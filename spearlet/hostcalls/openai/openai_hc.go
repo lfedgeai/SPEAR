@@ -29,7 +29,7 @@ type OpenAIChatMessage struct {
 	Role       string               `json:"role"`
 	Content    string               `json:"content"`
 	ToolCalls  []OpenAIChatToolCall `json:"tool_calls,omitempty"`
-	ToolCallId string               `json:"tool_call_id"`
+	ToolCallId string               `json:"tool_call_id,omitempty"`
 }
 
 type OpenAIChatCompletionResponse struct {
@@ -274,7 +274,7 @@ func OpenAISpeechToText(ep common.APIEndpointInfo, args *OpenAISpeechToTextReque
 		return nil, fmt.Errorf("error unmarshalling args: %v", err)
 	}
 
-	log.Debugf("SpeechToText Request: %v", sttReq)
+	log.Debugf("AudioASR Request: %v", sttReq)
 	u := *ep.Base + ep.Url
 
 	// send data as multipart/form-data
@@ -310,7 +310,7 @@ func OpenAISpeechToText(ep common.APIEndpointInfo, args *OpenAISpeechToTextReque
 		return nil, fmt.Errorf("error sending request: %v", err)
 	}
 
-	log.Debugf("Speech to Text Response: %s", string(res))
+	log.Infof("Speech to Text Response: %s", string(res))
 	respData := OpenAISpeechToTextResponse{}
 	err = json.Unmarshal(res, &respData)
 	if err != nil {

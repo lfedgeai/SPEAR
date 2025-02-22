@@ -358,20 +358,24 @@ func (w *Spearlet) metaDataToTaskCfg(meta TaskMetaData) *task.TaskConfig {
 			Cmd:      "/start",
 			Args:     []string{},
 			Image:    meta.ImageName,
+			WorkDir:  "",
 			HostAddr: w.spearAddr,
 		}
 	case task.TaskTypeProcess:
 		// go though search patch to find ExecName
 		execName := ""
+		execPath := ""
 		for _, path := range w.cfg.SearchPath {
 			log.Infof("Searching for exec %s in path %s", meta.ExecName, path)
 			if _, err := os.Stat(filepath.Join(path, meta.ExecName)); err == nil {
 				execName = filepath.Join(path, meta.ExecName)
+				execPath = path
 				break
 			}
 		}
-		if execName == "" {
-			log.Errorf("Error: exec not found: %s", meta.Name)
+		if execName == "" || execPath == "" {
+			log.Errorf("Error: exec name %s and path %s not found",
+				meta.ExecName, execPath)
 			return nil
 		}
 		log.Infof("Using exec: %s", execName)
@@ -380,6 +384,7 @@ func (w *Spearlet) metaDataToTaskCfg(meta TaskMetaData) *task.TaskConfig {
 			Cmd:      execName,
 			Args:     []string{},
 			Image:    "",
+			WorkDir:  execPath,
 			HostAddr: w.spearAddr,
 		}
 	default:
@@ -419,7 +424,6 @@ func (w *Spearlet) ExecuteTaskByName(taskName string, funcType task.TaskType, me
 			Name:      taskName,
 		}
 	case task.TaskTypeProcess:
-
 		fakeMeta = TaskMetaData{
 			Id:       -1,
 			Type:     task.TaskTypeProcess,
@@ -681,18 +685,23 @@ func (w *Spearlet) handler(req *http.Request, resp http.ResponseWriter) {
 			respError(resp, fmt.Sprintf("Error: %v", err))
 			return
 		}
-		defer conn.Close()
 		upgraded = true
 
 		inStream = make(chan task.Message, 1024)
 		go func() {
+			defer conn.Close()
 			defer close(inStream)
 			for {
 				_, msg, err := conn.ReadMessage()
 				if err != nil {
+					// do not print anything if it is 1000 error
+					if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+						return
+					}
 					log.Errorf("Error reading message: %v", err)
 					return
 				}
+				log.Infof("Received message: %s", msg)
 				inStream <- task.Message(msg)
 			}
 		}()
@@ -718,7 +727,7 @@ func (w *Spearlet) handler(req *http.Request, resp http.ResponseWriter) {
 	taskId, errTaskId := funcId(req)
 	taskName, errTaskName := funcName(req)
 	if errTaskId != nil && errTaskName != nil {
-		respError(resp, fmt.Sprintf("Error: taskid or taskname is required"))
+		respError(resp, "Error: taskid or taskname is required")
 		return
 	}
 
@@ -758,9 +767,11 @@ func (w *Spearlet) handler(req *http.Request, resp http.ResponseWriter) {
 		[]byte{}); err != nil {
 		log.Warnf("Error: %v", err)
 	}
-	if err := t.Stop(); err != nil {
-		log.Warnf("Error stopping task: %v", err)
-	}
+	go func() {
+		if err := t.Stop(); err != nil {
+			log.Warnf("Error stopping task: %v", err)
+		}
+	}()
 }
 
 func (w *Spearlet) addRoutes() {
@@ -879,6 +890,7 @@ func init() {
 }
 
 func respError(resp http.ResponseWriter, msg string) {
+	log.Warnf("Returning error %s", msg)
 	resp.WriteHeader(http.StatusInternalServerError)
 	resp.Write([]byte(msg))
 }

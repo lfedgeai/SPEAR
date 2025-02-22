@@ -26,6 +26,37 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+class RequestContext(object):
+    """
+    RequestContext is the context of the request
+    """
+
+    def __init__(self, args=None, is_streaming=False):
+        self._is_streaming = is_streaming
+        self._args = args
+
+    @property
+    def is_streaming(self):
+        """
+        check if the request is streaming
+        """
+        return self._is_streaming
+
+    @property
+    def payload(self) -> str:
+        """
+        get the payload
+        """
+        if self._is_streaming:
+            raise ValueError("Streaming request does not have payload")
+        return self._args
+
+    def __str__(self):
+        if self._is_streaming:
+            raise ValueError("Streaming request does not have payload")
+        return self._args
+
+
 class HostAgent(object):
     """
     HostAgent is the agent that connects to the host
@@ -107,11 +138,11 @@ class HostAgent(object):
         main loop to handle the rpc calls
         """
 
-        def handle_worker(handler, req_id: int, params: str):
+        def handle_worker(handler, req_id: int, ctx: RequestContext):
             with self._inflight_requests_lock:
                 self._inflight_requests_count += 1
             try:
-                result = handler(params)
+                result = handler(ctx)
                 self._put_rpc_response(req_id, result)
             except Exception as e:
                 logger.error("Error: %s", traceback.format_exc())
@@ -167,7 +198,8 @@ class HostAgent(object):
                                 end = ToolInvocationResponse.ToolInvocationResponseEnd(
                                     builder)
                                 builder.Finish(end)
-                                self._put_rpc_response(req.Id(), builder.Output())
+                                self._put_rpc_response(
+                                    req.Id(), builder.Output())
                             except Exception as e:
                                 logger.error(
                                     "Error: %s", traceback.format_exc())
@@ -195,7 +227,44 @@ class HostAgent(object):
                 custom_req = CustomRequest.CustomRequest.GetRootAsCustomRequest(
                     req.RequestAsNumpy(), 0
                 )
-                if custom_req.RequestInfoType() != RequestInfo.RequestInfo.NormalRequestInfo:
+                if custom_req.RequestInfoType() == RequestInfo.RequestInfo.NormalRequestInfo:
+                    normal_req = NormalRequestInfo.NormalRequestInfo()
+                    normal_req.Init(custom_req.RequestInfo().Bytes,
+                                    custom_req.RequestInfo().Pos)
+                    params_str = normal_req.ParamsStr().decode("utf-8")
+                    handler = self._handlers.get(
+                        custom_req.MethodStr().decode("utf-8"))
+                    if handler is None:
+                        logger.error("Method not found: %s",
+                                     custom_req.MethodStr())
+                        self._put_rpc_error(
+                            req.Id(),
+                            -32601,
+                            "Method not found",
+                            "Method not found",
+                        )
+                    else:
+                        if self._inflight_requests_count > MAX_INFLIGHT_REQUESTS:
+                            self._put_rpc_error(
+                                req.Id(),
+                                -32000,
+                                "Too many requests",
+                                "Too many requests",
+                            )
+                        else:
+                            # create a thread to handle the request
+                            t = threading.Thread(
+                                target=handle_worker,
+                                args=(
+                                    handler,
+                                    req.Id(),
+                                    RequestContext(args=params_str),
+                                ),
+                            )
+                            t.daemon = True
+                            t.start()
+                    continue
+                if custom_req.RequestInfoType() == RequestInfo.RequestInfo.StreamRequestInfo:
                     logger.error("streaming not yet supported. Type: %s, Expected: %s",
                                  custom_req.RequestInfoType(),
                                  RequestInfo.RequestInfo.NormalRequestInfo)
@@ -206,40 +275,14 @@ class HostAgent(object):
                         "stream not supported yet",
                     )
                     continue
-                normal_req = NormalRequestInfo.NormalRequestInfo()
-                normal_req.Init(custom_req.RequestInfo().Bytes, custom_req.RequestInfo().Pos)
-                params_str = normal_req.ParamsStr().decode("utf-8")
-                handler = self._handlers.get(
-                    custom_req.MethodStr().decode("utf-8"))
-                if handler is None:
-                    logger.error("Method not found: %s",
-                                 custom_req.MethodStr())
-                    self._put_rpc_error(
-                        req.Id(),
-                        -32601,
-                        "Method not found",
-                        "Method not found",
-                    )
-                else:
-                    if self._inflight_requests_count > MAX_INFLIGHT_REQUESTS:
-                        self._put_rpc_error(
-                            req.Id(),
-                            -32000,
-                            "Too many requests",
-                            "Too many requests",
-                        )
-                    else:
-                        # create a thread to handle the request
-                        t = threading.Thread(
-                            target=handle_worker,
-                            args=(
-                                handler,
-                                req.Id(),
-                                params_str,
-                            ),
-                        )
-                        t.daemon = True
-                        t.start()
+                logger.error("invalid request type: %s",
+                             custom_req.RequestInfoType())
+                self._put_rpc_error(
+                    req.Id(),
+                    -32601,
+                    "invalid request type",
+                    "invalid request type",
+                )
             elif (
                 rpc_data.DataType()
                 == TransportMessageRaw_Data.TransportMessageRaw_Data.TransportResponse

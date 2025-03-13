@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import logging
 import sys
+from typing import Tuple, Union
 
 import flatbuffers as fbs
 import spear.client as client
-import spear.hostcalls.transform as tf
 
 from spear.proto.chat import (ChatCompletionRequest, ChatCompletionResponse,
                               ChatMessage, ChatMetadata, Role)
@@ -28,15 +28,50 @@ logger.setLevel(logging.INFO)
 DEFAULT_LLM_MODEL = "llama"  # "gpt-4o"
 
 
-def chat(agent: client.HostAgent, message: str,
+def chat(agent: client.HostAgent,
+         message: Union[str, list[str], list[Tuple[str, str]]],
          model: str = DEFAULT_LLM_MODEL,
          builtin_tools: list[int] = [],
          internal_tools: list[int] = []):
     """
     handle the llm request
     """
-    builder = fbs.Builder(len(message) + 2048)
-    content_off = builder.CreateString(message)
+    role_offs = []
+    content_offs = []
+    if (isinstance(message, list) and len(message) > 0 and
+            isinstance(message[0], str)):
+        builder = fbs.Builder(sum([len(m) for m in message]) + 2048)
+        for m in message:
+            if not isinstance(m, str):
+                raise ValueError("Invalid message type")
+            content_offs.append(builder.CreateString(m))
+            role_offs.append(Role.Role.User)
+    elif isinstance(message, str):
+        builder = fbs.Builder(len(message) + 2048)
+        content_offs.append(builder.CreateString(message))
+        role_offs.append(Role.Role.User)
+    elif (isinstance(message, list) and len(message) > 0 and
+          isinstance(message[0], tuple) and len(message[0]) == 2 and
+          isinstance(message[0][0], str) and isinstance(message[0][1], str)):
+        builder = fbs.Builder(sum([len(m[1]) for m in message]) + 2048)
+        for m in message:
+            content_offs.append(builder.CreateString(m[1]))
+            if m[0] == "user":
+                role_offs.append(Role.Role.User)
+            elif m[0] == "assistant":
+                role_offs.append(Role.Role.Assistant)
+            elif m[0] == "system":
+                role_offs.append(Role.Role.System)
+            elif m[0] == "developer":
+                role_offs.append(Role.Role.Developer)
+            elif m[0] == "tool":
+                role_offs.append(Role.Role.Tool)
+            elif m[0] == "other":
+                role_offs.append(Role.Role.Other)
+            else:
+                raise ValueError("Invalid message type")
+    else:
+        raise ValueError("Invalid message type")
     model_off = builder.CreateString(model)
 
     tools_off = -1
@@ -78,17 +113,21 @@ def chat(agent: client.HostAgent, message: str,
             builder.PrependUOffsetTRelative(off)
         tools_off = builder.EndVector()
 
-    ChatMetadata.ChatMetadataStart(builder)
-    ChatMetadata.AddRole(builder, Role.Role.User)
-    metadata_off = ChatMetadata.End(builder)
+    msg_offs = []
+    for i, off in enumerate(content_offs):
+        role = role_offs[i]
+        ChatMetadata.ChatMetadataStart(builder)
+        ChatMetadata.AddRole(builder, role)
+        meta_off = ChatMetadata.End(builder)
 
-    ChatMessage.ChatMessageStart(builder)
-    ChatMessage.AddContent(builder, content_off)
-    ChatMessage.AddMetadata(builder, metadata_off)
-    msg_off = ChatMessage.End(builder)
+        ChatMessage.ChatMessageStart(builder)
+        ChatMessage.AddContent(builder, off)
+        ChatMessage.AddMetadata(builder, meta_off)
+        msg_offs.append(ChatMessage.End(builder))
 
-    ChatCompletionRequest.StartMessagesVector(builder, 1)
-    builder.PrependUOffsetTRelative(msg_off)
+    ChatCompletionRequest.StartMessagesVector(builder, len(msg_offs))
+    for msg_off in reversed(msg_offs):
+        builder.PrependUOffsetTRelative(msg_off)
     msglist_off = builder.EndVector()
 
     ChatCompletionRequest.ChatCompletionRequestStart(builder)
@@ -142,6 +181,22 @@ def chat(agent: client.HostAgent, message: str,
     msg_len = chat_resp.MessagesLength()
     res = []
     for i in range(msg_len):
-        res.append(chat_resp.Messages(i).Content().decode("utf-8"))
+        role = chat_resp.Messages(i).Metadata().Role()
+        if role == Role.Role.Assistant:
+            role_str = "assistant"
+        elif role == Role.Role.Developer:
+            role_str = "developer"
+        elif role == Role.Role.System:
+            role_str = "system"
+        elif role == Role.Role.User:
+            role_str = "user"
+        elif role == Role.Role.Tool:
+            role_str = "tool"
+        elif role == Role.Role.Other:
+            role_str = "other"
+        else:
+            raise Exception(f"invalid role value {role}")
+        res.append((role_str,
+            chat_resp.Messages(i).Content().decode("utf-8")))
 
     return res

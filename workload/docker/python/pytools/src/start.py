@@ -30,11 +30,11 @@ def sleep(params):
     return "done"
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.info("Handling request: %s", params)
+    logger.info("Handling request: %s", ctx.payload)
     resp = agent.exec_request(
         "tool.new",
         tools.NewToolRequest(

@@ -23,11 +23,13 @@ logger.setLevel(logging.DEBUG)
 agent = client.HostAgent()
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.info("Handling request: %s", params)
+    logger.info("Handling request: %s", ctx)
+    logger.info("Instream ID: %s", ctx.istream)
+    logger.info("Outstream ID: %s", ctx.ostream)
 
 
 if __name__ == "__main__":

@@ -23,11 +23,11 @@ TEST_ASR_MODEL = "whisper-small"
 WAV_FILE = "../../../misc/opea/asr/english_male_tts.wav"
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.info("Handling request: %s", params)
+    logger.info("Handling request: %s", ctx.payload)
 
     test_asr(TEST_ASR_MODEL)
 

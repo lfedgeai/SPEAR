@@ -26,11 +26,11 @@ agent = client.HostAgent()
 TEST_LLM_MODEL = "qwen2.5-7B"
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.info("Handling request: %s", params)
+    logger.info("Handling request: %s", ctx.payload)
 
     # testing tool
     test_tool(TEST_LLM_MODEL)

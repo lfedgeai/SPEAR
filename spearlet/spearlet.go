@@ -114,12 +114,6 @@ var (
 			ImageName: "pytest-functionality:latest",
 			Name:      "pytest-functionality",
 		},
-		11: {
-			Id:       11,
-			Type:     task.TaskTypeProcess,
-			ExecName: "pytest-functionality.py",
-			Name:     "pytest-functionality-proc",
-		},
 	}
 )
 

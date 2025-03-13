@@ -63,7 +63,7 @@ def test_internal_tool():
     print(resp, file=sys.stderr)
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """

@@ -46,7 +46,6 @@ setup(
     version=get_version(),
     description="Spear Python SDK",
     author="Wilson Wang",
-    author_email="wilson.wang@bytedance.com",
     license="Apache-2.0",
     python_requires=">=3.6",
     packages=find_packages(include=["spear", "spear.*"]),

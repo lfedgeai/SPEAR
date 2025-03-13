@@ -35,7 +35,7 @@ func Input(inv *hostcalls.InvocationInfo, args []byte) ([]byte, error) {
 	}
 
 	// display the prompt
-	fmt.Print(req.Prompt())
+	fmt.Printf("%s", req.Prompt())
 	reader := bufio.NewReader(os.Stdout)
 
 	// Read a line from stdout
@@ -114,7 +114,7 @@ func Speak(inv *hostcalls.InvocationInfo, args []byte) ([]byte, error) {
 	f.Close()
 	log.Debugf("Created temp file: %s", f.Name())
 
-	if req.Dryrun() {
+	if !req.Dryrun() {
 		err = playMP3(f.Name())
 		if err != nil {
 			return nil, fmt.Errorf("could not play MP3 file: %w", err)

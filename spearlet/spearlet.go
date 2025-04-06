@@ -24,6 +24,7 @@ import (
 	_ "github.com/lfedgeai/spear/spearlet/tools"
 
 	"github.com/docker/docker/client"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
@@ -66,6 +67,8 @@ type Spearlet struct {
 	keyFile  string
 
 	streamUpgrader websocket.Upgrader
+
+	rtCollection *task.TaskRuntimeCollection
 }
 
 type TaskMetaData struct {
@@ -74,6 +77,8 @@ type TaskMetaData struct {
 	ImageName string
 	ExecName  string
 	Name      string
+	InStream  bool
+	OutStream bool
 }
 
 var (
@@ -83,36 +88,48 @@ var (
 			Type:      task.TaskTypeDocker,
 			ImageName: "gen_image:latest",
 			Name:      "gen_image",
+			InStream:  false,
+			OutStream: false,
 		},
 		4: {
 			Id:        4,
 			Type:      task.TaskTypeDocker,
 			ImageName: "pychat:latest",
 			Name:      "pychat",
+			InStream:  false,
+			OutStream: false,
 		},
 		5: {
 			Id:        5,
 			Type:      task.TaskTypeDocker,
 			ImageName: "pytools:latest",
 			Name:      "pytools",
+			InStream:  false,
+			OutStream: false,
 		},
 		6: {
 			Id:        6,
 			Type:      task.TaskTypeDocker,
 			ImageName: "pyconversation:latest",
 			Name:      "pyconversation",
+			InStream:  false,
+			OutStream: false,
 		},
 		7: {
 			Id:        7,
 			Type:      task.TaskTypeDocker,
 			ImageName: "pydummy:latest",
 			Name:      "pydummy",
+			InStream:  false,
+			OutStream: false,
 		},
 		8: {
 			Id:        8,
 			Type:      task.TaskTypeDocker,
 			ImageName: "pytest-functionality:latest",
 			Name:      "pytest-functionality",
+			InStream:  false,
+			OutStream: false,
 		},
 	}
 )
@@ -195,47 +212,20 @@ func (w *Spearlet) initializeRuntimes() {
 	}
 	task.RegisterSupportedTaskType(task.TaskTypeDocker)
 	task.RegisterSupportedTaskType(task.TaskTypeProcess)
-	task.InitTaskRuntimes(cfg)
-}
-
-func isStreamingRequest(req *http.Request) bool {
-	headers := req.Header
-	// get the streaming flag from the headers
-	streaming := headers.Get(HeaderStreamingFunction)
-	if streaming == "" {
-		return false
-	}
-
-	// convert streaming to bool
-	b, err := strconv.ParseBool(streaming)
-	if err != nil {
-		log.Errorf("error parsing %s header: %v", HeaderStreamingFunction, err)
-		return false
-	}
-
-	return b
-}
-
-func funcAsync(req *http.Request) (bool, error) {
-	// get request headers
-	headers := req.Header
-	// get the async from the headers
-	async := headers.Get(HeaderFuncAsync)
-	if async == "" {
-		return false, nil
-	}
-
-	// convert async to bool
-	b, err := strconv.ParseBool(async)
-	if err != nil {
-		return false, fmt.Errorf("error parsing %s header: %v",
-			HeaderFuncAsync, err)
-	}
-
-	return b, nil
+	w.rtCollection = task.NewTaskRuntimeCollection(cfg)
 }
 
 func funcId(req *http.Request) (int64, error) {
+	vars := mux.Vars(req)
+	if id, ok := vars["funcId"]; ok {
+		// convert id to int64
+		i, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			return -1, fmt.Errorf("error parsing funcId: %v", err)
+		}
+		return i, nil
+	}
+
 	// get request headers
 	headers := req.Header
 	// get the id from the headers
@@ -320,25 +310,26 @@ func (w *Spearlet) ListTasks() []string {
 }
 
 func (w *Spearlet) RunTask(funcId int64, funcName string, funcType task.TaskType,
-	method string, data string, inStream chan task.Message,
-	terminate bool, wait bool) (
-	respData string, respStream chan task.Message, err error) {
-	t, respData, respStream, err := w.ExecuteTask(funcId, funcName, funcType, method, data, inStream)
+	method string, data string, reqStream chan task.Message, respStream chan task.Message,
+	sendTermOnRtn bool, waitInstance bool) (
+	respData string, err error) {
+	t, respData, err := w.ExecuteTask(funcId, funcName, funcType, method, data,
+		reqStream, respStream)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-	if terminate {
+	if sendTermOnRtn {
 		if err := w.commMgr.SendOutgoingRPCSignal(t, transport.SignalTerminate,
 			[]byte{}); err != nil {
-			return "", nil, fmt.Errorf("error: %v", err)
+			return "", fmt.Errorf("error: %v", err)
 		}
 	}
-	if wait {
+	if waitInstance {
 		if _, err := t.Wait(); err != nil {
 			log.Warnf("Error waiting for task: %v", err)
 		}
 	}
-	return respData, respStream, nil
+	return respData, nil
 }
 
 func (w *Spearlet) metaDataToTaskCfg(meta TaskMetaData) *task.TaskConfig {
@@ -387,189 +378,92 @@ func (w *Spearlet) metaDataToTaskCfg(meta TaskMetaData) *task.TaskConfig {
 }
 
 func (w *Spearlet) ExecuteTaskByName(taskName string, funcType task.TaskType, method string,
-	reqData string, reqStream chan task.Message) (t task.Task,
-	respData string, respStream chan task.Message,
-	err error) {
-	var fakeMeta TaskMetaData
+	reqData string, reqStream chan task.Message, respStream chan task.Message) (t task.Task,
+	respData string, err error) {
+	meta := TaskMetaData{
+		Id: -1,
+	}
 
-	if _, ok := task.GlobalTaskRuntimes[funcType]; !ok {
-		return nil, "", nil, fmt.Errorf("error: task runtime not found: %d",
+	if _, err := w.rtCollection.GetTaskRuntime(funcType); err != nil {
+		return nil, "", fmt.Errorf("error: task runtime not found: %d",
 			funcType)
 	}
 
-	switch funcType {
-	case task.TaskTypeDocker:
-		// search if the docker image exists
-		// if not, return error
-		cli, err := client.NewClientWithOpts(client.FromEnv)
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("error: %v", err)
+	for _, v := range tmpMetaData {
+		if v.Name == taskName {
+			meta = v
+			break
 		}
-
-		_, _, err = cli.ImageInspectWithRaw(context.Background(), taskName)
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("error: %v", err)
-		}
-
-		fakeMeta = TaskMetaData{
-			Id:        -1,
-			Type:      task.TaskTypeDocker,
-			ImageName: taskName,
-			Name:      taskName,
-		}
-	case task.TaskTypeProcess:
-		fakeMeta = TaskMetaData{
-			Id:       -1,
-			Type:     task.TaskTypeProcess,
-			ExecName: taskName,
-			Name:     taskName,
-		}
-	case task.TaskTypeDylib:
-		panic("not implemented")
-	case task.TaskTypeWasm:
-		panic("not implemented")
-	default:
-		panic("invalid task type")
 	}
 
-	log.Infof("Using metadata: %+v", fakeMeta)
-
-	cfg := w.metaDataToTaskCfg(fakeMeta)
-	if cfg == nil {
-		return nil, "", nil, fmt.Errorf("error: invalid task type: %d",
-			funcType)
-	}
-
-	rt, err := task.GetTaskRuntime(funcType)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
-	}
-
-	newTask, err := rt.CreateTask(cfg)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
-	}
-	err = w.commMgr.InstallToTask(newTask)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
-	}
-
-	log.Debugf("Starting task: %s", newTask.Name())
-	newTask.Start()
-
-	reqMQueueID := uint16(0)
-	w.mQueues[newTask] = map[uint16]chan task.Message{
-		reqMQueueID: make(chan task.Message, 1024),
-	}
-	respMQueueID := uint16(1)
-	w.mQueues[newTask] = map[uint16]chan task.Message{
-		respMQueueID: make(chan task.Message, 1024),
-	}
-
-	builder := flatbuffers.NewBuilder(512)
-	methodOff := builder.CreateString(method)
-
-	if reqStream == nil {
-		dataOff := builder.CreateString(reqData)
-
-		custom.NormalRequestInfoStart(builder)
-		custom.NormalRequestInfoAddParamsStr(builder, dataOff)
-		infoOff := custom.NormalRequestInfoEnd(builder)
-
-		custom.CustomRequestStart(builder)
-		custom.CustomRequestAddMethodStr(builder, methodOff)
-		custom.CustomRequestAddRequestInfoType(builder,
-			custom.RequestInfoNormalRequestInfo)
-		custom.CustomRequestAddRequestInfo(builder, infoOff)
-		builder.Finish(custom.CustomRequestEnd(builder))
-	} else {
-		custom.StreamRequestInfoStart(builder)
-		custom.StreamRequestInfoAddInQueueId(builder, int32(reqMQueueID))
-		custom.StreamRequestInfoAddOutQueueId(builder, int32(respMQueueID))
-		infoOff := custom.StreamRequestInfoEnd(builder)
-
-		custom.CustomRequestStart(builder)
-		custom.CustomRequestAddMethodStr(builder, methodOff)
-		custom.CustomRequestAddRequestInfoType(builder,
-			custom.RequestInfoStreamRequestInfo)
-		custom.CustomRequestAddRequestInfo(builder, infoOff)
-		builder.Finish(custom.CustomRequestEnd(builder))
-	}
-
-	if reqStream != nil {
-		go func() {
-			for msg := range reqStream {
-				w.mQueues[newTask][reqMQueueID] <- msg
-			}
-		}()
-	}
-
-	if r, err := w.commMgr.SendOutgoingRPCRequest(newTask,
-		transport.MethodCustom,
-		builder.FinishedBytes()); err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
-	} else {
-		if len(r.ResponseBytes()) == 0 {
-			return newTask, "", nil, nil
-		}
-		customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
-
-		if customResp.ReturnStream() {
-			// stream return
-			queueId := respMQueueID
-			// streaming response
-			if _, ok := w.mQueues[newTask][uint16(queueId)]; !ok {
-				return nil, "", nil, fmt.Errorf("error: queue not found: %d",
-					queueId)
+	if meta.Id == -1 {
+		switch funcType {
+		case task.TaskTypeDocker:
+			// search if the docker image exists
+			// if not, return error
+			cli, err := client.NewClientWithOpts(client.FromEnv)
+			if err != nil {
+				return nil, "", fmt.Errorf("error: %v", err)
 			}
 
-			return newTask, "", w.mQueues[newTask][uint16(queueId)], nil
-		} else {
-			customRespData := customResp.DataBytes()
-			return newTask, string(customRespData), nil, nil
-		}
-	}
-}
+			_, _, err = cli.ImageInspectWithRaw(context.Background(), taskName)
+			if err != nil {
+				return nil, "", fmt.Errorf("error: %v", err)
+			}
 
-func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method string,
-	reqData string, reqStream chan task.Message) (t task.Task,
-	respData string,
-	respStream chan task.Message,
-	err error) {
-	// get metadata from taskId
-	meta, ok := tmpMetaData[taskId]
-	if !ok {
-		return nil, "", nil, fmt.Errorf("error: invalid task id: %d",
-			taskId)
-	}
-	if funcType == task.TaskTypeUnknown {
-		funcType = meta.Type
-	}
-	if meta.Type != funcType {
-		return nil, "", nil, fmt.Errorf("error: invalid task type: %d, %+v",
-			funcType, meta)
+			meta = TaskMetaData{
+				Id:        -1,
+				Type:      task.TaskTypeDocker,
+				ImageName: taskName,
+				Name:      taskName,
+				InStream:  false,
+				OutStream: false,
+			}
+		case task.TaskTypeProcess:
+			meta = TaskMetaData{
+				Id:        -1,
+				Type:      task.TaskTypeProcess,
+				ExecName:  taskName,
+				Name:      taskName,
+				InStream:  false,
+				OutStream: false,
+			}
+		case task.TaskTypeDylib:
+			panic("not implemented")
+		case task.TaskTypeWasm:
+			panic("not implemented")
+		default:
+			panic("invalid task type")
+		}
+
+		if reqStream != nil {
+			meta.InStream = true
+		}
+		if respStream != nil {
+			meta.OutStream = true
+		}
 	}
 
 	log.Infof("Using metadata: %+v", meta)
 
 	cfg := w.metaDataToTaskCfg(meta)
 	if cfg == nil {
-		return nil, "", nil, fmt.Errorf("error: invalid task type: %d",
+		return nil, "", fmt.Errorf("error: invalid task type: %d",
 			funcType)
 	}
 
-	rt, err := task.GetTaskRuntime(funcType)
+	rt, err := w.rtCollection.GetTaskRuntime(funcType)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
+		return nil, "", fmt.Errorf("error: %v", err)
 	}
 
 	newTask, err := rt.CreateTask(cfg)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
+		return nil, "", fmt.Errorf("error: %v", err)
 	}
 	err = w.commMgr.InstallToTask(newTask)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
+		return nil, "", fmt.Errorf("error: %v", err)
 	}
 
 	log.Debugf("Starting task: %s", newTask.Name())
@@ -587,7 +481,8 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 	builder := flatbuffers.NewBuilder(512)
 	methodOff := builder.CreateString(method)
 
-	if reqStream == nil {
+	if reqStream == nil && respStream == nil {
+		// no stream
 		dataOff := builder.CreateString(reqData)
 
 		custom.NormalRequestInfoStart(builder)
@@ -625,10 +520,10 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 	if r, err := w.commMgr.SendOutgoingRPCRequest(newTask,
 		transport.MethodCustom,
 		builder.FinishedBytes()); err != nil {
-		return nil, "", nil, fmt.Errorf("error: %v", err)
+		return nil, "", fmt.Errorf("error: %v", err)
 	} else {
 		if len(r.ResponseBytes()) == 0 {
-			return newTask, "", nil, nil
+			return newTask, "", nil
 		}
 		customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
 
@@ -637,78 +532,206 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 			queueId := respMQueueID
 			// streaming response
 			if _, ok := w.mQueues[newTask][uint16(queueId)]; !ok {
-				return nil, "", nil, fmt.Errorf("error: queue not found: %d",
+				return nil, "", fmt.Errorf("error: queue not found: %d",
 					queueId)
 			}
 
-			return newTask, "", w.mQueues[newTask][uint16(queueId)], nil
+			go func() {
+				for msg := range w.mQueues[newTask][uint16(queueId)] {
+					respStream <- msg
+				}
+			}()
+
+			return newTask, "", nil
 		} else {
 			customRespData := customResp.DataBytes()
-			return newTask, string(customRespData), nil, nil
+			return newTask, string(customRespData), nil
+		}
+	}
+}
+
+func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method string,
+	reqData string, reqStream chan task.Message, respStream chan task.Message) (t task.Task,
+	respData string,
+	err error) {
+	// get metadata from taskId
+	meta, ok := tmpMetaData[taskId]
+	if !ok {
+		return nil, "", fmt.Errorf("error: invalid task id: %d",
+			taskId)
+	}
+	if funcType == task.TaskTypeUnknown {
+		funcType = meta.Type
+	}
+	if meta.Type != funcType {
+		return nil, "", fmt.Errorf("error: invalid task type: %d, %+v",
+			funcType, meta)
+	}
+	if meta.InStream != (reqStream != nil) {
+		return nil, "", fmt.Errorf("error: invalid task input stream: %v, %v",
+			meta.InStream, reqStream != nil)
+	}
+	if meta.OutStream != (respStream != nil) {
+		return nil, "", fmt.Errorf("error: invalid task output stream: %v, %v",
+			meta.OutStream, respStream != nil)
+	}
+
+	log.Infof("Using metadata: %+v", meta)
+
+	cfg := w.metaDataToTaskCfg(meta)
+	if cfg == nil {
+		return nil, "", fmt.Errorf("error: invalid task type: %d",
+			funcType)
+	}
+
+	rt, err := w.rtCollection.GetTaskRuntime(funcType)
+	if err != nil {
+		return nil, "", fmt.Errorf("error: %v", err)
+	}
+
+	newTask, err := rt.CreateTask(cfg)
+	if err != nil {
+		return nil, "", fmt.Errorf("error: %v", err)
+	}
+	err = w.commMgr.InstallToTask(newTask)
+	if err != nil {
+		return nil, "", fmt.Errorf("error: %v", err)
+	}
+
+	log.Debugf("Starting task: %s", newTask.Name())
+	newTask.Start()
+
+	reqMQueueID := -1
+	respMQueueID := -1
+
+	if reqStream != nil {
+		reqMQueueID = 0
+		w.mQueues[newTask] = map[uint16]chan task.Message{
+			uint16(reqMQueueID): make(chan task.Message, 1024),
+		}
+	}
+
+	if respStream != nil {
+		respMQueueID = 1
+		w.mQueues[newTask] = map[uint16]chan task.Message{
+			uint16(respMQueueID): make(chan task.Message, 1024),
+		}
+	}
+
+	builder := flatbuffers.NewBuilder(512)
+	methodOff := builder.CreateString(method)
+
+	if reqStream == nil && respStream == nil {
+		// no stream
+		dataOff := builder.CreateString(reqData)
+
+		custom.NormalRequestInfoStart(builder)
+		custom.NormalRequestInfoAddParamsStr(builder, dataOff)
+		infoOff := custom.NormalRequestInfoEnd(builder)
+
+		custom.CustomRequestStart(builder)
+		custom.CustomRequestAddMethodStr(builder, methodOff)
+		custom.CustomRequestAddRequestInfoType(builder,
+			custom.RequestInfoNormalRequestInfo)
+		custom.CustomRequestAddRequestInfo(builder, infoOff)
+		builder.Finish(custom.CustomRequestEnd(builder))
+	} else {
+		custom.StreamRequestInfoStart(builder)
+		custom.StreamRequestInfoAddInQueueId(builder, int32(reqMQueueID))
+		custom.StreamRequestInfoAddOutQueueId(builder, int32(respMQueueID))
+		infoOff := custom.StreamRequestInfoEnd(builder)
+
+		custom.CustomRequestStart(builder)
+		custom.CustomRequestAddMethodStr(builder, methodOff)
+		custom.CustomRequestAddRequestInfoType(builder,
+			custom.RequestInfoStreamRequestInfo)
+		custom.CustomRequestAddRequestInfo(builder, infoOff)
+		builder.Finish(custom.CustomRequestEnd(builder))
+	}
+
+	if reqStream != nil {
+		go func() {
+			for msg := range reqStream {
+				w.mQueues[newTask][uint16(reqMQueueID)] <- msg
+			}
+		}()
+	}
+
+	if r, err := w.commMgr.SendOutgoingRPCRequest(newTask,
+		transport.MethodCustom,
+		builder.FinishedBytes()); err != nil {
+		return nil, "", fmt.Errorf("error: %v", err)
+	} else {
+		if len(r.ResponseBytes()) == 0 {
+			return newTask, "", nil
+		}
+		customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
+
+		if customResp.ReturnStream() {
+			// streaming response
+			if _, ok := w.mQueues[newTask][uint16(respMQueueID)]; !ok {
+				return nil, "", fmt.Errorf("error: queue not found: %d",
+					respMQueueID)
+			}
+
+			go func() {
+				for msg := range w.mQueues[newTask][uint16(respMQueueID)] {
+					respStream <- msg
+				}
+			}()
+
+			return newTask, "", nil
+		} else {
+			customRespData := customResp.DataBytes()
+			return newTask, string(customRespData), nil
 		}
 	}
 }
 
 func (w *Spearlet) ExecuteTask(funcId int64, funcName string, funcType task.TaskType,
-	method string,
-	data string, inStream chan task.Message) (t task.Task, respData string,
-	respStream chan task.Message, err error) {
+	method, data string, inStream, outStream chan task.Message) (t task.Task, respData string,
+	err error) {
 	if funcId >= 0 {
-		return w.ExecuteTaskById(funcId, funcType, method, data, inStream)
+		return w.ExecuteTaskById(funcId, funcType, method, data, inStream, outStream)
 	}
 	if funcName != "" {
-		return w.ExecuteTaskByName(funcName, funcType, method, data, inStream)
+		return w.ExecuteTaskByName(funcName, funcType, method, data, inStream, outStream)
 	}
-	return nil, "", nil, fmt.Errorf("error: invalid task id or name")
+	return nil, "", fmt.Errorf("error: invalid task id or name")
 }
 
-func (w *Spearlet) handler(req *http.Request, resp http.ResponseWriter) {
+func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 	var inData string
-	var inStream chan task.Message
+	var inStream, outStream chan task.Message
 	var conn *websocket.Conn
 	var err error
 
-	upgraded := false
+	log.Infof("Streaming request")
+	conn, err = w.streamUpgrader.Upgrade(resp, req, nil)
+	if err != nil {
+		respError(resp, fmt.Sprintf("Error: %v", err))
+		return
+	}
 
-	streamingReq := isStreamingRequest(req)
-
-	if streamingReq {
-		log.Infof("Streaming request")
-		conn, err = w.streamUpgrader.Upgrade(resp, req, nil)
-		if err != nil {
-			respError(resp, fmt.Sprintf("Error: %v", err))
-			return
-		}
-		upgraded = true
-
-		inStream = make(chan task.Message, 1024)
-		go func() {
-			defer conn.Close()
-			defer close(inStream)
-			for {
-				_, msg, err := conn.ReadMessage()
-				if err != nil {
-					// do not print anything if it is 1000 error
-					if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-						return
-					}
-					log.Errorf("Error reading message: %v", err)
+	inStream = make(chan task.Message, 1024)
+	outStream = make(chan task.Message, 1024)
+	go func() {
+		defer conn.Close()
+		defer close(inStream)
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				// do not print anything if it is 1000 error
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
 					return
 				}
-				log.Infof("Received message: %s", msg)
-				inStream <- task.Message(msg)
+				log.Errorf("Error reading message: %v", err)
+				return
 			}
-		}()
-	} else {
-		buf := make([]byte, common.MaxDataResponseSize)
-		n, err := req.Body.Read(buf)
-		if err != nil && err != io.EOF {
-			log.Errorf("Error reading body: %v", err)
-			respError(resp, fmt.Sprintf("Error: %v", err))
-			return
+			log.Infof("Received message: %s", msg)
+			inStream <- task.Message(msg)
 		}
-		inData = string(buf[:n])
-	}
+	}()
 
 	// get the function type
 	funcType, err := funcType(req)
@@ -725,34 +748,81 @@ func (w *Spearlet) handler(req *http.Request, resp http.ResponseWriter) {
 		return
 	}
 
-	t, outData, outStream, err := w.ExecuteTask(taskId, taskName, funcType, "handle",
-		inData, inStream)
+	t, outData, err := w.ExecuteTask(taskId, taskName, funcType, "handle",
+		inData, inStream, outStream)
 	if err != nil {
 		respError(resp, fmt.Sprintf("Error: %v", err))
 		return
 	}
 
-	if outStream != nil {
-		log.Infof("Streaming response")
-		if !upgraded {
-			conn, err = w.streamUpgrader.Upgrade(resp, req, nil)
-			if err != nil {
-				respError(resp, fmt.Sprintf("Error: %v", err))
-				return
-			}
-			defer conn.Close()
-		}
-
-		for msg := range outStream {
-			err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
-			if err != nil {
-				log.Errorf("Error writing message: %v", err)
-				return
-			}
-		}
-	} else {
+	if v, ok := <-outStream; !ok {
+		// no stream output
 		resp.Write([]byte(outData))
+	} else {
+		err := conn.WriteMessage(websocket.TextMessage, []byte(v))
+		if err != nil {
+			log.Errorf("Error writing message: %v", err)
+		} else {
+			for msg := range outStream {
+				err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
+				if err != nil {
+					log.Errorf("Error writing message: %v", err)
+					break
+				}
+			}
+		}
 	}
+
+	log.Infof("Terminating task %v", t)
+	// terminate the task by sending a signal
+	if err := w.commMgr.SendOutgoingRPCSignal(t,
+		transport.SignalTerminate,
+		[]byte{}); err != nil {
+		log.Warnf("Error: %v", err)
+	}
+	go func() {
+		if err := t.Stop(); err != nil {
+			log.Warnf("Error stopping task: %v", err)
+		}
+	}()
+}
+
+func (w *Spearlet) handle(resp http.ResponseWriter, req *http.Request) {
+	var inData string
+	var err error
+
+	buf := make([]byte, common.MaxDataResponseSize)
+	n, err := req.Body.Read(buf)
+	if err != nil && err != io.EOF {
+		log.Errorf("Error reading body: %v", err)
+		respError(resp, fmt.Sprintf("Error: %v", err))
+		return
+	}
+	inData = string(buf[:n])
+
+	// get the function type
+	funcType, err := funcType(req)
+	if err != nil {
+		respError(resp, fmt.Sprintf("Error: %v", err))
+		return
+	}
+
+	// get the function id
+	taskId, errTaskId := funcId(req)
+	taskName, errTaskName := funcName(req)
+	if errTaskId != nil && errTaskName != nil {
+		respError(resp, "Error: taskid or taskname is required")
+		return
+	}
+
+	t, outData, err := w.ExecuteTask(taskId, taskName, funcType, "handle",
+		inData, nil, nil)
+	if err != nil {
+		respError(resp, fmt.Sprintf("Error: %v", err))
+		return
+	}
+
+	resp.Write([]byte(outData))
 
 	log.Infof("Terminating task %v", t)
 	// terminate the task by sending a signal
@@ -773,11 +843,10 @@ func (w *Spearlet) addRoutes() {
 		req *http.Request) {
 		resp.Write([]byte("OK"))
 	})
-	w.mux.HandleFunc("/", func(resp http.ResponseWriter,
-		req *http.Request) {
-		log.Debugf("Received request: %s", req.URL.Path)
-		w.handler(req, resp)
-	})
+	w.mux.HandleFunc("/", w.handle)
+	w.mux.HandleFunc("/{funcId}", w.handle)
+	w.mux.HandleFunc("/stream", w.handleStream)
+	w.mux.HandleFunc("/stream/{funcId}", w.handleStream)
 }
 
 func (w *Spearlet) StartProviderService() {
@@ -871,7 +940,7 @@ func (w *Spearlet) Stop() {
 	if w.srv != nil {
 		w.srv.Shutdown(context.Background())
 	}
-	task.StopTaskRuntimes()
+	w.rtCollection.Cleanup()
 }
 
 func SetLogLevel(lvl log.Level) {

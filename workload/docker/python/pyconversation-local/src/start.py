@@ -8,12 +8,11 @@ import sys
 import spear.client as client
 import spear.hostcalls.tools as tools
 import spear.hostcalls.transform as tf
+import spear.transform.chat as chat
+import spear.transform.speech as speech
 import spear.utils.io as io
 
-import spear.transform.chat as chat
 from spear.proto.tool import BuiltinToolID
-import spear.transform.speech as speech
-
 
 LLM_MODEL = "gpt-4o"  # "llama-toolchat" # "llama-toolchat-70b" # "qwen-toolchat-72b"
 STT_MODEL = "gaia-whisper"

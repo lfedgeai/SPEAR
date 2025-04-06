@@ -54,6 +54,17 @@ def handle(ctx):
     # agent.stop()
 
 
+def handle_stream(ctx):
+    """
+    handle streaming request
+    """
+    logger.info("Handling streaming request: %s", ctx.payload)
+
+    # test("text-embedding-ada-002")
+    # test("bge-large-en-v1.5")
+
+    # agent.stop()
+
 def test_chat(model):
     """
     test the model
@@ -137,4 +148,5 @@ def test_tool(model):
 
 if __name__ == "__main__":
     agent.register_handler("handle", handle)
+    agent.register_handler("handle_stream", handle_stream, True, True)
     agent.run()

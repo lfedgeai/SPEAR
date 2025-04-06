@@ -108,6 +108,7 @@ require (
 	github.com/go-vgo/robotgo v0.110.5
 	github.com/google/flatbuffers v24.3.25+incompatible
 	github.com/gordonklaus/portaudio v0.0.0-20230709114228-aafa478834f5
+	github.com/gorilla/mux v1.8.1
 	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3

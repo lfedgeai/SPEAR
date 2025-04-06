@@ -54,26 +54,12 @@ func NewDockerTaskRuntime(rtCfg *TaskRuntimeConfig) (*DockerTaskRuntime, error) 
 		tasks:      make(map[TaskID]Task),
 		rtCfg:      rtCfg,
 		containers: make(map[string]*container.CreateResponse),
-		stopCh:     make(chan struct{}),
-		stopWg:     sync.WaitGroup{},
 		listenPort: fmt.Sprintf("%d", randomInt),
 
 		pullImages: false,
 	}
 
 	go res.runTCPServer(res.listenPort)
-
-	res.stopWg.Add(1)
-	go func() {
-		defer res.stopWg.Done()
-		<-res.stopCh
-		log.Debugf("Stopping docker task runtime")
-		for _, task := range res.containers {
-			if err := docker.StopContainer(task.ID); err != nil {
-				log.Errorf("Error stopping container %s: %v", task.ID, err)
-			}
-		}
-	}()
 
 	if rtCfg.StartServices {
 		if err := res.startBackendServices(); err != nil {
@@ -91,14 +77,20 @@ func (d *DockerTaskRuntime) Start() error {
 }
 
 func (d *DockerTaskRuntime) Stop() error {
-	d.stopCh <- struct{}{}
 	// iterate all tasks and stop them
+	log.Infof("Stopping docker task runtime")
 	for _, task := range d.tasks {
 		if err := task.Stop(); err != nil {
 			log.Errorf("Error stopping task %s: %v", task.ID(), err)
 		}
 	}
-	d.stopWg.Wait()
+	// stop the backend services
+	log.Infof("Stopping backend services")
+	for _, task := range d.containers {
+		if err := docker.StopContainer(task.ID); err != nil {
+			log.Errorf("Error stopping container %s: %v", task.ID, err)
+		}
+	}
 	return nil
 }
 

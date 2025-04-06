@@ -133,8 +133,8 @@ func NewRootCmd() *cobra.Command {
 					return
 				}
 
-				t, outData, outStream, err := w.ExecuteTask(funcId, funcName, rtType,
-					execReqMethod, execReqPayload, nil)
+				t, outData, err := w.ExecuteTask(funcId, funcName, rtType,
+					execReqMethod, execReqPayload, nil, nil)
 				if err != nil {
 					log.Errorf("Error executing workload: %v", err)
 					return
@@ -143,13 +143,13 @@ func NewRootCmd() *cobra.Command {
 				if outData != "" {
 					log.Infof("Workload execution output: %v", outData)
 				}
-				if outStream != nil {
-					// print out stream
-					log.Infof("Workload execution output stream: %v", outStream)
-					for msg := range outStream {
-						log.Infof("%v", msg)
-					}
-				}
+				// if outStream != nil {
+				// 	// print out stream
+				// 	log.Infof("Workload execution output stream: %v", outStream)
+				// 	for msg := range outStream {
+				// 		log.Infof("%v", msg)
+				// 	}
+				// }
 
 				log.Infof("Terminating task %v", t)
 				// terminate the task by sending a signal

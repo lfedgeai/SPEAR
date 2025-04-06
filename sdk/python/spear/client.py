@@ -12,8 +12,9 @@ from typing import Callable
 
 import flatbuffers as fbs
 
-from spear.proto.custom import (CustomRequest, NormalRequestInfo, RequestInfo,
-                                StreamRequestInfo, CustomResponse)
+from spear.proto.custom import (CustomRequest, CustomResponse,
+                                NormalRequestInfo, RequestInfo,
+                                StreamRequestInfo)
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
@@ -25,6 +26,43 @@ DEFAULT_MESSAGE_SIZE = 4096
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+class Handler(object):
+    """
+    Handler is the base class for all handlers
+    """
+
+    def __init__(self, handle, in_stream: bool = False, out_stream: bool = False):
+        if not callable(handle):
+            raise ValueError("handle must be a callable")
+        if not isinstance(in_stream, bool):
+            raise ValueError("in_stream must be a boolean")
+        if not isinstance(out_stream, bool):
+            raise ValueError("out_stream must be a boolean")
+        self._handle = handle
+        self._in_stream = in_stream
+        self._out_stream = out_stream
+
+    @property
+    def in_stream(self) -> bool:
+        """
+        get the input stream flag
+        """
+        return self._in_stream
+
+    @property
+    def out_stream(self) -> bool:
+        """
+        get the output stream flag
+        """
+        return self._out_stream
+
+    def handle(self, *args, **kwargs):
+        """
+        handle the request
+        """
+        return self._handle(*args, **kwargs)
 
 
 class RequestContext(object):
@@ -140,18 +178,19 @@ class HostAgent(object):
         main loop to handle the rpc calls
         """
 
-        def handle_worker(handler, req_id: int, ctx: RequestContext):
+        def handle_worker(handler_obj: Handler, req_id: int, ctx: RequestContext):
             with self._inflight_requests_lock:
                 self._inflight_requests_count += 1
             try:
-                result = handler(ctx)
+                result = handler_obj.handle(ctx)
                 if result is None:
                     result = b""
                 else:
                     if isinstance(result, str):
                         result = result.encode("utf-8")
                     if not isinstance(result, bytes):
-                        raise ValueError(f"Invalid response type: {type(result)}")
+                        raise ValueError(
+                            f"Invalid response type: {type(result)}")
                 builder = fbs.Builder(1024)
                 off = builder.CreateByteVector(result)
                 CustomResponse.CustomResponseStart(builder)
@@ -245,9 +284,9 @@ class HostAgent(object):
                 custom_req = CustomRequest.CustomRequest.GetRootAsCustomRequest(
                     req.RequestAsNumpy(), 0
                 )
-                handler = self._handlers.get(
+                handler_obj = self._handlers.get(
                     custom_req.MethodStr().decode("utf-8"))
-                if handler is None:
+                if handler_obj is None:
                     logger.error("Method not found: %s",
                                  custom_req.MethodStr())
                     self._put_rpc_error(
@@ -259,6 +298,17 @@ class HostAgent(object):
                     continue
 
                 if custom_req.RequestInfoType() == RequestInfo.RequestInfo.NormalRequestInfo:
+                    if handler_obj.in_stream or handler_obj.out_stream:
+                        logger.error("Invalid request type: %s",
+                                     custom_req.RequestInfoType())
+                        self._put_rpc_error(
+                            req.Id(),
+                            -32601,
+                            "invalid request type",
+                            "invalid request type",
+                        )
+                        continue
+                    # handle the normal request
                     normal_req = NormalRequestInfo.NormalRequestInfo()
                     normal_req.Init(custom_req.RequestInfo().Bytes,
                                     custom_req.RequestInfo().Pos)
@@ -276,7 +326,7 @@ class HostAgent(object):
                         t = threading.Thread(
                             target=handle_worker,
                             args=(
-                                handler,
+                                handler_obj,
                                 req.Id(),
                                 req_ctx,
                             ),
@@ -285,6 +335,17 @@ class HostAgent(object):
                         t.start()
                     continue
                 if custom_req.RequestInfoType() == RequestInfo.RequestInfo.StreamRequestInfo:
+                    if not (handler_obj.in_stream or handler_obj.out_stream):
+                        logger.error("Invalid request type: %s",
+                                     custom_req.RequestInfoType())
+                        self._put_rpc_error(
+                            req.Id(),
+                            -32601,
+                            "invalid request type",
+                            "invalid request type",
+                        )
+                        continue
+                    # handle the stream request
                     stream_req = StreamRequestInfo.StreamRequestInfo()
                     stream_req.Init(custom_req.RequestInfo().Bytes,
                                     custom_req.RequestInfo().Pos)
@@ -295,7 +356,7 @@ class HostAgent(object):
                     t = threading.Thread(
                         target=handle_worker,
                         args=(
-                            handler,
+                            handler_obj,
                             req.Id(),
                             req_ctx,
                         ),
@@ -346,11 +407,22 @@ class HostAgent(object):
         """
         self._internal_tools[tid] = handler
 
-    def register_handler(self, method: str, handler):
+    def register_handler(self, method: str, handler: Callable, 
+                         in_stream: bool = False, out_stream: bool = False):
         """
         register the handler for the method
         """
-        self._handlers[method] = handler
+        if not isinstance(method, str):
+            raise ValueError("method must be a string")
+        if not isinstance(handler, Callable):
+            raise ValueError("handler must be a callable")
+        if not isinstance(in_stream, bool):
+            raise ValueError("in_stream must be a boolean")
+        if not isinstance(out_stream, bool):
+            raise ValueError("out_stream must be a boolean")
+        if method in self._handlers:
+            raise ValueError("method already registered")
+        self._handlers[method] = Handler(handler, in_stream, out_stream)
 
     def unregister_handler(self, method):
         """

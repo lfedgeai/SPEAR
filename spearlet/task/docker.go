@@ -13,6 +13,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	removeAfterStop = true
+)
+
 type DockerTask struct {
 	name      string
 	container *container.CreateResponse
@@ -67,7 +71,8 @@ func (p *DockerTask) Start() error {
 				// read data
 				data := make([]byte, sz)
 				if _, err = io.ReadFull(p.conn, data); err != nil {
-					log.Errorf("Error reading from connection: %v, size: %d", err, sz)
+					log.Errorf("Error reading from connection: %v, size: %d",
+						err, sz)
 					return
 				}
 
@@ -103,7 +108,8 @@ func (p *DockerTask) Start() error {
 	}()
 
 	// get stdin and stdout
-	val, err := p.runtime.cli.ContainerAttach(context.TODO(), p.container.ID,
+	val, err := p.runtime.cli.ContainerAttach(context.TODO(),
+		p.container.ID,
 		container.AttachOptions{
 			Stream: true,
 			Stdin:  true,
@@ -184,6 +190,17 @@ func (p *DockerTask) Stop() error {
 	if err != nil {
 		return err
 	}
+	if removeAfterStop {
+		err = p.runtime.cli.ContainerRemove(context.TODO(), p.container.ID,
+			container.RemoveOptions{
+				RemoveVolumes: true,
+				Force:         true,
+			})
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

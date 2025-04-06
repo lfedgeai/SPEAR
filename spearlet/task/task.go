@@ -36,13 +36,11 @@ const (
 	TaskStatusStopped
 )
 
-var GlobalTaskRuntimes = make(map[TaskType]TaskRuntime)
-
 const (
 	maxDataSize = 4096 * 1024
 )
 
-var supportedTaskTypes = []TaskType{}
+var supportedTaskTypes = map[TaskType]struct{}{}
 
 // message type []bytes
 type Message []byte
@@ -127,12 +125,28 @@ type TaskRuntimeConfig struct {
 	StartServices bool
 }
 
+type TaskRuntimeCollection struct {
+	// task runtimes
+	TaskRuntimes map[TaskType]TaskRuntime
+	// task runtime config
+	TaskRuntimeConfig *TaskRuntimeConfig
+}
+
+func NewTaskRuntimeCollection(cfg *TaskRuntimeConfig) *TaskRuntimeCollection {
+	res := &TaskRuntimeCollection{
+		TaskRuntimes:      make(map[TaskType]TaskRuntime),
+		TaskRuntimeConfig: cfg,
+	}
+	res.initTaskRuntimes(cfg)
+	return res
+}
+
 // initialize task runtimes
-func InitTaskRuntimes(cfg *TaskRuntimeConfig) {
+func (c *TaskRuntimeCollection) initTaskRuntimes(cfg *TaskRuntimeConfig) {
 	if len(supportedTaskTypes) == 0 {
 		panic("no supported task types")
 	}
-	for _, taskType := range supportedTaskTypes {
+	for taskType, _ := range supportedTaskTypes {
 		log.Infof("Initializing task runtime: %v", taskType)
 		switch taskType {
 		case TaskTypeDocker:
@@ -141,51 +155,51 @@ func InitTaskRuntimes(cfg *TaskRuntimeConfig) {
 				log.Warn("Failed to init Docker runtime")
 				continue
 			}
-			GlobalTaskRuntimes[TaskTypeDocker] = rt
+			c.TaskRuntimes[TaskTypeDocker] = rt
 		case TaskTypeProcess:
-			GlobalTaskRuntimes[TaskTypeProcess] = NewProcessTaskRuntime()
+			c.TaskRuntimes[TaskTypeProcess] = NewProcessTaskRuntime()
 		case TaskTypeDylib:
-			GlobalTaskRuntimes[TaskTypeDylib] = &DylibTaskRuntime{}
+			c.TaskRuntimes[TaskTypeDylib] = &DylibTaskRuntime{}
 		case TaskTypeWasm:
-			GlobalTaskRuntimes[TaskTypeWasm] = &WasmTaskRuntime{}
+			c.TaskRuntimes[TaskTypeWasm] = &WasmTaskRuntime{}
 		default:
 			panic("invalid task type")
 		}
 	}
 }
 
-func StopTaskRuntimes() {
-	for rtName, rt := range GlobalTaskRuntimes {
-		log.Debugf("Stopping task runtime: %v", rtName)
-		rt.Stop()
+func (c *TaskRuntimeCollection) Cleanup() {
+	for t, rt := range c.TaskRuntimes {
+		log.Infof("Cleaning up task runtime type: %v", t)
+		if err := rt.Stop(); err != nil {
+			log.Errorf("Error stopping task runtime: %v", err)
+		}
 	}
+}
+
+func (c *TaskRuntimeCollection) GetTaskRuntime(taskType TaskType) (TaskRuntime, error) {
+	if rt, ok := c.TaskRuntimes[taskType]; ok {
+		return rt, nil
+	}
+	return nil, fmt.Errorf("task runtime not found")
 }
 
 // register task runtime
 func RegisterSupportedTaskType(taskType TaskType) {
-	for _, t := range supportedTaskTypes {
-		if t == taskType {
-			log.Warnf("task runtime already registered: %v", taskType)
-			return
-		}
+	if _, ok := supportedTaskTypes[taskType]; ok {
+		log.Warnf("Task type %v already registered", taskType)
+		return
 	}
-	supportedTaskTypes = append(supportedTaskTypes, taskType)
+	supportedTaskTypes[taskType] = struct{}{}
+	log.Infof("Registered task type %v", taskType)
 }
 
 // unregister task runtime
 func UnregisterSupportedTaskType(taskType TaskType) {
-	for i, t := range supportedTaskTypes {
-		if t == taskType {
-			supportedTaskTypes = append(supportedTaskTypes[:i], supportedTaskTypes[i+1:]...)
-			return
-		}
+	if _, ok := supportedTaskTypes[taskType]; !ok {
+		log.Warnf("Task type %v not registered", taskType)
+		return
 	}
-}
-
-// factory method for TaskRuntime
-func GetTaskRuntime(taskType TaskType) (TaskRuntime, error) {
-	if rt, ok := GlobalTaskRuntimes[taskType]; ok {
-		return rt, nil
-	}
-	return nil, fmt.Errorf("task runtime not found")
+	delete(supportedTaskTypes, taskType)
+	log.Infof("Unregistered task type %v", taskType)
 }

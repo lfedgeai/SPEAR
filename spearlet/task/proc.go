@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"sync"
@@ -168,7 +169,7 @@ func (p *ProcessTask) Start() error {
 func (p *ProcessTask) Stop() error {
 	// kill process
 	if p.cmd.Process != nil {
-		if err := p.cmd.Process.Kill(); err != nil {
+		if err := p.cmd.Process.Kill(); err != nil && err != os.ErrProcessDone {
 			log.Errorf("Error stopping task: %v", err)
 			return err
 		}

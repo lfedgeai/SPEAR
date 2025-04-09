@@ -3,6 +3,8 @@ package task
 import (
 	"fmt"
 
+	"slices"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -39,8 +41,6 @@ const (
 const (
 	maxDataSize = 4096 * 1024
 )
-
-var supportedTaskTypes = map[TaskType]struct{}{}
 
 // message type []bytes
 type Message []byte
@@ -120,9 +120,10 @@ func (w *WasmTaskRuntime) Stop() error {
 }
 
 type TaskRuntimeConfig struct {
-	Debug         bool
-	Cleanup       bool
-	StartServices bool
+	Debug              bool
+	Cleanup            bool
+	StartServices      bool
+	SupportedTaskTypes []TaskType
 }
 
 type TaskRuntimeCollection struct {
@@ -143,10 +144,10 @@ func NewTaskRuntimeCollection(cfg *TaskRuntimeConfig) *TaskRuntimeCollection {
 
 // initialize task runtimes
 func (c *TaskRuntimeCollection) initTaskRuntimes(cfg *TaskRuntimeConfig) {
-	if len(supportedTaskTypes) == 0 {
+	if len(cfg.SupportedTaskTypes) == 0 {
 		panic("no supported task types")
 	}
-	for taskType, _ := range supportedTaskTypes {
+	for _, taskType := range cfg.SupportedTaskTypes {
 		log.Infof("Initializing task runtime: %v", taskType)
 		switch taskType {
 		case TaskTypeDocker:
@@ -185,21 +186,23 @@ func (c *TaskRuntimeCollection) GetTaskRuntime(taskType TaskType) (TaskRuntime, 
 }
 
 // register task runtime
-func RegisterSupportedTaskType(taskType TaskType) {
-	if _, ok := supportedTaskTypes[taskType]; ok {
+func (cfg *TaskRuntimeConfig) RegisterSupportedTaskType(taskType TaskType) {
+	if slices.Contains(cfg.SupportedTaskTypes, taskType) {
 		log.Warnf("Task type %v already registered", taskType)
 		return
 	}
-	supportedTaskTypes[taskType] = struct{}{}
+	cfg.SupportedTaskTypes = append(cfg.SupportedTaskTypes, taskType)
 	log.Infof("Registered task type %v", taskType)
 }
 
 // unregister task runtime
-func UnregisterSupportedTaskType(taskType TaskType) {
-	if _, ok := supportedTaskTypes[taskType]; !ok {
-		log.Warnf("Task type %v not registered", taskType)
-		return
+func (cfg *TaskRuntimeConfig) UnregisterSupportedTaskType(taskType TaskType) {
+	for i, ty := range cfg.SupportedTaskTypes {
+		if ty == taskType {
+			cfg.SupportedTaskTypes = append(cfg.SupportedTaskTypes[:i], cfg.SupportedTaskTypes[i+1:]...)
+			log.Infof("Unregistered task type %v", taskType)
+			return
+		}
 	}
-	delete(supportedTaskTypes, taskType)
-	log.Infof("Unregistered task type %v", taskType)
+	log.Warnf("Task type %v not found", taskType)
 }

@@ -89,8 +89,18 @@ func TestProcStreamingFunctionality(t *testing.T) {
 		w.Stop()
 	})
 
-	in_stream := make(chan task.Message, 10)
-	out_stream := make(chan task.Message, 10)
+	in_stream := make(chan task.Message, 100)
+	out_stream := make(chan task.Message, 100)
+
+	go func() {
+		defer func() {
+			log.Infof("Closing in stream")
+			close(in_stream)
+		}()
+		for range 10 {
+			in_stream <- task.Message([]byte("hello"))
+		}
+	}()
 
 	res, err := w.RunTask(-1, "pytest-functionality.py", task.TaskTypeProcess,
 		"handle_stream", "",

@@ -13,11 +13,6 @@ enum Method : uint32 {
     // tool and toolset
     ToolInvoke,
     InternalToolCreate,
-    // message queue
-    MQCreate,
-    MQDelete,
-    MQPub,
-    MQSub,
     // vec store
     VecStoreCreate,
     VecStoreInsert,

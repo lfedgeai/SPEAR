@@ -7,3 +7,4 @@ bin/spearlet
 *.egg-info
 sdk/python/dist
 __pycache__
+sdk/python/pyproject.toml

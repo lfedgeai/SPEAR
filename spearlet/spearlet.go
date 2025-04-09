@@ -17,6 +17,7 @@ import (
 
 	"github.com/lfedgeai/spear/pkg/common"
 	"github.com/lfedgeai/spear/pkg/spear/proto/custom"
+	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
 	hc "github.com/lfedgeai/spear/spearlet/hostcalls"
 	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
@@ -58,7 +59,6 @@ type Spearlet struct {
 
 	hc      *hostcalls.HostCalls
 	commMgr *hostcalls.CommunicationManager
-	mQueues map[task.Task]map[uint16]chan task.Message
 
 	spearAddr string
 
@@ -171,7 +171,6 @@ func NewSpearlet(cfg *SpearletConfig) *Spearlet {
 		mux:       http.NewServeMux(),
 		hc:        nil,
 		commMgr:   hostcalls.NewCommunicationManager(),
-		mQueues:   map[task.Task]map[uint16]chan task.Message{},
 		spearAddr: cfg.SpearAddr,
 		streamUpgrader: websocket.Upgrader{
 			ReadBufferSize:  1024 * 4,
@@ -210,8 +209,8 @@ func (w *Spearlet) initializeRuntimes() {
 		Cleanup:       true,
 		StartServices: w.cfg.StartBackendServices,
 	}
-	task.RegisterSupportedTaskType(task.TaskTypeDocker)
-	task.RegisterSupportedTaskType(task.TaskTypeProcess)
+	cfg.RegisterSupportedTaskType(task.TaskTypeDocker)
+	cfg.RegisterSupportedTaskType(task.TaskTypeProcess)
 	w.rtCollection = task.NewTaskRuntimeCollection(cfg)
 }
 
@@ -446,108 +445,8 @@ func (w *Spearlet) ExecuteTaskByName(taskName string, funcType task.TaskType, me
 
 	log.Infof("Using metadata: %+v", meta)
 
-	cfg := w.metaDataToTaskCfg(meta)
-	if cfg == nil {
-		return nil, "", fmt.Errorf("error: invalid task type: %d",
-			funcType)
-	}
-
-	rt, err := w.rtCollection.GetTaskRuntime(funcType)
-	if err != nil {
-		return nil, "", fmt.Errorf("error: %v", err)
-	}
-
-	newTask, err := rt.CreateTask(cfg)
-	if err != nil {
-		return nil, "", fmt.Errorf("error: %v", err)
-	}
-	err = w.commMgr.InstallToTask(newTask)
-	if err != nil {
-		return nil, "", fmt.Errorf("error: %v", err)
-	}
-
-	log.Debugf("Starting task: %s", newTask.Name())
-	newTask.Start()
-
-	reqMQueueID := uint16(0)
-	w.mQueues[newTask] = map[uint16]chan task.Message{
-		reqMQueueID: make(chan task.Message, 1024),
-	}
-	respMQueueID := uint16(1)
-	w.mQueues[newTask] = map[uint16]chan task.Message{
-		respMQueueID: make(chan task.Message, 1024),
-	}
-
-	builder := flatbuffers.NewBuilder(512)
-	methodOff := builder.CreateString(method)
-
-	if reqStream == nil && respStream == nil {
-		// no stream
-		dataOff := builder.CreateString(reqData)
-
-		custom.NormalRequestInfoStart(builder)
-		custom.NormalRequestInfoAddParamsStr(builder, dataOff)
-		infoOff := custom.NormalRequestInfoEnd(builder)
-
-		custom.CustomRequestStart(builder)
-		custom.CustomRequestAddMethodStr(builder, methodOff)
-		custom.CustomRequestAddRequestInfoType(builder,
-			custom.RequestInfoNormalRequestInfo)
-		custom.CustomRequestAddRequestInfo(builder, infoOff)
-		builder.Finish(custom.CustomRequestEnd(builder))
-	} else {
-		custom.StreamRequestInfoStart(builder)
-		custom.StreamRequestInfoAddInQueueId(builder, int32(reqMQueueID))
-		custom.StreamRequestInfoAddOutQueueId(builder, int32(respMQueueID))
-		infoOff := custom.StreamRequestInfoEnd(builder)
-
-		custom.CustomRequestStart(builder)
-		custom.CustomRequestAddMethodStr(builder, methodOff)
-		custom.CustomRequestAddRequestInfoType(builder,
-			custom.RequestInfoStreamRequestInfo)
-		custom.CustomRequestAddRequestInfo(builder, infoOff)
-		builder.Finish(custom.CustomRequestEnd(builder))
-	}
-
-	if reqStream != nil {
-		go func() {
-			for msg := range reqStream {
-				w.mQueues[newTask][reqMQueueID] <- msg
-			}
-		}()
-	}
-
-	if r, err := w.commMgr.SendOutgoingRPCRequest(newTask,
-		transport.MethodCustom,
-		builder.FinishedBytes()); err != nil {
-		return nil, "", fmt.Errorf("error: %v", err)
-	} else {
-		if len(r.ResponseBytes()) == 0 {
-			return newTask, "", nil
-		}
-		customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
-
-		if customResp.ReturnStream() {
-			// stream return
-			queueId := respMQueueID
-			// streaming response
-			if _, ok := w.mQueues[newTask][uint16(queueId)]; !ok {
-				return nil, "", fmt.Errorf("error: queue not found: %d",
-					queueId)
-			}
-
-			go func() {
-				for msg := range w.mQueues[newTask][uint16(queueId)] {
-					respStream <- msg
-				}
-			}()
-
-			return newTask, "", nil
-		} else {
-			customRespData := customResp.DataBytes()
-			return newTask, string(customRespData), nil
-		}
-	}
+	return w.executeTaskByMetaData(meta, method, reqData, reqStream,
+		respStream)
 }
 
 func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method string,
@@ -578,13 +477,20 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 
 	log.Infof("Using metadata: %+v", meta)
 
+	return w.executeTaskByMetaData(meta, method, reqData, reqStream,
+		respStream)
+}
+
+func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
+	method, reqData string, reqStream, respStream chan task.Message) (t task.Task,
+	respData string, err error) {
 	cfg := w.metaDataToTaskCfg(meta)
 	if cfg == nil {
-		return nil, "", fmt.Errorf("error: invalid task type: %d",
-			funcType)
+		return nil, "", fmt.Errorf("error: invalid task with meta: %v",
+			meta)
 	}
 
-	rt, err := w.rtCollection.GetTaskRuntime(funcType)
+	rt, err := w.rtCollection.GetTaskRuntime(meta.Type)
 	if err != nil {
 		return nil, "", fmt.Errorf("error: %v", err)
 	}
@@ -601,28 +507,72 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 	log.Debugf("Starting task: %s", newTask.Name())
 	newTask.Start()
 
-	reqMQueueID := -1
-	respMQueueID := -1
+	reqStreamID := -1
+	respStreamID := -1
 
 	if reqStream != nil {
-		reqMQueueID = 0
-		w.mQueues[newTask] = map[uint16]chan task.Message{
-			uint16(reqMQueueID): make(chan task.Message, 1024),
-		}
+		reqStreamID = 0
 	}
 
 	if respStream != nil {
-		respMQueueID = 1
-		w.mQueues[newTask] = map[uint16]chan task.Message{
-			uint16(respMQueueID): make(chan task.Message, 1024),
-		}
+		respStreamID = 1
 	}
 
-	builder := flatbuffers.NewBuilder(512)
-	methodOff := builder.CreateString(method)
+	if reqStream != nil {
+		var i int64 = 0
 
-	if reqStream == nil && respStream == nil {
-		// no stream
+		w.commMgr.RegisterTaskSignalCallback(newTask,
+			transport.SignalStreamEvent,
+			func(data []byte) error {
+				// get the stream event
+				log.Infof("Received stream event from task %s: %s",
+					newTask.Name(), data)
+				return nil
+			},
+		)
+
+		for msg := range reqStream {
+			// create stream event request
+			builder := flatbuffers.NewBuilder(512)
+			msgOff := builder.CreateByteVector([]byte(msg))
+
+			stream.StreamEventStart(builder)
+			stream.StreamEventAddStreamId(builder, int32(reqStreamID))
+			stream.StreamEventAddReplyStreamId(builder, int32(respStreamID))
+			stream.StreamEventAddData(builder, msgOff)
+			stream.StreamEventAddSequenceId(builder, i)
+			builder.Finish(stream.StreamEventEnd(builder))
+
+			// send the stream event singal
+			if err := w.commMgr.SendOutgoingRPCSignal(newTask,
+				transport.SignalStreamEvent,
+				builder.FinishedBytes()); err != nil {
+				return nil, "", fmt.Errorf("error: %v", err)
+			}
+
+			i += 1
+		}
+
+		builder := flatbuffers.NewBuilder(512)
+		stream.StreamEventStart(builder)
+		stream.StreamEventAddStreamId(builder, int32(reqStreamID))
+		stream.StreamEventAddReplyStreamId(builder, int32(respStreamID))
+		stream.StreamEventAddSequenceId(builder, i)
+		stream.StreamEventAddFinal(builder, true)
+		builder.Finish(stream.StreamEventEnd(builder))
+		// send the stream event singal
+		if err := w.commMgr.SendOutgoingRPCSignal(newTask,
+			transport.SignalStreamEvent,
+			builder.FinishedBytes()); err != nil {
+			return nil, "", fmt.Errorf("error: %v", err)
+		}
+
+		// TODO: get response from signals
+		return newTask, "", nil
+	} else {
+		builder := flatbuffers.NewBuilder(512)
+		methodOff := builder.CreateString(method)
+
 		dataOff := builder.CreateString(reqData)
 
 		custom.NormalRequestInfoStart(builder)
@@ -635,55 +585,26 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 			custom.RequestInfoNormalRequestInfo)
 		custom.CustomRequestAddRequestInfo(builder, infoOff)
 		builder.Finish(custom.CustomRequestEnd(builder))
-	} else {
-		custom.StreamRequestInfoStart(builder)
-		custom.StreamRequestInfoAddInQueueId(builder, int32(reqMQueueID))
-		custom.StreamRequestInfoAddOutQueueId(builder, int32(respMQueueID))
-		infoOff := custom.StreamRequestInfoEnd(builder)
 
-		custom.CustomRequestStart(builder)
-		custom.CustomRequestAddMethodStr(builder, methodOff)
-		custom.CustomRequestAddRequestInfoType(builder,
-			custom.RequestInfoStreamRequestInfo)
-		custom.CustomRequestAddRequestInfo(builder, infoOff)
-		builder.Finish(custom.CustomRequestEnd(builder))
-	}
-
-	if reqStream != nil {
-		go func() {
-			for msg := range reqStream {
-				w.mQueues[newTask][uint16(reqMQueueID)] <- msg
-			}
-		}()
-	}
-
-	if r, err := w.commMgr.SendOutgoingRPCRequest(newTask,
-		transport.MethodCustom,
-		builder.FinishedBytes()); err != nil {
-		return nil, "", fmt.Errorf("error: %v", err)
-	} else {
-		if len(r.ResponseBytes()) == 0 {
-			return newTask, "", nil
-		}
-		customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
-
-		if customResp.ReturnStream() {
-			// streaming response
-			if _, ok := w.mQueues[newTask][uint16(respMQueueID)]; !ok {
-				return nil, "", fmt.Errorf("error: queue not found: %d",
-					respMQueueID)
-			}
-
-			go func() {
-				for msg := range w.mQueues[newTask][uint16(respMQueueID)] {
-					respStream <- msg
-				}
-			}()
-
-			return newTask, "", nil
+		if r, err := w.commMgr.SendOutgoingRPCRequest(newTask,
+			transport.MethodCustom,
+			builder.FinishedBytes()); err != nil {
+			return nil, "", fmt.Errorf("error: %v", err)
 		} else {
-			customRespData := customResp.DataBytes()
-			return newTask, string(customRespData), nil
+			if len(r.ResponseBytes()) == 0 {
+				return newTask, "", nil
+			}
+			customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
+
+			if customResp.ReturnStream() {
+				// streaming response
+				// TODO: write respond to outputstream
+
+				return newTask, "", nil
+			} else {
+				customRespData := customResp.DataBytes()
+				return newTask, string(customRespData), nil
+			}
 		}
 	}
 }

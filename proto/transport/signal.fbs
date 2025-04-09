@@ -5,6 +5,7 @@ namespace spear.proto.transport;
 enum Signal : uint32 {
     Unknown = 0,
     Terminate,
+    StreamEvent,
 }
 
 table TransportSignal {

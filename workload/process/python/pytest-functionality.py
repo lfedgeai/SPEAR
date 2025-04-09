@@ -9,6 +9,7 @@ import spear.utils.io as io
 from spear.utils.tool import register_internal_tool
 
 from spear.proto.tool import BuiltinToolID
+from spear.proto.transport import Signal
 
 logging.basicConfig(
     level=logging.DEBUG,  # Set the desired logging level
@@ -54,16 +55,16 @@ def handle(ctx):
     # agent.stop()
 
 
-def handle_stream(ctx):
+def handle_stream(data):
     """
     handle streaming request
     """
-    logger.info("Handling streaming request: %s", ctx.payload)
+    logger.info("Handling streaming request: %s", data)
 
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
 
-    # agent.stop()
+    return f"reply to: {data}"
 
 def test_chat(model):
     """
@@ -148,5 +149,5 @@ def test_tool(model):
 
 if __name__ == "__main__":
     agent.register_handler("handle", handle)
-    agent.register_handler("handle_stream", handle_stream, True, True)
+    agent.register_signal_handler(Signal.Signal.StreamEvent, handle_stream)
     agent.run()

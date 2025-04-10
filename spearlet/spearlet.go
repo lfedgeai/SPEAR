@@ -525,8 +525,29 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 			transport.SignalStreamEvent,
 			func(data []byte) error {
 				// get the stream event
-				log.Infof("Received stream event from task %s: %s",
-					newTask.Name(), data)
+				streamEvent := stream.GetRootAsStreamEvent(data, 0)
+				// get the reply stream id
+				replyStreamId := streamEvent.ReplyStreamId()
+				if replyStreamId != int32(respStreamID) {
+					return fmt.Errorf("error: invalid reply stream id: %d",
+						replyStreamId)
+				}
+				// get reply sequence id
+				repSeqId := streamEvent.SequenceId()
+				// get data
+				streamData := streamEvent.DataBytes()
+				if len(data) != 0 {
+					log.Debugf(
+						"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
+						newTask.Name(), replyStreamId, repSeqId, streamData,
+					)
+				}
+				respStream <- task.Message(streamData)
+				if streamEvent.Final() {
+					// all data is received
+					log.Debug("Received stream end")
+					close(respStream)
+				}
 				return nil
 			},
 		)

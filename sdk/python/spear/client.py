@@ -435,7 +435,6 @@ class HostAgent(object):
                     self.stop()
                     return
                 if sig.Method() == Signal.Signal.StreamEvent:
-                    logger.debug("Received stream event")
                     stream_req = StreamEvent.StreamEvent.GetRootAsStreamEvent(
                         sig.PayloadAsNumpy(), 0
                     )
@@ -449,7 +448,8 @@ class HostAgent(object):
                             try:
                                 resp_data = handler(ctx)
                             except Exception as e:
-                                logger.error("Error: %s", traceback.format_exc())
+                                logger.error(
+                                    "Error: %s", traceback.format_exc())
                                 raise e
                             if resp_data is not None:
                                 if isinstance(resp_data, str):
@@ -459,12 +459,14 @@ class HostAgent(object):
                                     if stream_req.StreamId() in self._stream_sequence_ids:
                                         seq_id = self._stream_sequence_ids[
                                             stream_req.StreamId()]
-                                        self._stream_sequence_ids[stream_req.StreamId()] += 1
+                                        self._stream_sequence_ids[stream_req.StreamId(
+                                        )] += 1
                                     else:
                                         seq_id = 0
-                                        self._stream_sequence_ids[stream_req.StreamId()] = 1
+                                        self._stream_sequence_ids[stream_req.StreamId(
+                                        )] = 1
                                 self._put_streamevent_signal(
-                                    stream_req.ReplyStreamId(),
+                                    -1, stream_req.ReplyStreamId(),
                                     seq_id,
                                     resp_data,
                                     stream_req.Final(),
@@ -563,7 +565,8 @@ class HostAgent(object):
                 raise RuntimeError(resp.Message())
             return resp.ResponseAsNumpy()
 
-    def _put_streamevent_signal(self, stream_id: int, seq_id: int, data: bytes, last_message: bool):
+    def _put_streamevent_signal(self, stream_id: int, reply_stream_id: int,
+                                seq_id: int, data: bytes, last_message: bool):
         """
         send the rpc signal
         """
@@ -572,10 +575,17 @@ class HostAgent(object):
 
         StreamEvent.StreamEventStart(builder)
         StreamEvent.AddStreamId(builder, stream_id)
+        StreamEvent.AddReplyStreamId(builder, reply_stream_id)
         StreamEvent.AddSequenceId(builder, seq_id)
         StreamEvent.AddData(builder, data_off)
         StreamEvent.AddFinal(builder, last_message)
         req_off = StreamEvent.End(builder)
+        builder.Finish(req_off)
+
+        stream_event_data = builder.Output()
+
+        builder = fbs.Builder(len(stream_event_data) + 1024)
+        req_off = builder.CreateByteVector(stream_event_data)
 
         TransportSignal.TransportSignalStart(builder)
         TransportSignal.AddMethod(

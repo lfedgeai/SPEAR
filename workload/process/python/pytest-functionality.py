@@ -64,7 +64,7 @@ def handle_stream(data):
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
 
-    return f"reply to: {data}"
+    return f"#Hi I got the context: {data}#"
 
 def test_chat(model):
     """

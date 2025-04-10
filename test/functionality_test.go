@@ -102,6 +102,12 @@ func TestProcStreamingFunctionality(t *testing.T) {
 		}
 	}()
 
+	go func() {
+		for msg := range out_stream {
+			log.Infof("Received message: %s", msg)
+		}
+	}()
+
 	res, err := w.RunTask(-1, "pytest-functionality.py", task.TaskTypeProcess,
 		"handle_stream", "",
 		in_stream, out_stream,

@@ -199,6 +199,16 @@ func NewRootCmd() *cobra.Command {
 				return
 			}
 
+			// convert search paths to absolute paths
+			for i, path := range runSearchPaths {
+				absPath, err := os.Getwd()
+				if err != nil {
+					log.Errorf("Error getting current working directory: %v", err)
+					return
+				}
+				runSearchPaths[i] = absPath + "/" + path
+			}
+
 			// create config
 			config, err := spearlet.NewServeSpearletConfig(serveAddr, servePort, runSearchPaths,
 				runDebug, runSpearAddr, serveCertFile, serveKeyFile, runStartBackendServices)

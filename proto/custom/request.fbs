@@ -1,17 +1,11 @@
 namespace spear.proto.custom;
 
 
-table StreamRequestInfo {
-    in_queue_id: int32;
-    out_queue_id: int32;
-}
-
 table NormalRequestInfo {
     params_str: string;
 }
 
 union RequestInfo {
-    StreamRequestInfo,
     NormalRequestInfo,
 }
 

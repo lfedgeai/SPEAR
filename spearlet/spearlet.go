@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -475,7 +476,7 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 			meta.OutStream, respStream != nil)
 	}
 
-	log.Infof("Using metadata: %+v", meta)
+	log.Debugf("Using metadata: %+v", meta)
 
 	return w.executeTaskByMetaData(meta, method, reqData, reqStream,
 		respStream)
@@ -541,11 +542,13 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 						"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
 						newTask.Name(), replyStreamId, repSeqId, streamData,
 					)
+					respStream <- task.Message(streamData)
 				}
-				respStream <- task.Message(streamData)
 				if streamEvent.Final() {
 					// all data is received
 					log.Debug("Received stream end")
+					w.commMgr.UnregisterTaskSignalCallback(newTask,
+						transport.SignalStreamEvent)
 					close(respStream)
 				}
 				return nil
@@ -588,7 +591,6 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 			return nil, "", fmt.Errorf("error: %v", err)
 		}
 
-		// TODO: get response from signals
 		return newTask, "", nil
 	} else {
 		builder := flatbuffers.NewBuilder(512)
@@ -616,16 +618,8 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 				return newTask, "", nil
 			}
 			customResp := custom.GetRootAsCustomResponse(r.ResponseBytes(), 0)
-
-			if customResp.ReturnStream() {
-				// streaming response
-				// TODO: write respond to outputstream
-
-				return newTask, "", nil
-			} else {
-				customRespData := customResp.DataBytes()
-				return newTask, string(customRespData), nil
-			}
+			customRespData := customResp.DataBytes()
+			return newTask, string(customRespData), nil
 		}
 	}
 }
@@ -657,6 +651,7 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 
 	inStream = make(chan task.Message, 1024)
 	outStream = make(chan task.Message, 1024)
+	wg := &sync.WaitGroup{}
 	go func() {
 		defer conn.Close()
 		defer close(inStream)
@@ -670,7 +665,6 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 				log.Errorf("Error reading message: %v", err)
 				return
 			}
-			log.Infof("Received message: %s", msg)
 			inStream <- task.Message(msg)
 		}
 	}()
@@ -690,32 +684,28 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	t, outData, err := w.ExecuteTask(taskId, taskName, funcType, "handle",
+	go func() {
+		defer wg.Done()
+		wg.Add(1)
+		for msg := range outStream {
+			log.Debugf("Sending message to client: %s", msg)
+			err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
+			if err != nil {
+				log.Warnf("Error writing message: %v", err)
+				break
+			}
+		}
+	}()
+
+	t, _, err := w.ExecuteTask(taskId, taskName, funcType, "handle",
 		inData, inStream, outStream)
 	if err != nil {
 		respError(resp, fmt.Sprintf("Error: %v", err))
 		return
 	}
 
-	if v, ok := <-outStream; !ok {
-		// no stream output
-		resp.Write([]byte(outData))
-	} else {
-		err := conn.WriteMessage(websocket.TextMessage, []byte(v))
-		if err != nil {
-			log.Errorf("Error writing message: %v", err)
-		} else {
-			for msg := range outStream {
-				err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
-				if err != nil {
-					log.Errorf("Error writing message: %v", err)
-					break
-				}
-			}
-		}
-	}
-
-	log.Infof("Terminating task %v", t)
+	wg.Wait()
+	log.Debugf("Terminating task %v", t)
 	// terminate the task by sending a signal
 	if err := w.commMgr.SendOutgoingRPCSignal(t,
 		transport.SignalTerminate,

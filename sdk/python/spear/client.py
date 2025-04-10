@@ -13,8 +13,7 @@ from typing import Callable
 import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
-                                NormalRequestInfo, RequestInfo,
-                                StreamRequestInfo)
+                                NormalRequestInfo, RequestInfo)
 from spear.proto.stream import StreamEvent
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
@@ -71,10 +70,8 @@ class RequestContext(object):
     RequestContext is the context of the request
     """
 
-    def __init__(self, payload=None, event=None, istream_id=None, ostream_id=None):
+    def __init__(self, payload=None):
         self._payload = payload
-        self._in_stream_id = istream_id
-        self._out_stream_id = ostream_id
 
     @property
     def payload(self) -> str:
@@ -82,20 +79,6 @@ class RequestContext(object):
         get the payload
         """
         return self._payload
-
-    @property
-    def istream(self) -> int:
-        """
-        get the input stream id
-        """
-        return self._in_stream_id
-
-    @property
-    def ostream(self) -> int:
-        """
-        get the output stream id
-        """
-        return self._out_stream_id
 
 
 class StreamRequestContext(object):
@@ -231,8 +214,6 @@ class HostAgent(object):
                 builder = fbs.Builder(1024)
                 off = builder.CreateByteVector(result)
                 CustomResponse.CustomResponseStart(builder)
-                # TODO: return stream not supported yet
-                CustomResponse.CustomResponseAddReturnStream(builder, False)
                 CustomResponse.CustomResponseAddData(builder, off)
                 end = CustomResponse.CustomResponseEnd(builder)
                 builder.Finish(end)
@@ -371,36 +352,6 @@ class HostAgent(object):
                         t.daemon = True
                         t.start()
                     continue
-                if custom_req.RequestInfoType() == RequestInfo.RequestInfo.StreamRequestInfo:
-                    if not (handler_obj.in_stream or handler_obj.out_stream):
-                        logger.error("Invalid request type: %s",
-                                     custom_req.RequestInfoType())
-                        self._put_rpc_error(
-                            req.Id(),
-                            -32601,
-                            "invalid request type",
-                            "invalid request type",
-                        )
-                        continue
-                    # handle the stream request
-                    stream_req = StreamRequestInfo.StreamRequestInfo()
-                    stream_req.Init(custom_req.RequestInfo().Bytes,
-                                    custom_req.RequestInfo().Pos)
-                    req_ctx = RequestContext(
-                        istream_id=stream_req.InQueueId(),
-                        ostream_id=stream_req.OutQueueId(),
-                    )
-                    t = threading.Thread(
-                        target=handle_worker,
-                        args=(
-                            handler_obj,
-                            req.Id(),
-                            req_ctx,
-                        ),
-                    )
-                    t.daemon = True
-                    t.start()
-                    continue
                 logger.error("invalid request type: %s",
                              custom_req.RequestInfoType())
                 self._put_rpc_error(
@@ -445,12 +396,12 @@ class HostAgent(object):
                     )
                     if self._sig_handlers.get(Signal.Signal.StreamEvent):
                         for handler in self._sig_handlers[Signal.Signal.StreamEvent]:
+                            resp_data = None
                             try:
                                 resp_data = handler(ctx)
                             except Exception as e:
                                 logger.error(
-                                    "Error: %s", traceback.format_exc())
-                                raise e
+                                    "Error: %s", str(e))
                             if resp_data is not None:
                                 if isinstance(resp_data, str):
                                     resp_data = resp_data.encode("utf-8")
@@ -470,6 +421,13 @@ class HostAgent(object):
                                     seq_id,
                                     resp_data,
                                     stream_req.Final(),
+                                )
+                            else:
+                                self._put_streamevent_signal(
+                                    -1, stream_req.ReplyStreamId(),
+                                    stream_req.SequenceId(),
+                                    b"",
+                                    True,
                                 )
                 else:
                     logger.error("Invalid signal method: %s", sig.Method())

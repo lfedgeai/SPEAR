@@ -218,7 +218,7 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 				}
 				if _, ok := c.taskSigCallbacks[t][sig.Method()]; !ok {
 					c.taskSigCallbacksMu.RUnlock()
-					log.Errorf("No signal callback registered for task: %v, signal: %v", t.Name(),
+					log.Warnf("No signal callback registered for task: %v, signal: %v", t.Name(),
 						sig.Method())
 					continue
 				}

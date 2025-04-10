@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 import logging
 import sys
-import time
 
 import spear.client as client
-import spear.transform.chat as chat
-import spear.utils.io as io
-from spear.utils.tool import register_internal_tool
-
-from spear.proto.tool import BuiltinToolID
+import spear.proto.transport.Signal as Signal
 
 logging.basicConfig(
     level=logging.DEBUG,  # Set the desired logging level
@@ -22,16 +17,25 @@ logger.setLevel(logging.DEBUG)
 
 agent = client.HostAgent()
 
+# global counter
+counter = 0
 
-def handle(ctx):
+def handle_stream(ctx):
     """
     handle the request
+    if nothing is returned or exception is raised, the stream will be closed
     """
+    global counter
+    counter += 1
     logger.info("Handling request: %s", ctx)
-    logger.info("Instream ID: %s", ctx.istream)
-    logger.info("Outstream ID: %s", ctx.ostream)
+    if counter > 5:
+        return
+    return f"I got your message\"{ctx}\""
 
 
 if __name__ == "__main__":
-    agent.register_handler("handle", handle)
+    agent.register_signal_handler(
+        Signal.Signal.StreamEvent,
+        handle_stream,
+    )
     agent.run()

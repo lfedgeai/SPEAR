@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import argparse
 import ssl
 import threading
-import time
 
 import websocket
 
-WS_DEST = "wss://localhost:8080"
+DEST = "localhost:8080/stream"
 
 
 def on_message(ws, message):
@@ -33,7 +33,6 @@ def on_open(ws):
     def run(*args):
         ''' send a message to the server
         '''
-        ws.send("Hello, Server!")
         while True:
             message = input("Enter message: ")
             if message.lower() == 'exit':
@@ -43,10 +42,18 @@ def on_open(ws):
     threading.Thread(target=run).start()
 
 
-if __name__ == "__main__":
-    ws = websocket.WebSocketApp(WS_DEST,
+def main(args):
+    ''' main function
+    '''
+    dest = ""
+    if args.secure:
+        dest = "wss://"
+    else:
+        dest = "ws://"
+    dest += args.dest
+    print(f"Connecting to {dest}...")
+    ws = websocket.WebSocketApp(dest,
                                 header={
-                                    "Spear-Func-Streaming": "true",
                                     "Spear-Func-Type": "2",
                                     "Spear-Func-Name": "test.py",
                                 },
@@ -59,3 +66,17 @@ if __name__ == "__main__":
         "cert_reqs": ssl.CERT_NONE,
         "check_hostname": False
     })
+
+
+if __name__ == "__main__":
+    ''' entry point
+    '''
+    # -s option for secure connection
+    parser = argparse.ArgumentParser(description="WebSocket client")
+    parser.add_argument("-s", "--secure", action="store_true", default=False,
+                        help="use secure connection")
+    parser.add_argument("-d", "--dest", type=str,
+                        default=DEST,
+                        help="destination URL")
+    args = parser.parse_args()
+    main(args)

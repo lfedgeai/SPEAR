@@ -824,8 +824,10 @@ func (w *Spearlet) StartProviderService() {
 			hostcalls.APIEndpointMap[hostcalls.OpenAIFunctionType(t)] =
 				[]hostcalls.APIEndpointInfo{}
 		}
-		hostcalls.APIEndpointMap[hostcalls.OpenAIFunctionType(t)] = append(
-			hostcalls.APIEndpointMap[hostcalls.OpenAIFunctionType(t)], body)
+		// prepend the body to the list
+		hostcalls.APIEndpointMap[hostcalls.OpenAIFunctionType(t)] =
+			append([]hostcalls.APIEndpointInfo{body},
+				hostcalls.APIEndpointMap[hostcalls.OpenAIFunctionType(t)]...)
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	})
 

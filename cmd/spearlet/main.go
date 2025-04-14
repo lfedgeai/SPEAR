@@ -129,7 +129,7 @@ func NewRootCmd() *cobra.Command {
 				} else if execProcFileName != "" {
 					funcName = execProcFileName
 				} else {
-					log.Errorf("Invalid workload name %s", execWorkloadName)
+					log.Errorf("Both workload name and process filename are missing. Please provide at least one.")
 					return
 				}
 

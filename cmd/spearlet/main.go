@@ -200,13 +200,13 @@ func NewRootCmd() *cobra.Command {
 			}
 
 			// convert search paths to absolute paths
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Errorf("Error getting current working directory: %v", err)
+				return
+			}
 			for i, path := range runSearchPaths {
-				absPath, err := os.Getwd()
-				if err != nil {
-					log.Errorf("Error getting current working directory: %v", err)
-					return
-				}
-				runSearchPaths[i] = absPath + "/" + path
+				runSearchPaths[i] = cwd + "/" + path
 			}
 
 			// create config

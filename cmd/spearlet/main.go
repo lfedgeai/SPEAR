@@ -14,11 +14,10 @@ import (
 )
 
 var (
-	execRtTypeStr    string
 	execWorkloadName string
-	execProcFileName string
 	execReqMethod    string
 	execReqPayload   string
+	execStreaming    bool
 
 	runStartBackendServices bool
 	runSpearAddr            string
@@ -35,20 +34,42 @@ var (
 	serveKeyFile  string
 )
 
-func isValidSearchPaths(paths []string) bool {
-	for _, path := range paths {
-		// make sure it is a path, not a file
-		if s, err := os.Stat(path); err == nil {
-			if !s.IsDir() {
-				log.Errorf("Invalid search path %s", path)
-				return false
-			}
+func validateSearchPaths(paths []string) ([]string, error) {
+	rtnPaths := make([]string, len(paths))
+	// change relative paths to absolute paths
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Errorf("Error getting current working directory: %v", err)
+		return nil, err
+	}
+	for i, path := range paths {
+		if strings.HasPrefix(path, "/") {
+			rtnPaths[i] = path
 		} else {
-			log.Errorf("Invalid search path %s", path)
-			return false
+			rtnPaths[i] = cwd + "/" + path
 		}
 	}
-	return true
+
+	// check if the paths exist
+	for _, path := range rtnPaths {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			log.Errorf("Path %s does not exist", path)
+			return nil, err
+		}
+	}
+	// check if the paths are directories
+	for _, path := range rtnPaths {
+		if fi, err := os.Stat(path); err == nil {
+			if !fi.IsDir() {
+				log.Errorf("Path %s is not a directory", path)
+				return nil, err
+			}
+		} else {
+			log.Errorf("Error getting file info for path %s: %v", path, err)
+			return nil, err
+		}
+	}
+	return rtnPaths, nil
 }
 
 func NewRootCmd() *cobra.Command {
@@ -73,11 +94,8 @@ func NewRootCmd() *cobra.Command {
 				"unknown": task.TaskTypeUnknown,
 			}
 
-			if execWorkloadName == "" && execProcFileName == "" {
+			if execWorkloadName == "" {
 				log.Errorf("Invalid workload name %s", execWorkloadName)
-				return
-			} else if execProcFileName != "" && execWorkloadName != "" {
-				log.Error("Cannot specify both workload name and process filename at the same time")
 				return
 			}
 			if execReqMethod == "" {
@@ -87,17 +105,39 @@ func NewRootCmd() *cobra.Command {
 			if runSpearAddr == "" {
 				runSpearAddr = common.SpearPlatformAddress
 			}
-			if !isValidSearchPaths(runSearchPaths) {
-				log.Errorf("Invalid search paths")
+			runSearchPaths, err := validateSearchPaths(runSearchPaths)
+			if err != nil {
+				log.Errorf("Error validating search paths: %v", err)
 				return
 			}
 
-			// check if the workload type is valid
-			if rtType, ok := validChoices[strings.ToLower(execRtTypeStr)]; !ok {
-				log.Errorf("Invalid runtime type %s", execRtTypeStr)
-			} else {
+			// if execWorkloadName is not a number, it is in the format of
+			// <scheme>://<name>
+			if execWorkloadName != "" && strings.Contains(execWorkloadName, "://") {
+				var rtType task.TaskType
+				var workloadFullName string
+
+				// split the workload name into scheme and name
+				schemeName := strings.Split(execWorkloadName, "://")
+				if len(schemeName) != 2 {
+					log.Errorf("Invalid workload name %s", execWorkloadName)
+					return
+				}
+				// check if the scheme is valid
+				if rtt, ok := validChoices[strings.ToLower(schemeName[0])]; !ok {
+					log.Errorf("Invalid workload scheme %s", schemeName[0])
+					return
+				} else {
+					if rtt == task.TaskTypeUnknown {
+						log.Errorf("Invalid workload scheme %s", schemeName[0])
+						return
+					}
+					rtType = rtt
+					workloadFullName = schemeName[1]
+				}
+
 				log.Infof("Executing workload %s with runtime type %v",
-					execWorkloadName, rtType)
+					workloadFullName, rtType)
 				// set log level
 				if runVerbose {
 					spearlet.SetLogLevel(log.DebugLevel)
@@ -108,48 +148,45 @@ func NewRootCmd() *cobra.Command {
 					runSearchPaths, runStartBackendServices)
 				w := spearlet.NewSpearlet(config)
 				w.Initialize()
-
 				defer func() {
 					w.Stop()
 				}()
 
-				var funcId int64 = -1
-				var funcName string = ""
-				var err error
-				if execWorkloadName != "" {
-					// lookup task id
-					funcId, err = w.LookupTaskId(execWorkloadName)
-					if err != nil {
-						log.Errorf("Error looking up task id: %v", err)
-						// print available tasks
-						tasks := w.ListTasks()
-						log.Infof("Available tasks: %v", tasks)
-						return
-					}
-				} else if execProcFileName != "" {
-					funcName = execProcFileName
-				} else {
-					log.Errorf("Both workload name and process filename are missing. Please provide at least one.")
-					return
-				}
+				var inStream chan task.Message
+				var outStream chan task.Message
+				if execStreaming {
+					inStream = make(chan task.Message, 128)
+					outStream = make(chan task.Message, 128)
+					// get input from stdin until ctrl-d or ctrl-c
+					// line separated
+					go func() {
+						defer close(inStream)
+						for {
+							buf := make([]byte, 1024)
+							n, err := os.Stdin.Read(buf)
+							if err != nil {
+								break
+							}
+							inStream <- task.Message(buf[:n])
+						}
+					}()
 
-				t, outData, err := w.ExecuteTask(funcId, funcName, rtType,
-					execReqMethod, execReqPayload, nil, nil)
+					// print to stdout
+					go func() {
+						for msg := range outStream {
+							os.Stdout.Write(msg)
+						}
+					}()
+				}
+				t, outData, err := w.ExecuteTask(-1, workloadFullName, rtType,
+					execReqMethod, execReqPayload, inStream, outStream)
 				if err != nil {
 					log.Errorf("Error executing workload: %v", err)
 					return
 				}
-
 				if outData != "" {
 					log.Infof("Workload execution output: %v", outData)
 				}
-				// if outStream != nil {
-				// 	// print out stream
-				// 	log.Infof("Workload execution output stream: %v", outStream)
-				// 	for msg := range outStream {
-				// 		log.Infof("%v", msg)
-				// 	}
-				// }
 
 				log.Infof("Terminating task %v", t)
 				// terminate the task by sending a signal
@@ -169,17 +206,14 @@ func NewRootCmd() *cobra.Command {
 
 	// workload name
 	execCmd.PersistentFlags().StringVarP(&execWorkloadName, "name", "n", "",
-		"workload name. Cannot be used with process workload filename at the same time")
-	// workload filename
-	execCmd.PersistentFlags().StringVarP(&execProcFileName, "file", "f", "",
-		"process workload filename. Only valid for process type workload")
-	// workload type, a choice of Docker, Process, Dylib or Wasm
-	execCmd.PersistentFlags().StringVarP(&execRtTypeStr, "type", "t", "unknown",
-		"type of the workload. By default, it is unknown and the spearlet will try to determine the type.")
+		"workload name. It can be in the format of <scheme>://<workload_name> or <workload_id>")
 	// workload request payload
 	execCmd.PersistentFlags().StringVarP(&execReqMethod, "method", "m", "handle",
 		"default method to invoke")
 	execCmd.PersistentFlags().StringVarP(&execReqPayload, "payload", "p", "", "request payload")
+	// streaming flag
+	execCmd.PersistentFlags().BoolVarP(&execStreaming, "streaming", "S", false,
+		"switch to streaming call to the workload")
 	rootCmd.AddCommand(execCmd)
 
 	var serveCmd = &cobra.Command{
@@ -194,19 +228,10 @@ func NewRootCmd() *cobra.Command {
 			if runSpearAddr == "" {
 				runSpearAddr = common.SpearPlatformAddress
 			}
-			if !isValidSearchPaths(runSearchPaths) {
-				log.Errorf("Invalid search paths")
-				return
-			}
-
-			// convert search paths to absolute paths
-			cwd, err := os.Getwd()
+			runSearchPaths, err := validateSearchPaths(runSearchPaths)
 			if err != nil {
-				log.Errorf("Error getting current working directory: %v", err)
+				log.Errorf("Error validating search paths: %v", err)
 				return
-			}
-			for i, path := range runSearchPaths {
-				runSearchPaths[i] = cwd + "/" + path
 			}
 
 			// create config

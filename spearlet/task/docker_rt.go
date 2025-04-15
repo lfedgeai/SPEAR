@@ -80,15 +80,13 @@ func (d *DockerTaskRuntime) Stop() error {
 	// iterate all tasks and stop them
 	log.Infof("Stopping docker task runtime")
 	for _, task := range d.tasks {
-		if err := task.Stop(); err != nil {
-			log.Errorf("Error stopping task %s: %v", task.ID(), err)
-		}
+		task.Stop()
 	}
 	// stop the backend services
 	log.Infof("Stopping backend services")
 	for _, task := range d.containers {
 		if err := docker.StopContainer(task.ID); err != nil {
-			log.Errorf("Error stopping container %s: %v", task.ID, err)
+			log.Warnf("Error stopping container %s: %v", task.ID, err)
 		}
 	}
 	return nil

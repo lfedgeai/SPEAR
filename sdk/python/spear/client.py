@@ -686,6 +686,9 @@ class HostAgent(object):
                 lendata = length.to_bytes(8, byteorder="little")
                 self._client.sendall(lendata)
                 self._client.sendall(data)
+            # send a data with length 0
+            lendata = (0).to_bytes(8, byteorder="little")
+            self._client.sendall(lendata)
 
         def send_data():
             # clear the pipe

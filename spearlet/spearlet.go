@@ -411,6 +411,7 @@ func (w *Spearlet) ExecuteTaskByName(taskName string, funcType task.TaskType, me
 				return nil, "", fmt.Errorf("error: %v", err)
 			}
 
+			log.Debugf("Docker image %s found", taskName)
 			meta = TaskMetaData{
 				Id:        -1,
 				Type:      task.TaskTypeDocker,

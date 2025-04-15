@@ -47,7 +47,7 @@ func (p *ProcessTask) ID() TaskID {
 }
 
 func (p *ProcessTask) Start() error {
-	log.Infof("running command: %+v", p.cmd)
+	log.Infof("Running command: %+v", p.cmd)
 
 	// read from stderr and print to log
 	stdout, err := p.cmd.StdoutPipe()
@@ -106,6 +106,7 @@ func (p *ProcessTask) Start() error {
 
 		// input goroutine
 		go func() {
+			defer close(p.chanOut)
 			for {
 				// read a int64 data size
 				buf := make([]byte, 8)
@@ -124,6 +125,10 @@ func (p *ProcessTask) Start() error {
 				}
 				sz := binary.LittleEndian.Uint64(buf)
 				log.Debugf("DockerTask got message size: 0x%x", sz)
+				if sz == 0 {
+					log.Infof("Connection closed for task %s", p.name)
+					return
+				}
 
 				// read data
 				data := make([]byte, sz)
@@ -145,18 +150,21 @@ func (p *ProcessTask) Start() error {
 				binary.LittleEndian.PutUint64(buf, uint64(len(msg)))
 				_, err := p.conn.Write(buf)
 				if err != nil {
-					log.Errorf("Error writing to connection: %v", err)
+					log.Errorf("Error writing data buffer length to connection: %v",
+						err)
 					return
 				}
 
 				// write data
 				n, err := p.conn.Write([]byte(msg))
-				if n != len(msg) {
-					log.Errorf("Error writing to connection: %v", err)
+				if err != nil {
+					log.Errorf("Error writing data buffer to connection: %v",
+						err)
 					return
 				}
-				if err != nil {
-					log.Errorf("Error writing to connection: %v", err)
+				if n != len(msg) {
+					log.Errorf("Error writing full data buffer length to connection: %v",
+						err)
 					return
 				}
 			}

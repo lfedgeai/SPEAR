@@ -5,7 +5,8 @@ enum Role:byte {
     User = 1,
     Assistant = 2,
     Developer = 3,
-    Other = 4,
+    Tool = 4,
+    Other = 5,
 }
 
 enum Reason:byte {

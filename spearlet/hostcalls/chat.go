@@ -86,6 +86,8 @@ func roleStrToRole(role string) chat.Role {
 		return chat.RoleAssistant
 	case "developer":
 		return chat.RoleDeveloper
+	case "tool":
+		return chat.RoleTool
 	default:
 		return chat.RoleOther
 	}
@@ -101,6 +103,8 @@ func roleToRoleStr(role chat.Role) string {
 		return "assistant"
 	case chat.RoleDeveloper:
 		return "developer"
+	case chat.RoleTool:
+		return "tool"
 	default:
 		return "other"
 	}
@@ -213,9 +217,11 @@ func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompleti
 		openAiChatReq2 := hcopenai.OpenAIChatCompletionRequest{
 			Model:    string(chatReq.Model()),
 			Messages: []hcopenai.OpenAIChatMessage{},
+			Tools:    []hcopenai.OpenAIChatToolFunction{},
 		}
 		// build the messages
 		for _, msg := range mem.GetMessages() {
+			log.Debugf("Got Message %+v", msg)
 			tmp := hcopenai.OpenAIChatMessage{
 				Content: msg.Content,
 			}

@@ -20,13 +20,13 @@ logger.setLevel(logging.INFO)
 agent = client.HostAgent()
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.debug("Handling request: %s", params)
+    logger.debug("Handling request: %s", ctx.payload)
     msg = tf.ChatMessageV2(
-        metadata=tf.ChatMessageV2Metadata(role="user"), content=params
+        metadata=tf.ChatMessageV2Metadata(role="user"), content=ctx.payload
     )
     resp = agent.exec_request(
         "transform",

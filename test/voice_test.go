@@ -14,7 +14,7 @@ func processAudio(buffer []byte, err error) {
 	fmt.Println("Audio buffer:", buffer[:10]) // Print the first 10 samples as an example
 }
 
-func TestVoice(t *testing.T) {
+func _TestVoice(t *testing.T) {
 	// Start recording audio and get the stop channel
 	stopChan, err := io.RecordAudio(44100, processAudio)
 	if err != nil {

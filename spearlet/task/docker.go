@@ -13,6 +13,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	removeAfterStop = true
+)
+
 type DockerTask struct {
 	name      string
 	container *container.CreateResponse
@@ -49,6 +53,7 @@ func (p *DockerTask) Start() error {
 
 		// input goroutine
 		go func() {
+			defer close(p.chanOut)
 			for {
 				// read a int64 data size
 				buf := make([]byte, 8)
@@ -63,11 +68,16 @@ func (p *DockerTask) Start() error {
 				}
 				sz := binary.LittleEndian.Uint64(buf)
 				log.Debugf("DockerTask got message size: 0x%x", sz)
+				if sz == 0 {
+					log.Infof("Connection closed for task %s", p.name)
+					return
+				}
 
 				// read data
 				data := make([]byte, sz)
 				if _, err = io.ReadFull(p.conn, data); err != nil {
-					log.Errorf("Error reading from connection: %v, size: %d", err, sz)
+					log.Errorf("Error reading from connection: %v, size: %d",
+						err, sz)
 					return
 				}
 
@@ -84,18 +94,24 @@ func (p *DockerTask) Start() error {
 				binary.LittleEndian.PutUint64(buf, uint64(len(msg)))
 				_, err := p.conn.Write(buf)
 				if err != nil {
-					log.Errorf("Error writing to connection: %v", err)
+					log.Errorf(
+						"Error writing data buffer length to connection: %v",
+						err)
 					return
 				}
 
 				// write data
 				n, err := p.conn.Write([]byte(msg))
-				if n != len(msg) {
-					log.Errorf("Error writing to connection: %v", err)
+				if err != nil {
+					log.Errorf(
+						"Error writing data buffer to connection: %v",
+						err)
 					return
 				}
-				if err != nil {
-					log.Errorf("Error writing to connection: %v", err)
+				if n != len(msg) {
+					log.Errorf(
+						"Error writing full data buffer to connection: %v",
+						err)
 					return
 				}
 			}
@@ -103,7 +119,8 @@ func (p *DockerTask) Start() error {
 	}()
 
 	// get stdin and stdout
-	val, err := p.runtime.cli.ContainerAttach(context.TODO(), p.container.ID,
+	val, err := p.runtime.cli.ContainerAttach(context.TODO(),
+		p.container.ID,
 		container.AttachOptions{
 			Stream: true,
 			Stdin:  true,
@@ -184,6 +201,17 @@ func (p *DockerTask) Stop() error {
 	if err != nil {
 		return err
 	}
+	if removeAfterStop {
+		err = p.runtime.cli.ContainerRemove(context.TODO(), p.container.ID,
+			container.RemoveOptions{
+				RemoveVolumes: true,
+				Force:         true,
+			})
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

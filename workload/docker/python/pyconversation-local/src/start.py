@@ -8,10 +8,14 @@ import sys
 import spear.client as client
 import spear.hostcalls.tools as tools
 import spear.hostcalls.transform as tf
+import spear.transform.chat as chat
+import spear.transform.speech as speech
 import spear.utils.io as io
 
-LLM_MODEL = "gpt-4o" # "llama-toolchat" # "llama-toolchat-70b" # "qwen-toolchat-72b"
-STT_MODEL = "whisper-1" # "gaia-whisper"
+from spear.proto.tool import BuiltinToolID
+
+LLM_MODEL = "gpt-4o"  # "llama-toolchat" # "llama-toolchat-70b" # "qwen-toolchat-72b"
+STT_MODEL = "gaia-whisper"
 TTS_MODEL = "tts-1"
 
 SPEAK_MESSAGE = True
@@ -29,136 +33,22 @@ logger.setLevel(logging.INFO)
 
 agent = client.HostAgent()
 
-def display_chat_message(msg):
-    """
-    display the chat message
-    """
-    assert isinstance(msg, tf.ChatMessageV2)
-    if msg.metadata.tool_calls:
-        for tool_call in msg.metadata.tool_calls:
-            print(
-                f"[{msg.metadata.role}] TOOL_CALL -> {tool_call.function.name}",
-                flush=True,
-            )
-    elif msg.content:
-        # limit the max length of the message content to 4096
-        if len(msg.content) > 4096:
-            msg.content = msg.content[:4096] + "..."
-        print(f"[{msg.metadata.role}] {msg.content}", flush=True)
 
-
-def audio_to_text(audio):
-    """
-    convert audio to text
-    """
-    resp = agent.exec_request(
-        "transform",
-        tf.TransformRequest(
-            input_types=[tf.TransformType.AUDIO],
-            output_types=[tf.TransformType.TEXT],
-            operations=[tf.TransformOperation.SPEECH_TO_TEXT],
-            params={
-                "model": STT_MODEL,
-                "audio": audio,
-            },
-        ),
-    )
-    if isinstance(resp, client.JsonRpcOkResp):
-        resp = tf.TransformResponse.schema().load(resp.result)
-        assert len(resp.results) == 1
-        data = resp.results[0].data
-        # conver to json object and get "text" field
-        data = data["text"]
-        return data
-    elif isinstance(resp, client.JsonRpcErrorResp):
-        logger.error("Error: %s", resp.message)
-        return None
-
-
-def speak_chat_message(msg):
-    """
-    speak the chat message
-    """
-    assert isinstance(msg, tf.ChatMessageV2)
-    if len(msg.content) > 4096:
-        logger.warning("Message content is too long, will skip speaking")
-        return
-    resp = agent.exec_request(
-        "transform",
-        tf.TransformRequest(
-            input_types=[tf.TransformType.TEXT],
-            output_types=[tf.TransformType.AUDIO],
-            operations=[tf.TransformOperation.TEXT_TO_SPEECH],
-            params={
-                "model": TTS_MODEL,
-                "voice": "nova",
-                "input": msg.content,
-                "response_format": "mp3",
-            },
-        ),
-    )
-    if isinstance(resp, client.JsonRpcOkResp):
-        resp = tf.TransformResponse.schema().load(resp.result)
-        assert len(resp.results) == 1
-        data = resp.results[0].data
-        io.speak(agent, data)
-    elif isinstance(resp, client.JsonRpcErrorResp):
-        logger.error("Error: %s", resp.message)
-
-
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.debug("Handling request: %s", params)
+    logger.debug("Handling request: %s", ctx.payload)
 
-    resp = agent.exec_request(
-        "toolset.new",
-        tools.NewToolsetRequest(
-            name="toolset",
-            description="Toolset for sending email",
-            tool_ids=[],
-        ),
-    )
-
-    toolsetid = None
-    if isinstance(resp, client.JsonRpcOkResp):
-        logger.debug("Toolset created with id: %s", resp.result)
-        resp = tools.NewToolsetResponse.schema().load(resp.result)
-        toolsetid = resp.toolset_id
-    elif isinstance(resp, client.JsonRpcErrorResp):
-        return resp.message
-    else:
-        return "Unknown error"
-
-    resp = agent.exec_request(
-        "toolset.install.builtins",
-        tools.ToolsetInstallBuiltinsRequest(
-            toolset_id=toolsetid,
-        ),
-    )
-    if isinstance(resp, client.JsonRpcOkResp):
-        logger.debug("Builtin tools installed with id: %s", resp.result)
-    elif isinstance(resp, client.JsonRpcErrorResp):
-        agent.stop()
-        return resp.message
-    else:
-        agent.stop()
-        return "Unknown error"
-
-    msg_memory = [
-        tf.ChatMessageV2(
-            metadata=tf.ChatMessageV2Metadata(role="system"),
-            content=("You will be provided with a set of tools you could potentially use. " +
-                     "But do not make tool calls unless it is necessary for you to answer " +
-                     "the user question. "),
-        )
-    ]
+    msg_memory = [("system",
+                   ("You will be provided with a set of tools you could potentially use. " +
+                    "But do not make tool calls unless it is necessary for you to answer " +
+                    "the user question. "))]
     while True:
         user_input = io.input(agent, "(? for help) > ")
 
         # trim the user input, remove space and newline
-        user_input = user_input.strip()
+        user_input = user_input.strip().decode('utf-8')
         if not user_input:
             continue
         if user_input == "q":
@@ -170,53 +60,41 @@ r: record voice input"""
             print(help_msg, flush=True)
             continue
         if user_input == "r":
-            resp = io.record(agent, "Assistant is listening")
-            if resp:
-                user_input = audio_to_text(resp)
-                if user_input:
-                    print(f"User: {user_input}", flush=True)
-                else:
-                    print("Failed to convert audio to text", flush=True)
-                    continue
+            user_input = io.record(agent, "Assistant is listening")
+            if user_input:
+                print(f"User: {user_input}", flush=True)
+            else:
+                print("Failed to convert audio to text", flush=True)
+                continue
 
         msg_memory.append(
-            tf.ChatMessageV2(
-                metadata=tf.ChatMessageV2Metadata(role="user"), content=user_input
-            )
+            ("user", user_input)
         )
 
-        resp = agent.exec_request(
-            "transform",
-            tf.TransformRequest(
-                input_types=[tf.TransformType.TEXT],
-                output_types=[tf.TransformType.TEXT],
-                operations=[tf.TransformOperation.LLM, tf.TransformOperation.TOOLS],
-                params={
-                    "model": LLM_MODEL,
-                    "messages": msg_memory,
-                    "toolset_id": toolsetid,
-                },
-            ),
-        )
+        resp = chat.chat(agent, msg_memory, model=LLM_MODEL,
+                         builtin_tools=[
+                             BuiltinToolID.BuiltinToolID.Datetime,
+                             BuiltinToolID.BuiltinToolID.FullScreenshot,
+                             BuiltinToolID.BuiltinToolID.MouseRightClick,
+                             BuiltinToolID.BuiltinToolID.SearchContactEmail,
+                             BuiltinToolID.BuiltinToolID.SendEmailDraftWindow,
+                             BuiltinToolID.BuiltinToolID.ComposeEmail,
+                             BuiltinToolID.BuiltinToolID.ListOpenEmails,
+                             BuiltinToolID.BuiltinToolID.OpenURL,
+                         ])
 
-        new_msg_memory = []
-        if isinstance(resp, client.JsonRpcOkResp):
-            resp = tf.TransformResponse.schema().load(resp.result)
-            # base64 decode the response string
-            data = resp.results[0].data
-            res = tf.ChatResponseV2.schema().load(data)
-            new_msg_memory = res.messages
-        elif isinstance(resp, client.JsonRpcErrorResp):
-            break
-
-        tmp_msgs = new_msg_memory[len(msg_memory):]
-        for msg in tmp_msgs:
-            display_chat_message(msg)
-            if msg.metadata.role == "assistant" and not msg.metadata.tool_calls:
+        tmp_msgs = resp[len(msg_memory):]
+        for e in tmp_msgs:
+            role = e[0]
+            msg = e[1]
+            print(f"{role}: {msg}", flush=True)
+            # and not msg.metadata.tool_calls
+            if role == "assistant" and len(msg) > 0:
                 if SPEAK_MESSAGE:
-                    speak_chat_message(msg)
+                    io.speak(agent, msg)
 
-        msg_memory = new_msg_memory
+        msg_memory = [(e[0], e[1]) if e[0] != "tool" else ("user", e[1])
+                      for e in resp]
 
     agent.stop()
     return "done"

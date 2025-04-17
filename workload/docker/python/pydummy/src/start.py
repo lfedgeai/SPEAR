@@ -18,11 +18,11 @@ logger.setLevel(logging.INFO)
 agent = client.HostAgent()
 
 
-def handle(params):
+def handle(ctx):
     """
     handle the request
     """
-    logger.debug("Handling request: %s", params)
+    logger.debug("Handling request: %s", ctx.payload)
     test("gpt-4o")
     #test("text-embedding-ada-002")
     #test("bge-large-en-v1.5")

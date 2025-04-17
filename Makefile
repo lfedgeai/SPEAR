@@ -3,6 +3,11 @@ VERSION := $(shell git describe --tags --match "*" --always --dirty)
 REPO_ROOT := $(shell pwd)
 OUTPUT_DIR := $(REPO_ROOT)/bin
 
+FLATC := $(shell command -v flatc 2> /dev/null)
+
+ifndef FLATC
+  $(error "flatc binary not found in PATH. Please install flatc.")
+endif
 
 all: clean spearlet workload sdk
 
@@ -12,7 +17,7 @@ WORKLOAD_SUBDIRS := $(shell find $(REPO_ROOT)/workload -mindepth 1 -maxdepth 3 -
 
 clean:
 	@set -ex; \
-	docker system prune -f && \
+	docker system prune -f || true && \
 	rm -rf $(OUTPUT_DIR) && \
 	rm -rf $(REPO_ROOT)/pkg/spear && \
 	for dir in $(SUBDIRS); do \
@@ -25,14 +30,20 @@ build: spearlet
 		make -C $$dir build; \
 	done
 
+install_sdk: build
+	@set -e; \
+	cd $(REPO_ROOT)/sdk/python && \
+	file=$$(printf "%s\n" ./dist/spear-*.whl | head -n1); \
+	python -m pip install "$$file" --force-reinstall
+
+
 spearlet: pkg/spear
 	go build -o $(OUTPUT_DIR)/spearlet \
 	-ldflags "-X 'github.com/lfedgeai/spear/pkg/common.Version=$(VERSION)'" \
 	$(REPO_ROOT)/cmd/spearlet/main.go
 
-test: workload
+test: workload build install_sdk
 	@set -e; \
-	cd $(REPO_ROOT); \
 	go test -v ./test/... && \
 	for dir in $(SUBDIRS); do \
 		make -C $$dir test; \
@@ -54,6 +65,6 @@ format: format_python format_golang
 
 pkg/spear:
 	allfiles=`find ${REPO_ROOT}/proto -name "*.fbs"`; \
-	flatc -o $(REPO_ROOT)/pkg/ -I ${REPO_ROOT}/proto --go-module-name "github.com/lfedgeai/spear/pkg" --go --gen-all $${allfiles}
+	$(FLATC) -o $(REPO_ROOT)/pkg/ -I ${REPO_ROOT}/proto --go-module-name "github.com/lfedgeai/spear/pkg" --go --gen-all $${allfiles}
 
 .PHONY: all spearlet test workload clean format_python format

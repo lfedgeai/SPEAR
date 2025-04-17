@@ -33,6 +33,8 @@ type ReqChanData struct {
 	InvInfo *InvocationInfo
 }
 
+type SignalCallbacks map[transport.Signal]func([]byte) error
+
 // communication manager for hostcalls and guest responses
 type CommunicationManager struct {
 	respCh chan *RespChanData // incoming responses
@@ -41,6 +43,9 @@ type CommunicationManager struct {
 
 	pendingRequests   map[int64]*requestCallback
 	pendingRequestsMu sync.RWMutex
+
+	taskSigCallbacks   map[task.Task]SignalCallbacks
+	taskSigCallbacksMu sync.RWMutex
 }
 
 type HostCallHandler func(inv *InvocationInfo, args []byte) ([]byte, error)
@@ -110,6 +115,9 @@ func NewCommunicationManager() *CommunicationManager {
 
 		pendingRequests:   make(map[int64]*requestCallback),
 		pendingRequestsMu: sync.RWMutex{},
+
+		taskSigCallbacks:   make(map[task.Task]SignalCallbacks),
+		taskSigCallbacksMu: sync.RWMutex{},
 	}
 }
 
@@ -201,6 +209,25 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 				}
 				sig.Init(sigTbl.Bytes, sigTbl.Pos)
 				log.Debugf("Platform received signal: %s", sig.Method().String())
+				// check if we have a callback for this signal
+				c.taskSigCallbacksMu.RLock()
+				if _, ok := c.taskSigCallbacks[t]; !ok {
+					c.taskSigCallbacksMu.RUnlock()
+					log.Errorf("No signal callbacks registered for task: %v", t.Name())
+					continue
+				}
+				if _, ok := c.taskSigCallbacks[t][sig.Method()]; !ok {
+					c.taskSigCallbacksMu.RUnlock()
+					log.Warnf("No signal callback registered for task: %v, signal: %v", t.Name(),
+						sig.Method())
+					continue
+				}
+				cb := c.taskSigCallbacks[t][sig.Method()]
+				c.taskSigCallbacksMu.RUnlock()
+				// call the callback
+				if err := cb(sig.PayloadBytes()); err != nil {
+					log.Errorf("Error handling signal: %v", err)
+				}
 			} else {
 				log.Errorf("Invalid transport message type: %d", transRaw.DataType())
 			}
@@ -249,6 +276,40 @@ type requestCallback struct {
 	cb        ResquestCallback
 	autoClear bool
 	ts        time.Time
+}
+
+func (c *CommunicationManager) RegisterTaskSignalCallback(t task.Task,
+	sig transport.Signal, cb func([]byte) error) {
+	c.taskSigCallbacksMu.Lock()
+	defer c.taskSigCallbacksMu.Unlock()
+	if t == nil {
+		log.Errorf("task is nil")
+		return
+	}
+	if _, ok := c.taskSigCallbacks[t]; !ok {
+		c.taskSigCallbacks[t] = make(SignalCallbacks)
+	}
+	c.taskSigCallbacks[t][sig] = cb
+}
+
+func (c *CommunicationManager) UnregisterTaskSignalCallback(t task.Task,
+	sig transport.Signal) {
+	c.taskSigCallbacksMu.Lock()
+	defer c.taskSigCallbacksMu.Unlock()
+	if t == nil {
+		log.Errorf("task is nil")
+		return
+	}
+	if _, ok := c.taskSigCallbacks[t]; !ok {
+		return
+	}
+	if _, ok := c.taskSigCallbacks[t][sig]; !ok {
+		return
+	}
+	delete(c.taskSigCallbacks[t], sig)
+	if len(c.taskSigCallbacks[t]) == 0 {
+		delete(c.taskSigCallbacks, t)
+	}
 }
 
 func (c *CommunicationManager) SendOutgoingRPCSignal(t task.Task, signal transport.Signal,

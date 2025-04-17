@@ -81,7 +81,7 @@ func StartVectorStoreContainer(cleanup bool, pull bool) (*container.CreateRespon
 	}
 
 	// generate a random name for the container
-	name := fmt.Sprintf("qdrant-%d", time.Now().Unix())
+	name := fmt.Sprintf("qdrant-%d", time.Now().UnixMicro())
 
 	// create the container
 	c, err := cli.ContainerCreate(context.TODO(), &container.Config{

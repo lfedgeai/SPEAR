@@ -2,13 +2,16 @@ package task
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -44,7 +47,7 @@ func (p *ProcessTask) ID() TaskID {
 }
 
 func (p *ProcessTask) Start() error {
-	log.Infof("running command: %+v", p.cmd)
+	log.Infof("Running command: %+v", p.cmd)
 
 	// read from stderr and print to log
 	stdout, err := p.cmd.StdoutPipe()
@@ -87,7 +90,7 @@ func (p *ProcessTask) Start() error {
 	go func() {
 		if err := p.cmd.Wait(); err != nil {
 			// get stderr output
-			log.Errorf("Error: wait error. %v, command %s", err, p.cmd.String())
+			log.Infof("Wait error. %v, command %s", err, p.cmd.String())
 		}
 
 		// set status to stopped
@@ -103,6 +106,7 @@ func (p *ProcessTask) Start() error {
 
 		// input goroutine
 		go func() {
+			defer close(p.chanOut)
 			for {
 				// read a int64 data size
 				buf := make([]byte, 8)
@@ -112,11 +116,19 @@ func (p *ProcessTask) Start() error {
 						log.Infof("Connection closed for task %s", p.name)
 						return
 					}
+					if errors.Is(err, syscall.ECONNRESET) {
+						log.Warnf("Connection reset for task %s", p.name)
+						return
+					}
 					log.Errorf("Error reading from connection: %v", err)
 					return
 				}
 				sz := binary.LittleEndian.Uint64(buf)
 				log.Debugf("DockerTask got message size: 0x%x", sz)
+				if sz == 0 {
+					log.Infof("Connection closed for task %s", p.name)
+					return
+				}
 
 				// read data
 				data := make([]byte, sz)
@@ -138,18 +150,21 @@ func (p *ProcessTask) Start() error {
 				binary.LittleEndian.PutUint64(buf, uint64(len(msg)))
 				_, err := p.conn.Write(buf)
 				if err != nil {
-					log.Errorf("Error writing to connection: %v", err)
+					log.Errorf("Error writing data buffer length to connection: %v",
+						err)
 					return
 				}
 
 				// write data
 				n, err := p.conn.Write([]byte(msg))
-				if n != len(msg) {
-					log.Errorf("Error writing to connection: %v", err)
+				if err != nil {
+					log.Errorf("Error writing data buffer to connection: %v",
+						err)
 					return
 				}
-				if err != nil {
-					log.Errorf("Error writing to connection: %v", err)
+				if n != len(msg) {
+					log.Errorf("Error writing full data buffer length to connection: %v",
+						err)
 					return
 				}
 			}
@@ -162,7 +177,7 @@ func (p *ProcessTask) Start() error {
 func (p *ProcessTask) Stop() error {
 	// kill process
 	if p.cmd.Process != nil {
-		if err := p.cmd.Process.Kill(); err != nil {
+		if err := p.cmd.Process.Kill(); err != nil && err != os.ErrProcessDone {
 			log.Errorf("Error stopping task: %v", err)
 			return err
 		}

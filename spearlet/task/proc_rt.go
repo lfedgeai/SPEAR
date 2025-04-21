@@ -53,7 +53,7 @@ func (p *ProcessTaskRuntime) Stop() error {
 }
 
 func (p *ProcessTaskRuntime) CreateTask(cfg *TaskConfig) (Task, error) {
-	log.Debugf("Creating process task with name: %s", cfg.Name)
+	log.Debugf("Creating process task with file: %s", cfg.Name)
 
 	if cfg.Image != "" {
 		return nil, fmt.Errorf("image not supported for process task")

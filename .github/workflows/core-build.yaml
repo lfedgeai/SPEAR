@@ -1,10 +1,10 @@
-name: SPEAR-TEST
+name: SPEAR Build and Test
 
 on: push
 
 jobs:
-  Spear-build:
-    name: Make & Run Spear DEMO
+  SPEAR-Build:
+    name: Make & Run SPEAR DEMO
     runs-on: ubuntu-latest
     steps:
     - name: Read warehouse contents
@@ -41,11 +41,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install build
 
+    - name: Install Docker
+      uses: docker/setup-buildx-action@v2
+
     - name: Install Dependencies & Compile Files
       run: |
         sudo apt install portaudio19-dev libx11-dev libxtst-dev
-        curl -fsSL https://get.docker.com -o get-docker.sh
-        sudo sh get-docker.sh
+        # curl -fsSL https://get.docker.com -o get-docker.sh
+        # sudo sh get-docker.sh
         make
 
     - name: Pull Related Docker Images

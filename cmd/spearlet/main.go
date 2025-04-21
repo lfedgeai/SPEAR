@@ -32,6 +32,13 @@ var (
 	// openssl req -x509 -newkey rsa:2048 -keyout server.key -out server.crt -days 365 -nodes
 	serveCertFile string
 	serveKeyFile  string
+
+	validChoices = map[string]task.TaskType{
+		"docker": task.TaskTypeDocker,
+		"file":   task.TaskTypeProcess,
+		"dylib":  task.TaskTypeDylib,
+		"wasm":   task.TaskTypeWasm,
+	}
 )
 
 func validateSearchPaths(paths []string) ([]string, error) {
@@ -86,14 +93,6 @@ func NewRootCmd() *cobra.Command {
 		Use:   "exec",
 		Short: "Execute a workload",
 		Run: func(cmd *cobra.Command, args []string) {
-			var validChoices = map[string]task.TaskType{
-				"docker":  task.TaskTypeDocker,
-				"process": task.TaskTypeProcess,
-				"dylib":   task.TaskTypeDylib,
-				"wasm":    task.TaskTypeWasm,
-				"unknown": task.TaskTypeUnknown,
-			}
-
 			if execWorkloadName == "" {
 				log.Errorf("Invalid workload name %s", execWorkloadName)
 				return
@@ -204,9 +203,14 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
+	possibleOptions := []string{}
+	for k := range validChoices {
+		possibleOptions = append(possibleOptions, k)
+	}
 	// workload name
 	execCmd.PersistentFlags().StringVarP(&execWorkloadName, "name", "n", "",
-		"workload name. It can be in the format of <scheme>://<workload_name> or <workload_id>")
+		"workload name. It can be in the format of <scheme>://<workload_name> or <workload_id>,"+
+			" where scheme can be one of "+strings.Join(possibleOptions, ", "))
 	// workload request payload
 	execCmd.PersistentFlags().StringVarP(&execReqMethod, "method", "m", "handle",
 		"default method to invoke")

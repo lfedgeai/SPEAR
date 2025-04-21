@@ -5,6 +5,9 @@ from setuptools import find_packages, setup
 
 
 def convert_to_pep440(version_str):
+    '''
+    Convert a version string from git describe format to PEP 440 format.
+    '''
     version_str = version_str.lstrip('v')
 
     pattern = r'^(\d+\.\d+\.\d+)-(\d+)-g([0-9a-f]+)(-dirty)?$'
@@ -28,6 +31,9 @@ def convert_to_pep440(version_str):
 
 
 def get_version():
+    '''
+    Get the version from the git tag.
+    '''
     try:
         result = subprocess.check_output(['git', 'describe', '--tags', '--match',
                                           '*', '--always', '--dirty'],
@@ -44,7 +50,7 @@ def get_version():
 setup(
     name="spear",
     version=get_version(),
-    description="Spear Python SDK",
+    description="SPEAR Python SDK",
     author="Wilson Wang",
     license="Apache-2.0",
     python_requires=">=3.6",

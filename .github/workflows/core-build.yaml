@@ -4,7 +4,7 @@ on: push
 
 jobs:
   SPEAR-Build:
-    name: Make & Run SPEAR DEMO
+    name: Make & Run SPEAR Tests
     runs-on: ubuntu-latest
     steps:
     - name: Read warehouse contents

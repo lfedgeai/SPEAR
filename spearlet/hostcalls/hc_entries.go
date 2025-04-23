@@ -10,10 +10,6 @@ var Hostcalls = []*hostcalls.HostCall{
 		NameID:  transport.MethodTransform,
 		Handler: Transform,
 	},
-	{
-		NameID:  transport.MethodTransformConfig,
-		Handler: TransformConfig,
-	},
 	// invoke tool
 	{
 		NameID:  transport.MethodToolInvoke,

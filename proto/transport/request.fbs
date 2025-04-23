@@ -5,7 +5,6 @@ namespace spear.proto.transport;
 enum Method : uint32 {
     Unknown = 0,
     Transform,
-    TransformConfig,
     // io related
     Input,
     Speak,

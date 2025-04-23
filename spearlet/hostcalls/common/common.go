@@ -137,11 +137,6 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 	c.outCh[t] = in
 
 	go func() {
-		inv := InvocationInfo{
-			Task:    t,
-			CommMgr: c,
-		}
-
 		for msg := range out {
 			// process message
 			transRaw := transport.GetRootAsTransportMessageRaw(msg, 0)
@@ -150,83 +145,19 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 				continue
 			}
 			if transRaw.DataType() == transport.TransportMessageRaw_DataTransportRequest {
-				// request
-				req := transport.TransportRequest{}
-				// convert to transport request
-				reqTbl := &flatbuffers.Table{}
-				if !transRaw.Data(reqTbl) {
-					log.Errorf("Error getting transport request table")
-					continue
-				}
-				req.Init(reqTbl.Bytes, reqTbl.Pos)
-				log.Debugf("Hostcall received request: %d", req.Method())
-				c.reqCh <- &ReqChanData{
-					Req:     &req,
-					InvInfo: &inv,
+				err := c.doResponse(t, transRaw)
+				if err != nil {
+					log.Errorf("Error processing response: %v", err)
 				}
 			} else if transRaw.DataType() == transport.TransportMessageRaw_DataTransportResponse {
-				// response
-				resp := transport.TransportResponse{}
-				// convert to transport response
-				respTbl := &flatbuffers.Table{}
-				if !transRaw.Data(respTbl) {
-					log.Errorf("Error getting transport response table")
-					continue
+				err := c.doRequest(t, transRaw)
+				if err != nil {
+					log.Errorf("Error processing request: %v", err)
 				}
-				resp.Init(respTbl.Bytes, respTbl.Pos)
-				log.Debugf("Hostcall received response: %d", resp.Id())
-				go func() {
-					// check if it is response to a pending request
-					c.pendingRequestsMu.RLock()
-					entry, ok := c.pendingRequests[resp.Id()]
-					c.pendingRequestsMu.RUnlock()
-					if ok {
-						cb := entry.cb
-						if err := cb(&resp); err != nil {
-							log.Errorf("Error handling response: %v", err)
-						}
-						if entry.autoClear {
-							c.pendingRequestsMu.Lock()
-							delete(c.pendingRequests, resp.Id())
-							c.pendingRequestsMu.Unlock()
-						}
-						return
-					}
-
-					// this is when we receive a response that is not a pending request
-					c.respCh <- &RespChanData{
-						Resp:    &resp,
-						InvInfo: &inv,
-					}
-				}()
-
 			} else if transRaw.DataType() == transport.TransportMessageRaw_DataTransportSignal {
-				sig := transport.TransportSignal{}
-				sigTbl := &flatbuffers.Table{}
-				if !transRaw.Data(sigTbl) {
-					log.Errorf("Error getting transport signal table")
-					continue
-				}
-				sig.Init(sigTbl.Bytes, sigTbl.Pos)
-				log.Debugf("Platform received signal: %s", sig.Method().String())
-				// check if we have a callback for this signal
-				c.taskSigCallbacksMu.RLock()
-				if _, ok := c.taskSigCallbacks[t]; !ok {
-					c.taskSigCallbacksMu.RUnlock()
-					log.Errorf("No signal callbacks registered for task: %v", t.Name())
-					continue
-				}
-				if _, ok := c.taskSigCallbacks[t][sig.Method()]; !ok {
-					c.taskSigCallbacksMu.RUnlock()
-					log.Warnf("No signal callback registered for task: %v, signal: %v", t.Name(),
-						sig.Method())
-					continue
-				}
-				cb := c.taskSigCallbacks[t][sig.Method()]
-				c.taskSigCallbacksMu.RUnlock()
-				// call the callback
-				if err := cb(sig.PayloadBytes()); err != nil {
-					log.Errorf("Error handling signal: %v", err)
+				err := c.doSignal(t, transRaw)
+				if err != nil {
+					log.Errorf("Error processing signal: %v", err)
 				}
 			} else {
 				log.Errorf("Invalid transport message type: %d", transRaw.DataType())
@@ -234,6 +165,95 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 		}
 	}()
 
+	return nil
+}
+
+func (c *CommunicationManager) doResponse(t task.Task, transportRaw *transport.TransportMessageRaw) error {
+	inv := InvocationInfo{
+		Task:    t,
+		CommMgr: c,
+	}
+	// request
+	req := transport.TransportRequest{}
+	// convert to transport request
+	reqTbl := &flatbuffers.Table{}
+	if !transportRaw.Data(reqTbl) {
+		return fmt.Errorf("error getting transport request table")
+	}
+	req.Init(reqTbl.Bytes, reqTbl.Pos)
+	log.Debugf("Hostcall received request: %d", req.Method())
+	c.reqCh <- &ReqChanData{
+		Req:     &req,
+		InvInfo: &inv,
+	}
+	return nil
+}
+
+func (c *CommunicationManager) doRequest(t task.Task, transportRaw *transport.TransportMessageRaw) error {
+	inv := InvocationInfo{
+		Task:    t,
+		CommMgr: c,
+	}
+	resp := transport.TransportResponse{}
+	// convert to transport response
+	respTbl := &flatbuffers.Table{}
+	if !transportRaw.Data(respTbl) {
+		return fmt.Errorf("error getting transport response table")
+	}
+	resp.Init(respTbl.Bytes, respTbl.Pos)
+	log.Debugf("Hostcall received response: %d", resp.Id())
+	go func() {
+		// check if it is response to a pending request
+		c.pendingRequestsMu.RLock()
+		entry, ok := c.pendingRequests[resp.Id()]
+		c.pendingRequestsMu.RUnlock()
+		if ok {
+			cb := entry.cb
+			if err := cb(&resp); err != nil {
+				log.Errorf("Error handling response: %v", err)
+			}
+			if entry.autoClear {
+				c.pendingRequestsMu.Lock()
+				delete(c.pendingRequests, resp.Id())
+				c.pendingRequestsMu.Unlock()
+			}
+			return
+		}
+
+		// this is when we receive a response that is not a pending request
+		c.respCh <- &RespChanData{
+			Resp:    &resp,
+			InvInfo: &inv,
+		}
+	}()
+	return nil
+}
+
+func (c *CommunicationManager) doSignal(t task.Task, transportRaw *transport.TransportMessageRaw) error {
+	sig := transport.TransportSignal{}
+	sigTbl := &flatbuffers.Table{}
+	if !transportRaw.Data(sigTbl) {
+		return fmt.Errorf("error getting transport signal table")
+	}
+	sig.Init(sigTbl.Bytes, sigTbl.Pos)
+	log.Debugf("Platform received signal: %s", sig.Method().String())
+	// check if we have a callback for this signal
+	c.taskSigCallbacksMu.RLock()
+	if _, ok := c.taskSigCallbacks[t]; !ok {
+		c.taskSigCallbacksMu.RUnlock()
+		return fmt.Errorf("no signal callbacks registered for task: %v", t.Name())
+	}
+	if _, ok := c.taskSigCallbacks[t][sig.Method()]; !ok {
+		c.taskSigCallbacksMu.RUnlock()
+		return fmt.Errorf("no signal callback registered for task: %v, signal: %v", t.Name(),
+			sig.Method())
+	}
+	cb := c.taskSigCallbacks[t][sig.Method()]
+	c.taskSigCallbacksMu.RUnlock()
+	// call the callback
+	if err := cb(sig.PayloadBytes()); err != nil {
+		return fmt.Errorf("error handling signal: %v", err)
+	}
 	return nil
 }
 

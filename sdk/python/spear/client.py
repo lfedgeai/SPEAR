@@ -14,7 +14,7 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import StreamEvent
+from spear.proto.stream import StreamData, StreamDataWrapper, StreamRaw
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
@@ -385,17 +385,30 @@ class HostAgent(object):
                     logger.info("Terminating the agent")
                     self.stop()
                     return
-                if sig.Method() == Signal.Signal.StreamEvent:
-                    stream_req = StreamEvent.StreamEvent.GetRootAsStreamEvent(
+                if sig.Method() == Signal.Signal.StreamData:
+                    stream_req = StreamData.StreamData.GetRootAsStreamData(
                         sig.PayloadAsNumpy(), 0
                     )
+                    if stream_req.DataType() != StreamDataWrapper.StreamDataWrapper.StreamRaw:
+                        logger.error("Invalid stream data type: %s",
+                                     stream_req.DataType())
+                        raise ValueError("Invalid stream data type")
+                    if stream_req.Data() is None:
+                        logger.error("Invalid stream data")
+                        raise ValueError("Invalid stream data")
+                    stream_raw = StreamRaw.StreamRaw()
+                    stream_raw.Init(stream_req.Data().Bytes,
+                                    stream_req.Data().Pos)
+                    if stream_raw.DataIsNone():
+                        logger.error("Invalid stream data")
+                        raise ValueError("Invalid stream data")
                     ctx = StreamRequestContext(
-                        data=stream_req.DataAsNumpy(),
+                        data=stream_raw.DataAsNumpy(),
                         last_message=stream_req.Final(),
                         stream_id=stream_req.StreamId(),
                     )
-                    if self._sig_handlers.get(Signal.Signal.StreamEvent):
-                        for handler in self._sig_handlers[Signal.Signal.StreamEvent]:
+                    if self._sig_handlers.get(Signal.Signal.StreamData):
+                        for handler in self._sig_handlers[Signal.Signal.StreamData]:
                             resp_data = None
                             try:
                                 resp_data = handler(ctx)
@@ -416,14 +429,14 @@ class HostAgent(object):
                                         seq_id = 0
                                         self._stream_sequence_ids[stream_req.StreamId(
                                         )] = 1
-                                self._put_streamevent_signal(
+                                self._put_streamdata_signal(
                                     -1, stream_req.ReplyStreamId(),
                                     seq_id,
                                     resp_data,
                                     stream_req.Final(),
                                 )
                             else:
-                                self._put_streamevent_signal(
+                                self._put_streamdata_signal(
                                     -1, stream_req.ReplyStreamId(),
                                     stream_req.SequenceId(),
                                     b"",
@@ -523,21 +536,28 @@ class HostAgent(object):
                 raise RuntimeError(resp.Message())
             return resp.ResponseAsNumpy()
 
-    def _put_streamevent_signal(self, stream_id: int, reply_stream_id: int,
-                                seq_id: int, data: bytes, last_message: bool):
+    def _put_streamdata_signal(self, stream_id: int, reply_stream_id: int,
+                               seq_id: int, data: bytes, last_message: bool):
         """
         send the rpc signal
         """
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
 
-        StreamEvent.StreamEventStart(builder)
-        StreamEvent.AddStreamId(builder, stream_id)
-        StreamEvent.AddReplyStreamId(builder, reply_stream_id)
-        StreamEvent.AddSequenceId(builder, seq_id)
-        StreamEvent.AddData(builder, data_off)
-        StreamEvent.AddFinal(builder, last_message)
-        req_off = StreamEvent.End(builder)
+        StreamRaw.StreamRawStart(builder)
+        StreamRaw.AddData(builder, data_off)
+        stream_raw_off = StreamRaw.End(builder)
+
+        StreamData.StreamDataStart(builder)
+        StreamData.AddStreamId(builder, stream_id)
+        StreamData.AddReplyStreamId(builder, reply_stream_id)
+        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddData(builder, stream_raw_off)
+        StreamData.AddDataType(
+            builder, StreamDataWrapper.StreamDataWrapper.StreamRaw
+        )
+        StreamData.AddFinal(builder, last_message)
+        req_off = StreamData.End(builder)
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
@@ -547,7 +567,7 @@ class HostAgent(object):
 
         TransportSignal.TransportSignalStart(builder)
         TransportSignal.AddMethod(
-            builder, Signal.Signal.StreamEvent
+            builder, Signal.Signal.StreamData
         )
         TransportSignal.AddPayload(builder, req_off)
         req_off = TransportSignal.End(builder)

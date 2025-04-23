@@ -1,12 +1,26 @@
 namespace spear.proto.stream;
 
 table StreamEvent {
+    event_name: string;
+    event_data: [ubyte];
+}
+
+table StreamRaw {
+    data: [ubyte];
+}
+
+union StreamDataWrapper {
+    StreamEvent,
+    StreamRaw
+}
+
+table StreamData {
     // The stream ID to which this request belongs.
     stream_id: int32 = -1;
     reply_stream_id: int32 = -1; // -1 if no need to reply
     sequence_id: int64 = -1;
-    data: [ubyte];
+    data: StreamDataWrapper;
     final: bool = false;
 }
 
-root_type StreamEvent;
+root_type StreamData;

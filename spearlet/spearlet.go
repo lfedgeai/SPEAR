@@ -524,33 +524,49 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 		var i int64 = 0
 
 		w.commMgr.RegisterTaskSignalCallback(newTask,
-			transport.SignalStreamEvent,
-			func(data []byte) error {
+			transport.SignalStreamData,
+			func(rawdata []byte) error {
 				// get the stream event
-				streamEvent := stream.GetRootAsStreamEvent(data, 0)
+				streamData := stream.GetRootAsStreamData(rawdata, 0)
 				// get the reply stream id
-				replyStreamId := streamEvent.ReplyStreamId()
+				replyStreamId := streamData.ReplyStreamId()
 				if replyStreamId != int32(respStreamID) {
 					return fmt.Errorf("error: invalid reply stream id: %d",
 						replyStreamId)
 				}
 				// get reply sequence id
-				repSeqId := streamEvent.SequenceId()
+				repSeqId := streamData.SequenceId()
 				// get data
-				streamData := streamEvent.DataBytes()
-				if len(data) != 0 {
-					log.Debugf(
-						"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
-						newTask.Name(), replyStreamId, repSeqId, streamData,
-					)
-					respStream <- task.Message(streamData)
+				tbl := flatbuffers.Table{}
+				if !streamData.Data(&tbl) {
+					return fmt.Errorf("error: invalid stream data")
 				}
-				if streamEvent.Final() {
-					// all data is received
-					log.Debug("Received stream end")
-					w.commMgr.UnregisterTaskSignalCallback(newTask,
-						transport.SignalStreamEvent)
-					close(respStream)
+				switch streamData.DataType() {
+				case stream.StreamDataWrapperStreamEvent:
+					// get the stream event
+					panic("not implemented")
+				case stream.StreamDataWrapperStreamRaw:
+					// get the stream raw data
+					data := stream.GetRootAsStreamRaw(tbl.Bytes, tbl.Pos)
+					if data == nil {
+						return fmt.Errorf("error: invalid stream raw data")
+					}
+					// get the stream raw data
+					if data.DataLength() > 0 {
+						buf := data.DataBytes()
+						log.Debugf(
+							"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
+							newTask.Name(), replyStreamId, repSeqId, buf,
+						)
+						respStream <- task.Message(buf)
+					}
+					if streamData.Final() {
+						// all data is received
+						log.Debug("Received stream end")
+						w.commMgr.UnregisterTaskSignalCallback(newTask,
+							transport.SignalStreamData)
+						close(respStream)
+					}
 				}
 				return nil
 			},
@@ -561,33 +577,38 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 			builder := flatbuffers.NewBuilder(512)
 			msgOff := builder.CreateByteVector([]byte(msg))
 
-			stream.StreamEventStart(builder)
-			stream.StreamEventAddStreamId(builder, int32(reqStreamID))
-			stream.StreamEventAddReplyStreamId(builder, int32(respStreamID))
-			stream.StreamEventAddData(builder, msgOff)
-			stream.StreamEventAddSequenceId(builder, i)
-			builder.Finish(stream.StreamEventEnd(builder))
+			stream.StreamRawStart(builder)
+			stream.StreamRawAddData(builder, msgOff)
+			srOff := stream.StreamRawEnd(builder)
+
+			stream.StreamDataStart(builder)
+			stream.StreamDataAddStreamId(builder, int32(reqStreamID))
+			stream.StreamDataAddReplyStreamId(builder, int32(respStreamID))
+			stream.StreamDataAddData(builder, srOff)
+			stream.StreamDataAddDataType(builder,
+				stream.StreamDataWrapperStreamRaw)
+			stream.StreamDataAddSequenceId(builder, i)
+			builder.Finish(stream.StreamDataEnd(builder))
 
 			// send the stream event singal
 			if err := w.commMgr.SendOutgoingRPCSignal(newTask,
-				transport.SignalStreamEvent,
+				transport.SignalStreamData,
 				builder.FinishedBytes()); err != nil {
 				return nil, "", fmt.Errorf("error: %v", err)
 			}
-
 			i += 1
 		}
 
 		builder := flatbuffers.NewBuilder(512)
-		stream.StreamEventStart(builder)
-		stream.StreamEventAddStreamId(builder, int32(reqStreamID))
-		stream.StreamEventAddReplyStreamId(builder, int32(respStreamID))
-		stream.StreamEventAddSequenceId(builder, i)
-		stream.StreamEventAddFinal(builder, true)
-		builder.Finish(stream.StreamEventEnd(builder))
+		stream.StreamDataStart(builder)
+		stream.StreamDataAddStreamId(builder, int32(reqStreamID))
+		stream.StreamDataAddReplyStreamId(builder, int32(respStreamID))
+		stream.StreamDataAddSequenceId(builder, i)
+		stream.StreamDataAddFinal(builder, true)
+		builder.Finish(stream.StreamDataEnd(builder))
 		// send the stream event singal
 		if err := w.commMgr.SendOutgoingRPCSignal(newTask,
-			transport.SignalStreamEvent,
+			transport.SignalStreamData,
 			builder.FinishedBytes()); err != nil {
 			return nil, "", fmt.Errorf("error: %v", err)
 		}

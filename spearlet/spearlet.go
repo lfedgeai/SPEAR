@@ -600,10 +600,19 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 		}
 
 		builder := flatbuffers.NewBuilder(512)
+		msgOff := builder.CreateByteVector([]byte{})
+
+		stream.StreamRawStart(builder)
+		stream.StreamRawAddData(builder, msgOff)
+		srOff := stream.StreamRawEnd(builder)
+
 		stream.StreamDataStart(builder)
 		stream.StreamDataAddStreamId(builder, int32(reqStreamID))
 		stream.StreamDataAddReplyStreamId(builder, int32(respStreamID))
 		stream.StreamDataAddSequenceId(builder, i)
+		stream.StreamDataAddData(builder, srOff)
+		stream.StreamDataAddDataType(builder,
+			stream.StreamDataWrapperStreamRaw)
 		stream.StreamDataAddFinal(builder, true)
 		builder.Finish(stream.StreamDataEnd(builder))
 		// send the stream event singal

@@ -77,6 +77,8 @@ type Task interface {
 	SetVar(key TaskVar, value interface{})
 	// get task variable
 	GetVar(key TaskVar) (interface{}, bool)
+	// register a function called when task is finished
+	RegisterOnFinish(fn func(Task))
 }
 
 // interface for taskruntime

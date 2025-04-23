@@ -3,24 +3,24 @@ package tools
 import (
 	"os/exec"
 
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 )
 
-var contactTools = []hccommon.ToolRegistry{
+var contactTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "search_contact_email",
-		Id:          hccommon.BuiltinToolID_SearchContactEmail,
+		Id:          core.BuiltinToolID_SearchContactEmail,
 		Description: "Search for a person's email address in Contacts",
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"name": {
 				Ptype:       "string",
 				Description: "Name of the contact to search for",
 				Required:    true,
 			},
 		},
-		CbBuiltIn: func(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+		CbBuiltIn: func(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 			// use apple script to search for contact
 			log.Infof("Searching for contact with name %s", args.(map[string]interface{})["name"].(string))
 			script := `set personName to "` + args.(map[string]interface{})["name"].(string) + `"
@@ -55,6 +55,6 @@ var contactTools = []hccommon.ToolRegistry{
 
 func init() {
 	for _, tool := range contactTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

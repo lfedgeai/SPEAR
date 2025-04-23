@@ -3,26 +3,26 @@ package tools
 import (
 	"os/exec"
 
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 )
 
-var emailTools = []hccommon.ToolRegistry{
+var emailTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "list_open_emails",
-		Id:          hccommon.BuiltinToolID_ListOpenEmails,
+		Id:          core.BuiltinToolID_ListOpenEmails,
 		Description: "List all open email drafts window",
-		Params:      map[string]hccommon.ToolParam{},
+		Params:      map[string]core.ToolParam{},
 		CbBuiltIn:   listOpenEmails,
 	},
 	{
-		ToolType: hccommon.ToolType_Builtin,
+		ToolType: core.ToolType_Builtin,
 		Name:     "compose_email",
-		Id:       hccommon.BuiltinToolID_ComposeEmail,
+		Id:       core.BuiltinToolID_ComposeEmail,
 		Description: `Compose an email, open a draft window with the email pre-filled. 
 		NOTE: the email has to be a valid email address, you need to get it from other tools or from the user directly`,
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"to": {
 				Ptype:       "string",
 				Description: "Email address to send email to",
@@ -42,13 +42,13 @@ var emailTools = []hccommon.ToolRegistry{
 		CbBuiltIn: composeEmail,
 	},
 	{
-		ToolType: hccommon.ToolType_Builtin,
+		ToolType: core.ToolType_Builtin,
 		Name:     "send_email_draft_window",
-		Id:       hccommon.BuiltinToolID_SendEmailDraftWindow,
+		Id:       core.BuiltinToolID_SendEmailDraftWindow,
 		Description: `Activate the email draft window and send the email. 
 		NOTE: 1. Call the tool "list_open_emails" to list available email windows before calling this function. 
 		2. Before call this tool to actually send the email, assitant needs to stop & ask the user to say yes`,
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"window_name": {
 				Ptype:       "string",
 				Description: "Name of the email draft window returned= from the \"list_open_emails\" tool",
@@ -59,7 +59,7 @@ var emailTools = []hccommon.ToolRegistry{
 	},
 }
 
-func listOpenEmails(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func listOpenEmails(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	// use apple script to list all open email drafts window
 	script := `tell application "Microsoft Outlook"
 		activate
@@ -86,7 +86,7 @@ func listOpenEmails(inv *hccommon.InvocationInfo, args interface{}) (interface{}
 	return string(out), nil
 }
 
-func composeEmail(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func composeEmail(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	// use apple script to open mail app and compose email
 	params := args.(map[string]interface{})
 	subject, ok := params["subject"].(string)
@@ -117,7 +117,7 @@ func composeEmail(inv *hccommon.InvocationInfo, args interface{}) (interface{}, 
 	return string(out), nil
 }
 
-func sendEmailDraftWindow(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func sendEmailDraftWindow(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	// use apple script to send email
 	log.Infof("Sending email with window name %s", args.(map[string]interface{})["window_name"].(string))
 	script := `set targetPrefix to "` + args.(map[string]interface{})["window_name"].(string) + `"
@@ -163,6 +163,6 @@ func sendEmailDraftWindow(inv *hccommon.InvocationInfo, args interface{}) (inter
 
 func init() {
 	for _, tool := range emailTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

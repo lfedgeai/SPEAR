@@ -6,34 +6,20 @@ import (
 	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
+	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
 	"github.com/lfedgeai/spear/pkg/utils/protohelper"
 	"github.com/lfedgeai/spear/spearlet/task"
 	log "github.com/sirupsen/logrus"
 )
 
-type HostCall struct {
-	NameID  transport.Method
-	Handler HostCallHandler
-}
+type ResquestCallback func(resp *transport.TransportResponse) error
 
-// invokation info
-type InvocationInfo struct {
-	Task    task.Task
-	CommMgr *CommunicationManager
+type requestCallback struct {
+	cb        ResquestCallback
+	autoClear bool
+	ts        time.Time
 }
-
-type RespChanData struct {
-	Resp    *transport.TransportResponse
-	InvInfo *InvocationInfo
-}
-
-type ReqChanData struct {
-	Req     *transport.TransportRequest
-	InvInfo *InvocationInfo
-}
-
-type SignalCallbacks map[transport.Signal]func([]byte) error
 
 // communication manager for hostcalls and guest responses
 type CommunicationManager struct {
@@ -46,65 +32,8 @@ type CommunicationManager struct {
 
 	taskSigCallbacks   map[task.Task]SignalCallbacks
 	taskSigCallbacksMu sync.RWMutex
-}
 
-type HostCallHandler func(inv *InvocationInfo, args []byte) ([]byte, error)
-
-type HostCalls struct {
-	// map of hostcalls
-	HCMap   map[transport.Method]HostCallHandler
-	CommMgr *CommunicationManager
-}
-
-var ResponseTimeout = 5 * time.Minute
-
-func NewHostCalls(commMgr *CommunicationManager) *HostCalls {
-	return &HostCalls{
-		HCMap:   make(map[transport.Method]HostCallHandler),
-		CommMgr: commMgr,
-	}
-}
-
-func (h *HostCalls) RegisterHostCall(hc *HostCall) error {
-	nameId := hc.NameID
-	handler := hc.Handler
-	log.Debugf("Registering hostcall: %v", nameId)
-	if _, ok := h.HCMap[nameId]; ok {
-		return fmt.Errorf("hostcall already registered: %v", nameId)
-	}
-	h.HCMap[nameId] = handler
-	return nil
-}
-
-func (h *HostCalls) Run() {
-	for {
-		entry := h.CommMgr.GetIncomingRequest()
-		req := entry.Req
-		inv := entry.InvInfo
-		if handler, ok := h.HCMap[req.Method()]; ok {
-			result, err := handler(inv, req.RequestBytes())
-			if err != nil {
-				log.Errorf("Error executing hostcall: %v", err)
-				if err := h.CommMgr.SendOutgoingRPCResponseError(inv.Task, req.Id(), -1,
-					err.Error()); err != nil {
-					log.Errorf("Error sending response: %v", err)
-				}
-			} else {
-				// send success response
-				log.Infof("Hostcall success: %v, ID %d", req.Method(), req.Id())
-				if err := h.CommMgr.SendOutgoingRPCResponse(inv.Task, req.Id(),
-					result); err != nil {
-					log.Errorf("Error sending response: %v", err)
-				}
-			}
-		} else {
-			log.Errorf("Hostcall not found: %v", req.Method())
-			if err := h.CommMgr.SendOutgoingRPCResponseError(inv.Task, req.Id(), 2,
-				"method not found"); err != nil {
-				log.Errorf("Error sending response: %v", err)
-			}
-		}
-	}
+	StreamBiChannels map[task.Task]map[int32]StreamBiChannel
 }
 
 func NewCommunicationManager() *CommunicationManager {
@@ -118,6 +47,8 @@ func NewCommunicationManager() *CommunicationManager {
 
 		taskSigCallbacks:   make(map[task.Task]SignalCallbacks),
 		taskSigCallbacksMu: sync.RWMutex{},
+
+		StreamBiChannels: make(map[task.Task]map[int32]StreamBiChannel),
 	}
 }
 
@@ -164,6 +95,10 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 			}
 		}
 	}()
+
+	t.RegisterOnFinish(func(t task.Task) {
+		c.CleanupTask(t)
+	})
 
 	return nil
 }
@@ -251,7 +186,7 @@ func (c *CommunicationManager) doSignal(t task.Task, transportRaw *transport.Tra
 	cb := c.taskSigCallbacks[t][sig.Method()]
 	c.taskSigCallbacksMu.RUnlock()
 	// call the callback
-	if err := cb(sig.PayloadBytes()); err != nil {
+	if err := cb(t, sig.PayloadBytes()); err != nil {
 		return fmt.Errorf("error handling signal: %v", err)
 	}
 	return nil
@@ -290,16 +225,8 @@ func (c *CommunicationManager) SendOutgoingRPCResponse(t task.Task, id int64,
 	return nil
 }
 
-type ResquestCallback func(resp *transport.TransportResponse) error
-
-type requestCallback struct {
-	cb        ResquestCallback
-	autoClear bool
-	ts        time.Time
-}
-
 func (c *CommunicationManager) RegisterTaskSignalCallback(t task.Task,
-	sig transport.Signal, cb func([]byte) error) {
+	sig transport.Signal, cb func(task.Task, []byte) error) {
 	c.taskSigCallbacksMu.Lock()
 	defer c.taskSigCallbacksMu.Unlock()
 	if t == nil {
@@ -399,4 +326,69 @@ func (c *CommunicationManager) SendOutgoingRPCRequest(t task.Task, method transp
 	case <-time.After(ResponseTimeout):
 		return nil, fmt.Errorf("timeout")
 	}
+}
+
+func (c *CommunicationManager) SendOutgoingNotifyEvent(t task.Task, resource string, etype stream.NotifyEventType,
+	data []byte, final bool) error {
+	if etype == stream.NotifyEventTypeError {
+		return fmt.Errorf("error notify event type")
+	}
+	builder := flatbuffers.NewBuilder(0)
+	resourceOff := builder.CreateString(resource)
+	dataOff := builder.CreateByteVector(data)
+
+	stream.StreamNotifyEventStart(builder)
+	stream.StreamNotifyEventAddType(builder, etype)
+	stream.StreamNotifyEventAddResource(builder, resourceOff)
+	stream.StreamNotifyEventAddData(builder, dataOff)
+	notifyOff := stream.StreamNotifyEventEnd(builder)
+
+	stream.StreamDataStart(builder)
+	stream.StreamDataAddData(builder, notifyOff)
+	stream.StreamDataAddDataType(builder, stream.StreamDataWrapperStreamNotifyEvent)
+	stream.StreamDataAddFinal(builder, final)
+
+	builder.Finish(notifyOff)
+
+	if err := c.SendOutgoingRPCSignal(t, transport.SignalStreamData, builder.FinishedBytes()); err != nil {
+		return err
+	}
+	log.Debugf("Send stream notify event: %s, %d", resource, etype)
+	return nil
+}
+
+func (c *CommunicationManager) CleanupTask(t task.Task) {
+	c.cleanupOutCh(t)
+	c.cleanupTaskSignalCallbacks(t)
+	c.cleanupStreamBiChannels(t)
+}
+
+func (c *CommunicationManager) cleanupStreamBiChannels(t task.Task) {
+	if _, ok := c.StreamBiChannels[t]; !ok {
+		return
+	}
+	for streamId, p := range c.StreamBiChannels[t] {
+		p.Stop()
+		delete(c.StreamBiChannels[t], streamId)
+	}
+	if len(c.StreamBiChannels[t]) == 0 {
+		delete(c.StreamBiChannels, t)
+	}
+}
+
+func (c *CommunicationManager) cleanupTaskSignalCallbacks(t task.Task) {
+	c.taskSigCallbacksMu.Lock()
+	defer c.taskSigCallbacksMu.Unlock()
+	if _, ok := c.taskSigCallbacks[t]; !ok {
+		return
+	}
+	delete(c.taskSigCallbacks, t)
+}
+
+func (c *CommunicationManager) cleanupOutCh(t task.Task) {
+	if _, ok := c.outCh[t]; !ok {
+		return
+	}
+	close(c.outCh[t])
+	delete(c.outCh, t)
 }

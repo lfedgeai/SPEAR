@@ -20,14 +20,18 @@ import (
 	"github.com/lfedgeai/spear/pkg/spear/proto/custom"
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 	hc "github.com/lfedgeai/spear/spearlet/hostcalls"
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
 	"github.com/lfedgeai/spear/spearlet/task"
 	_ "github.com/lfedgeai/spear/spearlet/tools"
 
 	"github.com/docker/docker/client"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+)
+
+const (
+	SystemIOStreamId = 0
 )
 
 var (
@@ -310,11 +314,11 @@ func (w *Spearlet) ListTasks() []string {
 }
 
 func (w *Spearlet) RunTask(funcId int64, funcName string, funcType task.TaskType,
-	method string, data string, reqStream chan task.Message, respStream chan task.Message,
+	method string, data string, reqChan chan task.Message, respChan chan task.Message,
 	sendTermOnRtn bool, waitInstance bool) (
 	respData string, err error) {
 	t, respData, err := w.ExecuteTask(funcId, funcName, funcType, method, data,
-		reqStream, respStream)
+		reqChan, respChan)
 	if err != nil {
 		return "", err
 	}
@@ -378,7 +382,7 @@ func (w *Spearlet) metaDataToTaskCfg(meta TaskMetaData) *task.TaskConfig {
 }
 
 func (w *Spearlet) ExecuteTaskByName(taskName string, funcType task.TaskType, method string,
-	reqData string, reqStream chan task.Message, respStream chan task.Message) (t task.Task,
+	reqData string, reqChan chan task.Message, respChan chan task.Message) (t task.Task,
 	respData string, err error) {
 	meta := TaskMetaData{
 		Id: -1,
@@ -437,22 +441,22 @@ func (w *Spearlet) ExecuteTaskByName(taskName string, funcType task.TaskType, me
 			panic("invalid task type")
 		}
 
-		if reqStream != nil {
+		if reqChan != nil {
 			meta.InStream = true
 		}
-		if respStream != nil {
+		if respChan != nil {
 			meta.OutStream = true
 		}
 	}
 
 	log.Infof("Using metadata: %+v", meta)
 
-	return w.executeTaskByMetaData(meta, method, reqData, reqStream,
-		respStream)
+	return w.executeTaskByMetaData(meta, method, reqData, reqChan,
+		respChan)
 }
 
 func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method string,
-	reqData string, reqStream chan task.Message, respStream chan task.Message) (t task.Task,
+	reqData string, reqChan chan task.Message, respChan chan task.Message) (t task.Task,
 	respData string,
 	err error) {
 	// get metadata from taskId
@@ -468,23 +472,23 @@ func (w *Spearlet) ExecuteTaskById(taskId int64, funcType task.TaskType, method 
 		return nil, "", fmt.Errorf("error: invalid task type: %d, %+v",
 			funcType, meta)
 	}
-	if meta.InStream != (reqStream != nil) {
+	if meta.InStream != (reqChan != nil) {
 		return nil, "", fmt.Errorf("error: invalid task input stream: %v, %v",
-			meta.InStream, reqStream != nil)
+			meta.InStream, reqChan != nil)
 	}
-	if meta.OutStream != (respStream != nil) {
+	if meta.OutStream != (respChan != nil) {
 		return nil, "", fmt.Errorf("error: invalid task output stream: %v, %v",
-			meta.OutStream, respStream != nil)
+			meta.OutStream, respChan != nil)
 	}
 
 	log.Debugf("Using metadata: %+v", meta)
 
-	return w.executeTaskByMetaData(meta, method, reqData, reqStream,
-		respStream)
+	return w.executeTaskByMetaData(meta, method, reqData, reqChan,
+		respChan)
 }
 
 func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
-	method, reqData string, reqStream, respStream chan task.Message) (t task.Task,
+	method, reqData string, reqChan, respChan chan task.Message) (t task.Task,
 	respData string, err error) {
 	cfg := w.metaDataToTaskCfg(meta)
 	if cfg == nil {
@@ -509,85 +513,170 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 	log.Debugf("Starting task: %s", newTask.Name())
 	newTask.Start()
 
-	reqStreamID := -1
-	respStreamID := -1
-
-	if reqStream != nil {
-		reqStreamID = 0
+	reqChanID := -1
+	if reqChan != nil {
+		reqChanID = 0
 	}
 
-	if respStream != nil {
-		respStreamID = 1
-	}
-
-	if reqStream != nil {
+	if reqChan != nil {
 		var i int64 = 0
 
 		w.commMgr.RegisterTaskSignalCallback(newTask,
-			transport.SignalStreamEvent,
-			func(data []byte) error {
+			transport.SignalStreamData,
+			func(t task.Task, rawdata []byte) error {
 				// get the stream event
-				streamEvent := stream.GetRootAsStreamEvent(data, 0)
-				// get the reply stream id
-				replyStreamId := streamEvent.ReplyStreamId()
-				if replyStreamId != int32(respStreamID) {
-					return fmt.Errorf("error: invalid reply stream id: %d",
-						replyStreamId)
-				}
+				streamData := stream.GetRootAsStreamData(rawdata, 0)
 				// get reply sequence id
-				repSeqId := streamEvent.SequenceId()
-				// get data
-				streamData := streamEvent.DataBytes()
-				if len(data) != 0 {
-					log.Debugf(
-						"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
-						newTask.Name(), replyStreamId, repSeqId, streamData,
-					)
-					respStream <- task.Message(streamData)
+				repSeqId := streamData.SequenceId()
+				streamId := streamData.StreamId()
+				if streamId != int32(SystemIOStreamId) {
+					// check if the stream id is valid
+					if _, ok := w.commMgr.StreamBiChannels[t][streamId]; !ok {
+						return fmt.Errorf("error: invalid stream id: %d",
+							streamId)
+					}
 				}
-				if streamEvent.Final() {
-					// all data is received
-					log.Debug("Received stream end")
-					w.commMgr.UnregisterTaskSignalCallback(newTask,
-						transport.SignalStreamEvent)
-					close(respStream)
+				if streamData.Final() {
+					defer func() {
+						// if key is not found, do not delete
+						if _, ok := w.commMgr.StreamBiChannels[t]; !ok {
+							return
+						}
+						delete(w.commMgr.StreamBiChannels[t], streamId)
+					}()
+				}
+				switch streamData.DataType() {
+				case stream.StreamDataWrapperStreamRawData:
+					if streamId == int32(SystemIOStreamId) {
+						log.Infof("raw stream from task %s: %s",
+							t.Name(), string(rawdata))
+						// get the stream raw data
+						tbl := flatbuffers.Table{}
+						if !streamData.Data(&tbl) {
+							return fmt.Errorf("error: invalid stream data")
+						}
+						if tbl.Bytes == nil {
+							return fmt.Errorf("error: invalid stream data")
+						}
+						raw := stream.GetRootAsStreamRawData(tbl.Bytes, tbl.Pos)
+						if raw == nil {
+							return fmt.Errorf("error: invalid stream data")
+						}
+						if raw.Length() > 0 {
+							buf := raw.DataBytes()
+							log.Infof(
+								"Received stream event from task %s: stream id: %d, seq id: %d, data: %s, length: %d vs %d",
+								t.Name(), streamId, repSeqId, buf, len(buf), raw.Length(),
+							)
+							// send the data to the request stream
+							respChan <- task.Message(buf)
+						}
+						if streamData.Final() {
+							// all data is received
+							log.Debug("Received stream end")
+							w.commMgr.UnregisterTaskSignalCallback(t,
+								transport.SignalStreamData)
+							close(respChan)
+						}
+					} else {
+						return fmt.Errorf("error: invalid stream id: %d",
+							streamId)
+					}
+				case stream.StreamDataWrapperStreamOperationEvent:
+					// get the stream operation event
+					tbl := flatbuffers.Table{}
+					if !streamData.Data(&tbl) {
+						return fmt.Errorf("error: invalid stream data")
+					}
+					if tbl.Bytes == nil {
+						return fmt.Errorf("error: invalid stream data")
+					}
+					op := stream.GetRootAsStreamOperationEvent(tbl.Bytes,
+						tbl.Pos)
+					if op == nil {
+						return fmt.Errorf("error: invalid stream data")
+					}
+					sc, ok := w.commMgr.StreamBiChannels[t][streamId]
+					if !ok {
+						return fmt.Errorf("error: stream channel not found: %d for operation event",
+							streamId)
+					}
+					sc.AddStreamData(rawdata)
+				case stream.StreamDataWrapperStreamNotifyEvent:
+					// get the stream notify event
+					tbl := flatbuffers.Table{}
+					if !streamData.Data(&tbl) {
+						return fmt.Errorf("error: invalid stream data")
+					}
+					if tbl.Bytes == nil {
+						return fmt.Errorf("error: invalid stream data")
+					}
+					notify := stream.GetRootAsStreamNotifyEvent(tbl.Bytes,
+						tbl.Pos)
+					if notify == nil {
+						return fmt.Errorf("error: invalid stream data")
+					}
+					sc, ok := w.commMgr.StreamBiChannels[t][streamId]
+					if !ok {
+						return fmt.Errorf("error: stream channel not found: %d for notify event",
+							streamId)
+					}
+					sc.AddStreamData(rawdata)
+				default:
+					// unsupported stream data type
+					return fmt.Errorf("error: unsupported stream data type: %d",
+						streamData.DataType())
 				}
 				return nil
 			},
 		)
 
-		for msg := range reqStream {
+		for msg := range reqChan {
 			// create stream event request
 			builder := flatbuffers.NewBuilder(512)
 			msgOff := builder.CreateByteVector([]byte(msg))
 
-			stream.StreamEventStart(builder)
-			stream.StreamEventAddStreamId(builder, int32(reqStreamID))
-			stream.StreamEventAddReplyStreamId(builder, int32(respStreamID))
-			stream.StreamEventAddData(builder, msgOff)
-			stream.StreamEventAddSequenceId(builder, i)
-			builder.Finish(stream.StreamEventEnd(builder))
+			stream.StreamRawDataStart(builder)
+			stream.StreamRawDataAddData(builder, msgOff)
+			stream.StreamRawDataAddLength(builder, int32(len(msg)))
+			streamRawDataOff := stream.StreamRawDataEnd(builder)
+
+			stream.StreamDataStart(builder)
+			stream.StreamDataAddStreamId(builder, int32(reqChanID))
+			stream.StreamDataAddDataType(builder,
+				stream.StreamDataWrapperStreamRawData)
+			stream.StreamDataAddData(builder, streamRawDataOff)
+			stream.StreamDataAddSequenceId(builder, i)
+			builder.Finish(stream.StreamDataEnd(builder))
 
 			// send the stream event singal
 			if err := w.commMgr.SendOutgoingRPCSignal(newTask,
-				transport.SignalStreamEvent,
+				transport.SignalStreamData,
 				builder.FinishedBytes()); err != nil {
 				return nil, "", fmt.Errorf("error: %v", err)
 			}
-
 			i += 1
 		}
 
 		builder := flatbuffers.NewBuilder(512)
-		stream.StreamEventStart(builder)
-		stream.StreamEventAddStreamId(builder, int32(reqStreamID))
-		stream.StreamEventAddReplyStreamId(builder, int32(respStreamID))
-		stream.StreamEventAddSequenceId(builder, i)
-		stream.StreamEventAddFinal(builder, true)
-		builder.Finish(stream.StreamEventEnd(builder))
+		msgOff := builder.CreateByteVector([]byte{})
+
+		stream.StreamRawDataStart(builder)
+		stream.StreamRawDataAddData(builder, msgOff)
+		stream.StreamRawDataAddLength(builder, 0)
+		streamRawDataOff := stream.StreamRawDataEnd(builder)
+
+		stream.StreamDataStart(builder)
+		stream.StreamDataAddStreamId(builder, int32(reqChanID))
+		stream.StreamDataAddSequenceId(builder, i)
+		stream.StreamDataAddDataType(builder,
+			stream.StreamDataWrapperStreamRawData)
+		stream.StreamDataAddData(builder, streamRawDataOff)
+		stream.StreamDataAddFinal(builder, true)
+		builder.Finish(stream.StreamDataEnd(builder))
 		// send the stream event singal
 		if err := w.commMgr.SendOutgoingRPCSignal(newTask,
-			transport.SignalStreamEvent,
+			transport.SignalStreamData,
 			builder.FinishedBytes()); err != nil {
 			return nil, "", fmt.Errorf("error: %v", err)
 		}

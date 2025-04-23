@@ -3,7 +3,7 @@ package hostcalls
 import (
 	"fmt"
 
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 )
 
 func TextToImage(inv *hostcalls.InvocationInfo, args interface{}) (interface{}, error) {

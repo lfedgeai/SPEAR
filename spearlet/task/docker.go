@@ -33,7 +33,8 @@ type DockerTask struct {
 	taskVars   map[TaskVar]interface{}
 	taskVarsMu sync.RWMutex
 
-	reqId uint64
+	reqId  uint64
+	stopCh chan struct{}
 }
 
 func (p *DockerTask) ID() TaskID {
@@ -196,6 +197,8 @@ func (p *DockerTask) Start() error {
 }
 
 func (p *DockerTask) Stop() error {
+	defer close(p.stopCh)
+
 	err := p.runtime.cli.ContainerStop(context.TODO(), p.container.ID,
 		container.StopOptions{})
 	if err != nil {
@@ -264,4 +267,12 @@ func (p *DockerTask) GetVar(key TaskVar) (interface{}, bool) {
 	defer p.taskVarsMu.RUnlock()
 	val, ok := p.taskVars[key]
 	return val, ok
+}
+
+func (p *DockerTask) RegisterOnFinish(fn func(Task)) {
+	// register a function called when task is finished
+	go func() {
+		<-p.stopCh
+		fn(p)
+	}()
 }

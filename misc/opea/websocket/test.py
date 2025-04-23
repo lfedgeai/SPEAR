@@ -35,7 +35,7 @@ def handle_stream(ctx):
 
 if __name__ == "__main__":
     agent.register_signal_handler(
-        Signal.Signal.StreamEvent,
+        Signal.Signal.StreamData,
         handle_stream,
     )
     agent.run()

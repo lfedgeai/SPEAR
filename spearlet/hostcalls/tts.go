@@ -4,12 +4,11 @@ import (
 	"fmt"
 
 	"github.com/lfedgeai/spear/pkg/spear/proto/transform"
-	"github.com/lfedgeai/spear/spearlet/hostcalls/common"
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	oai "github.com/lfedgeai/spear/spearlet/hostcalls/openai"
 )
 
-func TextToSpeech(inv *hostcalls.InvocationInfo, args *transform.TransformRequest) ([]byte, error) {
+func TextToSpeech(inv *core.InvocationInfo, args *transform.TransformRequest) ([]byte, error) {
 	// // right now we just call openai TextToSpeech
 	// req := &transform.TextToSpeechRequest{}
 	// err := utils.InterfaceToType(&req, args)
@@ -44,7 +43,7 @@ func textToSpeechData(text, model, voice, format string) (string, error) {
 		Voice:  voice,
 		Format: format,
 	}
-	ep := common.GetAPIEndpointInfo(common.OpenAIFunctionTypeTextToSpeech, req2.Model)
+	ep := core.GetAPIEndpointInfo(core.OpenAIFunctionTypeTextToSpeech, req2.Model)
 	if len(ep) == 0 {
 		return "", fmt.Errorf("error getting endpoint for model %s", req2.Model)
 	}

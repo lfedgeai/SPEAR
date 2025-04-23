@@ -7,16 +7,16 @@ import (
 
 	"github.com/kbinani/screenshot"
 
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 )
 
-var screenTools = []hccommon.ToolRegistry{
+var screenTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "full_screenshot",
-		Id:          hccommon.BuiltinToolID_FullScreenshot,
+		Id:          core.BuiltinToolID_FullScreenshot,
 		Description: `Take screenshots of everything on all screens, and save them to files`,
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"filename-prefix": {
 				Ptype:       "string",
 				Description: "Prefix for the filename",
@@ -27,7 +27,7 @@ var screenTools = []hccommon.ToolRegistry{
 	},
 }
 
-func screenshotCall(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func screenshotCall(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	for i := range screenshot.NumActiveDisplays() {
 		bound := screenshot.GetDisplayBounds(i)
 		img, err := screenshot.CaptureRect(bound)
@@ -50,6 +50,6 @@ func screenshotCall(inv *hccommon.InvocationInfo, args interface{}) (interface{}
 
 func init() {
 	for _, tool := range screenTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

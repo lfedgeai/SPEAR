@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	"github.com/twilio/twilio-go"
 
 	twilioApi "github.com/twilio/twilio-go/rest/api/v2010"
@@ -16,13 +16,13 @@ var (
 	twilioFrom       = os.Getenv("TWILIO_FROM")
 )
 
-var phoneTools = []hccommon.ToolRegistry{
+var phoneTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "phone_call",
-		Id:          hccommon.BuiltinToolID_PhoneCall,
+		Id:          core.BuiltinToolID_PhoneCall,
 		Description: "Call a phone number and play a message",
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"phone_number": {
 				Ptype:       "string",
 				Description: "Phone number to send SMS to",
@@ -34,7 +34,7 @@ var phoneTools = []hccommon.ToolRegistry{
 				Required:    true,
 			},
 		},
-		CbBuiltIn: func(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+		CbBuiltIn: func(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 			if twilioAccountSid == "" || twilioApiSecret == "" {
 				return nil, fmt.Errorf("twilio credentials not set")
 			}
@@ -57,6 +57,6 @@ var phoneTools = []hccommon.ToolRegistry{
 
 func init() {
 	for _, tool := range phoneTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

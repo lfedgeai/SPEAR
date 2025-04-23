@@ -1,0 +1,8 @@
+namespace spear.proto.stream;
+
+table StreamControlResponse {
+    request_id: int32 = -1;
+    stream_id: int32 = -1;
+}
+
+root_type StreamControlResponse;

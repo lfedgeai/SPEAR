@@ -5,7 +5,7 @@ import (
 
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/lfedgeai/spear/pkg/spear/proto/tool"
-	hcommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hcommon "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 )
 

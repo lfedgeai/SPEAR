@@ -83,39 +83,6 @@ func isSubSetOf[T comparable](a, b []T) bool {
 	return true
 }
 
-func TransformConfig(inv *hostcalls.InvocationInfo, args []byte) ([]byte, error) {
-	// task := *(inv.Task)
-	// log.Debugf("Executing hostcall \"%s\" with args %v for task %s",
-	// 	payload.HostCallTransformConfig, args, task.ID())
-	// // convert args to TransformConfigRequest
-	// jsonBytes, err := json.Marshal(args)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error marshalling args: %v", err)
-	// }
-
-	// req := &payload.TransformConfigRequest{}
-	// err = req.Unmarshal(jsonBytes)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error unmarshalling args: %v", err)
-	// }
-
-	// if req.Reset {
-	// 	task.SetVar(t.TVTest, nil)
-	// 	return &payload.TransformConfigResponse{
-	// 		Result: "success",
-	// 	}, nil
-	// }
-
-	// if req.Test != "" {
-	// 	task.SetVar(t.TVTest, req.Test)
-	// }
-
-	// return &payload.TransformConfigResponse{
-	// 	Result: "success",
-	// }, nil
-	return nil, fmt.Errorf("hostcall   not implemented")
-}
-
 func Transform(inv *hostcalls.InvocationInfo, args []byte) ([]byte, error) {
 	req := transform.GetRootAsTransformRequest(args, 0)
 	if req == nil {

@@ -1,0 +1,26 @@
+namespace spear.proto.stream;
+
+enum EventType : uint32 {
+    Raw = 0,
+    Control,
+    Data,
+}
+
+table StreamEvent {
+    type: EventType = Raw;
+    // golang will crash if length is 0, 
+    // we need use an extra field to indicate the length
+    length: int32 = 0;
+    data: [ubyte];
+}
+
+table StreamData {
+    // The stream ID to which this request belongs.
+    stream_id: int32 = -1;
+    reply_stream_id: int32 = -1; // -1 if no need to reply
+    sequence_id: int64 = -1;
+    event: StreamEvent;
+    final: bool = false;
+}
+
+root_type StreamData;

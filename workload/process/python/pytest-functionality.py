@@ -149,5 +149,5 @@ def test_tool(model):
 
 if __name__ == "__main__":
     agent.register_handler("handle", handle)
-    agent.register_signal_handler(Signal.Signal.StreamEvent, handle_stream)
+    agent.register_signal_handler(Signal.Signal.StreamData, handle_stream)
     agent.run()

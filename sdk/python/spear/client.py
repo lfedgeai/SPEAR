@@ -14,7 +14,7 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import StreamEvent
+from spear.proto.stream import StreamData, EventType, StreamEvent
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
@@ -385,17 +385,31 @@ class HostAgent(object):
                     logger.info("Terminating the agent")
                     self.stop()
                     return
-                if sig.Method() == Signal.Signal.StreamEvent:
-                    stream_req = StreamEvent.StreamEvent.GetRootAsStreamEvent(
+                if sig.Method() == Signal.Signal.StreamData:
+                    sdata = StreamData.StreamData.GetRootAsStreamData(
                         sig.PayloadAsNumpy(), 0
                     )
+                    if sdata.Event() is None:
+                        logger.error("Invalid stream data")
+                        raise ValueError("Invalid stream data")
+                    sevnt = sdata.Event()
+                    if sevnt is None:
+                        logger.error("Invalid stream data")
+                        raise ValueError("Invalid stream data")
+                    data = b""
+                    if sevnt.Length() > 0:
+                        data = sevnt.DataAsNumpy()
+                    if sevnt.Type() != EventType.EventType.Raw:
+                        logger.error("Invalid stream data type: %s",
+                                     sevnt.Type())
+                        raise ValueError("Invalid stream data type")
                     ctx = StreamRequestContext(
-                        data=stream_req.DataAsNumpy(),
-                        last_message=stream_req.Final(),
-                        stream_id=stream_req.StreamId(),
+                        data=data,
+                        last_message=sdata.Final(),
+                        stream_id=sdata.StreamId(),
                     )
-                    if self._sig_handlers.get(Signal.Signal.StreamEvent):
-                        for handler in self._sig_handlers[Signal.Signal.StreamEvent]:
+                    if self._sig_handlers.get(Signal.Signal.StreamData):
+                        for handler in self._sig_handlers[Signal.Signal.StreamData]:
                             resp_data = None
                             try:
                                 resp_data = handler(ctx)
@@ -407,25 +421,25 @@ class HostAgent(object):
                                     resp_data = resp_data.encode("utf-8")
                                 # check if sequence id is set
                                 with self._stream_sequence_ids_lock:
-                                    if stream_req.StreamId() in self._stream_sequence_ids:
+                                    if sdata.StreamId() in self._stream_sequence_ids:
                                         seq_id = self._stream_sequence_ids[
-                                            stream_req.StreamId()]
-                                        self._stream_sequence_ids[stream_req.StreamId(
+                                            sdata.StreamId()]
+                                        self._stream_sequence_ids[sdata.StreamId(
                                         )] += 1
                                     else:
                                         seq_id = 0
-                                        self._stream_sequence_ids[stream_req.StreamId(
+                                        self._stream_sequence_ids[sdata.StreamId(
                                         )] = 1
-                                self._put_streamevent_signal(
-                                    -1, stream_req.ReplyStreamId(),
+                                self._put_streamdata_signal(
+                                    -1, sdata.ReplyStreamId(),
                                     seq_id,
                                     resp_data,
-                                    stream_req.Final(),
+                                    sdata.Final(),
                                 )
                             else:
-                                self._put_streamevent_signal(
-                                    -1, stream_req.ReplyStreamId(),
-                                    stream_req.SequenceId(),
+                                self._put_streamdata_signal(
+                                    -1, sdata.ReplyStreamId(),
+                                    sdata.SequenceId(),
                                     b"",
                                     True,
                                 )
@@ -523,21 +537,30 @@ class HostAgent(object):
                 raise RuntimeError(resp.Message())
             return resp.ResponseAsNumpy()
 
-    def _put_streamevent_signal(self, stream_id: int, reply_stream_id: int,
-                                seq_id: int, data: bytes, last_message: bool):
+    def _put_streamdata_signal(self, stream_id: int, reply_stream_id: int,
+                               seq_id: int, data: bytes, last_message: bool):
         """
         send the rpc signal
         """
+        data_len = len(data)
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
-
+        
         StreamEvent.StreamEventStart(builder)
-        StreamEvent.AddStreamId(builder, stream_id)
-        StreamEvent.AddReplyStreamId(builder, reply_stream_id)
-        StreamEvent.AddSequenceId(builder, seq_id)
         StreamEvent.AddData(builder, data_off)
-        StreamEvent.AddFinal(builder, last_message)
-        req_off = StreamEvent.End(builder)
+        StreamEvent.AddLength(builder, data_len)
+        StreamEvent.AddType(
+            builder, EventType.EventType.Raw
+        )
+        stream_event_off = StreamEvent.End(builder)
+
+        StreamData.StreamDataStart(builder)
+        StreamData.AddStreamId(builder, stream_id)
+        StreamData.AddReplyStreamId(builder, reply_stream_id)
+        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddEvent(builder, stream_event_off)
+        StreamData.AddFinal(builder, last_message)
+        req_off = StreamData.End(builder)
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
@@ -547,7 +570,7 @@ class HostAgent(object):
 
         TransportSignal.TransportSignalStart(builder)
         TransportSignal.AddMethod(
-            builder, Signal.Signal.StreamEvent
+            builder, Signal.Signal.StreamData
         )
         TransportSignal.AddPayload(builder, req_off)
         req_off = TransportSignal.End(builder)

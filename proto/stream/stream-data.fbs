@@ -6,12 +6,15 @@ table StreamEvent {
 }
 
 table StreamRaw {
+    // golang will crash if length is 0, 
+    // we need use an extra field to indicate the length
+    length: int32 = 0; 
     data: [ubyte];
 }
 
 union StreamDataWrapper {
     StreamEvent,
-    StreamRaw
+    StreamRaw,
 }
 
 table StreamData {

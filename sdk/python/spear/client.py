@@ -541,11 +541,13 @@ class HostAgent(object):
         """
         send the rpc signal
         """
+        data_len = len(data)
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
 
         StreamRaw.StreamRawStart(builder)
         StreamRaw.AddData(builder, data_off)
+        StreamRaw.AddLength(builder, data_len)
         stream_raw_off = StreamRaw.End(builder)
 
         StreamData.StreamDataStart(builder)

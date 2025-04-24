@@ -552,7 +552,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 						return fmt.Errorf("error: invalid stream raw data")
 					}
 					// get the stream raw data
-					if data.DataLength() > 0 {
+					if data.Length() > 0 {
 						buf := data.DataBytes()
 						log.Debugf(
 							"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
@@ -579,6 +579,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 
 			stream.StreamRawStart(builder)
 			stream.StreamRawAddData(builder, msgOff)
+			stream.StreamRawAddLength(builder, int32(len(msg)))
 			srOff := stream.StreamRawEnd(builder)
 
 			stream.StreamDataStart(builder)
@@ -604,6 +605,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 
 		stream.StreamRawStart(builder)
 		stream.StreamRawAddData(builder, msgOff)
+		stream.StreamRawAddLength(builder, 0)
 		srOff := stream.StreamRawEnd(builder)
 
 		stream.StreamDataStart(builder)

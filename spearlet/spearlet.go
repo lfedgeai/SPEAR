@@ -511,11 +511,9 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 
 	reqStreamID := -1
 	respStreamID := -1
-
 	if reqStream != nil {
 		reqStreamID = 0
 	}
-
 	if respStream != nil {
 		respStreamID = 1
 	}
@@ -537,23 +535,14 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 				// get reply sequence id
 				repSeqId := streamData.SequenceId()
 				// get data
-				tbl := flatbuffers.Table{}
-				if !streamData.Data(&tbl) {
-					return fmt.Errorf("error: invalid stream data")
+				var streamEvent stream.StreamEvent
+				if streamData.Event(&streamEvent) == nil {
+					return fmt.Errorf("error: invalid stream event")
 				}
-				switch streamData.DataType() {
-				case stream.StreamDataWrapperStreamEvent:
-					// get the stream event
-					panic("not implemented")
-				case stream.StreamDataWrapperStreamRaw:
-					// get the stream raw data
-					data := stream.GetRootAsStreamRaw(tbl.Bytes, tbl.Pos)
-					if data == nil {
-						return fmt.Errorf("error: invalid stream raw data")
-					}
-					// get the stream raw data
-					if data.Length() > 0 {
-						buf := data.DataBytes()
+				switch streamEvent.Type() {
+				case stream.EventTypeRaw:
+					if streamEvent.Length() > 0 {
+						buf := streamEvent.DataBytes()
 						log.Debugf(
 							"Received stream event from task %s: stream id: %d, seq id: %d, data: %s",
 							newTask.Name(), replyStreamId, repSeqId, buf,
@@ -567,6 +556,10 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 							transport.SignalStreamData)
 						close(respStream)
 					}
+				case stream.EventTypeControl:
+					// get the control data
+				case stream.EventTypeData:
+					// get the data
 				}
 				return nil
 			},
@@ -577,17 +570,16 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 			builder := flatbuffers.NewBuilder(512)
 			msgOff := builder.CreateByteVector([]byte(msg))
 
-			stream.StreamRawStart(builder)
-			stream.StreamRawAddData(builder, msgOff)
-			stream.StreamRawAddLength(builder, int32(len(msg)))
-			srOff := stream.StreamRawEnd(builder)
+			stream.StreamEventStart(builder)
+			stream.StreamEventAddData(builder, msgOff)
+			stream.StreamEventAddLength(builder, int32(len(msg)))
+			stream.StreamEventAddType(builder, stream.EventTypeRaw)
+			streamEventOff := stream.StreamEventEnd(builder)
 
 			stream.StreamDataStart(builder)
 			stream.StreamDataAddStreamId(builder, int32(reqStreamID))
 			stream.StreamDataAddReplyStreamId(builder, int32(respStreamID))
-			stream.StreamDataAddData(builder, srOff)
-			stream.StreamDataAddDataType(builder,
-				stream.StreamDataWrapperStreamRaw)
+			stream.StreamDataAddEvent(builder, streamEventOff)
 			stream.StreamDataAddSequenceId(builder, i)
 			builder.Finish(stream.StreamDataEnd(builder))
 
@@ -603,18 +595,17 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 		builder := flatbuffers.NewBuilder(512)
 		msgOff := builder.CreateByteVector([]byte{})
 
-		stream.StreamRawStart(builder)
-		stream.StreamRawAddData(builder, msgOff)
-		stream.StreamRawAddLength(builder, 0)
-		srOff := stream.StreamRawEnd(builder)
+		stream.StreamEventStart(builder)
+		stream.StreamEventAddData(builder, msgOff)
+		stream.StreamEventAddLength(builder, 0)
+		stream.StreamEventAddType(builder, stream.EventTypeRaw)
+		streamEventOff := stream.StreamEventEnd(builder)
 
 		stream.StreamDataStart(builder)
 		stream.StreamDataAddStreamId(builder, int32(reqStreamID))
 		stream.StreamDataAddReplyStreamId(builder, int32(respStreamID))
 		stream.StreamDataAddSequenceId(builder, i)
-		stream.StreamDataAddData(builder, srOff)
-		stream.StreamDataAddDataType(builder,
-			stream.StreamDataWrapperStreamRaw)
+		stream.StreamDataAddEvent(builder, streamEventOff)
 		stream.StreamDataAddFinal(builder, true)
 		builder.Finish(stream.StreamDataEnd(builder))
 		// send the stream event singal

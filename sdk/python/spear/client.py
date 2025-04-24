@@ -14,7 +14,7 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import StreamData, StreamDataWrapper, StreamRaw
+from spear.proto.stream import StreamData, EventType, StreamEvent
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
@@ -386,26 +386,27 @@ class HostAgent(object):
                     self.stop()
                     return
                 if sig.Method() == Signal.Signal.StreamData:
-                    stream_req = StreamData.StreamData.GetRootAsStreamData(
+                    sdata = StreamData.StreamData.GetRootAsStreamData(
                         sig.PayloadAsNumpy(), 0
                     )
-                    if stream_req.DataType() != StreamDataWrapper.StreamDataWrapper.StreamRaw:
+                    if sdata.Event() is None:
+                        logger.error("Invalid stream data")
+                        raise ValueError("Invalid stream data")
+                    sevnt = sdata.Event()
+                    if sevnt is None:
+                        logger.error("Invalid stream data")
+                        raise ValueError("Invalid stream data")
+                    data = b""
+                    if sevnt.Length() > 0:
+                        data = sevnt.DataAsNumpy()
+                    if sevnt.Type() != EventType.EventType.Raw:
                         logger.error("Invalid stream data type: %s",
-                                     stream_req.DataType())
+                                     sevnt.Type())
                         raise ValueError("Invalid stream data type")
-                    if stream_req.Data() is None:
-                        logger.error("Invalid stream data")
-                        raise ValueError("Invalid stream data")
-                    stream_raw = StreamRaw.StreamRaw()
-                    stream_raw.Init(stream_req.Data().Bytes,
-                                    stream_req.Data().Pos)
-                    if stream_raw.DataIsNone():
-                        logger.error("Invalid stream data")
-                        raise ValueError("Invalid stream data")
                     ctx = StreamRequestContext(
-                        data=stream_raw.DataAsNumpy(),
-                        last_message=stream_req.Final(),
-                        stream_id=stream_req.StreamId(),
+                        data=data,
+                        last_message=sdata.Final(),
+                        stream_id=sdata.StreamId(),
                     )
                     if self._sig_handlers.get(Signal.Signal.StreamData):
                         for handler in self._sig_handlers[Signal.Signal.StreamData]:
@@ -420,25 +421,25 @@ class HostAgent(object):
                                     resp_data = resp_data.encode("utf-8")
                                 # check if sequence id is set
                                 with self._stream_sequence_ids_lock:
-                                    if stream_req.StreamId() in self._stream_sequence_ids:
+                                    if sdata.StreamId() in self._stream_sequence_ids:
                                         seq_id = self._stream_sequence_ids[
-                                            stream_req.StreamId()]
-                                        self._stream_sequence_ids[stream_req.StreamId(
+                                            sdata.StreamId()]
+                                        self._stream_sequence_ids[sdata.StreamId(
                                         )] += 1
                                     else:
                                         seq_id = 0
-                                        self._stream_sequence_ids[stream_req.StreamId(
+                                        self._stream_sequence_ids[sdata.StreamId(
                                         )] = 1
                                 self._put_streamdata_signal(
-                                    -1, stream_req.ReplyStreamId(),
+                                    -1, sdata.ReplyStreamId(),
                                     seq_id,
                                     resp_data,
-                                    stream_req.Final(),
+                                    sdata.Final(),
                                 )
                             else:
                                 self._put_streamdata_signal(
-                                    -1, stream_req.ReplyStreamId(),
-                                    stream_req.SequenceId(),
+                                    -1, sdata.ReplyStreamId(),
+                                    sdata.SequenceId(),
                                     b"",
                                     True,
                                 )
@@ -544,20 +545,20 @@ class HostAgent(object):
         data_len = len(data)
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
-
-        StreamRaw.StreamRawStart(builder)
-        StreamRaw.AddData(builder, data_off)
-        StreamRaw.AddLength(builder, data_len)
-        stream_raw_off = StreamRaw.End(builder)
+        
+        StreamEvent.StreamEventStart(builder)
+        StreamEvent.AddData(builder, data_off)
+        StreamEvent.AddLength(builder, data_len)
+        StreamEvent.AddType(
+            builder, EventType.EventType.Raw
+        )
+        stream_event_off = StreamEvent.End(builder)
 
         StreamData.StreamDataStart(builder)
         StreamData.AddStreamId(builder, stream_id)
         StreamData.AddReplyStreamId(builder, reply_stream_id)
         StreamData.AddSequenceId(builder, seq_id)
-        StreamData.AddData(builder, stream_raw_off)
-        StreamData.AddDataType(
-            builder, StreamDataWrapper.StreamDataWrapper.StreamRaw
-        )
+        StreamData.AddEvent(builder, stream_event_off)
         StreamData.AddFinal(builder, last_message)
         req_off = StreamData.End(builder)
         builder.Finish(req_off)

@@ -1,20 +1,17 @@
 namespace spear.proto.stream;
 
-table StreamEvent {
-    event_name: string;
-    event_data: [ubyte];
+enum EventType : uint32 {
+    Raw = 0,
+    Control,
+    Data,
 }
 
-table StreamRaw {
+table StreamEvent {
+    type: EventType = Raw;
     // golang will crash if length is 0, 
     // we need use an extra field to indicate the length
-    length: int32 = 0; 
+    length: int32 = 0;
     data: [ubyte];
-}
-
-union StreamDataWrapper {
-    StreamEvent,
-    StreamRaw,
 }
 
 table StreamData {
@@ -22,7 +19,7 @@ table StreamData {
     stream_id: int32 = -1;
     reply_stream_id: int32 = -1; // -1 if no need to reply
     sequence_id: int64 = -1;
-    data: StreamDataWrapper;
+    event: StreamEvent;
     final: bool = false;
 }
 

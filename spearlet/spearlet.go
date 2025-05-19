@@ -548,7 +548,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 				switch streamData.DataType() {
 				case stream.StreamDataWrapperStreamRawData:
 					if streamId == int32(SystemIOStreamId) {
-						log.Debugf("Received raw data from task %s: %s",
+						log.Infof("raw stream from task %s: %s",
 							t.Name(), string(rawdata))
 						// get the stream raw data
 						tbl := flatbuffers.Table{}

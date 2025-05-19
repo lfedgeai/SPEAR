@@ -572,7 +572,7 @@ class HostAgent(object):
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
-        logger.info("Stream event data: %s len %d",
+        logger.info("raw stream data: %s len %d",
                     stream_event_data, len(stream_event_data))
 
         builder = fbs.Builder(len(stream_event_data) + 1024)
@@ -593,8 +593,6 @@ class HostAgent(object):
         msg_off = TransportMessageRaw.End(builder)
         builder.Finish(msg_off)
 
-        logger.debug("calling _put_streamdata_signal with parameters: %s",
-                    locals())
         self._put_raw_object(builder.Output())
 
     def _put_signal(self, method: int, req_buf: bytes):

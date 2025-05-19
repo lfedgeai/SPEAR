@@ -421,6 +421,8 @@ class HostAgent(object):
                                             if isinstance(resp_data, str):
                                                 resp_data = resp_data.encode(
                                                     "utf-8")
+                                            if isinstance(resp_data, bytearray):
+                                                resp_data = bytes(resp_data)
                                         else:
                                             resp_data = b""
                                         # check if sequence id is set
@@ -570,6 +572,8 @@ class HostAgent(object):
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
+        logger.info("Stream event data: %s len %d",
+                    stream_event_data, len(stream_event_data))
 
         builder = fbs.Builder(len(stream_event_data) + 1024)
         req_off = builder.CreateByteVector(stream_event_data)
@@ -591,7 +595,6 @@ class HostAgent(object):
 
         logger.debug("calling _put_streamdata_signal with parameters: %s",
                     locals())
-
         self._put_raw_object(builder.Output())
 
     def _put_signal(self, method: int, req_buf: bytes):

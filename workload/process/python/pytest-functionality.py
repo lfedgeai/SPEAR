@@ -6,6 +6,7 @@ import time
 import spear.client as client
 import spear.transform.chat as chat
 import spear.utils.io as io
+from spear.stream.stream import create_stream, close_stream
 from spear.utils.tool import register_internal_tool
 
 from spear.proto.tool import BuiltinToolID
@@ -51,7 +52,7 @@ def handle(ctx):
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
 
-    test_streamdata()
+    test_stream_data()
 
     time.sleep(10)
     # agent.stop()
@@ -67,6 +68,7 @@ def handle_stream(data):
     # test("bge-large-en-v1.5")
 
     return f"#Hi I got the context: {data}#"
+
 
 def test_chat(model):
     """
@@ -149,11 +151,16 @@ def test_tool(model):
     logger.info(resp)
 
 
-def test_streamdata():
+def test_stream_data():
     """
     test streamdata
     """
     logger.info("Testing streamdata")
+    stream_id = create_stream(agent)
+    logger.info("Stream ID: %d", stream_id)
+    # close stream
+    close_stream(agent, stream_id)
+    logger.info("Stream closed")
 
 
 if __name__ == "__main__":

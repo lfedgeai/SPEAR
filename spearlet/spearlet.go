@@ -548,7 +548,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 				switch streamData.DataType() {
 				case stream.StreamDataWrapperStreamRawData:
 					if streamId == int32(SystemIOStreamId) {
-						log.Infof("raw stream from task %s: %s",
+						log.Debugf("raw stream from task %s: %s",
 							t.Name(), string(rawdata))
 						// get the stream raw data
 						tbl := flatbuffers.Table{}
@@ -558,13 +558,11 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 						if tbl.Bytes == nil {
 							return fmt.Errorf("error: invalid stream data")
 						}
-						raw := stream.GetRootAsStreamRawData(tbl.Bytes, tbl.Pos)
-						if raw == nil {
-							return fmt.Errorf("error: invalid stream data")
-						}
+						raw := stream.StreamRawData{}
+						raw.Init(tbl.Bytes, tbl.Pos)
 						if raw.Length() > 0 {
 							buf := raw.DataBytes()
-							log.Infof(
+							log.Debugf(
 								"Received stream event from task %s: stream id: %d, seq id: %d, data: %s, length: %d vs %d",
 								t.Name(), streamId, repSeqId, buf, len(buf), raw.Length(),
 							)
@@ -591,11 +589,8 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 					if tbl.Bytes == nil {
 						return fmt.Errorf("error: invalid stream data")
 					}
-					op := stream.GetRootAsStreamOperationEvent(tbl.Bytes,
-						tbl.Pos)
-					if op == nil {
-						return fmt.Errorf("error: invalid stream data")
-					}
+					op := stream.StreamOperationEvent{}
+					op.Init(tbl.Bytes, tbl.Pos)
 					sc, ok := w.commMgr.StreamBiChannels[t][streamId]
 					if !ok {
 						return fmt.Errorf("error: stream channel not found: %d for operation event",
@@ -611,11 +606,8 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 					if tbl.Bytes == nil {
 						return fmt.Errorf("error: invalid stream data")
 					}
-					notify := stream.GetRootAsStreamNotifyEvent(tbl.Bytes,
-						tbl.Pos)
-					if notify == nil {
-						return fmt.Errorf("error: invalid stream data")
-					}
+					notify := stream.StreamNotifyEvent{}
+					notify.Init(tbl.Bytes, tbl.Pos)
 					sc, ok := w.commMgr.StreamBiChannels[t][streamId]
 					if !ok {
 						return fmt.Errorf("error: stream channel not found: %d for notify event",

@@ -572,7 +572,7 @@ class HostAgent(object):
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
-        logger.info("raw stream data: %s len %d",
+        logger.debug("raw stream data: %s len %d",
                     stream_event_data, len(stream_event_data))
 
         builder = fbs.Builder(len(stream_event_data) + 1024)

@@ -144,11 +144,8 @@ func (p *streamChannel) reqChanEventWorker() {
 					log.Errorf("failed to get stream notify event")
 					continue
 				}
-				notify := stream.GetRootAsStreamNotifyEvent(tbl.Bytes, tbl.Pos)
-				if notify == nil {
-					log.Errorf("failed to get stream notify event")
-					continue
-				}
+				notify := stream.StreamNotifyEvent{}
+				notify.Init(tbl.Bytes, tbl.Pos)
 				resource := string(notify.Resource())
 				notifyType := notify.Type()
 				res := GetStreamResource(resource)
@@ -167,11 +164,8 @@ func (p *streamChannel) reqChanEventWorker() {
 					log.Errorf("failed to get stream operation event")
 					continue
 				}
-				op := stream.GetRootAsStreamOperationEvent(tbl.Bytes, tbl.Pos)
-				if op == nil {
-					log.Errorf("failed to get stream operation event")
-					continue
-				}
+				op := stream.StreamOperationEvent{}
+				op.Init(tbl.Bytes, tbl.Pos)
 				resource := string(op.Resource())
 				opType := op.Op()
 				res := GetStreamResource(resource)

@@ -186,7 +186,7 @@ func (c *CommunicationManager) doSignal(t task.Task, transportRaw *transport.Tra
 	cb := c.taskSigCallbacks[t][sig.Method()]
 	c.taskSigCallbacksMu.RUnlock()
 	// call the callback
-	if err := cb(sig.PayloadBytes()); err != nil {
+	if err := cb(t, sig.PayloadBytes()); err != nil {
 		return fmt.Errorf("error handling signal: %v", err)
 	}
 	return nil

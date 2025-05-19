@@ -233,6 +233,14 @@ func (p *ProcessTask) GetVar(key TaskVar) (interface{}, bool) {
 	}
 }
 
+func (p *ProcessTask) RegisterOnFinish(fn func(Task)) {
+	// register a function called when task is finished
+	go func() {
+		<-p.done
+		fn(p)
+	}()
+}
+
 func NewProcessTask(cfg *TaskConfig) *ProcessTask {
 	rand.Seed(time.Now().UnixNano())
 	secretGenerated := rand.Int63()

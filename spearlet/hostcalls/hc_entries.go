@@ -2,7 +2,7 @@ package hostcalls
 
 import (
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 )
 
 var Hostcalls = []*hostcalls.HostCall{
@@ -92,5 +92,10 @@ var Hostcalls = []*hostcalls.HostCall{
 	{
 		NameID:  transport.MethodCustom,
 		Handler: nil,
+	},
+	// stream ctrol related operations
+	{
+		NameID:  transport.MethodStreamCtrl,
+		Handler: StreamCtrl,
 	},
 }

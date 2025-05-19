@@ -51,6 +51,8 @@ def handle(ctx):
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
 
+    test_streamdata()
+
     time.sleep(10)
     # agent.stop()
 
@@ -145,6 +147,13 @@ def test_tool(model):
                          tid,
                      ])
     logger.info(resp)
+
+
+def test_streamdata():
+    """
+    test streamdata
+    """
+    logger.info("Testing streamdata")
 
 
 if __name__ == "__main__":

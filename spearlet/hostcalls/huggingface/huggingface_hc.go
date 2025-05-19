@@ -3,7 +3,7 @@ package huggingface
 import (
 	"fmt"
 
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 )
 
 type HuggingFaceEmbeddingsRequest struct {

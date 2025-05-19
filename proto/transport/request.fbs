@@ -19,6 +19,8 @@ enum Method : uint32 {
     VecStoreDelete,
     // Custom
     Custom,
+    // Stream related
+    StreamCtrl,
 }
 
 table TransportRequest {

@@ -52,7 +52,7 @@ func NewCommunicationManager() *CommunicationManager {
 	}
 }
 
-func (c *CommunicationManager) InstallToTask(t task.Task) error {
+func (c *CommunicationManager) InitializeTaskData(t task.Task) error {
 	if t == nil {
 		log.Errorf("task is nil")
 		return fmt.Errorf("task is nil")
@@ -95,6 +95,8 @@ func (c *CommunicationManager) InstallToTask(t task.Task) error {
 			}
 		}
 	}()
+
+	c.StreamBiChannels[t] = make(map[int32]StreamBiChannel)
 
 	t.RegisterOnFinish(func(t task.Task) {
 		c.CleanupTask(t)

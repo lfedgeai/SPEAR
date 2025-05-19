@@ -88,6 +88,7 @@ type streamChannel struct {
 	reqCh    chan []byte
 	respCh   chan []byte
 	stopCh   chan struct{}
+	handler  func(data []byte)
 }
 
 func NewStreamBiChannel(t task.Task, streamId int32) StreamBiChannel {
@@ -97,23 +98,12 @@ func NewStreamBiChannel(t task.Task, streamId int32) StreamBiChannel {
 		reqCh:    make(chan []byte, 128),
 		respCh:   make(chan []byte, 128),
 		stopCh:   make(chan struct{}),
+		handler:  nil,
 	}
+
 	go res.reqChanEventWorker()
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-res.stopCh:
-	// 			return
-	// 		case resp := <-res.respCh:
-	// 			// process the response
-	// 			if err := res.commMgr.SendOutgoingRPCSignal(t,
-	// 				transport.SignalStreamData,
-	// 				resp); err != nil {
-	// 				fmt.Printf("failed to send stream data: %v\n", err)
-	// 			}
-	// 		}
-	// 	}
-	// }()
+	go res.respChanEventWorker()
+
 	return res
 }
 
@@ -123,6 +113,19 @@ func (p *streamChannel) StreamId() int32 {
 
 func (p *streamChannel) AddStreamData(data []byte) {
 	p.reqCh <- data
+}
+
+func (p *streamChannel) respChanEventWorker() {
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		case data := <-p.respCh:
+			if p.handler != nil {
+				p.handler(data)
+			}
+		}
+	}
 }
 
 func (p *streamChannel) reqChanEventWorker() {
@@ -188,16 +191,7 @@ func (p *streamChannel) reqChanEventWorker() {
 
 // set the function that will be called when new stream data is available
 func (p *streamChannel) SetDataHandler(handler func(data []byte)) {
-	go func() {
-		for {
-			select {
-			case <-p.stopCh:
-				return
-			case resp := <-p.respCh:
-				handler(resp)
-			}
-		}
-	}()
+	p.handler = handler
 }
 
 func (p *streamChannel) Stop() {

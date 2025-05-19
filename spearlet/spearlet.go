@@ -505,7 +505,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 	if err != nil {
 		return nil, "", fmt.Errorf("error: %v", err)
 	}
-	err = w.commMgr.InstallToTask(newTask)
+	err = w.commMgr.InitializeTaskData(newTask)
 	if err != nil {
 		return nil, "", fmt.Errorf("error: %v", err)
 	}

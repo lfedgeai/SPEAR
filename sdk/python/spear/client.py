@@ -14,12 +14,14 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import StreamData, StreamDataWrapper, StreamRawData
+from spear.proto.stream import (StreamData, StreamDataWrapper, StreamRawData,
+                                OperationType, StreamOperationEvent)
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
                                    TransportMessageRaw_Data, TransportRequest,
                                    TransportResponse, TransportSignal)
+
 
 MAX_INFLIGHT_REQUESTS = 128
 DEFAULT_MESSAGE_SIZE = 4096
@@ -546,6 +548,64 @@ class HostAgent(object):
                 raise RuntimeError(resp.Message())
             return resp.ResponseAsNumpy()
 
+    def send_operation_event(self, stream_id: int, resource: str, op: OperationType,
+                             data: bytes, last_message: bool = False):
+        """
+        send the operation event
+        """
+        builder = fbs.Builder(len(data) + 1024)
+        data_off = builder.CreateByteVector(data)
+        resource_off = builder.CreateString(resource)
+
+        StreamOperationEvent.StreamOperationEventStart(builder)
+        StreamOperationEvent.AddResource(builder, resource_off)
+        StreamOperationEvent.AddOp(builder, op)
+        StreamOperationEvent.AddData(builder, data_off)
+        StreamOperationEvent.AddLength(builder, len(data))
+        stream_op_event_off = StreamOperationEvent.End(builder)
+
+        with self._stream_sequence_ids_lock:
+            if stream_id in self._stream_sequence_ids:
+                seq_id = self._stream_sequence_ids[stream_id]
+                self._stream_sequence_ids[stream_id] += 1
+            else:
+                seq_id = 0
+                self._stream_sequence_ids[stream_id] = 0
+
+        StreamData.StreamDataStart(builder)
+        StreamData.AddStreamId(builder, stream_id)
+        StreamData.AddSequenceId(
+            builder, seq_id)
+        StreamData.AddDataType(
+            builder, StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
+        )
+        StreamData.AddData(builder, stream_op_event_off)
+        StreamData.AddFinal(builder, last_message)
+        req_off = StreamData.End(builder)
+        builder.Finish(req_off)
+
+        stream_event_data = builder.Output()
+
+        builder = fbs.Builder(len(stream_event_data) + 1024)
+        req_off = builder.CreateByteVector(stream_event_data)
+
+        TransportSignal.TransportSignalStart(builder)
+        TransportSignal.AddMethod(
+            builder, Signal.Signal.StreamData
+        )
+        TransportSignal.AddPayload(builder, req_off)
+        req_off = TransportSignal.End(builder)
+
+        TransportMessageRaw.TransportMessageRawStart(builder)
+        TransportMessageRaw.AddDataType(
+            builder, TransportMessageRaw_Data.TransportMessageRaw_Data.TransportSignal
+        )
+        TransportMessageRaw.AddData(builder, req_off)
+        msg_off = TransportMessageRaw.End(builder)
+        builder.Finish(msg_off)
+
+        self._put_raw_object(builder.Output())
+
     def _put_streamdata_signal(self, stream_id: int, seq_id: int,
                                data: bytes, last_message: bool):
         """
@@ -573,7 +633,7 @@ class HostAgent(object):
 
         stream_event_data = builder.Output()
         logger.debug("raw stream data: %s len %d",
-                    stream_event_data, len(stream_event_data))
+                     stream_event_data, len(stream_event_data))
 
         builder = fbs.Builder(len(stream_event_data) + 1024)
         req_off = builder.CreateByteVector(stream_event_data)

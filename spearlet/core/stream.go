@@ -1,4 +1,4 @@
-package common
+package core
 
 import (
 	"fmt"
@@ -49,14 +49,14 @@ func (r *streamResource) Notification(sc StreamBiChannel,
 
 func RegisterStreamResource(name string, r StreamResource) {
 	if _, ok := globalStreamResources[name]; ok {
-		panic(fmt.Sprintf("stream resource %s already registered", name))
+		panic(fmt.Sprintf("stream resource \"%s\" already registered", name))
 	}
 	globalStreamResources[name] = r
 }
 
 func UnregisterStreamResource(name string) {
 	if _, ok := globalStreamResources[name]; !ok {
-		panic(fmt.Sprintf("stream resource %s not registered", name))
+		panic(fmt.Sprintf("stream resource \"%s\" not registered", name))
 	}
 	delete(globalStreamResources, name)
 }
@@ -65,7 +65,7 @@ func GetStreamResource(name string) StreamResource {
 	if r, ok := globalStreamResources[name]; ok {
 		return r
 	}
-	panic(fmt.Sprintf("stream resource %s not registered", name))
+	panic(fmt.Sprintf("stream resource \"%s\" not registered", name))
 }
 
 type StreamEventType int

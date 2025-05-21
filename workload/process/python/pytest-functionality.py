@@ -6,8 +6,8 @@ import time
 import spear.client as client
 import spear.transform.chat as chat
 import spear.utils.io as io
-from spear.stream import (create_stream, close_stream,
-                          stream_sendoperation, OperationType)
+from spear.stream import (OperationType, close_stream, create_stream,
+                          stream_sendoperation)
 from spear.utils.tool import register_internal_tool
 
 from spear.proto.tool import BuiltinToolID
@@ -160,7 +160,7 @@ def test_stream_data():
     stream_id = create_stream(agent)
     logger.info("Stream ID: %d", stream_id)
 
-    stream_sendoperation(agent, stream_id, "test",
+    stream_sendoperation(agent, stream_id, "dummy",
                          OperationType.Create, b"test data")
 
     # close stream

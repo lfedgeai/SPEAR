@@ -14,14 +14,13 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import (StreamData, StreamDataWrapper, StreamRawData,
-                                OperationType, StreamOperationEvent)
+from spear.proto.stream import (OperationType, StreamData, StreamDataWrapper,
+                                StreamOperationEvent, StreamRawData)
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
                                    TransportMessageRaw_Data, TransportRequest,
                                    TransportResponse, TransportSignal)
-
 
 MAX_INFLIGHT_REQUESTS = 128
 DEFAULT_MESSAGE_SIZE = 4096
@@ -632,8 +631,8 @@ class HostAgent(object):
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
-        logger.debug("raw stream data: %s len %d",
-                     stream_event_data, len(stream_event_data))
+        # logger.debug("raw stream data: %s len %d",
+        #              stream_event_data, len(stream_event_data))
 
         builder = fbs.Builder(len(stream_event_data) + 1024)
         req_off = builder.CreateByteVector(stream_event_data)

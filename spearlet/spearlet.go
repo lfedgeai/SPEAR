@@ -22,6 +22,7 @@ import (
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
 	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 	hc "github.com/lfedgeai/spear/spearlet/hostcalls"
+	_ "github.com/lfedgeai/spear/spearlet/streamresource"
 	"github.com/lfedgeai/spear/spearlet/task"
 	_ "github.com/lfedgeai/spear/spearlet/tools"
 

@@ -7,6 +7,7 @@ enum StreamControlOps : uint32 {
 
 table StreamControlRequest {
     request_id: int32 = -1;
+    class_name: string;
     op: StreamControlOps = New;
     stream_id: int32 = -1; // only valid when op is close
 }

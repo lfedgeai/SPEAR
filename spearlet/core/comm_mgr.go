@@ -1,4 +1,4 @@
-package common
+package core
 
 import (
 	"fmt"
@@ -227,7 +227,7 @@ func (c *CommunicationManager) SendOutgoingRPCResponse(t task.Task, id int64,
 	return nil
 }
 
-func (c *CommunicationManager) RegisterTaskSignalCallback(t task.Task,
+func (c *CommunicationManager) RegisterTaskSignalHandler(t task.Task,
 	sig transport.Signal, cb func(task.Task, []byte) error) {
 	c.taskSigCallbacksMu.Lock()
 	defer c.taskSigCallbacksMu.Unlock()
@@ -330,32 +330,32 @@ func (c *CommunicationManager) SendOutgoingRPCRequest(t task.Task, method transp
 	}
 }
 
-func (c *CommunicationManager) SendOutgoingNotifyEvent(t task.Task, resource string, etype stream.NotifyEventType,
+func (c *CommunicationManager) SendOutgoingNotificationEvent(t task.Task, name string, etype stream.NotificationEventType,
 	data []byte, final bool) error {
-	if etype == stream.NotifyEventTypeError {
-		return fmt.Errorf("error notify event type")
+	if etype == stream.NotificationEventTypeError {
+		return fmt.Errorf("error notification event type")
 	}
 	builder := flatbuffers.NewBuilder(0)
-	resourceOff := builder.CreateString(resource)
+	nameOff := builder.CreateString(name)
 	dataOff := builder.CreateByteVector(data)
 
-	stream.StreamNotifyEventStart(builder)
-	stream.StreamNotifyEventAddType(builder, etype)
-	stream.StreamNotifyEventAddResource(builder, resourceOff)
-	stream.StreamNotifyEventAddData(builder, dataOff)
-	notifyOff := stream.StreamNotifyEventEnd(builder)
+	stream.StreamNotificationEventStart(builder)
+	stream.StreamNotificationEventAddType(builder, etype)
+	stream.StreamNotificationEventAddName(builder, nameOff)
+	stream.StreamNotificationEventAddData(builder, dataOff)
+	notificationOff := stream.StreamNotificationEventEnd(builder)
 
 	stream.StreamDataStart(builder)
-	stream.StreamDataAddData(builder, notifyOff)
-	stream.StreamDataAddDataType(builder, stream.StreamDataWrapperStreamNotifyEvent)
+	stream.StreamDataAddData(builder, notificationOff)
+	stream.StreamDataAddDataType(builder, stream.StreamDataWrapperStreamNotificationEvent)
 	stream.StreamDataAddFinal(builder, final)
 
-	builder.Finish(notifyOff)
+	builder.Finish(notificationOff)
 
 	if err := c.SendOutgoingRPCSignal(t, transport.SignalStreamData, builder.FinishedBytes()); err != nil {
 		return err
 	}
-	log.Debugf("Send stream notify event: %s, %d", resource, etype)
+	log.Debugf("Send stream notification event: %s, %d", name, etype)
 	return nil
 }
 

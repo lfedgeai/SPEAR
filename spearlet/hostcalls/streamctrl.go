@@ -7,7 +7,6 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	hcommon "github.com/lfedgeai/spear/spearlet/core"
-	log "github.com/sirupsen/logrus"
 )
 
 func StreamCtrl(inv *hcommon.InvocationInfo,
@@ -23,6 +22,7 @@ func StreamCtrl(inv *hcommon.InvocationInfo,
 	}
 	switch req.Op() {
 	case stream.StreamControlOpsNew:
+		className := req.ClassName()
 		// gernerate a positive random int32 stream id
 		streamId := rand.Int31n(1 << 30)
 		// check if the stream id is already used
@@ -30,14 +30,12 @@ func StreamCtrl(inv *hcommon.InvocationInfo,
 			return nil, fmt.Errorf("stream id %d already used", streamId)
 		}
 		// create a new stream
-		c := hcommon.NewStreamBiChannel(inv.Task,
-			streamId)
-		c.SetDataHandler(func(data []byte) {
-			// send the data to the task
-			log.Infof("stream data %d", streamId)
-			// TODO: send the data to the task
-			panic("not implemented")
-		})
+		c, err := hcommon.NewStreamBiChannel(inv,
+			streamId, string(className))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create stream %d: %v",
+				streamId, err)
+		}
 		inv.CommMgr.StreamBiChannels[inv.Task][streamId] = c
 		builder := flatbuffers.NewBuilder(0)
 		stream.StreamControlResponseStart(builder)

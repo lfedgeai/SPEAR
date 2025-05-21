@@ -1,4 +1,4 @@
-package common
+package core
 
 import (
 	"fmt"
@@ -16,8 +16,9 @@ type HostCall struct {
 
 // invokation info
 type InvocationInfo struct {
-	Task    task.Task
-	CommMgr *CommunicationManager
+	Task     task.Task
+	CommMgr  *CommunicationManager
+	RespChan chan task.Message // channel to send response to client during streaming
 }
 
 type RespChanData struct {

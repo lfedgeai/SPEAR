@@ -13,7 +13,6 @@ from spear.utils.tool import register_internal_tool
 from spear.proto.tool import BuiltinToolID
 from spear.proto.transport import Signal
 
-
 logging.basicConfig(
     level=logging.DEBUG,  # Set the desired logging level
     # Customize the log format
@@ -28,7 +27,7 @@ agent = client.HostAgent()
 
 
 TEST_LLM_MODEL = "gpt-4o"  # "deepseek-toolchat"
-
+TAREGET_RESOURCE = "dummy"
 
 def handle(ctx):
     """
@@ -59,8 +58,8 @@ def handle(ctx):
     time.sleep(10)
     # agent.stop()
 
-
-def handle_stream(ctx: client.StreamRequestContext):
+# ctx is either StreamRequestContext or RawStreamRequestContext
+def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestContext):
     """
     handle streaming request
     """
@@ -71,7 +70,7 @@ def handle_stream(ctx: client.StreamRequestContext):
     if ctx.stream_id == client.SYS_IO_STREAM_ID:
         ctx.send_raw(agent, f"[Hi I got the context: {ctx}]")
     elif not ctx.is_raw:
-        ctx.send_notify(agent, "test", NotifyEventType.Completed,
+        ctx.send_notify(agent, ctx.resource, NotifyEventType.Completed,
                         f"[Reply from streamdata event handler: {ctx}]")
 
 
@@ -164,7 +163,7 @@ def test_stream_data():
     stream_id = create_stream(agent)
     logger.info("Stream ID: %d", stream_id)
 
-    stream_sendoperation(agent, stream_id, "dummy",
+    stream_sendoperation(agent, stream_id, TAREGET_RESOURCE,
                          OperationType.Create, b"test data")
 
     time.sleep(5)

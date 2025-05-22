@@ -85,7 +85,7 @@ class RequestContext(object):
         return self._payload
 
 
-class StreamRequestContextBase(object):
+class RawStreamRequestContext(object):
     """
     StreamRequestContext is the context of the stream request
     """
@@ -148,27 +148,6 @@ class StreamRequestContextBase(object):
     def __str__(self):
         return self.__repr__()
 
-
-def data_to_bytes(data) -> bytes:
-    """
-    convert the data to bytes
-    """
-    if isinstance(data, bytes):
-        return data
-    if isinstance(data, str):
-        return data.encode("utf-8")
-    if isinstance(data, bytearray):
-        return bytes(data)
-    raise ValueError(
-        f"Invalid data type: {type(data)}. Must be bytes, str or bytearray"
-    )
-
-
-class StreamRequestContext(StreamRequestContextBase):
-    """
-    StreamRequestContext is the context of the stream request
-    """
-
     def send_raw(self, agent, data: bytes, final: bool = False):
         """
         send raw data to the stream
@@ -187,6 +166,39 @@ class StreamRequestContext(StreamRequestContextBase):
             builder.Output(),
             final,
         )
+
+def data_to_bytes(data) -> bytes:
+    """
+    convert the data to bytes
+    """
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, str):
+        return data.encode("utf-8")
+    if isinstance(data, bytearray):
+        return bytes(data)
+    raise ValueError(
+        f"Invalid data type: {type(data)}. Must be bytes, str or bytearray"
+    )
+
+
+class StreamRequestContext(RawStreamRequestContext):
+    """
+    StreamRequestContext is the context of the stream request
+    """
+
+    def __init__(self, data, ty: int,
+                 last_message=False, stream_id: int = None, 
+                 resource: str = None):
+        super().__init__(data, ty, last_message, stream_id)
+        self._resource = resource
+
+    @property
+    def resource(self) -> str:
+        """
+        get the resource
+        """
+        return self._resource
 
     def send_notify(self, agent, resource: str, ty: NotifyEventType,
                     data: bytes, final: bool = False):
@@ -207,7 +219,7 @@ class StreamRequestContext(StreamRequestContextBase):
         logger.info("Sending stream notify event: %s", data)
         agent.send_notify_event(
             self._stream_id,
-            "test",
+            resource,
             ty,
             builder.Output(),
             final,
@@ -232,7 +244,7 @@ class StreamRequestContext(StreamRequestContextBase):
         logger.info("Sending stream operation event: %s", data)
         agent.send_operation_event(
             self._stream_id,
-            "test",
+            resource,
             op,
             builder.Output(),
             final,
@@ -525,7 +537,7 @@ class HostAgent(object):
                                 data = rdata.DataAsNumpy()
                             else:
                                 data = b""
-                            ctx = StreamRequestContext(
+                            ctx = RawStreamRequestContext(
                                 data=data,
                                 ty=StreamDataWrapper.StreamDataWrapper.StreamRawData,
                                 last_message=sdata.Final(),
@@ -553,6 +565,7 @@ class HostAgent(object):
                                 ty=StreamDataWrapper.StreamDataWrapper.StreamOperationEvent,
                                 last_message=sdata.Final(),
                                 stream_id=sdata.StreamId(),
+                                resource=opdata.Resource().decode("utf-8"),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
                                 for handler in self._sig_handlers[Signal.Signal.StreamData]:
@@ -576,6 +589,7 @@ class HostAgent(object):
                                 ty=StreamDataWrapper.StreamDataWrapper.StreamNotifyEvent,
                                 last_message=sdata.Final(),
                                 stream_id=sdata.StreamId(),
+                                resource=ndata.Resource().decode("utf-8"),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
                                 for handler in self._sig_handlers[Signal.Signal.StreamData]:

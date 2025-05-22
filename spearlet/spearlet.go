@@ -522,13 +522,6 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 			// get reply sequence id
 			repSeqId := streamData.SequenceId()
 			streamId := streamData.StreamId()
-			if streamId != int32(SystemIOStreamId) {
-				// check if the stream id is valid
-				if _, ok := w.commMgr.StreamBiChannels[t][streamId]; !ok {
-					return fmt.Errorf("error: invalid stream id: %d",
-						streamId)
-				}
-			}
 			if streamData.Final() {
 				defer func() {
 					// if key is not found, do not delete
@@ -593,7 +586,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 					return fmt.Errorf("error: stream channel not found: %d for operation event",
 						streamId)
 				}
-				sc.AddStreamData(rawdata)
+				sc.AddRequestStreamData(rawdata)
 			case stream.StreamDataWrapperStreamNotifyEvent:
 				// get the stream notify event
 				tbl := flatbuffers.Table{}
@@ -610,7 +603,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 					return fmt.Errorf("error: stream channel not found: %d for notify event",
 						streamId)
 				}
-				sc.AddStreamData(rawdata)
+				sc.AddRequestStreamData(rawdata)
 			default:
 				// unsupported stream data type
 				return fmt.Errorf("error: unsupported stream data type: %d",

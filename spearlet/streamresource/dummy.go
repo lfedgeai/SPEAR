@@ -1,8 +1,6 @@
 package streamresource
 
 import (
-	"fmt"
-
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	"github.com/lfedgeai/spear/spearlet/core"
 )
@@ -21,13 +19,17 @@ func (r *dummyStreamResource) Name() string {
 func (r *dummyStreamResource) Operation(sc core.StreamBiChannel,
 	op stream.OperationType,
 	data []byte) error {
-	return fmt.Errorf("unsupported stream operation %d", op)
+	sc.ReplyNotifyEvent("op reply", stream.NotifyEventTypeCompleted,
+		[]byte("dummy"), false)
+	return nil
 }
 
 func (r *dummyStreamResource) Notification(sc core.StreamBiChannel,
 	op stream.NotifyEventType,
 	data []byte) error {
-	return fmt.Errorf("unsupported stream notification %d", op)
+	sc.ReplyNotifyEvent("notify reply", stream.NotifyEventTypeCompleted,
+		[]byte("dummy"), false)
+	return nil
 }
 
 func init() {

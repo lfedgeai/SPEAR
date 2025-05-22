@@ -77,28 +77,34 @@ const (
 
 type StreamBiChannel interface {
 	StreamId() int32
-	AddStreamData(data []byte)
+	AddRequestStreamData(data []byte)
+	ReplyNotifyEvent(resource string, ty stream.NotifyEventType,
+		data []byte, final bool)
+	ReplyOperationEvent(resource string, ty stream.OperationType,
+		data []byte, final bool)
 	SetDataHandler(handler func(data []byte))
 	Stop()
 }
 
 type streamChannel struct {
-	task     task.Task
-	streamId int32
-	reqCh    chan []byte
-	respCh   chan []byte
-	stopCh   chan struct{}
-	handler  func(data []byte)
+	task      task.Task
+	streamId  int32
+	reqCh     chan []byte
+	respCh    chan []byte
+	respSeqId int64
+	stopCh    chan struct{}
+	handler   func(data []byte)
 }
 
 func NewStreamBiChannel(t task.Task, streamId int32) StreamBiChannel {
 	res := &streamChannel{
-		task:     t,
-		streamId: streamId,
-		reqCh:    make(chan []byte, 128),
-		respCh:   make(chan []byte, 128),
-		stopCh:   make(chan struct{}),
-		handler:  nil,
+		task:      t,
+		streamId:  streamId,
+		reqCh:     make(chan []byte, 128),
+		respCh:    make(chan []byte, 128),
+		respSeqId: 0,
+		stopCh:    make(chan struct{}),
+		handler:   nil,
 	}
 
 	go res.reqChanEventWorker()
@@ -111,17 +117,73 @@ func (p *streamChannel) StreamId() int32 {
 	return p.streamId
 }
 
-func (p *streamChannel) AddStreamData(data []byte) {
+func (p *streamChannel) AddRequestStreamData(data []byte) {
 	p.reqCh <- data
 }
 
+func (p *streamChannel) ReplyNotifyEvent(resource string, ty stream.NotifyEventType,
+	data []byte, final bool) {
+	// put data inside a streamdata and send it to the respCh
+	builder := flatbuffers.NewBuilder(0)
+	resOff := builder.CreateString(resource)
+	dataOff := builder.CreateByteVector(data)
+
+	stream.StreamNotifyEventStart(builder)
+	stream.StreamNotifyEventAddType(builder, ty)
+	stream.StreamNotifyEventAddResource(builder, resOff)
+	stream.StreamNotifyEventAddData(builder, dataOff)
+	stream.StreamNotifyEventAddLength(builder, int32(len(data)))
+	sneOff := stream.StreamNotifyEventEnd(builder)
+
+	stream.StreamDataStart(builder)
+	stream.StreamDataAddDataType(builder, stream.StreamDataWrapperStreamNotifyEvent)
+	stream.StreamDataAddData(builder, sneOff)
+	stream.StreamDataAddStreamId(builder, p.streamId)
+	stream.StreamDataAddFinal(builder, final)
+	stream.StreamDataAddSequenceId(builder, p.respSeqId)
+	builder.Finish(stream.StreamDataEnd(builder))
+	p.respCh <- builder.FinishedBytes()
+
+	// increment the sequence id
+	p.respSeqId++
+}
+
+func (p *streamChannel) ReplyOperationEvent(resource string, ty stream.OperationType,
+	data []byte, final bool) {
+	// put data inside a streamdata and send it to the respCh
+	builder := flatbuffers.NewBuilder(0)
+	resOff := builder.CreateString(resource)
+	dataOff := builder.CreateByteVector(data)
+
+	stream.StreamOperationEventStart(builder)
+	stream.StreamOperationEventAddOp(builder, ty)
+	stream.StreamOperationEventAddResource(builder, resOff)
+	stream.StreamOperationEventAddData(builder, dataOff)
+	stream.StreamOperationEventAddLength(builder, int32(len(data)))
+	sneOff := stream.StreamOperationEventEnd(builder)
+
+	stream.StreamDataStart(builder)
+	stream.StreamDataAddDataType(builder, stream.StreamDataWrapperStreamOperationEvent)
+	stream.StreamDataAddData(builder, sneOff)
+	stream.StreamDataAddStreamId(builder, p.streamId)
+	stream.StreamDataAddFinal(builder, final)
+	stream.StreamDataAddSequenceId(builder, p.respSeqId)
+	builder.Finish(stream.StreamDataEnd(builder))
+	p.respCh <- builder.FinishedBytes()
+
+	// increment the sequence id
+	p.respSeqId++
+}
+
 func (p *streamChannel) respChanEventWorker() {
+	respCh := p.respCh
 	for {
 		select {
 		case <-p.stopCh:
 			return
-		case data := <-p.respCh:
+		case data := <-respCh:
 			if p.handler != nil {
+				log.Infof("stream channel reply %d data %d", p.streamId, len(data))
 				p.handler(data)
 			}
 		}
@@ -191,6 +253,7 @@ func (p *streamChannel) reqChanEventWorker() {
 
 // set the function that will be called when new stream data is available
 func (p *streamChannel) SetDataHandler(handler func(data []byte)) {
+	log.Infof("set stream %d data handler", p.streamId)
 	p.handler = handler
 }
 

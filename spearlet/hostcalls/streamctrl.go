@@ -6,6 +6,7 @@ import (
 
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
+	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
 	hcommon "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 )
@@ -35,8 +36,14 @@ func StreamCtrl(inv *hcommon.InvocationInfo,
 		c.SetDataHandler(func(data []byte) {
 			// send the data to the task
 			log.Infof("stream data %d", streamId)
-			// TODO: send the data to the task
-			panic("not implemented")
+			if err := inv.CommMgr.SendOutgoingRPCSignal(
+				inv.Task,
+				transport.SignalStreamData,
+				data,
+			); err != nil {
+				log.Errorf("failed to send stream data %d: %v",
+					streamId, err)
+			}
 		})
 		inv.CommMgr.StreamBiChannels[inv.Task][streamId] = c
 		builder := flatbuffers.NewBuilder(0)

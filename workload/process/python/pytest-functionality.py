@@ -7,11 +7,12 @@ import spear.client as client
 import spear.transform.chat as chat
 import spear.utils.io as io
 from spear.stream import (OperationType, close_stream, create_stream,
-                          stream_sendoperation)
+                          stream_sendoperation, NotifyEventType)
 from spear.utils.tool import register_internal_tool
 
 from spear.proto.tool import BuiltinToolID
 from spear.proto.transport import Signal
+
 
 logging.basicConfig(
     level=logging.DEBUG,  # Set the desired logging level
@@ -59,16 +60,19 @@ def handle(ctx):
     # agent.stop()
 
 
-def handle_stream(data):
+def handle_stream(ctx: client.StreamRequestContext):
     """
     handle streaming request
     """
-    logger.info("Handling streaming request: %s", data)
+    logger.info("Handling streaming request: %s", ctx)
 
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
-
-    return f"#Hi I got the context: {data}#"
+    if ctx.stream_id == client.SYS_IO_STREAM_ID:
+        ctx.send_raw(agent, f"[Hi I got the context: {ctx}]")
+    elif not ctx.is_raw:
+        ctx.send_notify(agent, "test", NotifyEventType.Completed,
+                        f"[Reply from streamdata event handler: {ctx}]")
 
 
 def test_chat(model):
@@ -163,6 +167,7 @@ def test_stream_data():
     stream_sendoperation(agent, stream_id, "dummy",
                          OperationType.Create, b"test data")
 
+    time.sleep(5)
     # close stream
     close_stream(agent, stream_id)
     logger.info("Stream closed")

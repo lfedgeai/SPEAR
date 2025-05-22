@@ -535,7 +535,7 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 			case stream.StreamDataWrapperStreamRawData:
 				if streamId == int32(SystemIOStreamId) {
 					if respChan == nil {
-						return fmt.Errorf("error: invalid stream id: %d",
+						return fmt.Errorf("response channel cannot be nil for stream id: %d",
 							streamId)
 					}
 					log.Debugf("raw stream from task %s: %s",

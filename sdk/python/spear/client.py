@@ -207,6 +207,8 @@ class StreamRequestContext(StreamRequestContextBase):
         logger.info("Sending stream notify event: %s", data)
         agent.send_notify_event(
             self._stream_id,
+            "test",
+            ty,
             builder.Output(),
             final,
         )
@@ -230,6 +232,8 @@ class StreamRequestContext(StreamRequestContextBase):
         logger.info("Sending stream operation event: %s", data)
         agent.send_operation_event(
             self._stream_id,
+            "test",
+            op,
             builder.Output(),
             final,
         )

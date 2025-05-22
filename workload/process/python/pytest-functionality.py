@@ -70,7 +70,8 @@ def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestCont
     if ctx.stream_id == client.SYS_IO_STREAM_ID:
         ctx.send_raw(agent, f"[Hi I got the context: {ctx}]")
     elif not ctx.is_raw:
-        ctx.send_notify(agent, ctx.resource, NotifyEventType.Completed,
+        logger.info("event target: %s", ctx.resource)
+        ctx.send_notify(agent, TAREGET_RESOURCE, NotifyEventType.Completed,
                         f"[Reply from streamdata event handler: {ctx}]")
 
 

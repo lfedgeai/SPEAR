@@ -12,13 +12,13 @@ enum OperationType: ubyte {
 }
 
 table StreamOperationEvent {
-    resource: string;
+    name: string;
     op: OperationType = NoOp;
     length: int32 = 0;
     data: [ubyte];
 }
 
-enum NotifyEventType: ubyte {
+enum NotificationEventType: ubyte {
     Error = 0,
     Configured,
     Created,
@@ -28,9 +28,9 @@ enum NotifyEventType: ubyte {
     Cancelled,
 }
 
-table StreamNotifyEvent {
-    resource: string;
-    type: NotifyEventType = Error;
+table StreamNotificationEvent {
+    name: string;
+    type: NotificationEventType = Error;
     length: int32 = 0;
     data: [ubyte];
     error_msg: string;
@@ -45,7 +45,7 @@ table StreamRawData {
 
 union StreamDataWrapper {
     StreamOperationEvent,
-    StreamNotifyEvent,
+    StreamNotificationEvent,
     StreamRawData,
 }
 

@@ -14,9 +14,10 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import (OperationType, StreamData, StreamDataWrapper,
-                                StreamOperationEvent, StreamRawData, StreamNotifyEvent,
-                                NotifyEventType)
+from spear.proto.stream import (NotificationEventType, OperationType,
+                                StreamData, StreamDataWrapper,
+                                StreamNotificationEvent, StreamOperationEvent,
+                                StreamRawData)
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
@@ -112,11 +113,11 @@ class RawStreamRequestContext(object):
         return self._type == StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
 
     @property
-    def is_notify_event(self) -> bool:
+    def is_notification_event(self) -> bool:
         """
-        check if the data is notify event
+        check if the data is notification event
         """
-        return self._type == StreamDataWrapper.StreamDataWrapper.StreamNotifyEvent
+        return self._type == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent
 
     @property
     def data(self) -> str:
@@ -189,53 +190,53 @@ class StreamRequestContext(RawStreamRequestContext):
 
     def __init__(self, data, ty: int,
                  last_message=False, stream_id: int = None, 
-                 resource: str = None):
+                 name: str = None):
         super().__init__(data, ty, last_message, stream_id)
-        self._resource = resource
+        self._name = name
 
     @property
-    def resource(self) -> str:
+    def name(self) -> str:
         """
-        get the resource
+        get the name
         """
-        return self._resource
+        return self._name
 
-    def send_notify(self, agent, resource: str, ty: NotifyEventType,
+    def send_notification(self, agent, name: str, ty: NotificationEventType,
                     data: bytes, final: bool = False):
         """
-        send notify event
+        send notification event
         """
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data_to_bytes(data))
-        resource_off = builder.CreateString(resource)
+        name_off = builder.CreateString(name)
 
-        StreamNotifyEvent.StreamNotifyEventStart(builder)
-        StreamNotifyEvent.AddResource(builder, resource_off)
-        StreamNotifyEvent.AddData(builder, data_off)
-        StreamNotifyEvent.AddLength(builder, len(data))
-        StreamNotifyEvent.AddType(builder, ty)
-        builder.Finish(StreamNotifyEvent.End(builder))
+        StreamNotificationEvent.StreamNotificationEventStart(builder)
+        StreamNotificationEvent.AddName(builder, name_off)
+        StreamNotificationEvent.AddData(builder, data_off)
+        StreamNotificationEvent.AddLength(builder, len(data))
+        StreamNotificationEvent.AddType(builder, ty)
+        builder.Finish(StreamNotificationEvent.End(builder))
 
-        logger.info("Sending stream notify event: %s", data)
-        agent.send_notify_event(
+        logger.info("Sending stream notification event: %s", data)
+        agent.send_notification_event(
             self._stream_id,
-            resource,
+            name,
             ty,
             builder.Output(),
             final,
         )
 
-    def send_operation(self, agent, resource: str, op: OperationType,
+    def send_operation(self, agent, name: str, op: OperationType,
                        data: bytes, final: bool = False):
         """
         send operation event
         """
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data_to_bytes(data))
-        resource_off = builder.CreateString(resource)
+        name_off = builder.CreateString(name)
 
         StreamOperationEvent.StreamOperationEventStart(builder)
-        StreamOperationEvent.AddResource(builder, resource_off)
+        StreamOperationEvent.AddName(builder, name_off)
         StreamOperationEvent.AddOp(builder, op)
         StreamOperationEvent.AddData(builder, data_off)
         StreamOperationEvent.AddLength(builder, len(data))
@@ -244,7 +245,7 @@ class StreamRequestContext(RawStreamRequestContext):
         logger.info("Sending stream operation event: %s", data)
         agent.send_operation_event(
             self._stream_id,
-            resource,
+            name,
             op,
             builder.Output(),
             final,
@@ -565,7 +566,7 @@ class HostAgent(object):
                                 ty=StreamDataWrapper.StreamDataWrapper.StreamOperationEvent,
                                 last_message=sdata.Final(),
                                 stream_id=sdata.StreamId(),
-                                resource=opdata.Resource().decode("utf-8"),
+                                name=opdata.Name().decode("utf-8"),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
                                 for handler in self._sig_handlers[Signal.Signal.StreamData]:
@@ -576,9 +577,9 @@ class HostAgent(object):
                                             "Error: %s", str(e))
                             else:
                                 logger.error("No handler for stream data")
-                        elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamNotifyEvent:
-                            logger.info("Stream notify event")
-                            ndata = StreamNotifyEvent.StreamNotifyEvent()
+                        elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent:
+                            logger.info("Stream notification event")
+                            ndata = StreamNotificationEvent.StreamNotificationEvent()
                             ndata.Init(sdata.Data().Bytes, sdata.Data().Pos)
                             if ndata.Length() > 0:
                                 data = ndata.DataAsNumpy()
@@ -586,10 +587,10 @@ class HostAgent(object):
                                 data = b""
                             ctx = StreamRequestContext(
                                 data=data,
-                                ty=StreamDataWrapper.StreamDataWrapper.StreamNotifyEvent,
+                                ty=StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent,
                                 last_message=sdata.Final(),
                                 stream_id=sdata.StreamId(),
-                                resource=ndata.Resource().decode("utf-8"),
+                                name=ndata.Name().decode("utf-8"),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
                                 for handler in self._sig_handlers[Signal.Signal.StreamData]:
@@ -731,7 +732,7 @@ class HostAgent(object):
                 self._stream_sequence_ids[stream_id] = 0
         return seq_id
 
-    def send_operation_event(self, stream_id: int, resource: str,
+    def send_operation_event(self, stream_id: int, name: str,
                              op: OperationType, data: bytes,
                              last_message: bool = False):
         """
@@ -739,10 +740,10 @@ class HostAgent(object):
         """
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
-        resource_off = builder.CreateString(resource)
+        name_off = builder.CreateString(name)
 
         StreamOperationEvent.StreamOperationEventStart(builder)
-        StreamOperationEvent.AddResource(builder, resource_off)
+        StreamOperationEvent.AddName(builder, name_off)
         StreamOperationEvent.AddOp(builder, op)
         StreamOperationEvent.AddData(builder, data_off)
         StreamOperationEvent.AddLength(builder, len(data))
@@ -769,21 +770,21 @@ class HostAgent(object):
             stream_event_data
         )
 
-    def send_notify_event(self, stream_id: int, resource: str,
-                          ty: NotifyEventType, data: bytes,
+    def send_notification_event(self, stream_id: int, name: str,
+                          ty: NotificationEventType, data: bytes,
                           last_message: bool = False):
         """
-        send the notify event signal
+        send the notification event signal
         """
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
-        resource_off = builder.CreateString(resource)
-        StreamNotifyEvent.StreamNotifyEventStart(builder)
-        StreamNotifyEvent.AddResource(builder, resource_off)
-        StreamNotifyEvent.AddData(builder, data_off)
-        StreamNotifyEvent.AddLength(builder, len(data))
-        StreamNotifyEvent.AddType(builder, ty)
-        stream_notify_event_off = StreamNotifyEvent.End(builder)
+        name_off = builder.CreateString(name)
+        StreamNotificationEvent.StreamNotificationEventStart(builder)
+        StreamNotificationEvent.AddName(builder, name_off)
+        StreamNotificationEvent.AddData(builder, data_off)
+        StreamNotificationEvent.AddLength(builder, len(data))
+        StreamNotificationEvent.AddType(builder, ty)
+        stream_notification_event_off = StreamNotificationEvent.End(builder)
 
         seq_id = self.generate_sequence_id(stream_id)
 
@@ -791,9 +792,9 @@ class HostAgent(object):
         StreamData.AddStreamId(builder, stream_id)
         StreamData.AddSequenceId(builder, seq_id)
         StreamData.AddDataType(
-            builder, StreamDataWrapper.StreamDataWrapper.StreamNotifyEvent
+            builder, StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent
         )
-        StreamData.AddData(builder, stream_notify_event_off)
+        StreamData.AddData(builder, stream_notification_event_off)
         StreamData.AddFinal(builder, last_message)
         req_off = StreamData.End(builder)
         builder.Finish(req_off)

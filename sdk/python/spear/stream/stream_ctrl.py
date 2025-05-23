@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def create_stream(agent: client.HostAgent) -> int:
+def create_stream(agent: client.HostAgent, class_name: str) -> int:
     """
     Create a stream
     """
@@ -28,9 +28,14 @@ def create_stream(agent: client.HostAgent) -> int:
 
     req_id = 1234 # temporary value
     builder = fbs.Builder(0)
+    strOff = builder.CreateString(class_name)
+    
     StreamControlRequest.StreamControlRequestStart(builder)
     StreamControlRequest.StreamControlRequestAddRequestId(
         builder, req_id
+    )
+    StreamControlRequest.StreamControlRequestAddClassName(
+        builder, strOff
     )
     StreamControlRequest.StreamControlRequestAddOp(
         builder, StreamControlOps.StreamControlOps.New

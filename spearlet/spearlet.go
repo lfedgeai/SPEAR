@@ -20,9 +20,10 @@ import (
 	"github.com/lfedgeai/spear/pkg/spear/proto/custom"
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
+	"github.com/lfedgeai/spear/spearlet/core"
 	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 	hc "github.com/lfedgeai/spear/spearlet/hostcalls"
-	_ "github.com/lfedgeai/spear/spearlet/streamresource"
+	_ "github.com/lfedgeai/spear/spearlet/stream"
 	"github.com/lfedgeai/spear/spearlet/task"
 	_ "github.com/lfedgeai/spear/spearlet/tools"
 
@@ -514,13 +515,23 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 	log.Debugf("Starting task: %s", newTask.Name())
 	newTask.Start()
 
-	w.commMgr.RegisterTaskSignalCallback(newTask,
+	c, err := core.NewStreamBiChannel(&hostcalls.InvocationInfo{
+		Task:     newTask,
+		CommMgr:  w.commMgr,
+		RespChan: respChan,
+	}, SystemIOStreamId, "sys")
+	if err != nil {
+		return nil, "", fmt.Errorf("error: %v", err)
+	}
+	w.commMgr.StreamBiChannels[newTask][SystemIOStreamId] = c
+
+	w.commMgr.RegisterTaskSignalHandler(newTask,
 		transport.SignalStreamData,
 		func(t task.Task, rawdata []byte) error {
 			// get the stream event
 			streamData := stream.GetRootAsStreamData(rawdata, 0)
 			// get reply sequence id
-			repSeqId := streamData.SequenceId()
+			// repSeqId := streamData.SequenceId()
 			streamId := streamData.StreamId()
 			if streamData.Final() {
 				defer func() {
@@ -531,84 +542,12 @@ func (w *Spearlet) executeTaskByMetaData(meta TaskMetaData,
 					delete(w.commMgr.StreamBiChannels[t], streamId)
 				}()
 			}
-			switch streamData.DataType() {
-			case stream.StreamDataWrapperStreamRawData:
-				if streamId == int32(SystemIOStreamId) {
-					if respChan == nil {
-						return fmt.Errorf("response channel cannot be nil for stream id: %d",
-							streamId)
-					}
-					log.Debugf("raw stream from task %s: %s",
-						t.Name(), string(rawdata))
-					// get the stream raw data
-					tbl := flatbuffers.Table{}
-					if !streamData.Data(&tbl) {
-						return fmt.Errorf("error: invalid stream data")
-					}
-					if tbl.Bytes == nil {
-						return fmt.Errorf("error: invalid stream data")
-					}
-					raw := stream.StreamRawData{}
-					raw.Init(tbl.Bytes, tbl.Pos)
-					if raw.Length() > 0 {
-						buf := raw.DataBytes()
-						log.Debugf(
-							"Received stream event from task %s: stream id: %d, seq id: %d, data: %s, length: %d vs %d",
-							t.Name(), streamId, repSeqId, buf, len(buf), raw.Length(),
-						)
-						// send the data to the request stream
-						respChan <- task.Message(buf)
-					}
-					if streamData.Final() {
-						// all data is received
-						log.Debug("Received stream end")
-						w.commMgr.UnregisterTaskSignalCallback(t,
-							transport.SignalStreamData)
-						close(respChan)
-					}
-				} else {
-					return fmt.Errorf("error: invalid stream id: %d",
-						streamId)
-				}
-			case stream.StreamDataWrapperStreamOperationEvent:
-				// get the stream operation event
-				tbl := flatbuffers.Table{}
-				if !streamData.Data(&tbl) {
-					return fmt.Errorf("error: invalid stream data")
-				}
-				if tbl.Bytes == nil {
-					return fmt.Errorf("error: invalid stream data")
-				}
-				op := stream.StreamOperationEvent{}
-				op.Init(tbl.Bytes, tbl.Pos)
-				sc, ok := w.commMgr.StreamBiChannels[t][streamId]
-				if !ok {
-					return fmt.Errorf("error: stream channel not found: %d for operation event",
-						streamId)
-				}
-				sc.AddRequestStreamData(rawdata)
-			case stream.StreamDataWrapperStreamNotifyEvent:
-				// get the stream notify event
-				tbl := flatbuffers.Table{}
-				if !streamData.Data(&tbl) {
-					return fmt.Errorf("error: invalid stream data")
-				}
-				if tbl.Bytes == nil {
-					return fmt.Errorf("error: invalid stream data")
-				}
-				notify := stream.StreamNotifyEvent{}
-				notify.Init(tbl.Bytes, tbl.Pos)
-				sc, ok := w.commMgr.StreamBiChannels[t][streamId]
-				if !ok {
-					return fmt.Errorf("error: stream channel not found: %d for notify event",
-						streamId)
-				}
-				sc.AddRequestStreamData(rawdata)
-			default:
-				// unsupported stream data type
-				return fmt.Errorf("error: unsupported stream data type: %d",
-					streamData.DataType())
+			sc, ok := w.commMgr.StreamBiChannels[t][streamId]
+			if !ok {
+				return fmt.Errorf("error: stream channel not found: %d for event",
+					streamId)
 			}
+			sc.WriteStreamData(rawdata)
 			return nil
 		},
 	)

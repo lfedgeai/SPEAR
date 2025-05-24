@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import sys
 import os
 import queue
 import selectors
@@ -260,8 +261,8 @@ class HostAgent(object):
     _instance = None
 
     def __init__(self):
-        self._send_queue = None
-        self._recv_queue = None
+        self._send_queue = queue.Queue(512)
+        self._recv_queue = queue.Queue(512)
         self._global_id = 1
         self._send_task = None
         self._send_task_pipe_r, self._send_task_pipe_w = os.pipe()
@@ -299,8 +300,6 @@ class HostAgent(object):
         # send little endian secret 64-bit integer
         client.send(struct.pack("<Q", host_secret))
         self._client.setblocking(False)
-        self._send_queue = queue.Queue(512)
-        self._recv_queue = queue.Queue(512)
         self._global_id = 0
 
     def run(self, host_addr=None, host_secret=None):
@@ -372,6 +371,7 @@ class HostAgent(object):
                 rpc_data.DataType()
                 == TransportMessageRaw_Data.TransportMessageRaw_Data.TransportRequest
             ):
+                logger.info("transport request")
                 # handle the request
                 req = TransportRequest.TransportRequest()
                 req.Init(rpc_data.Data().Bytes, rpc_data.Data().Pos)
@@ -554,7 +554,6 @@ class HostAgent(object):
                             else:
                                 logger.error("No handler for stream data")
                         elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamOperationEvent:
-                            logger.info("Stream operation event")
                             opdata = StreamOperationEvent.StreamOperationEvent()
                             opdata.Init(sdata.Data().Bytes, sdata.Data().Pos)
                             if opdata.Length() > 0:
@@ -578,7 +577,6 @@ class HostAgent(object):
                             else:
                                 logger.error("No handler for stream data")
                         elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent:
-                            logger.info("Stream notification event")
                             ndata = StreamNotificationEvent.StreamNotificationEvent()
                             ndata.Init(sdata.Data().Bytes, sdata.Data().Pos)
                             if ndata.Length() > 0:
@@ -683,7 +681,8 @@ class HostAgent(object):
         """
         get the data from the incoming queue
         """
-        return self._recv_queue.get()
+        data = self._recv_queue.get()
+        return data
 
     def _get_rpc_data(self) -> TransportMessageRaw.TransportMessageRaw:
         trans_resp = (

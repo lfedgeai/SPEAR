@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"sync"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
@@ -103,13 +104,18 @@ type StreamBiChannel interface {
 	WriteOperationToTask(name string, ty stream.OperationType,
 		data []byte, final bool)
 	WriteRawToTask(data []byte, final bool)
+
+	Flush() error
 }
 
 type streamChannel struct {
-	invInfo   *InvocationInfo
-	streamId  int32
-	reqCh     chan []byte
-	respCh    chan []byte
+	invInfo  *InvocationInfo
+	streamId int32
+
+	reqCh  chan []byte
+	respCh chan []byte
+	respWg sync.WaitGroup
+
 	respSeqId int64
 	stopCh    chan struct{}
 	handler   func(data []byte)
@@ -131,6 +137,7 @@ func NewStreamBiChannel(inv *InvocationInfo, streamId int32, className string) (
 		streamId:  streamId,
 		reqCh:     make(chan []byte, 128),
 		respCh:    make(chan []byte, 128),
+		respWg:    sync.WaitGroup{},
 		respSeqId: 0,
 		stopCh:    make(chan struct{}),
 	}
@@ -142,7 +149,6 @@ func NewStreamBiChannel(inv *InvocationInfo, streamId int32, className string) (
 	}
 
 	res.handler = func(data []byte) {
-		log.Infof("stream data %d", streamId)
 		if err := res.invInfo.CommMgr.SendOutgoingRPCSignal(
 			res.invInfo.Task,
 			transport.SignalStreamData,
@@ -193,6 +199,7 @@ func (p *streamChannel) WriteNotificationToTask(name string, ty stream.Notificat
 	stream.StreamDataAddSequenceId(builder, p.respSeqId)
 	builder.Finish(stream.StreamDataEnd(builder))
 	p.respCh <- builder.FinishedBytes()
+	p.respWg.Add(1)
 
 	// increment the sequence id
 	p.respSeqId++
@@ -220,6 +227,7 @@ func (p *streamChannel) WriteOperationToTask(name string, ty stream.OperationTyp
 	stream.StreamDataAddSequenceId(builder, p.respSeqId)
 	builder.Finish(stream.StreamDataEnd(builder))
 	p.respCh <- builder.FinishedBytes()
+	p.respWg.Add(1)
 
 	// increment the sequence id
 	p.respSeqId++
@@ -243,9 +251,19 @@ func (p *streamChannel) WriteRawToTask(data []byte, final bool) {
 	stream.StreamDataAddSequenceId(builder, p.respSeqId)
 	builder.Finish(stream.StreamDataEnd(builder))
 	p.respCh <- builder.FinishedBytes()
+	p.respWg.Add(1)
 
 	// increment the sequence id
 	p.respSeqId++
+}
+
+func (p *streamChannel) Flush() error {
+	if p.respCh == nil {
+		return fmt.Errorf("stream channel is stopped")
+	}
+	// wait for all responses to be processed
+	p.respWg.Wait()
+	return nil
 }
 
 func (p *streamChannel) respChanEventWorker() {
@@ -256,9 +274,9 @@ func (p *streamChannel) respChanEventWorker() {
 			return
 		case data := <-respCh:
 			if p.handler != nil {
-				log.Infof("stream channel reply %d data %d", p.streamId, len(data))
 				p.handler(data)
 			}
+			p.respWg.Done()
 		}
 	}
 }

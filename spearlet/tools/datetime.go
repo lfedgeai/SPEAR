@@ -4,24 +4,24 @@ import (
 	"fmt"
 	"time"
 
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 )
 
-var dtTools = []hccommon.ToolRegistry{
+var dtTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "datetime",
-		Id:          hccommon.BuiltinToolID_Datetime,
+		Id:          core.BuiltinToolID_Datetime,
 		Description: "Get current date and time, including timezone information",
-		Params:      map[string]hccommon.ToolParam{},
+		Params:      map[string]core.ToolParam{},
 		CbBuiltIn:   datetime,
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "sleep",
-		Id:          hccommon.BuiltinToolID_Sleep,
+		Id:          core.BuiltinToolID_Sleep,
 		Description: "Sleep for a specified number of seconds",
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"seconds": {
 				Ptype:       "integer",
 				Description: "Number of seconds to sleep",
@@ -32,7 +32,7 @@ var dtTools = []hccommon.ToolRegistry{
 	},
 }
 
-func sleep(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func sleep(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	secondsStr := args.(map[string]interface{})["seconds"]
 	// it is either float64 or int
 	seconds := int(secondsStr.(float64))
@@ -40,12 +40,12 @@ func sleep(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) 
 	return fmt.Sprintf("Slept for %d seconds", seconds), nil
 }
 
-func datetime(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func datetime(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	return time.Now().Format(time.RFC3339), nil
 }
 
 func init() {
 	for _, tool := range dtTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

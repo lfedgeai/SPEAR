@@ -5,7 +5,7 @@ import (
 
 	"github.com/lfedgeai/spear/pkg/spear/proto/transform"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 )
 

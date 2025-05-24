@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import sys
 import os
 import queue
 import selectors
@@ -14,7 +15,10 @@ import flatbuffers as fbs
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
-from spear.proto.stream import StreamEvent
+from spear.proto.stream import (NotificationEventType, OperationType,
+                                StreamData, StreamDataWrapper,
+                                StreamNotificationEvent, StreamOperationEvent,
+                                StreamRawData)
 from spear.proto.tool import (InternalToolInfo, ToolInfo,
                               ToolInvocationRequest, ToolInvocationResponse)
 from spear.proto.transport import (Method, Signal, TransportMessageRaw,
@@ -23,6 +27,8 @@ from spear.proto.transport import (Method, Signal, TransportMessageRaw,
 
 MAX_INFLIGHT_REQUESTS = 128
 DEFAULT_MESSAGE_SIZE = 4096
+
+SYS_IO_STREAM_ID = 0
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -81,15 +87,38 @@ class RequestContext(object):
         return self._payload
 
 
-class StreamRequestContext(object):
+class RawStreamRequestContext(object):
     """
     StreamRequestContext is the context of the stream request
     """
 
-    def __init__(self, data, last_message=False, stream_id: int = None):
+    def __init__(self, data, ty: int,
+                 last_message=False, stream_id: int = None):
         self._data = data
+        self._type = ty
         self._last_message = last_message
         self._stream_id = stream_id
+
+    @property
+    def is_raw(self) -> bool:
+        """
+        check if the data is raw
+        """
+        return self._type == StreamDataWrapper.StreamDataWrapper.StreamRawData
+
+    @property
+    def is_operation_event(self) -> bool:
+        """
+        check if the data is operation event
+        """
+        return self._type == StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
+
+    @property
+    def is_notification_event(self) -> bool:
+        """
+        check if the data is notification event
+        """
+        return self._type == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent
 
     @property
     def data(self) -> str:
@@ -97,6 +126,13 @@ class StreamRequestContext(object):
         get the payload
         """
         return self._data
+
+    @property
+    def stream_id(self) -> int:
+        """
+        get the stream id
+        """
+        return self._stream_id
 
     @property
     def last_message(self) -> bool:
@@ -107,11 +143,114 @@ class StreamRequestContext(object):
 
     def __repr__(self):
         return (f"StreamRequestContext(data={self._data}, " +
+                f"type={self._type}, " +
                 f"last_message={self._last_message}), " +
                 f"stream_id={self._stream_id})")
 
     def __str__(self):
         return self.__repr__()
+
+    def send_raw(self, agent, data: bytes, final: bool = False):
+        """
+        send raw data to the stream
+        """
+        builder = fbs.Builder(len(data) + 1024)
+        data_off = builder.CreateByteVector(data_to_bytes(data))
+
+        StreamRawData.StreamRawDataStart(builder)
+        StreamRawData.AddData(builder, data_off)
+        StreamRawData.AddLength(builder, len(data))
+        builder.Finish(StreamRawData.End(builder))
+
+        logger.debug("Sending raw stream data: %s", data)
+        agent.send_rawdata_event(
+            self._stream_id,
+            builder.Output(),
+            final,
+        )
+
+def data_to_bytes(data) -> bytes:
+    """
+    convert the data to bytes
+    """
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, str):
+        return data.encode("utf-8")
+    if isinstance(data, bytearray):
+        return bytes(data)
+    raise ValueError(
+        f"Invalid data type: {type(data)}. Must be bytes, str or bytearray"
+    )
+
+
+class StreamRequestContext(RawStreamRequestContext):
+    """
+    StreamRequestContext is the context of the stream request
+    """
+
+    def __init__(self, data, ty: int,
+                 last_message=False, stream_id: int = None, 
+                 name: str = None):
+        super().__init__(data, ty, last_message, stream_id)
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        """
+        get the name
+        """
+        return self._name
+
+    def send_notification(self, agent, name: str, ty: NotificationEventType,
+                    data: bytes, final: bool = False):
+        """
+        send notification event
+        """
+        builder = fbs.Builder(len(data) + 1024)
+        data_off = builder.CreateByteVector(data_to_bytes(data))
+        name_off = builder.CreateString(name)
+
+        StreamNotificationEvent.StreamNotificationEventStart(builder)
+        StreamNotificationEvent.AddName(builder, name_off)
+        StreamNotificationEvent.AddData(builder, data_off)
+        StreamNotificationEvent.AddLength(builder, len(data))
+        StreamNotificationEvent.AddType(builder, ty)
+        builder.Finish(StreamNotificationEvent.End(builder))
+
+        logger.info("Sending stream notification event: %s", data)
+        agent.send_notification_event(
+            self._stream_id,
+            name,
+            ty,
+            builder.Output(),
+            final,
+        )
+
+    def send_operation(self, agent, name: str, op: OperationType,
+                       data: bytes, final: bool = False):
+        """
+        send operation event
+        """
+        builder = fbs.Builder(len(data) + 1024)
+        data_off = builder.CreateByteVector(data_to_bytes(data))
+        name_off = builder.CreateString(name)
+
+        StreamOperationEvent.StreamOperationEventStart(builder)
+        StreamOperationEvent.AddName(builder, name_off)
+        StreamOperationEvent.AddOp(builder, op)
+        StreamOperationEvent.AddData(builder, data_off)
+        StreamOperationEvent.AddLength(builder, len(data))
+        builder.Finish(StreamOperationEvent.End(builder))
+
+        logger.info("Sending stream operation event: %s", data)
+        agent.send_operation_event(
+            self._stream_id,
+            name,
+            op,
+            builder.Output(),
+            final,
+        )
 
 
 class HostAgent(object):
@@ -122,8 +261,8 @@ class HostAgent(object):
     _instance = None
 
     def __init__(self):
-        self._send_queue = None
-        self._recv_queue = None
+        self._send_queue = queue.Queue(512)
+        self._recv_queue = queue.Queue(512)
         self._global_id = 1
         self._send_task = None
         self._send_task_pipe_r, self._send_task_pipe_w = os.pipe()
@@ -161,8 +300,6 @@ class HostAgent(object):
         # send little endian secret 64-bit integer
         client.send(struct.pack("<Q", host_secret))
         self._client.setblocking(False)
-        self._send_queue = queue.Queue(512)
-        self._recv_queue = queue.Queue(512)
         self._global_id = 0
 
     def run(self, host_addr=None, host_secret=None):
@@ -234,12 +371,14 @@ class HostAgent(object):
                 rpc_data.DataType()
                 == TransportMessageRaw_Data.TransportMessageRaw_Data.TransportRequest
             ):
+                logger.info("transport request")
                 # handle the request
                 req = TransportRequest.TransportRequest()
                 req.Init(rpc_data.Data().Bytes, rpc_data.Data().Pos)
 
-                if req.Method() != Method.Method.Custom:
-                    if req.Method() == Method.Method.ToolInvoke:
+                match req.Method():
+                    case Method.Method.ToolInvoke:
+                        # handle the tool invoke request
                         tool_invoke = ToolInvocationRequest.ToolInvocationRequest.\
                             GetRootAsToolInvocationRequest(
                                 req.RequestAsNumpy())
@@ -295,29 +434,63 @@ class HostAgent(object):
                         )
                         t.daemon = True
                         t.start()
-                        continue
-                    logger.error("Invalid method: %s", req.Method())
-                    raise ValueError("Invalid method")
+                    case Method.Method.Custom:
+                        # handle the custom request
+                        custom_req = CustomRequest.CustomRequest.GetRootAsCustomRequest(
+                            req.RequestAsNumpy(), 0
+                        )
+                        handler_obj = self._handlers.get(
+                            custom_req.MethodStr().decode("utf-8"))
+                        if handler_obj is None:
+                            logger.error("Method not found: %s",
+                                         custom_req.MethodStr())
+                            self._put_rpc_error(
+                                req.Id(),
+                                -32601,
+                                "Method not found",
+                                "Method not found",
+                            )
+                            continue
 
-                custom_req = CustomRequest.CustomRequest.GetRootAsCustomRequest(
-                    req.RequestAsNumpy(), 0
-                )
-                handler_obj = self._handlers.get(
-                    custom_req.MethodStr().decode("utf-8"))
-                if handler_obj is None:
-                    logger.error("Method not found: %s",
-                                 custom_req.MethodStr())
-                    self._put_rpc_error(
-                        req.Id(),
-                        -32601,
-                        "Method not found",
-                        "Method not found",
-                    )
-                    continue
-
-                if custom_req.RequestInfoType() == RequestInfo.RequestInfo.NormalRequestInfo:
-                    if handler_obj.in_stream or handler_obj.out_stream:
-                        logger.error("Invalid request type: %s",
+                        if custom_req.RequestInfoType() == \
+                                RequestInfo.RequestInfo.NormalRequestInfo:
+                            if handler_obj.in_stream or handler_obj.out_stream:
+                                logger.error("Invalid request type: %s",
+                                             custom_req.RequestInfoType())
+                                self._put_rpc_error(
+                                    req.Id(),
+                                    -32601,
+                                    "invalid request type",
+                                    "invalid request type",
+                                )
+                                continue
+                            # handle the normal request
+                            normal_req = NormalRequestInfo.NormalRequestInfo()
+                            normal_req.Init(custom_req.RequestInfo().Bytes,
+                                            custom_req.RequestInfo().Pos)
+                            params_str = normal_req.ParamsStr().decode("utf-8")
+                            req_ctx = RequestContext(payload=params_str)
+                            if self._inflight_requests_count > MAX_INFLIGHT_REQUESTS:
+                                self._put_rpc_error(
+                                    req.Id(),
+                                    -32000,
+                                    "Too many requests",
+                                    "Too many requests",
+                                )
+                            else:
+                                # create a thread to handle the request
+                                t = threading.Thread(
+                                    target=handle_worker,
+                                    args=(
+                                        handler_obj,
+                                        req.Id(),
+                                        req_ctx,
+                                    ),
+                                )
+                                t.daemon = True
+                                t.start()
+                            continue
+                        logger.error("invalid request type: %s",
                                      custom_req.RequestInfoType())
                         self._put_rpc_error(
                             req.Id(),
@@ -325,41 +498,9 @@ class HostAgent(object):
                             "invalid request type",
                             "invalid request type",
                         )
-                        continue
-                    # handle the normal request
-                    normal_req = NormalRequestInfo.NormalRequestInfo()
-                    normal_req.Init(custom_req.RequestInfo().Bytes,
-                                    custom_req.RequestInfo().Pos)
-                    params_str = normal_req.ParamsStr().decode("utf-8")
-                    req_ctx = RequestContext(payload=params_str)
-                    if self._inflight_requests_count > MAX_INFLIGHT_REQUESTS:
-                        self._put_rpc_error(
-                            req.Id(),
-                            -32000,
-                            "Too many requests",
-                            "Too many requests",
-                        )
-                    else:
-                        # create a thread to handle the request
-                        t = threading.Thread(
-                            target=handle_worker,
-                            args=(
-                                handler_obj,
-                                req.Id(),
-                                req_ctx,
-                            ),
-                        )
-                        t.daemon = True
-                        t.start()
-                    continue
-                logger.error("invalid request type: %s",
-                             custom_req.RequestInfoType())
-                self._put_rpc_error(
-                    req.Id(),
-                    -32601,
-                    "invalid request type",
-                    "invalid request type",
-                )
+                    case _:
+                        logger.error("Invalid method: %s", req.Method())
+                        raise ValueError("Invalid method")
             elif (
                 rpc_data.DataType()
                 == TransportMessageRaw_Data.TransportMessageRaw_Data.TransportResponse
@@ -381,57 +522,92 @@ class HostAgent(object):
             ):
                 sig = TransportSignal.TransportSignal()
                 sig.Init(rpc_data.Data().Bytes, rpc_data.Data().Pos)
-                if sig.Method() == Signal.Signal.Terminate:
-                    logger.info("Terminating the agent")
-                    self.stop()
-                    return
-                if sig.Method() == Signal.Signal.StreamEvent:
-                    stream_req = StreamEvent.StreamEvent.GetRootAsStreamEvent(
-                        sig.PayloadAsNumpy(), 0
-                    )
-                    ctx = StreamRequestContext(
-                        data=stream_req.DataAsNumpy(),
-                        last_message=stream_req.Final(),
-                        stream_id=stream_req.StreamId(),
-                    )
-                    if self._sig_handlers.get(Signal.Signal.StreamEvent):
-                        for handler in self._sig_handlers[Signal.Signal.StreamEvent]:
-                            resp_data = None
-                            try:
-                                resp_data = handler(ctx)
-                            except Exception as e:
-                                logger.error(
-                                    "Error: %s", str(e))
-                            if resp_data is not None:
-                                if isinstance(resp_data, str):
-                                    resp_data = resp_data.encode("utf-8")
-                                # check if sequence id is set
-                                with self._stream_sequence_ids_lock:
-                                    if stream_req.StreamId() in self._stream_sequence_ids:
-                                        seq_id = self._stream_sequence_ids[
-                                            stream_req.StreamId()]
-                                        self._stream_sequence_ids[stream_req.StreamId(
-                                        )] += 1
-                                    else:
-                                        seq_id = 0
-                                        self._stream_sequence_ids[stream_req.StreamId(
-                                        )] = 1
-                                self._put_streamevent_signal(
-                                    -1, stream_req.ReplyStreamId(),
-                                    seq_id,
-                                    resp_data,
-                                    stream_req.Final(),
-                                )
+                match sig.Method():
+                    case Signal.Signal.Terminate:
+                        logger.info("Terminating the agent")
+                        self.stop()
+                        return
+                    case Signal.Signal.StreamData:
+                        sdata = StreamData.StreamData.GetRootAsStreamData(
+                            sig.PayloadAsNumpy(), 0
+                        )
+                        if sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamRawData:
+                            rdata = StreamRawData.StreamRawData()
+                            rdata.Init(sdata.Data().Bytes, sdata.Data().Pos)
+                            if rdata.Length() > 0:
+                                data = rdata.DataAsNumpy()
                             else:
-                                self._put_streamevent_signal(
-                                    -1, stream_req.ReplyStreamId(),
-                                    stream_req.SequenceId(),
-                                    b"",
-                                    True,
-                                )
-                else:
-                    logger.error("Invalid signal method: %s", sig.Method())
-                    raise ValueError("Invalid signal method")
+                                data = b""
+                            ctx = RawStreamRequestContext(
+                                data=data,
+                                ty=StreamDataWrapper.StreamDataWrapper.StreamRawData,
+                                last_message=sdata.Final(),
+                                stream_id=sdata.StreamId(),
+                            )
+                            if self._sig_handlers.get(Signal.Signal.StreamData):
+                                for handler in self._sig_handlers[Signal.Signal.StreamData]:
+                                    try:
+                                        handler(ctx)
+                                    except Exception as e:
+                                        logger.error(
+                                            "Error: %s", str(e))
+                            else:
+                                logger.error("No handler for stream data")
+                        elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamOperationEvent:
+                            opdata = StreamOperationEvent.StreamOperationEvent()
+                            opdata.Init(sdata.Data().Bytes, sdata.Data().Pos)
+                            if opdata.Length() > 0:
+                                data = opdata.DataAsNumpy()
+                            else:
+                                data = b""
+                            ctx = StreamRequestContext(
+                                data=data,
+                                ty=StreamDataWrapper.StreamDataWrapper.StreamOperationEvent,
+                                last_message=sdata.Final(),
+                                stream_id=sdata.StreamId(),
+                                name=opdata.Name().decode("utf-8"),
+                            )
+                            if self._sig_handlers.get(Signal.Signal.StreamData):
+                                for handler in self._sig_handlers[Signal.Signal.StreamData]:
+                                    try:
+                                        handler(ctx)
+                                    except Exception as e:
+                                        logger.error(
+                                            "Error: %s", str(e))
+                            else:
+                                logger.error("No handler for stream data")
+                        elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent:
+                            ndata = StreamNotificationEvent.StreamNotificationEvent()
+                            ndata.Init(sdata.Data().Bytes, sdata.Data().Pos)
+                            if ndata.Length() > 0:
+                                data = ndata.DataAsNumpy()
+                            else:
+                                data = b""
+                            ctx = StreamRequestContext(
+                                data=data,
+                                ty=StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent,
+                                last_message=sdata.Final(),
+                                stream_id=sdata.StreamId(),
+                                name=ndata.Name().decode("utf-8"),
+                            )
+                            if self._sig_handlers.get(Signal.Signal.StreamData):
+                                for handler in self._sig_handlers[Signal.Signal.StreamData]:
+                                    try:
+                                        handler(ctx)
+                                    except Exception as e:
+                                        logger.error(
+                                            "Error: %s", str(e))
+                            else:
+                                logger.error("No handler for stream data")
+                        else:
+                            # unsupported stream data type
+                            logger.error("unsupported stream data type: %s",
+                                         sdata.DataType())
+                            raise ValueError("unsupported stream data type")
+                    case _:
+                        logger.error("Invalid signal type: %s",
+                                     sig.Method())
+                        raise ValueError("Invalid signal type")
             else:
                 logger.error("Invalid rpc data")
                 raise ValueError("Invalid rpc data")
@@ -441,6 +617,24 @@ class HostAgent(object):
         register internal tool callback function
         """
         self._internal_tools[tid] = handler
+
+    def register_stream_signal_handler(self, sig_type, stream_id: int,
+                                       handler: Callable):
+        """
+        register the stream data signal handler for the stream id
+        """
+        if sig_type not in self._sig_handlers:
+            self._sig_handlers[sig_type] = []
+        if not isinstance(handler, Callable):
+            raise ValueError("handler must be a callable")
+
+        def handler_wrapper(ctx):
+            data = StreamData.StreamData.GetRootAsStreamData(
+                ctx.data, 0)
+            if data.StreamId() != stream_id:
+                return
+            return handler(ctx)
+        self._sig_handlers[sig_type].append(handler_wrapper)
 
     def register_signal_handler(self, sig_type, handler: Callable):
         """
@@ -487,7 +681,8 @@ class HostAgent(object):
         """
         get the data from the incoming queue
         """
-        return self._recv_queue.get()
+        data = self._recv_queue.get()
+        return data
 
     def _get_rpc_data(self) -> TransportMessageRaw.TransportMessageRaw:
         trans_resp = (
@@ -523,31 +718,129 @@ class HostAgent(object):
                 raise RuntimeError(resp.Message())
             return resp.ResponseAsNumpy()
 
-    def _put_streamevent_signal(self, stream_id: int, reply_stream_id: int,
-                                seq_id: int, data: bytes, last_message: bool):
+    def generate_sequence_id(self, stream_id: int) -> int:
         """
-        send the rpc signal
+        generate a sequence id for the stream
+        """
+        with self._stream_sequence_ids_lock:
+            if stream_id in self._stream_sequence_ids:
+                seq_id = self._stream_sequence_ids[stream_id]
+                self._stream_sequence_ids[stream_id] += 1
+            else:
+                seq_id = 0
+                self._stream_sequence_ids[stream_id] = 0
+        return seq_id
+
+    def send_operation_event(self, stream_id: int, name: str,
+                             op: OperationType, data: bytes,
+                             last_message: bool = False):
+        """
+        send the operation event
         """
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
+        name_off = builder.CreateString(name)
 
-        StreamEvent.StreamEventStart(builder)
-        StreamEvent.AddStreamId(builder, stream_id)
-        StreamEvent.AddReplyStreamId(builder, reply_stream_id)
-        StreamEvent.AddSequenceId(builder, seq_id)
-        StreamEvent.AddData(builder, data_off)
-        StreamEvent.AddFinal(builder, last_message)
-        req_off = StreamEvent.End(builder)
+        StreamOperationEvent.StreamOperationEventStart(builder)
+        StreamOperationEvent.AddName(builder, name_off)
+        StreamOperationEvent.AddOp(builder, op)
+        StreamOperationEvent.AddData(builder, data_off)
+        StreamOperationEvent.AddLength(builder, len(data))
+        stream_op_event_off = StreamOperationEvent.End(builder)
+
+        seq_id = self.generate_sequence_id(stream_id)
+
+        StreamData.StreamDataStart(builder)
+        StreamData.AddStreamId(builder, stream_id)
+        StreamData.AddSequenceId(
+            builder, seq_id)
+        StreamData.AddDataType(
+            builder, StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
+        )
+        StreamData.AddData(builder, stream_op_event_off)
+        StreamData.AddFinal(builder, last_message)
+        req_off = StreamData.End(builder)
         builder.Finish(req_off)
 
         stream_event_data = builder.Output()
+
+        self._put_signal(
+            Signal.Signal.StreamData,
+            stream_event_data
+        )
+
+    def send_notification_event(self, stream_id: int, name: str,
+                          ty: NotificationEventType, data: bytes,
+                          last_message: bool = False):
+        """
+        send the notification event signal
+        """
+        builder = fbs.Builder(len(data) + 1024)
+        data_off = builder.CreateByteVector(data)
+        name_off = builder.CreateString(name)
+        StreamNotificationEvent.StreamNotificationEventStart(builder)
+        StreamNotificationEvent.AddName(builder, name_off)
+        StreamNotificationEvent.AddData(builder, data_off)
+        StreamNotificationEvent.AddLength(builder, len(data))
+        StreamNotificationEvent.AddType(builder, ty)
+        stream_notification_event_off = StreamNotificationEvent.End(builder)
+
+        seq_id = self.generate_sequence_id(stream_id)
+
+        StreamData.StreamDataStart(builder)
+        StreamData.AddStreamId(builder, stream_id)
+        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddDataType(
+            builder, StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent
+        )
+        StreamData.AddData(builder, stream_notification_event_off)
+        StreamData.AddFinal(builder, last_message)
+        req_off = StreamData.End(builder)
+        builder.Finish(req_off)
+
+        stream_event_data = builder.Output()
+
+        self._put_signal(
+            Signal.Signal.StreamData,
+            stream_event_data
+        )
+
+    def send_rawdata_event(self, stream_id: int, data: bytes, last_message: bool):
+        """
+        send the rpc signal
+        """
+        data_len = len(data)
+        builder = fbs.Builder(len(data) + 1024)
+        data_off = builder.CreateByteVector(data)
+
+        StreamRawData.StreamRawDataStart(builder)
+        StreamRawData.AddData(builder, data_off)
+        StreamRawData.AddLength(builder, data_len)
+        stream_raw_data_off = StreamRawData.End(builder)
+
+        seq_id = self.generate_sequence_id(stream_id)
+
+        StreamData.StreamDataStart(builder)
+        StreamData.AddStreamId(builder, stream_id)
+        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddDataType(
+            builder, StreamDataWrapper.StreamDataWrapper.StreamRawData
+        )
+        StreamData.AddData(builder, stream_raw_data_off)
+        StreamData.AddFinal(builder, last_message)
+        req_off = StreamData.End(builder)
+        builder.Finish(req_off)
+
+        stream_event_data = builder.Output()
+        # logger.debug("raw stream data: %s len %d",
+        #              stream_event_data, len(stream_event_data))
 
         builder = fbs.Builder(len(stream_event_data) + 1024)
         req_off = builder.CreateByteVector(stream_event_data)
 
         TransportSignal.TransportSignalStart(builder)
         TransportSignal.AddMethod(
-            builder, Signal.Signal.StreamEvent
+            builder, Signal.Signal.StreamData
         )
         TransportSignal.AddPayload(builder, req_off)
         req_off = TransportSignal.End(builder)

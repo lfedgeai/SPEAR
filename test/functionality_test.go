@@ -94,7 +94,7 @@ func TestProcStreamingFunctionality(t *testing.T) {
 
 	go func() {
 		defer func() {
-			log.Infof("Closing in stream")
+			log.Infof("Closing input stream")
 			close(in_stream)
 		}()
 		for range 10 {

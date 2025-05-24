@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 	"github.com/lfedgeai/spear/spearlet/task"
 	"github.com/qdrant/go-client/qdrant"
 	log "github.com/sirupsen/logrus"

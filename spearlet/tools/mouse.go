@@ -4,17 +4,17 @@ import (
 	"time"
 
 	"github.com/go-vgo/robotgo"
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 )
 
-var mouseTools = []hccommon.ToolRegistry{
+var mouseTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "mouse_right_click",
-		Id:          hccommon.BuiltinToolID_MouseRightClick,
+		Id:          core.BuiltinToolID_MouseRightClick,
 		Description: `Right click the mouse at the current location.`,
-		Params:      map[string]hccommon.ToolParam{},
-		CbBuiltIn: func(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+		Params:      map[string]core.ToolParam{},
+		CbBuiltIn: func(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 			robotgo.Toggle("right")
 			time.Sleep(300 * time.Millisecond)
 			robotgo.Toggle("right", "up")
@@ -22,12 +22,12 @@ var mouseTools = []hccommon.ToolRegistry{
 		},
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "mouse_left_click",
-		Id:          hccommon.BuiltinToolID_MouseLeftClick,
+		Id:          core.BuiltinToolID_MouseLeftClick,
 		Description: `Left click the mouse at the current location.`,
-		Params:      map[string]hccommon.ToolParam{},
-		CbBuiltIn: func(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+		Params:      map[string]core.ToolParam{},
+		CbBuiltIn: func(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 			robotgo.Toggle("left")
 			time.Sleep(300 * time.Millisecond)
 			robotgo.Toggle("left", "up")
@@ -38,6 +38,6 @@ var mouseTools = []hccommon.ToolRegistry{
 
 func init() {
 	for _, tool := range mouseTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

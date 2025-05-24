@@ -1,0 +1,60 @@
+namespace spear.proto.stream;
+
+enum OperationType: ubyte {
+    NoOp = 0,
+    Configure,
+    Create,
+    Patch,
+    Delete,
+    Append,
+    Truncate,
+    Cancel,
+}
+
+table StreamOperationEvent {
+    name: string;
+    op: OperationType = NoOp;
+    length: int32 = 0;
+    data: [ubyte];
+}
+
+enum NotificationEventType: ubyte {
+    Error = 0,
+    Configured,
+    Created,
+    Updated,
+    Deleted,
+    Completed,
+    Cancelled,
+}
+
+table StreamNotificationEvent {
+    name: string;
+    type: NotificationEventType = Error;
+    length: int32 = 0;
+    data: [ubyte];
+    error_msg: string;
+}
+
+table StreamRawData {
+    // golang will crash if length is 0, 
+    // we need use an extra field to indicate the length
+    length: int32 = 0;
+    data: [ubyte];
+}
+
+union StreamDataWrapper {
+    StreamOperationEvent,
+    StreamNotificationEvent,
+    StreamRawData,
+}
+
+table StreamData {
+    // The stream ID to which this request belongs.
+    stream_id: int32 = -1;
+    sequence_id: int64 = -1;
+    data: StreamDataWrapper (required);
+    final: bool = false;
+}
+
+root_type StreamData;

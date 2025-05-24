@@ -6,6 +6,8 @@ import time
 import spear.client as client
 import spear.transform.chat as chat
 import spear.utils.io as io
+from spear.stream import (NotificationEventType, OperationType, close_stream,
+                          create_stream)
 from spear.utils.tool import register_internal_tool
 
 from spear.proto.tool import BuiltinToolID
@@ -25,6 +27,8 @@ agent = client.HostAgent()
 
 
 TEST_LLM_MODEL = "gpt-4o"  # "deepseek-toolchat"
+FUNCTION_NAME = "dummy"
+CLASS_NAME = "dummy"
 
 
 def handle(ctx):
@@ -51,20 +55,29 @@ def handle(ctx):
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
 
+    test_stream_data()
+
     time.sleep(10)
     # agent.stop()
 
+# ctx is either StreamRequestContext or RawStreamRequestContext
 
-def handle_stream(data):
+
+def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestContext):
     """
     handle streaming request
     """
-    logger.info("Handling streaming request: %s", data)
+    logger.info("Handling streaming request: %s", ctx)
 
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
+    if ctx.stream_id == client.SYS_IO_STREAM_ID:
+        ctx.send_raw(agent, f"[Hi I got the context: {ctx}]")
+    elif not ctx.is_raw:
+        logger.info("event target: %s", ctx.name)
+        ctx.send_notification(agent, FUNCTION_NAME, NotificationEventType.Completed,
+                        f"[Reply from streamdata event handler: {ctx}]")
 
-    return f"#Hi I got the context: {data}#"
 
 def test_chat(model):
     """
@@ -147,7 +160,24 @@ def test_tool(model):
     logger.info(resp)
 
 
+def test_stream_data():
+    """
+    test streamdata
+    """
+    logger.info("Testing streamdata")
+    stream_id = create_stream(agent, CLASS_NAME)
+    logger.info("Stream ID: %d", stream_id)
+
+    agent.send_operation_event(stream_id, FUNCTION_NAME,
+                               OperationType.Create, b"test data")
+
+    time.sleep(5)
+    # close stream
+    close_stream(agent, stream_id)
+    logger.info("Stream closed")
+
+
 if __name__ == "__main__":
     agent.register_handler("handle", handle)
-    agent.register_signal_handler(Signal.Signal.StreamEvent, handle_stream)
+    agent.register_signal_handler(Signal.Signal.StreamData, handle_stream)
     agent.run()

@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"os"
 
-	hccommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
 
-var webTools = []hccommon.ToolRegistry{
+var webTools = []core.ToolRegistry{
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "open_url",
-		Id:          hccommon.BuiltinToolID_OpenURL,
+		Id:          core.BuiltinToolID_OpenURL,
 		Description: `Open a URL in the default browser`,
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"url": {
 				Ptype:       "string",
 				Description: "URL to open",
@@ -28,11 +28,11 @@ var webTools = []hccommon.ToolRegistry{
 		CbBuiltIn: openUrl,
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "scroll_down",
-		Id:          hccommon.BuiltinToolID_ScrollDown,
+		Id:          core.BuiltinToolID_ScrollDown,
 		Description: `Scroll down the page using arrowdown key`,
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"times": {
 				Ptype:       "integer",
 				Description: "Number of times to press arrowdown key",
@@ -42,11 +42,11 @@ var webTools = []hccommon.ToolRegistry{
 		CbBuiltIn: scrollDown,
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "scroll_up",
-		Id:          hccommon.BuiltinToolID_ScrollUp,
+		Id:          core.BuiltinToolID_ScrollUp,
 		Description: `Scroll up the page using arrowup key`,
-		Params: map[string]hccommon.ToolParam{
+		Params: map[string]core.ToolParam{
 			"times": {
 				Ptype:       "integer",
 				Description: "Number of times to press arrowup key",
@@ -56,27 +56,27 @@ var webTools = []hccommon.ToolRegistry{
 		CbBuiltIn: scrollUp,
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "page_up",
-		Id:          hccommon.BuiltinToolID_PageUp,
+		Id:          core.BuiltinToolID_PageUp,
 		Description: `Scroll up the page using pageup key`,
-		Params:      map[string]hccommon.ToolParam{},
+		Params:      map[string]core.ToolParam{},
 		CbBuiltIn:   pageUp,
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "page_down",
-		Id:          hccommon.BuiltinToolID_PageDown,
+		Id:          core.BuiltinToolID_PageDown,
 		Description: `Scroll down the page using pagedown key`,
-		Params:      map[string]hccommon.ToolParam{},
+		Params:      map[string]core.ToolParam{},
 		CbBuiltIn:   pageDown,
 	},
 	{
-		ToolType:    hccommon.ToolType_Builtin,
+		ToolType:    core.ToolType_Builtin,
 		Name:        "web_screenshot",
-		Id:          hccommon.BuiltinToolID_WebScreenshot,
+		Id:          core.BuiltinToolID_WebScreenshot,
 		Description: `Take a screenshot of the current web page. This won't take a screenshot of the entire screen`,
-		Params:      map[string]hccommon.ToolParam{},
+		Params:      map[string]core.ToolParam{},
 		CbBuiltIn:   webScreenshot,
 	},
 }
@@ -85,7 +85,7 @@ var gCtx context.Context
 var gCtxCancel context.CancelFunc
 var started bool = false
 
-func webScreenshot(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func webScreenshot(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	if !started {
 		startChrome()
 	}
@@ -109,7 +109,7 @@ func webScreenshot(inv *hccommon.InvocationInfo, args interface{}) (interface{},
 	return "Screenshot taken successfully", nil
 }
 
-func pageUp(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func pageUp(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	if !started {
 		startChrome()
 	}
@@ -120,7 +120,7 @@ func pageUp(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error)
 	return "Scrolled up one page", nil
 }
 
-func pageDown(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func pageDown(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	if !started {
 		startChrome()
 	}
@@ -131,7 +131,7 @@ func pageDown(inv *hccommon.InvocationInfo, args interface{}) (interface{}, erro
 	return "Scrolled down one page", nil
 }
 
-func scrollDown(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func scrollDown(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	if !started {
 		startChrome()
 	}
@@ -147,7 +147,7 @@ func scrollDown(inv *hccommon.InvocationInfo, args interface{}) (interface{}, er
 	return fmt.Sprintf("Scrolled down %d times", times), nil
 }
 
-func scrollUp(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func scrollUp(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	if !started {
 		startChrome()
 	}
@@ -163,7 +163,7 @@ func scrollUp(inv *hccommon.InvocationInfo, args interface{}) (interface{}, erro
 	return fmt.Sprintf("Scrolled up %d times", times), nil
 }
 
-func openUrl(inv *hccommon.InvocationInfo, args interface{}) (interface{}, error) {
+func openUrl(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	if !started {
 		startChrome()
 	}
@@ -191,6 +191,6 @@ func startChrome() bool {
 
 func init() {
 	for _, tool := range webTools {
-		hccommon.RegisterBuiltinTool(tool)
+		core.RegisterBuiltinTool(tool)
 	}
 }

@@ -169,6 +169,7 @@ class RawStreamRequestContext(object):
             final,
         )
 
+
 def data_to_bytes(data) -> bytes:
     """
     convert the data to bytes
@@ -190,7 +191,7 @@ class StreamRequestContext(RawStreamRequestContext):
     """
 
     def __init__(self, data, ty: int,
-                 last_message=False, stream_id: int = None, 
+                 last_message=False, stream_id: int = None,
                  name: str = None):
         super().__init__(data, ty, last_message, stream_id)
         self._name = name
@@ -203,7 +204,7 @@ class StreamRequestContext(RawStreamRequestContext):
         return self._name
 
     def send_notification(self, agent, name: str, ty: NotificationEventType,
-                    data: bytes, final: bool = False):
+                          data: bytes, final: bool = False):
         """
         send notification event
         """
@@ -770,8 +771,8 @@ class HostAgent(object):
         )
 
     def send_notification_event(self, stream_id: int, name: str,
-                          ty: NotificationEventType, data: bytes,
-                          last_message: bool = False):
+                                ty: NotificationEventType, data: bytes,
+                                last_message: bool = False):
         """
         send the notification event signal
         """
@@ -1066,3 +1067,52 @@ class HostAgent(object):
 
         # create a thread to stop the agent
         threading.Thread(target=stop_worker).start()
+
+
+# global HostAgent instance variable
+_global_agent = HostAgent()
+
+
+def handle(method: Callable):
+    """
+    Decorator to register a function as a request handler
+    """
+    if not isinstance(method, Callable):
+        raise ValueError("method must be a callable")
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.register_handler("handle", method)
+    return method
+
+
+def handle_stream(method: Callable):
+    """
+    Decorator to register a function as a stream handler
+    """
+    if not isinstance(method, Callable):
+        raise ValueError("method must be a callable")
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.register_signal_handler(
+        Signal.Signal.StreamData, method
+    )
+    return method
+
+
+def init():
+    """
+    Initialize the global HostAgent instance
+    """
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.run()
+    logger.info("_global_agent initialized")
+
+
+def global_agent() -> HostAgent:
+    """
+    Get the global HostAgent instance
+    """
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    return _global_agent

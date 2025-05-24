@@ -178,8 +178,5 @@ def test_stream_data():
 
 
 if __name__ == "__main__":
-    # agent.register_handler("handle", handle)
-    # agent.register_signal_handler(Signal.Signal.StreamData, handle_stream)
-    # agent.run()
     client.init()
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import logging
-import sys
 import os
 import queue
 import selectors
 import socket
 import struct
+import sys
 import threading
 import time
 import traceback

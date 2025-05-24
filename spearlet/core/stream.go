@@ -198,8 +198,8 @@ func (p *streamChannel) WriteNotificationToTask(name string, ty stream.Notificat
 	stream.StreamDataAddFinal(builder, final)
 	stream.StreamDataAddSequenceId(builder, p.respSeqId)
 	builder.Finish(stream.StreamDataEnd(builder))
-	p.respCh <- builder.FinishedBytes()
 	p.respWg.Add(1)
+	p.respCh <- builder.FinishedBytes()
 
 	// increment the sequence id
 	p.respSeqId++
@@ -226,8 +226,8 @@ func (p *streamChannel) WriteOperationToTask(name string, ty stream.OperationTyp
 	stream.StreamDataAddFinal(builder, final)
 	stream.StreamDataAddSequenceId(builder, p.respSeqId)
 	builder.Finish(stream.StreamDataEnd(builder))
-	p.respCh <- builder.FinishedBytes()
 	p.respWg.Add(1)
+	p.respCh <- builder.FinishedBytes()
 
 	// increment the sequence id
 	p.respSeqId++
@@ -250,8 +250,8 @@ func (p *streamChannel) WriteRawToTask(data []byte, final bool) {
 	stream.StreamDataAddFinal(builder, final)
 	stream.StreamDataAddSequenceId(builder, p.respSeqId)
 	builder.Finish(stream.StreamDataEnd(builder))
-	p.respCh <- builder.FinishedBytes()
 	p.respWg.Add(1)
+	p.respCh <- builder.FinishedBytes()
 
 	// increment the sequence id
 	p.respSeqId++

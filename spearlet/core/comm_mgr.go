@@ -349,8 +349,9 @@ func (c *CommunicationManager) SendOutgoingNotificationEvent(t task.Task, name s
 	stream.StreamDataAddData(builder, notificationOff)
 	stream.StreamDataAddDataType(builder, stream.StreamDataWrapperStreamNotificationEvent)
 	stream.StreamDataAddFinal(builder, final)
+	streamDataOff := stream.StreamDataEnd(builder)
 
-	builder.Finish(notificationOff)
+	builder.Finish(streamDataOff)
 
 	if err := c.SendOutgoingRPCSignal(t, transport.SignalStreamData, builder.FinishedBytes()); err != nil {
 		return err

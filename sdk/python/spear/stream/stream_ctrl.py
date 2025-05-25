@@ -26,7 +26,7 @@ def create_stream(agent: client.HostAgent, class_name: str) -> int:
     """
     logger.info("Creating stream")
 
-    req_id = 1234 # temporary value
+    req_id = uuid.uuid4().int & (1<<32)-1  # Generate a unique 32-bit request ID
     builder = fbs.Builder(0)
     strOff = builder.CreateString(class_name)
     

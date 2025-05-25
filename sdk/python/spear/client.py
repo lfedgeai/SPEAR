@@ -92,8 +92,7 @@ class RawStreamRequestContext(object):
     StreamRequestContext is the context of the stream request
     """
 
-    def __init__(self, data, ty: int,
-                 last_message=False, stream_id: int = None):
+    def __init__(self, data, ty: int, last_message=False, stream_id: int = None):
         self._data = data
         self._type = ty
         self._last_message = last_message
@@ -142,10 +141,12 @@ class RawStreamRequestContext(object):
         return self._last_message
 
     def __repr__(self):
-        return (f"StreamRequestContext(data={self._data}, " +
-                f"type={self._type}, " +
-                f"last_message={self._last_message}), " +
-                f"stream_id={self._stream_id})")
+        return (
+            f"StreamRequestContext(data={self._data}, "
+            + f"type={self._type}, "
+            + f"last_message={self._last_message}), "
+            + f"stream_id={self._stream_id})"
+        )
 
     def __str__(self):
         return self.__repr__()
@@ -190,9 +191,9 @@ class StreamRequestContext(RawStreamRequestContext):
     StreamRequestContext is the context of the stream request
     """
 
-    def __init__(self, data, ty: int,
-                 last_message=False, stream_id: int = None,
-                 name: str = None):
+    def __init__(
+        self, data, ty: int, last_message=False, stream_id: int = None, name: str = None
+    ):
         super().__init__(data, ty, last_message, stream_id)
         self._name = name
 
@@ -203,8 +204,14 @@ class StreamRequestContext(RawStreamRequestContext):
         """
         return self._name
 
-    def send_notification(self, agent, name: str, ty: NotificationEventType,
-                          data: bytes, final: bool = False):
+    def send_notification(
+        self,
+        agent,
+        name: str,
+        ty: NotificationEventType,
+        data: bytes,
+        final: bool = False,
+    ):
         """
         send notification event
         """
@@ -228,8 +235,9 @@ class StreamRequestContext(RawStreamRequestContext):
             final,
         )
 
-    def send_operation(self, agent, name: str, op: OperationType,
-                       data: bytes, final: bool = False):
+    def send_operation(
+        self, agent, name: str, op: OperationType, data: bytes, final: bool = False
+    ):
         """
         send operation event
         """
@@ -347,8 +355,7 @@ class HostAgent(object):
                     if isinstance(result, str):
                         result = result.encode("utf-8")
                     if not isinstance(result, bytes):
-                        raise ValueError(
-                            f"Invalid response type: {type(result)}")
+                        raise ValueError(f"Invalid response type: {type(result)}")
                 builder = fbs.Builder(1024)
                 off = builder.CreateByteVector(result)
                 CustomResponse.CustomResponseStart(builder)
@@ -359,12 +366,10 @@ class HostAgent(object):
                 self._put_rpc_response(req_id, builder.Output())
             except Exception as e:
                 logger.error("Error: %s", traceback.format_exc())
-                self._put_rpc_error(req_id, -32603, str(e),
-                                    "Internal error: ")
+                self._put_rpc_error(req_id, -32603, str(e), "Internal error: ")
             with self._inflight_requests_lock:
                 self._inflight_requests_count -= 1
-            logger.debug("Inflight requests: %d",
-                         self._inflight_requests_count)
+            logger.debug("Inflight requests: %d", self._inflight_requests_count)
 
         while True:
             rpc_data = self._get_rpc_data()
@@ -380,12 +385,16 @@ class HostAgent(object):
                 match req.Method():
                     case Method.Method.ToolInvoke:
                         # handle the tool invoke request
-                        tool_invoke = ToolInvocationRequest.ToolInvocationRequest.\
-                            GetRootAsToolInvocationRequest(
-                                req.RequestAsNumpy())
-                        if tool_invoke.ToolInfoType() != ToolInfo.ToolInfo.InternalToolInfo:
-                            logger.error("Invalid tool info type: %s",
-                                         tool_invoke.ToolInfoType())
+                        tool_invoke = ToolInvocationRequest.ToolInvocationRequest.GetRootAsToolInvocationRequest(
+                            req.RequestAsNumpy()
+                        )
+                        if (
+                            tool_invoke.ToolInfoType()
+                            != ToolInfo.ToolInfo.InternalToolInfo
+                        ):
+                            logger.error(
+                                "Invalid tool info type: %s", tool_invoke.ToolInfoType()
+                            )
                             raise ValueError("Invalid tool info type")
                         tool_tbl = tool_invoke.ToolInfo()
                         if tool_tbl is None:
@@ -407,19 +416,22 @@ class HostAgent(object):
                                 builder = fbs.Builder(1024)
                                 res_off = builder.CreateString(result)
                                 ToolInvocationResponse.ToolInvocationResponseStart(
-                                    builder)
+                                    builder
+                                )
                                 ToolInvocationResponse.ToolInvocationResponseAddResult(
-                                    builder, res_off)
+                                    builder, res_off
+                                )
                                 end = ToolInvocationResponse.ToolInvocationResponseEnd(
-                                    builder)
+                                    builder
+                                )
                                 builder.Finish(end)
-                                self._put_rpc_response(
-                                    req.Id(), builder.Output())
+                                self._put_rpc_response(req.Id(), builder.Output())
                             except Exception as e:
-                                logger.error(
-                                    "Error: %s", traceback.format_exc())
-                                self._put_rpc_error(req.Id(), -32603, str(e),
-                                                    "Internal error: ")
+                                logger.error("Error: %s", traceback.format_exc())
+                                self._put_rpc_error(
+                                    req.Id(), -32603, str(e), "Internal error: "
+                                )
+
                         params_dict = {}
                         for i in range(tool_invoke.ParamsLength()):
                             k = tool_invoke.Params(i).Key().decode("utf-8")
@@ -428,10 +440,8 @@ class HostAgent(object):
                             params_dict[k] = v
                         t = threading.Thread(
                             target=internal_tool_handler,
-                            args=(
-                                handler,
-                            ),
-                            kwargs=params_dict
+                            args=(handler,),
+                            kwargs=params_dict,
                         )
                         t.daemon = True
                         t.start()
@@ -441,10 +451,10 @@ class HostAgent(object):
                             req.RequestAsNumpy(), 0
                         )
                         handler_obj = self._handlers.get(
-                            custom_req.MethodStr().decode("utf-8"))
+                            custom_req.MethodStr().decode("utf-8")
+                        )
                         if handler_obj is None:
-                            logger.error("Method not found: %s",
-                                         custom_req.MethodStr())
+                            logger.error("Method not found: %s", custom_req.MethodStr())
                             self._put_rpc_error(
                                 req.Id(),
                                 -32601,
@@ -453,11 +463,15 @@ class HostAgent(object):
                             )
                             continue
 
-                        if custom_req.RequestInfoType() == \
-                                RequestInfo.RequestInfo.NormalRequestInfo:
+                        if (
+                            custom_req.RequestInfoType()
+                            == RequestInfo.RequestInfo.NormalRequestInfo
+                        ):
                             if handler_obj.in_stream or handler_obj.out_stream:
-                                logger.error("Invalid request type: %s",
-                                             custom_req.RequestInfoType())
+                                logger.error(
+                                    "Invalid request type: %s",
+                                    custom_req.RequestInfoType(),
+                                )
                                 self._put_rpc_error(
                                     req.Id(),
                                     -32601,
@@ -467,8 +481,10 @@ class HostAgent(object):
                                 continue
                             # handle the normal request
                             normal_req = NormalRequestInfo.NormalRequestInfo()
-                            normal_req.Init(custom_req.RequestInfo().Bytes,
-                                            custom_req.RequestInfo().Pos)
+                            normal_req.Init(
+                                custom_req.RequestInfo().Bytes,
+                                custom_req.RequestInfo().Pos,
+                            )
                             params_str = normal_req.ParamsStr().decode("utf-8")
                             req_ctx = RequestContext(payload=params_str)
                             if self._inflight_requests_count > MAX_INFLIGHT_REQUESTS:
@@ -491,8 +507,9 @@ class HostAgent(object):
                                 t.daemon = True
                                 t.start()
                             continue
-                        logger.error("invalid request type: %s",
-                                     custom_req.RequestInfoType())
+                        logger.error(
+                            "invalid request type: %s", custom_req.RequestInfoType()
+                        )
                         self._put_rpc_error(
                             req.Id(),
                             -32601,
@@ -532,7 +549,10 @@ class HostAgent(object):
                         sdata = StreamData.StreamData.GetRootAsStreamData(
                             sig.PayloadAsNumpy(), 0
                         )
-                        if sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamRawData:
+                        if (
+                            sdata.DataType()
+                            == StreamDataWrapper.StreamDataWrapper.StreamRawData
+                        ):
                             rdata = StreamRawData.StreamRawData()
                             rdata.Init(sdata.Data().Bytes, sdata.Data().Pos)
                             if rdata.Length() > 0:
@@ -546,15 +566,19 @@ class HostAgent(object):
                                 stream_id=sdata.StreamId(),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
-                                for handler in self._sig_handlers[Signal.Signal.StreamData]:
+                                for handler in self._sig_handlers[
+                                    Signal.Signal.StreamData
+                                ]:
                                     try:
                                         handler(ctx)
                                     except Exception as e:
-                                        logger.error(
-                                            "Error: %s", str(e))
+                                        logger.error("Error: %s", str(e))
                             else:
                                 logger.error("No handler for stream data")
-                        elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamOperationEvent:
+                        elif (
+                            sdata.DataType()
+                            == StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
+                        ):
                             opdata = StreamOperationEvent.StreamOperationEvent()
                             opdata.Init(sdata.Data().Bytes, sdata.Data().Pos)
                             if opdata.Length() > 0:
@@ -569,15 +593,19 @@ class HostAgent(object):
                                 name=opdata.Name().decode("utf-8"),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
-                                for handler in self._sig_handlers[Signal.Signal.StreamData]:
+                                for handler in self._sig_handlers[
+                                    Signal.Signal.StreamData
+                                ]:
                                     try:
                                         handler(ctx)
                                     except Exception as e:
-                                        logger.error(
-                                            "Error: %s", str(e))
+                                        logger.error("Error: %s", str(e))
                             else:
                                 logger.error("No handler for stream data")
-                        elif sdata.DataType() == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent:
+                        elif (
+                            sdata.DataType()
+                            == StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent
+                        ):
                             ndata = StreamNotificationEvent.StreamNotificationEvent()
                             ndata.Init(sdata.Data().Bytes, sdata.Data().Pos)
                             if ndata.Length() > 0:
@@ -592,22 +620,23 @@ class HostAgent(object):
                                 name=ndata.Name().decode("utf-8"),
                             )
                             if self._sig_handlers.get(Signal.Signal.StreamData):
-                                for handler in self._sig_handlers[Signal.Signal.StreamData]:
+                                for handler in self._sig_handlers[
+                                    Signal.Signal.StreamData
+                                ]:
                                     try:
                                         handler(ctx)
                                     except Exception as e:
-                                        logger.error(
-                                            "Error: %s", str(e))
+                                        logger.error("Error: %s", str(e))
                             else:
                                 logger.error("No handler for stream data")
                         else:
                             # unsupported stream data type
-                            logger.error("unsupported stream data type: %s",
-                                         sdata.DataType())
+                            logger.error(
+                                "unsupported stream data type: %s", sdata.DataType()
+                            )
                             raise ValueError("unsupported stream data type")
                     case _:
-                        logger.error("Invalid signal type: %s",
-                                     sig.Method())
+                        logger.error("Invalid signal type: %s", sig.Method())
                         raise ValueError("Invalid signal type")
             else:
                 logger.error("Invalid rpc data")
@@ -619,8 +648,9 @@ class HostAgent(object):
         """
         self._internal_tools[tid] = handler
 
-    def register_stream_signal_handler(self, sig_type, stream_id: int,
-                                       handler: Callable):
+    def register_stream_signal_handler(
+        self, sig_type, stream_id: int, handler: Callable
+    ):
         """
         register the stream data signal handler for the stream id
         """
@@ -630,11 +660,11 @@ class HostAgent(object):
             raise ValueError("handler must be a callable")
 
         def handler_wrapper(ctx):
-            data = StreamData.StreamData.GetRootAsStreamData(
-                ctx.data, 0)
+            data = StreamData.StreamData.GetRootAsStreamData(ctx.data, 0)
             if data.StreamId() != stream_id:
                 return
             return handler(ctx)
+
         self._sig_handlers[sig_type].append(handler_wrapper)
 
     def register_signal_handler(self, sig_type, handler: Callable):
@@ -648,8 +678,13 @@ class HostAgent(object):
         self._sig_handlers[sig_type].append(handler)
         logger.debug("Registered signal handler for %s", sig_type)
 
-    def register_handler(self, method: str, handler: Callable,
-                         in_stream: bool = False, out_stream: bool = False):
+    def register_handler(
+        self,
+        method: str,
+        handler: Callable,
+        in_stream: bool = False,
+        out_stream: bool = False,
+    ):
         """
         register the handler for the method
         """
@@ -732,9 +767,14 @@ class HostAgent(object):
                 self._stream_sequence_ids[stream_id] = 0
         return seq_id
 
-    def send_operation_event(self, stream_id: int, name: str,
-                             op: OperationType, data: bytes,
-                             last_message: bool = False):
+    def send_operation_event(
+        self,
+        stream_id: int,
+        name: str,
+        op: OperationType,
+        data: bytes,
+        last_message: bool = False,
+    ):
         """
         send the operation event
         """
@@ -753,8 +793,7 @@ class HostAgent(object):
 
         StreamData.StreamDataStart(builder)
         StreamData.AddStreamId(builder, stream_id)
-        StreamData.AddSequenceId(
-            builder, seq_id)
+        StreamData.AddSequenceId(builder, seq_id)
         StreamData.AddDataType(
             builder, StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
         )
@@ -765,14 +804,16 @@ class HostAgent(object):
 
         stream_event_data = builder.Output()
 
-        self._put_signal(
-            Signal.Signal.StreamData,
-            stream_event_data
-        )
+        self._put_signal(Signal.Signal.StreamData, stream_event_data)
 
-    def send_notification_event(self, stream_id: int, name: str,
-                                ty: NotificationEventType, data: bytes,
-                                last_message: bool = False):
+    def send_notification_event(
+        self,
+        stream_id: int,
+        name: str,
+        ty: NotificationEventType,
+        data: bytes,
+        last_message: bool = False,
+    ):
         """
         send the notification event signal
         """
@@ -801,10 +842,7 @@ class HostAgent(object):
 
         stream_event_data = builder.Output()
 
-        self._put_signal(
-            Signal.Signal.StreamData,
-            stream_event_data
-        )
+        self._put_signal(Signal.Signal.StreamData, stream_event_data)
 
     def send_rawdata_event(self, stream_id: int, data: bytes, last_message: bool):
         """
@@ -840,9 +878,7 @@ class HostAgent(object):
         req_off = builder.CreateByteVector(stream_event_data)
 
         TransportSignal.TransportSignalStart(builder)
-        TransportSignal.AddMethod(
-            builder, Signal.Signal.StreamData
-        )
+        TransportSignal.AddMethod(builder, Signal.Signal.StreamData)
         TransportSignal.AddPayload(builder, req_off)
         req_off = TransportSignal.End(builder)
 
@@ -1093,9 +1129,7 @@ def handle_stream(method: Callable):
         raise ValueError("method must be a callable")
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")
-    _global_agent.register_signal_handler(
-        Signal.Signal.StreamData, method
-    )
+    _global_agent.register_signal_handler(Signal.Signal.StreamData, method)
     return method
 
 

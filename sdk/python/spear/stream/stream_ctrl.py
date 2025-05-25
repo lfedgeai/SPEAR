@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import sys
+import uuid
 
 import flatbuffers as fbs
 import spear.client as client
@@ -26,17 +27,13 @@ def create_stream(agent: client.HostAgent, class_name: str) -> int:
     """
     logger.info("Creating stream")
 
-    req_id = uuid.uuid4().int & (1<<32)-1  # Generate a unique 32-bit request ID
+    req_id = uuid.uuid4().int & (1 << 32) - 1  # Generate a unique 32-bit request ID
     builder = fbs.Builder(0)
     strOff = builder.CreateString(class_name)
-    
+
     StreamControlRequest.StreamControlRequestStart(builder)
-    StreamControlRequest.StreamControlRequestAddRequestId(
-        builder, req_id
-    )
-    StreamControlRequest.StreamControlRequestAddClassName(
-        builder, strOff
-    )
+    StreamControlRequest.StreamControlRequestAddRequestId(builder, req_id)
+    StreamControlRequest.StreamControlRequestAddClassName(builder, strOff)
     StreamControlRequest.StreamControlRequestAddOp(
         builder, StreamControlOps.StreamControlOps.New
     )
@@ -44,19 +41,16 @@ def create_stream(agent: client.HostAgent, class_name: str) -> int:
     builder.Finish(end_off)
 
     data = agent.exec_request(Method.Method.StreamCtrl, builder.Output())
-    resp = StreamControlResponse.StreamControlResponse.GetRootAs(
-        data, 0
-    )
+    resp = StreamControlResponse.StreamControlResponse.GetRootAs(data, 0)
     if resp.RequestId() != req_id:
         raise ValueError(
             f"Request ID mismatch: expected {req_id}, got {resp.RequestId()}"
         )
     if resp.StreamId() <= 0:
-        raise ValueError(
-            f"Invalid stream ID: {resp.StreamId()}"
-        )
+        raise ValueError(f"Invalid stream ID: {resp.StreamId()}")
     logger.info("Stream created with ID: %d", resp.StreamId())
     return resp.StreamId()
+
 
 def close_stream(agent: client.HostAgent, stream_id: int) -> None:
     """
@@ -64,15 +58,11 @@ def close_stream(agent: client.HostAgent, stream_id: int) -> None:
     """
     logger.info("Closing stream with ID: %d", stream_id)
 
-    req_id = 1234 # temporary value
+    req_id = 1234  # temporary value
     builder = fbs.Builder(0)
     StreamControlRequest.StreamControlRequestStart(builder)
-    StreamControlRequest.StreamControlRequestAddRequestId(
-        builder, req_id
-    )
-    StreamControlRequest.StreamControlRequestAddStreamId(
-        builder, stream_id
-    )
+    StreamControlRequest.StreamControlRequestAddRequestId(builder, req_id)
+    StreamControlRequest.StreamControlRequestAddStreamId(builder, stream_id)
     StreamControlRequest.StreamControlRequestAddOp(
         builder, StreamControlOps.StreamControlOps.Close
     )
@@ -80,15 +70,11 @@ def close_stream(agent: client.HostAgent, stream_id: int) -> None:
     builder.Finish(end_off)
 
     data = agent.exec_request(Method.Method.StreamCtrl, builder.Output())
-    resp = StreamControlResponse.StreamControlResponse.GetRootAs(
-        data, 0
-    )
+    resp = StreamControlResponse.StreamControlResponse.GetRootAs(data, 0)
     if resp.StreamId() != stream_id:
         raise ValueError(
-            f"Request ID mismatch: expected {stream_id}, got {resp.RequestId()}"
+            f"Request ID mismatch: expected {stream_id}, got {resp.StreamId()}"
         )
     if resp.RequestId() != req_id:
-        raise ValueError(
-            f"Invalid request ID: {resp.RequestId()}"
-        )
+        raise ValueError(f"Invalid request ID: {resp.RequestId()}")
     logger.info("Stream closed with ID: %d", resp.StreamId())

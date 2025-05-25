@@ -40,15 +40,21 @@ def handle(ctx):
     """
     logger.debug("Handling request: %s", ctx.payload)
 
-    msg_memory = [("system",
-                   ("You will be provided with a set of tools you could potentially use. " +
-                    "But do not make tool calls unless it is necessary for you to answer " +
-                    "the user question. "))]
+    msg_memory = [
+        (
+            "system",
+            (
+                "You will be provided with a set of tools you could potentially use. "
+                + "But do not make tool calls unless it is necessary for you to answer "
+                + "the user question. "
+            ),
+        )
+    ]
     while True:
         user_input = io.input(agent, "(? for help) > ")
 
         # trim the user input, remove space and newline
-        user_input = user_input.strip().decode('utf-8')
+        user_input = user_input.strip().decode("utf-8")
         if not user_input:
             continue
         if user_input == "q":
@@ -67,23 +73,25 @@ r: record voice input"""
                 print("Failed to convert audio to text", flush=True)
                 continue
 
-        msg_memory.append(
-            ("user", user_input)
+        msg_memory.append(("user", user_input))
+
+        resp = chat.chat(
+            agent,
+            msg_memory,
+            model=LLM_MODEL,
+            builtin_tools=[
+                BuiltinToolID.BuiltinToolID.Datetime,
+                BuiltinToolID.BuiltinToolID.FullScreenshot,
+                BuiltinToolID.BuiltinToolID.MouseRightClick,
+                BuiltinToolID.BuiltinToolID.SearchContactEmail,
+                BuiltinToolID.BuiltinToolID.SendEmailDraftWindow,
+                BuiltinToolID.BuiltinToolID.ComposeEmail,
+                BuiltinToolID.BuiltinToolID.ListOpenEmails,
+                BuiltinToolID.BuiltinToolID.OpenURL,
+            ],
         )
 
-        resp = chat.chat(agent, msg_memory, model=LLM_MODEL,
-                         builtin_tools=[
-                             BuiltinToolID.BuiltinToolID.Datetime,
-                             BuiltinToolID.BuiltinToolID.FullScreenshot,
-                             BuiltinToolID.BuiltinToolID.MouseRightClick,
-                             BuiltinToolID.BuiltinToolID.SearchContactEmail,
-                             BuiltinToolID.BuiltinToolID.SendEmailDraftWindow,
-                             BuiltinToolID.BuiltinToolID.ComposeEmail,
-                             BuiltinToolID.BuiltinToolID.ListOpenEmails,
-                             BuiltinToolID.BuiltinToolID.OpenURL,
-                         ])
-
-        tmp_msgs = resp[len(msg_memory):]
+        tmp_msgs = resp[len(msg_memory) :]
         for e in tmp_msgs:
             role = e[0]
             msg = e[1]
@@ -93,8 +101,7 @@ r: record voice input"""
                 if SPEAK_MESSAGE:
                     io.speak(agent, msg)
 
-        msg_memory = [(e[0], e[1]) if e[0] != "tool" else ("user", e[1])
-                      for e in resp]
+        msg_memory = [(e[0], e[1]) if e[0] != "tool" else ("user", e[1]) for e in resp]
 
     agent.stop()
     return "done"

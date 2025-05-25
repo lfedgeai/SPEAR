@@ -56,7 +56,8 @@ workload: build
 	done
 
 format_python:
-	isort -rc $(REPO_ROOT)/
+	black $(REPO_ROOT)/; \
+	isort $(REPO_ROOT)/
 
 format_golang:
 	gofmt -w .

@@ -48,6 +48,7 @@ class TransformRequest:
     operations: list[TransformOperation]
     params: Any
 
+
 @dataclass_json
 @dataclass
 class TransformResponseResult:
@@ -58,6 +59,7 @@ class TransformResponseResult:
     data: Dict
     type: TransformType
 
+
 @dataclass_json
 @dataclass
 class TransformResponse:
@@ -66,6 +68,7 @@ class TransformResponse:
     """
 
     results: list[TransformResponseResult]
+
 
 @dataclass_json
 @dataclass
@@ -85,7 +88,7 @@ class ChatToolCall:
     The tool call object for the chat hostcall.
     """
 
-    id : str
+    id: str
     type: str
     function: ChatToolCallFunction
 
@@ -125,6 +128,7 @@ class ChatResponse:
     id: str
     choices: list[ChatChoice]
 
+
 @dataclass_json
 @dataclass
 class ChatMessageV2ToolCallFunction:
@@ -147,6 +151,7 @@ class ChatMessageV2ToolCall:
     type: str
     function: ChatMessageV2ToolCallFunction
 
+
 @dataclass_json
 @dataclass
 class ChatMessageV2Metadata:
@@ -159,6 +164,7 @@ class ChatMessageV2Metadata:
     tool_call_id: Optional[str] = None
     tool_calls: Optional[list[ChatMessageV2ToolCall]] = None
 
+
 @dataclass_json
 @dataclass
 class ChatMessageV2:
@@ -168,6 +174,7 @@ class ChatMessageV2:
 
     metadata: ChatMessageV2Metadata
     content: str
+
 
 @dataclass_json
 @dataclass

@@ -35,7 +35,7 @@ def handle(ctx):
             output_types=[tf.TransformType.TEXT],
             operations=[tf.TransformOperation.LLM],
             params={
-                "model": "llama", # "gpt-4o",
+                "model": "llama",  # "gpt-4o",
                 "messages": [msg],
             },
         ),

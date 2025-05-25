@@ -32,7 +32,6 @@ def handle(ctx):
     test_asr(TEST_ASR_MODEL)
 
 
-
 def test_asr(model):
     """
     test ASR

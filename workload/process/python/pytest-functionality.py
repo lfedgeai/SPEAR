@@ -30,6 +30,7 @@ TEST_LLM_MODEL = "gpt-4o"  # "deepseek-toolchat"
 FUNCTION_NAME = "dummy"
 CLASS_NAME = "dummy"
 
+
 @client.handle
 def handle(ctx):
     """
@@ -60,7 +61,9 @@ def handle(ctx):
     time.sleep(10)
     # agent.stop()
 
+
 # ctx is either StreamRequestContext or RawStreamRequestContext
+
 
 @client.handle_stream
 def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestContext):
@@ -75,8 +78,12 @@ def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestCont
         ctx.send_raw(client.global_agent(), f"[Hi I got the context: {ctx}]")
     elif not ctx.is_raw:
         logger.info("event target: %s", ctx.name)
-        ctx.send_notification(client.global_agent(), FUNCTION_NAME, NotificationEventType.Completed,
-                        f"[Reply from streamdata event handler: {ctx}]")
+        ctx.send_notification(
+            client.global_agent(),
+            FUNCTION_NAME,
+            NotificationEventType.Completed,
+            f"[Reply from streamdata event handler: {ctx}]",
+        )
 
 
 def test_chat(model):
@@ -87,10 +94,14 @@ def test_chat(model):
 
     resp = chat.chat(client.global_agent(), "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(client.global_agent(), "what is the time now?",
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ])
+    resp = chat.chat(
+        client.global_agent(),
+        "what is the time now?",
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+    )
     logger.info(resp)
 
 
@@ -146,17 +157,17 @@ def test_tool(model):
 
     resp = chat.chat(client.global_agent(), "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(client.global_agent(),
-                     [
-                         "hi",
-                         "what is sum of 123 and 456?"
-                     ],
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ],
-                     internal_tools=[
-                         tid,
-                     ])
+    resp = chat.chat(
+        client.global_agent(),
+        ["hi", "what is sum of 123 and 456?"],
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+        internal_tools=[
+            tid,
+        ],
+    )
     logger.info(resp)
 
 
@@ -168,8 +179,9 @@ def test_stream_data():
     stream_id = create_stream(client.global_agent(), CLASS_NAME)
     logger.info("Stream ID: %d", stream_id)
 
-    client.global_agent().send_operation_event(stream_id, FUNCTION_NAME,
-                               OperationType.Create, b"test data")
+    client.global_agent().send_operation_event(
+        stream_id, FUNCTION_NAME, OperationType.Create, b"test data"
+    )
 
     time.sleep(5)
     # close stream
@@ -179,4 +191,3 @@ def test_stream_data():
 
 if __name__ == "__main__":
     client.init()
-

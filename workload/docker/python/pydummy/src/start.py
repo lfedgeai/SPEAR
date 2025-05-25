@@ -24,8 +24,8 @@ def handle(ctx):
     """
     logger.debug("Handling request: %s", ctx.payload)
     test("gpt-4o")
-    #test("text-embedding-ada-002")
-    #test("bge-large-en-v1.5")
+    # test("text-embedding-ada-002")
+    # test("bge-large-en-v1.5")
 
 
 def test(model):

@@ -13,10 +13,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type ResquestCallback func(resp *transport.TransportResponse) error
+type RequestCallback func(resp *transport.TransportResponse) error
 
 type requestCallback struct {
-	cb        ResquestCallback
+	cb        RequestCallback
 	autoClear bool
 	ts        time.Time
 }

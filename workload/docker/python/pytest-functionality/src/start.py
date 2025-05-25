@@ -62,10 +62,14 @@ def test_chat(model):
 
     resp = chat.chat(agent, "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(agent, "what is the time now?",
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ])
+    resp = chat.chat(
+        agent,
+        "what is the time now?",
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+    )
     logger.info(resp)
 
 
@@ -121,29 +125,29 @@ def test_tool(model):
 
     resp = chat.chat(agent, "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(agent,
-                     [
-                         "hi",
-                         "what is sum of 123 and 456?"
-                     ],
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ],
-                     internal_tools=[
-                         tid,
-                     ])
+    resp = chat.chat(
+        agent,
+        ["hi", "what is sum of 123 and 456?"],
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+        internal_tools=[
+            tid,
+        ],
+    )
     logger.info(resp)
-    resp = chat.chat(agent,
-                     [
-                         ("system", "you are a calculator"),
-                         ("user", "what is sum of 123 and 456?")
-                     ],
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ],
-                     internal_tools=[
-                         tid,
-                     ])
+    resp = chat.chat(
+        agent,
+        [("system", "you are a calculator"), ("user", "what is sum of 123 and 456?")],
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+        internal_tools=[
+            tid,
+        ],
+    )
     logger.info(resp)
 
 

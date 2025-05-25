@@ -23,11 +23,14 @@ def test_builtin_tool():
     """
     test builtin tool
     """
-    resp = chat.chat(agent,
-                     "help me to open sjsu's homepage",
-                     model="gpt-4o", builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.OpenURL,
-                     ])
+    resp = chat.chat(
+        agent,
+        "help me to open sjsu's homepage",
+        model="gpt-4o",
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.OpenURL,
+        ],
+    )
     print(resp, file=sys.stderr)
 
 
@@ -40,12 +43,15 @@ def test_tool_cb(content):
     # NOTE: this callback function should not block
     import tempfile
     import webbrowser
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as temp_file:
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", delete=False
+    ) as temp_file:
         # Write the HTML content to the temporary file
         temp_file.write(content)
         # Get the file path of the temporary file
         temp_file_path = temp_file.name
-    webbrowser.open(f'file://{temp_file_path}')
+    webbrowser.open(f"file://{temp_file_path}")
 
     return "done displaying html content"
 
@@ -55,11 +61,14 @@ def test_internal_tool():
     test internal tool
     """
     tid = register_internal_tool(agent, test_tool_cb)
-    resp = chat.chat(agent,
-                     "help me to display a html page with one button to say hello",
-                     model="gpt-4o", internal_tools=[
-                         tid,
-                     ])
+    resp = chat.chat(
+        agent,
+        "help me to display a html page with one button to say hello",
+        model="gpt-4o",
+        internal_tools=[
+            tid,
+        ],
+    )
     print(resp, file=sys.stderr)
 
 

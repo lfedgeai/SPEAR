@@ -72,8 +72,9 @@ def speak(
     return resp.Data()
 
 
-def record(agent: client.HostAgent, prompt: str,
-           model: str = "whisper-1", dryrun=False) -> str:
+def record(
+    agent: client.HostAgent, prompt: str, model: str = "whisper-1", dryrun=False
+) -> str:
     """
     get user input
     """

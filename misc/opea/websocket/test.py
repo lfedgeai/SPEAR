@@ -20,6 +20,7 @@ agent = client.HostAgent()
 # global counter
 counter = 0
 
+
 def handle_stream(ctx):
     """
     handle the request
@@ -30,7 +31,7 @@ def handle_stream(ctx):
     logger.info("Handling request: %s", ctx)
     if counter > 5:
         return
-    return f"I got your message\"{ctx}\""
+    return f'I got your message"{ctx}"'
 
 
 if __name__ == "__main__":

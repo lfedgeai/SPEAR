@@ -26,7 +26,7 @@ def sleep(params):
     sleep for a given number of seconds
     """
     logger.info("Sleeping for %s seconds", params["seconds"])
-    time.sleep(params["seconds"])    
+    time.sleep(params["seconds"])
     return "done"
 
 

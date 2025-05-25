@@ -93,7 +93,7 @@ var Hostcalls = []*hostcalls.HostCall{
 		NameID:  transport.MethodCustom,
 		Handler: nil,
 	},
-	// stream ctrol related operations
+	// stream ctrl related operations
 	{
 		NameID:  transport.MethodStreamCtrl,
 		Handler: StreamCtrl,

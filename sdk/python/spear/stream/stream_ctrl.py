@@ -27,13 +27,14 @@ def create_stream(agent: client.HostAgent, class_name: str) -> int:
     """
     logger.info("Creating stream")
 
-    req_id = uuid.uuid4().int & (1 << 32) - 1  # Generate a unique 32-bit request ID
+    # Generate a unique 32-bit signed request ID
+    req_id = uuid.uuid4().int & 0x7FFFFFFF  # Ensure it's within int32 positive range
     builder = fbs.Builder(0)
-    strOff = builder.CreateString(class_name)
+    str_off = builder.CreateString(class_name)
 
     StreamControlRequest.StreamControlRequestStart(builder)
     StreamControlRequest.StreamControlRequestAddRequestId(builder, req_id)
-    StreamControlRequest.StreamControlRequestAddClassName(builder, strOff)
+    StreamControlRequest.StreamControlRequestAddClassName(builder, str_off)
     StreamControlRequest.StreamControlRequestAddOp(
         builder, StreamControlOps.StreamControlOps.New
     )
@@ -58,7 +59,8 @@ def close_stream(agent: client.HostAgent, stream_id: int) -> None:
     """
     logger.info("Closing stream with ID: %d", stream_id)
 
-    req_id = 1234  # temporary value
+    # Generate a unique 32-bit signed request ID
+    req_id = uuid.uuid4().int & 0x7FFFFFFF  # Ensure it's within int32 positive range
     builder = fbs.Builder(0)
     StreamControlRequest.StreamControlRequestStart(builder)
     StreamControlRequest.StreamControlRequestAddRequestId(builder, req_id)

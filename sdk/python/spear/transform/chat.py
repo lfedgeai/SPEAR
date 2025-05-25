@@ -28,18 +28,19 @@ logger.setLevel(logging.INFO)
 DEFAULT_LLM_MODEL = "llama"  # "gpt-4o"
 
 
-def chat(agent: client.HostAgent,
-         message: Union[str, list[str], list[Tuple[str, str]]],
-         model: str = DEFAULT_LLM_MODEL,
-         builtin_tools: list[int] = [],
-         internal_tools: list[int] = []):
+def chat(
+    agent: client.HostAgent,
+    message: Union[str, list[str], list[Tuple[str, str]]],
+    model: str = DEFAULT_LLM_MODEL,
+    builtin_tools: list[int] = [],
+    internal_tools: list[int] = [],
+):
     """
     handle the llm request
     """
     role_offs = []
     content_offs = []
-    if (isinstance(message, list) and len(message) > 0 and
-            isinstance(message[0], str)):
+    if isinstance(message, list) and len(message) > 0 and isinstance(message[0], str):
         builder = fbs.Builder(sum([len(m) for m in message]) + 2048)
         for m in message:
             if not isinstance(m, str):
@@ -50,9 +51,14 @@ def chat(agent: client.HostAgent,
         builder = fbs.Builder(len(message) + 2048)
         content_offs.append(builder.CreateString(message))
         role_offs.append(Role.Role.User)
-    elif (isinstance(message, list) and len(message) > 0 and
-          isinstance(message[0], tuple) and len(message[0]) == 2 and
-          isinstance(message[0][0], str) and isinstance(message[0][1], str)):
+    elif (
+        isinstance(message, list)
+        and len(message) > 0
+        and isinstance(message[0], tuple)
+        and len(message[0]) == 2
+        and isinstance(message[0][0], str)
+        and isinstance(message[0][1], str)
+    ):
         builder = fbs.Builder(sum([len(m[1]) for m in message]) + 2048)
         for m in message:
             content_offs.append(builder.CreateString(m[1]))
@@ -106,7 +112,8 @@ def chat(agent: client.HostAgent,
 
     if len(builtin_tool_offs) + len(internal_tool_offs) > 0:
         ChatCompletionRequest.StartToolsVector(
-            builder, len(builtin_tool_offs) + len(internal_tool_offs))
+            builder, len(builtin_tool_offs) + len(internal_tool_offs)
+        )
         for off in builtin_tool_offs:
             builder.PrependUOffsetTRelative(off)
         for off in internal_tool_offs:
@@ -164,8 +171,7 @@ def chat(agent: client.HostAgent,
 
     data = agent.exec_request(Method.Method.Transform, builder.Output())
 
-    resp = TransformResponse.TransformResponse.GetRootAsTransformResponse(
-        data, 0)
+    resp = TransformResponse.TransformResponse.GetRootAsTransformResponse(data, 0)
     if (
         resp.DataType()
         != TransformResponse_Data.TransformResponse_Data.spear_proto_chat_ChatCompletionResponse
@@ -196,7 +202,6 @@ def chat(agent: client.HostAgent,
             role_str = "other"
         else:
             raise Exception(f"invalid role value {role}")
-        res.append((role_str,
-            chat_resp.Messages(i).Content().decode("utf-8")))
+        res.append((role_str, chat_resp.Messages(i).Content().decode("utf-8")))
 
     return res

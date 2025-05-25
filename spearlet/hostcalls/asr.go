@@ -8,13 +8,12 @@ import (
 	"github.com/lfedgeai/spear/pkg/spear/proto/speech"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transform"
 	helper "github.com/lfedgeai/spear/pkg/utils/protohelper"
-	"github.com/lfedgeai/spear/spearlet/hostcalls/common"
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	oai "github.com/lfedgeai/spear/spearlet/hostcalls/openai"
 	log "github.com/sirupsen/logrus"
 )
 
-func AudioASR(inv *hostcalls.InvocationInfo,
+func AudioASR(inv *core.InvocationInfo,
 	args *transform.TransformRequest) ([]byte, error) {
 	// verify the type of args is ASRRequest
 	asrReq := speech.ASRRequest{}
@@ -26,7 +25,7 @@ func AudioASR(inv *hostcalls.InvocationInfo,
 		Model: string(asrReq.Model()),
 		Audio: asrReq.AudioBytes(),
 	}
-	ep := common.GetAPIEndpointInfo(common.OpenAIFunctionTypeASR, req2.Model)
+	ep := core.GetAPIEndpointInfo(core.OpenAIFunctionTypeASR, req2.Model)
 	if len(ep) == 0 {
 		return nil, fmt.Errorf("error getting endpoint for model %s", req2.Model)
 	}
@@ -63,7 +62,7 @@ func speechToTextString(audio []byte, model string) (string, error) {
 		Model: model,
 		Audio: audio,
 	}
-	ep := common.GetAPIEndpointInfo(common.OpenAIFunctionTypeASR, req2.Model)
+	ep := core.GetAPIEndpointInfo(core.OpenAIFunctionTypeASR, req2.Model)
 	if len(ep) == 0 {
 		return "", fmt.Errorf("error getting endpoint for model %s", req2.Model)
 	}

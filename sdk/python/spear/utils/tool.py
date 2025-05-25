@@ -13,8 +13,9 @@ from spear.proto.transport import Method
 logger = logging.getLogger(__name__)
 
 
-def register_internal_tool(agent: client.HostAgent, cb: callable,
-                           name: str = None, desc: str = None) -> int:
+def register_internal_tool(
+    agent: client.HostAgent, cb: callable, name: str = None, desc: str = None
+) -> int:
     """
     register internal tool
     """
@@ -58,30 +59,35 @@ def register_internal_tool(agent: client.HostAgent, cb: callable,
     for p in sig.parameters:
         InternalToolCreateParamSpec.InternalToolCreateParamSpecStart(builder)
         InternalToolCreateParamSpec.InternalToolCreateParamSpecAddName(
-            builder, names[p])
+            builder, names[p]
+        )
         InternalToolCreateParamSpec.InternalToolCreateParamSpecAddType(
-            builder, types[p])
+            builder, types[p]
+        )
         if p in param_desc:
             InternalToolCreateParamSpec.InternalToolCreateParamSpecAddDescription(
-                builder, param_desc[p])
+                builder, param_desc[p]
+            )
         InternalToolCreateParamSpec.InternalToolCreateParamSpecAddRequired(
-            builder, sig.parameters[p].default is inspect.Parameter.empty)
+            builder, sig.parameters[p].default is inspect.Parameter.empty
+        )
         params.append(
-            InternalToolCreateParamSpec.InternalToolCreateParamSpecEnd(builder))
+            InternalToolCreateParamSpec.InternalToolCreateParamSpecEnd(builder)
+        )
 
     InternalToolCreateRequest.InternalToolCreateRequestStartParamsVector(
-        builder, len(params))
+        builder, len(params)
+    )
     for p in reversed(params):
         builder.PrependUOffsetTRelative(p)
     params_off = builder.EndVector()
 
     InternalToolCreateRequest.InternalToolCreateRequestStart(builder)
-    InternalToolCreateRequest.InternalToolCreateRequestAddName(
-        builder, tool_name_off)
+    InternalToolCreateRequest.InternalToolCreateRequestAddName(builder, tool_name_off)
     InternalToolCreateRequest.InternalToolCreateRequestAddDescription(
-        builder, tool_desc_off)
-    InternalToolCreateRequest.InternalToolCreateRequestAddParams(
-        builder, params_off)
+        builder, tool_desc_off
+    )
+    InternalToolCreateRequest.InternalToolCreateRequestAddParams(builder, params_off)
     data_off = InternalToolCreateRequest.InternalToolCreateRequestEnd(builder)
     builder.Finish(data_off)
 
@@ -90,9 +96,9 @@ def register_internal_tool(agent: client.HostAgent, cb: callable,
         builder.Output(),
     )
 
-    resp = InternalToolCreateResponse.InternalToolCreateResponse.\
-        GetRootAsInternalToolCreateResponse(
-            data, 0)
+    resp = InternalToolCreateResponse.InternalToolCreateResponse.GetRootAsInternalToolCreateResponse(
+        data, 0
+    )
     tid = resp.ToolId()
     agent.set_internal_tool(tid, cb)
     logger.info("Registered tool: %d", tid)

@@ -6,6 +6,8 @@ import time
 import spear.client as client
 import spear.transform.chat as chat
 import spear.utils.io as io
+from spear.stream import (NotificationEventType, OperationType, close_stream,
+                          create_stream)
 from spear.utils.tool import register_internal_tool
 
 from spear.proto.tool import BuiltinToolID
@@ -21,12 +23,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-agent = client.HostAgent()
+# agent = client.HostAgent()
 
 
 TEST_LLM_MODEL = "gpt-4o"  # "deepseek-toolchat"
+FUNCTION_NAME = "dummy"
+CLASS_NAME = "dummy"
 
 
+@client.handle
 def handle(ctx):
     """
     handle the request
@@ -51,20 +56,35 @@ def handle(ctx):
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
 
+    test_stream_data()
+
     time.sleep(10)
     # agent.stop()
 
 
-def handle_stream(data):
+# ctx is either StreamRequestContext or RawStreamRequestContext
+
+
+@client.handle_stream
+def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestContext):
     """
     handle streaming request
     """
-    logger.info("Handling streaming request: %s", data)
+    logger.info("Handling streaming request: %s", ctx)
 
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
+    if ctx.stream_id == client.SYS_IO_STREAM_ID:
+        ctx.send_raw(client.global_agent(), f"[Hi I got the context: {ctx}]")
+    elif not ctx.is_raw:
+        logger.info("event target: %s", ctx.name)
+        ctx.send_notification(
+            client.global_agent(),
+            FUNCTION_NAME,
+            NotificationEventType.Completed,
+            f"[Reply from streamdata event handler: {ctx}]",
+        )
 
-    return f"#Hi I got the context: {data}#"
 
 def test_chat(model):
     """
@@ -72,12 +92,16 @@ def test_chat(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = chat.chat(agent, "hi", model=model)
+    resp = chat.chat(client.global_agent(), "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(agent, "what is the time now?",
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ])
+    resp = chat.chat(
+        client.global_agent(),
+        "what is the time now?",
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+    )
     logger.info(resp)
 
 
@@ -87,7 +111,7 @@ def test_speak(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = io.speak(agent, "test test test", dryrun=True)
+    resp = io.speak(client.global_agent(), "test test test", dryrun=True)
     assert resp is not None
 
 
@@ -97,7 +121,7 @@ def test_record(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = io.record(agent, "recording test", dryrun=True)
+    resp = io.record(client.global_agent(), "recording test", dryrun=True)
     assert resp is not None
 
 
@@ -107,7 +131,7 @@ def test_input():
     """
     logger.info("Testing input")
 
-    resp = io.input(agent, "input", True)
+    resp = io.input(client.global_agent(), "input", True)
     logger.info(resp)
 
 
@@ -128,26 +152,42 @@ def test_tool(model):
     test the model
     """
     logger.info("Testing tool")
-    tid = register_internal_tool(agent, test_tool_cb)
+    tid = register_internal_tool(client.global_agent(), test_tool_cb)
     logger.info("Registered tool: %d", tid)
 
-    resp = chat.chat(agent, "hi", model=model)
+    resp = chat.chat(client.global_agent(), "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(agent,
-                     [
-                         "hi",
-                         "what is sum of 123 and 456?"
-                     ],
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ],
-                     internal_tools=[
-                         tid,
-                     ])
+    resp = chat.chat(
+        client.global_agent(),
+        ["hi", "what is sum of 123 and 456?"],
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+        internal_tools=[
+            tid,
+        ],
+    )
     logger.info(resp)
+
+
+def test_stream_data():
+    """
+    test streamdata
+    """
+    logger.info("Testing streamdata")
+    stream_id = create_stream(client.global_agent(), CLASS_NAME)
+    logger.info("Stream ID: %d", stream_id)
+
+    client.global_agent().send_operation_event(
+        stream_id, FUNCTION_NAME, OperationType.Create, b"test data"
+    )
+
+    time.sleep(5)
+    # close stream
+    close_stream(client.global_agent(), stream_id)
+    logger.info("Stream closed")
 
 
 if __name__ == "__main__":
-    agent.register_handler("handle", handle)
-    agent.register_signal_handler(Signal.Signal.StreamEvent, handle_stream)
-    agent.run()
+    client.init()

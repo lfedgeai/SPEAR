@@ -10,8 +10,7 @@ import (
 	"github.com/lfedgeai/spear/pkg/spear/proto/tool"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transform"
 	"github.com/lfedgeai/spear/pkg/spear/proto/transport"
-	"github.com/lfedgeai/spear/spearlet/hostcalls/common"
-	hcommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	hcopenai "github.com/lfedgeai/spear/spearlet/hostcalls/openai"
 	log "github.com/sirupsen/logrus"
 
@@ -152,17 +151,17 @@ func chatMessageToTransformBuffer(msgList []ChatMessage) []byte {
 	return builder.FinishedBytes()
 }
 
-func ChatCompletionWithTools(inv *hcommon.InvocationInfo,
+func ChatCompletionWithTools(inv *core.InvocationInfo,
 	args *transform.TransformRequest) ([]byte, error) {
 	return chatCompletion(inv, args, true)
 }
 
-func ChatCompletionNoTools(inv *hcommon.InvocationInfo,
+func ChatCompletionNoTools(inv *core.InvocationInfo,
 	args *transform.TransformRequest) ([]byte, error) {
 	return chatCompletion(inv, args, false)
 }
 
-func chatCompletion(inv *hcommon.InvocationInfo, args *transform.TransformRequest,
+func chatCompletion(inv *core.InvocationInfo, args *transform.TransformRequest,
 	hasTool bool) ([]byte, error) {
 	// verify the type of args is ChatCompletionRequest
 	chatReq := chat.ChatCompletionRequest{}
@@ -189,7 +188,7 @@ func chatCompletion(inv *hcommon.InvocationInfo, args *transform.TransformReques
 	return buf, nil
 }
 
-func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompletionRequest,
+func innerChatCompletion(inv *core.InvocationInfo, chatReq *chat.ChatCompletionRequest,
 	hasTool bool) ([]ChatMessage, error) {
 	mem := NewChatCompletionMemory()
 	for idx := range chatReq.MessagesLength() {
@@ -255,7 +254,7 @@ func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompleti
 				case tool.ToolInfoBuiltinToolInfo:
 					toolInfo := tool.BuiltinToolInfo{}
 					toolInfo.Init(tbl.Bytes, tbl.Pos)
-					tool, ok := hcommon.GetBuiltinTool(hcommon.BuiltinToolID(toolInfo.ToolId()))
+					tool, ok := core.GetBuiltinTool(core.BuiltinToolID(toolInfo.ToolId()))
 					if !ok {
 						return nil, fmt.Errorf("builtin tool not found")
 					}
@@ -287,7 +286,7 @@ func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompleti
 					toolInfo := tool.InternalToolInfo{}
 					toolInfo.Init(tbl.Bytes, tbl.Pos)
 					log.Infof("Internal tool: %d", toolInfo.ToolId())
-					tool, ok := hcommon.GetTaskInternalTool(inv.Task, hcommon.BuiltinToolID(toolInfo.ToolId()))
+					tool, ok := core.GetTaskInternalTool(inv.Task, core.BuiltinToolID(toolInfo.ToolId()))
 					if !ok {
 						return nil, fmt.Errorf("internal tool not found")
 					}
@@ -326,7 +325,7 @@ func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompleti
 			}
 		}
 
-		ep := common.GetAPIEndpointInfo(common.OpenAIFunctionTypeChatWithTools,
+		ep := core.GetAPIEndpointInfo(core.OpenAIFunctionTypeChatWithTools,
 			openAiChatReq2.Model)
 		if len(ep) == 0 {
 			return nil, fmt.Errorf("no endpoint found")
@@ -411,7 +410,7 @@ func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompleti
 				switch toolType {
 				case "B":
 					// it is a built-in tool
-					toolReg, ok := hcommon.GetBuiltinTool(hcommon.BuiltinToolID(toolId))
+					toolReg, ok := core.GetBuiltinTool(core.BuiltinToolID(toolId))
 					if !ok {
 						return nil, fmt.Errorf("builtin tool not found")
 					}
@@ -440,7 +439,7 @@ func innerChatCompletion(inv *hcommon.InvocationInfo, chatReq *chat.ChatCompleti
 					})
 				case "I":
 					// it is an internal tool
-					toolReg, ok := hcommon.GetTaskInternalTool(inv.Task, hcommon.BuiltinToolID(toolId))
+					toolReg, ok := core.GetTaskInternalTool(inv.Task, core.BuiltinToolID(toolId))
 					if !ok {
 						return nil, fmt.Errorf("internal tool not found")
 					}

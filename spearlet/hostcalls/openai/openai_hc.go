@@ -9,8 +9,7 @@ import (
 	"mime/multipart"
 
 	"github.com/lfedgeai/spear/pkg/net"
-	"github.com/lfedgeai/spear/spearlet/hostcalls/common"
-	hcommon "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	core "github.com/lfedgeai/spear/spearlet/core"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -79,7 +78,7 @@ type EndpointInfo struct {
 	APIKey  string
 }
 
-func OpenAIChatCompletion(ep common.APIEndpointInfo, chatReq *OpenAIChatCompletionRequest) (*OpenAIChatCompletionResponse, error) {
+func OpenAIChatCompletion(ep core.APIEndpointInfo, chatReq *OpenAIChatCompletionRequest) (*OpenAIChatCompletionResponse, error) {
 	jsonBytes, err := json.Marshal(chatReq)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling OpenAIChatCompletionRequest: %v", err)
@@ -143,7 +142,7 @@ type OpenAIEmbeddingsResponse struct {
 	Usage  interface{}             `json:"usage"`
 }
 
-func Embeddings(inv *hcommon.InvocationInfo, args interface{}) (interface{}, error) {
+func Embeddings(inv *core.InvocationInfo, args interface{}) (interface{}, error) {
 	// // verify the type of args is EmbeddingsRequest
 	// // use json marshal and unmarshal to verify the type
 	// jsonBytes, err := json.Marshal(args)
@@ -161,7 +160,7 @@ func Embeddings(inv *hcommon.InvocationInfo, args interface{}) (interface{}, err
 	// 	Model: embeddingsReq.Model,
 	// }
 
-	// ep := common.GetAPIEndpointInfo(common.OpenAIFunctionTypeEmbeddings, req.Model)
+	// ep := core.GetAPIEndpointInfo(core.OpenAIFunctionTypeEmbeddings, req.Model)
 	// if len(ep) == 0 {
 	// 	return nil, fmt.Errorf("error getting endpoint for model %s", req.Model)
 	// }
@@ -185,7 +184,7 @@ func Embeddings(inv *hcommon.InvocationInfo, args interface{}) (interface{}, err
 	return nil, fmt.Errorf("not implemented")
 }
 
-func OpenAIEmbeddings(ep common.APIEndpointInfo, args *OpenAIEmbeddingsRequest) (*OpenAIEmbeddingsResponse, error) {
+func OpenAIEmbeddings(ep core.APIEndpointInfo, args *OpenAIEmbeddingsRequest) (*OpenAIEmbeddingsResponse, error) {
 	// verify the type of args is EmbeddingsRequest
 	// use json marshal and unmarshal to verify the type
 	jsonBytes, err := json.Marshal(args)
@@ -222,7 +221,7 @@ type OpenAITextToSpeechResponse struct {
 	EncodedAudio string `json:"audio"`
 }
 
-func OpenAITextToSpeech(ep common.APIEndpointInfo, args *OpenAITextToSpeechRequest) (*OpenAITextToSpeechResponse, error) {
+func OpenAITextToSpeech(ep core.APIEndpointInfo, args *OpenAITextToSpeechRequest) (*OpenAITextToSpeechResponse, error) {
 	log.Infof("Generating Speech...")
 	// verify the type of args is TextToSpeechRequest
 	// use json marshal and unmarshal to verify the type
@@ -260,7 +259,7 @@ type OpenAISpeechToTextResponse struct {
 	Text string `json:"text"`
 }
 
-func OpenAISpeechToText(ep common.APIEndpointInfo, args *OpenAISpeechToTextRequest) (*OpenAISpeechToTextResponse, error) {
+func OpenAISpeechToText(ep core.APIEndpointInfo, args *OpenAISpeechToTextRequest) (*OpenAISpeechToTextResponse, error) {
 	log.Infof("Converting Speech to Text...")
 	// verify the type of args is SpeechToTextRequest
 	// use json marshal and unmarshal to verify the type
@@ -336,7 +335,7 @@ type OpenAIImageGenerationResponse struct {
 	Data    []OpenAIImageObject `json:"data"`
 }
 
-func OpenAIImageGeneration(ep common.APIEndpointInfo, args *OpenAIImageGenerationRequest) (*OpenAIImageGenerationResponse, error) {
+func OpenAIImageGeneration(ep core.APIEndpointInfo, args *OpenAIImageGenerationRequest) (*OpenAIImageGenerationResponse, error) {
 	// verify the type of args is ImageGenerationRequest
 	// use json marshal and unmarshal to verify the type
 	jsonBytes, err := json.Marshal(args)

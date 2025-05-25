@@ -146,6 +146,7 @@ func (p *ProcessTask) Start() error {
 		go func() {
 			for msg := range p.chanIn {
 				// write little endian int64 size
+				log.Debugf("Lowlevel socket sending data \"%v\"", msg)
 				buf := make([]byte, 8)
 				binary.LittleEndian.PutUint64(buf, uint64(len(msg)))
 				_, err := p.conn.Write(buf)
@@ -231,6 +232,14 @@ func (p *ProcessTask) GetVar(key TaskVar) (interface{}, bool) {
 	} else {
 		return p.taskVars[key], true
 	}
+}
+
+func (p *ProcessTask) RegisterOnFinish(fn func(Task)) {
+	// register a function called when task is finished
+	go func() {
+		<-p.done
+		fn(p)
+	}()
 }
 
 func NewProcessTask(cfg *TaskConfig) *ProcessTask {

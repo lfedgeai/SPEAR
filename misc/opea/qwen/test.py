@@ -58,13 +58,17 @@ def test_tool(model):
 
     resp = chat.chat(agent, "hi", model=model)
     logger.info(resp)
-    resp = chat.chat(agent, "what is sum of 123 and 321?",
-                     model=model, builtin_tools=[
-                         BuiltinToolID.BuiltinToolID.Datetime,
-                     ],
-                     internal_tools=[
-                         tid,
-                     ])
+    resp = chat.chat(
+        agent,
+        "what is sum of 123 and 321?",
+        model=model,
+        builtin_tools=[
+            BuiltinToolID.BuiltinToolID.Datetime,
+        ],
+        internal_tools=[
+            tid,
+        ],
+    )
     logger.info(resp)
 
 

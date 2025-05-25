@@ -15,7 +15,7 @@ import (
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
-	hostcalls "github.com/lfedgeai/spear/spearlet/hostcalls/common"
+	hostcalls "github.com/lfedgeai/spear/spearlet/core"
 	"github.com/schollz/progressbar/v3"
 
 	log "github.com/sirupsen/logrus"

@@ -64,8 +64,7 @@ def audio_asr(agent: client.HostAgent, data, model=DEFAULT_ASR_MODEL) -> str:
 
     data = agent.exec_request(Method.Method.Transform, builder.Output())
 
-    resp = TransformResponse.TransformResponse.GetRootAsTransformResponse(
-        data, 0)
+    resp = TransformResponse.TransformResponse.GetRootAsTransformResponse(data, 0)
     if (
         resp.DataType()
         != TransformResponse_Data.TransformResponse_Data.spear_proto_speech_ASRResponse

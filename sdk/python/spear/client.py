@@ -659,7 +659,7 @@ class HostAgent(object):
         """
         if sig_type not in self._sig_handlers:
             self._sig_handlers[sig_type] = []
-        if not isinstance(handler, Callable):
+        if not callable(handler):
             raise ValueError("handler must be a callable")
 
         def handler_wrapper(ctx):
@@ -676,7 +676,7 @@ class HostAgent(object):
         """
         if sig_type not in self._sig_handlers:
             self._sig_handlers[sig_type] = []
-        if not isinstance(handler, Callable):
+        if not callable(handler):
             raise ValueError("handler must be a callable")
         self._sig_handlers[sig_type].append(handler)
         logger.debug("Registered signal handler for %s", sig_type)
@@ -701,7 +701,7 @@ class HostAgent(object):
             logger.warning("No handler for stream id %d", ctx.stream_id)
             return
         handler = self._stream_handlers[ctx.stream_id]
-        if not isinstance(handler, Callable):
+        if not callable(handler):
             logger.error("Handler for stream id %d is not callable", ctx.stream_id)
             return
         handler(ctx)
@@ -712,7 +712,7 @@ class HostAgent(object):
         """
         if not isinstance(stream_id, int):
             raise ValueError("stream_id must be an integer")
-        if not isinstance(handler, Callable):
+        if not callable(handler):
             raise ValueError("handler must be a callable")
         if Signal.Signal.StreamData not in self._sig_handlers:
             self.register_signal_handler(
@@ -745,7 +745,7 @@ class HostAgent(object):
         """
         if not isinstance(method, str):
             raise ValueError("method must be a string")
-        if not isinstance(handler, Callable):
+        if not callable(handler):
             raise ValueError("handler must be a callable")
         if not isinstance(in_stream, bool):
             raise ValueError("in_stream must be a boolean")
@@ -1174,7 +1174,7 @@ def handle(method: Callable):
     """
     Decorator to register a function as a request handler
     """
-    if not isinstance(method, Callable):
+    if not callable(method):
         raise ValueError("method must be a callable")
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")
@@ -1186,7 +1186,7 @@ def _handle_stream(stream_id: int, method: Callable):
     """
     Decorator to register a function as a stream handler
     """
-    if not isinstance(method, Callable):
+    if not callable(method):
         raise ValueError("method must be a callable")
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")
@@ -1200,7 +1200,7 @@ def handle_stream(*args):
     """
     if len(args) != 1:
         raise ValueError("invalid arguments")
-    if isinstance(args[0], Callable):
+    if callable(args[0]):
         # if only one argument is passed and it is a callable
         return _handle_stream(0, args[0])
     elif isinstance(args[0], int):
@@ -1217,7 +1217,7 @@ def register_stream_handler(stream_id: int, handler: Callable):
     """
     if not isinstance(stream_id, int):
         raise ValueError("stream_id must be an integer")
-    if not isinstance(handler, Callable):
+    if not callable(handler):
         raise ValueError("handler must be a callable")
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")

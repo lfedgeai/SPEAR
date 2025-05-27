@@ -112,8 +112,8 @@ type streamChannel struct {
 	invInfo  *InvocationInfo
 	streamId int32
 
-	reqCh  chan []byte
-	respCh chan []byte
+	reqCh  chan []byte // requests from the task
+	respCh chan []byte // responses to the task
 	respWg sync.WaitGroup
 
 	respSeqId int64
@@ -174,6 +174,9 @@ func (p *streamChannel) StreamId() int32 {
 }
 
 func (p *streamChannel) WriteStreamData(data []byte) {
+	if p.reqCh == nil {
+		panic("stream channel is nil")
+	}
 	p.reqCh <- data
 }
 

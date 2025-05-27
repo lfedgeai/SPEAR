@@ -36,7 +36,6 @@ install_sdk: build
 	file=$$(printf "%s\n" ./dist/spear-*.whl | head -n1); \
 	python -m pip install "$$file" --force-reinstall
 
-
 spearlet: pkg/spear
 	go build -o $(OUTPUT_DIR)/spearlet \
 	-ldflags "-X 'github.com/lfedgeai/spear/pkg/common.Version=$(VERSION)'" \
@@ -47,7 +46,7 @@ test: workload build install_sdk
 	go test -v ./test/... && \
 	for dir in $(SUBDIRS); do \
 		make -C $$dir test; \
-	done; \
+	done
 
 workload: build
 	@set -e; \

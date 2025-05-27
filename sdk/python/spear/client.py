@@ -151,10 +151,11 @@ class RawStreamRequestContext(object):
     def __str__(self):
         return self.__repr__()
 
-    def send_raw(self, agent, data: bytes, final: bool = False):
+    def send_raw(self, data: bytes, final: bool = False):
         """
         send raw data to the stream
         """
+        agent = global_agent()
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data_to_bytes(data))
 
@@ -206,7 +207,6 @@ class StreamRequestContext(RawStreamRequestContext):
 
     def send_notification(
         self,
-        agent,
         name: str,
         ty: NotificationEventType,
         data: bytes,
@@ -215,6 +215,7 @@ class StreamRequestContext(RawStreamRequestContext):
         """
         send notification event
         """
+        agent = global_agent()
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data_to_bytes(data))
         name_off = builder.CreateString(name)
@@ -236,11 +237,12 @@ class StreamRequestContext(RawStreamRequestContext):
         )
 
     def send_operation(
-        self, agent, name: str, op: OperationType, data: bytes, final: bool = False
+        self, name: str, op: OperationType, data: bytes, final: bool = False
     ):
         """
         send operation event
         """
+        agent = global_agent()
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data_to_bytes(data))
         name_off = builder.CreateString(name)
@@ -570,7 +572,16 @@ class HostAgent(object):
                                     Signal.Signal.StreamData
                                 ]:
                                     try:
-                                        handler(ctx)
+                                        res = handler(ctx)
+                                        if res is not None:
+                                            logger.warning(
+                                                (
+                                                    "Handler is not supposed to return a value, "
+                                                    + "got: %s. "
+                                                    + " Use context to send data back."
+                                                ),
+                                                res,
+                                            )
                                     except Exception as e:
                                         logger.error("Error: %s", str(e))
                             else:

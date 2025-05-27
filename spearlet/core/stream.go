@@ -175,7 +175,7 @@ func (p *streamChannel) StreamId() int32 {
 
 func (p *streamChannel) WriteStreamDataForHost(data []byte) {
 	if p.reqCh == nil {
-		panic("stream channel is nil")
+		panic("reqCh is nil in streamChannel")
 	}
 	p.reqCh <- data
 }

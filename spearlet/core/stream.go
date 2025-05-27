@@ -98,7 +98,7 @@ type StreamBiChannel interface {
 	GetInvocationInfo() *InvocationInfo
 	Stop()
 
-	WriteStreamData(data []byte)
+	WriteStreamDataForHost(data []byte)
 	WriteNotificationToTask(name string, ty stream.NotificationEventType,
 		data []byte, final bool)
 	WriteOperationToTask(name string, ty stream.OperationType,
@@ -173,7 +173,7 @@ func (p *streamChannel) StreamId() int32 {
 	return p.streamId
 }
 
-func (p *streamChannel) WriteStreamData(data []byte) {
+func (p *streamChannel) WriteStreamDataForHost(data []byte) {
 	if p.reqCh == nil {
 		panic("stream channel is nil")
 	}

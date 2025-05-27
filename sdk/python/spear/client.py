@@ -156,19 +156,9 @@ class RawStreamRequestContext(object):
         send raw data to the stream
         """
         agent = global_agent()
-        builder = fbs.Builder(len(data) + 1024)
-        data_off = builder.CreateByteVector(data_to_bytes(data))
-
-        StreamRawData.StreamRawDataStart(builder)
-        StreamRawData.AddData(builder, data_off)
-        StreamRawData.AddLength(builder, len(data))
-        builder.Finish(StreamRawData.End(builder))
-
-        logger.debug("Sending raw stream data: %s", data)
         agent.send_rawdata_event(
             self._stream_id,
-            builder.Output(),
-            final,
+            data_to_bytes(data), final,
         )
 
 
@@ -179,7 +169,8 @@ def data_to_bytes(data) -> bytes:
     if isinstance(data, bytes):
         return data
     if isinstance(data, str):
-        return data.encode("utf-8")
+        res = data.encode("utf-8")
+        return res
     if isinstance(data, bytearray):
         return bytes(data)
     raise ValueError(
@@ -357,7 +348,8 @@ class HostAgent(object):
                     if isinstance(result, str):
                         result = result.encode("utf-8")
                     if not isinstance(result, bytes):
-                        raise ValueError(f"Invalid response type: {type(result)}")
+                        raise ValueError(
+                            f"Invalid response type: {type(result)}")
                 builder = fbs.Builder(1024)
                 off = builder.CreateByteVector(result)
                 CustomResponse.CustomResponseStart(builder)
@@ -371,7 +363,8 @@ class HostAgent(object):
                 self._put_rpc_error(req_id, -32603, str(e), "Internal error: ")
             with self._inflight_requests_lock:
                 self._inflight_requests_count -= 1
-            logger.debug("Inflight requests: %d", self._inflight_requests_count)
+            logger.debug("Inflight requests: %d",
+                         self._inflight_requests_count)
 
         while True:
             rpc_data = self._get_rpc_data()
@@ -427,9 +420,11 @@ class HostAgent(object):
                                     builder
                                 )
                                 builder.Finish(end)
-                                self._put_rpc_response(req.Id(), builder.Output())
+                                self._put_rpc_response(
+                                    req.Id(), builder.Output())
                             except Exception as e:
-                                logger.error("Error: %s", traceback.format_exc())
+                                logger.error(
+                                    "Error: %s", traceback.format_exc())
                                 self._put_rpc_error(
                                     req.Id(), -32603, str(e), "Internal error: "
                                 )
@@ -456,7 +451,8 @@ class HostAgent(object):
                             custom_req.MethodStr().decode("utf-8")
                         )
                         if handler_obj is None:
-                            logger.error("Method not found: %s", custom_req.MethodStr())
+                            logger.error("Method not found: %s",
+                                         custom_req.MethodStr())
                             self._put_rpc_error(
                                 req.Id(),
                                 -32601,

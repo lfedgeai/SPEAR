@@ -1083,23 +1083,20 @@ class HostAgent(object):
             length = len(data)
             lendata = length.to_bytes(8, byteorder="little")
             # send the length and the data
-            MAX_RETRIES = 5
-            TIMEOUT_SECONDS = 10
-            retries = 0
+            TIMEOUT_SECONDS = 5
             start_time = time.time()
-            while retries < MAX_RETRIES and (time.time() - start_time) < TIMEOUT_SECONDS:
+            while (time.time() - start_time) < TIMEOUT_SECONDS:
                 try:
                     self._client.sendall(lendata + data)
                     break
                 except BlockingIOError as e:
                     logger.warning("socket error: %s. errno: %d", str(e), e.errno)
-                    retries += 1
-                    time.sleep(0.5)  # Brief pause before retrying
+                    time.sleep(0.1)  # Brief pause before retrying
                 except Exception as e:
                     logger.error("Error sending data: %s", str(e))
                     return
-            if retries >= MAX_RETRIES or (time.time() - start_time) >= TIMEOUT_SECONDS:
-                logger.error("Failed to send data after %d retries or %d seconds timeout.", MAX_RETRIES, TIMEOUT_SECONDS)
+            else:
+                logger.error("Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS)
                 return
 
         sel = selectors.DefaultSelector()

@@ -5,7 +5,6 @@ import queue
 import selectors
 import socket
 import struct
-import sys
 import threading
 import time
 import traceback
@@ -158,7 +157,8 @@ class RawStreamRequestContext(object):
         agent = global_agent()
         agent.send_rawdata_event(
             self._stream_id,
-            data_to_bytes(data), final,
+            data_to_bytes(data),
+            final,
         )
 
 
@@ -281,6 +281,7 @@ class HostAgent(object):
         self._pending_requests_lock = threading.Lock()
         self._client = None
         self._sig_handlers = {}
+        self._stream_handlers = {}
         self._stream_sequence_ids = {}
         self._stream_sequence_ids_lock = threading.Lock()
 
@@ -348,8 +349,7 @@ class HostAgent(object):
                     if isinstance(result, str):
                         result = result.encode("utf-8")
                     if not isinstance(result, bytes):
-                        raise ValueError(
-                            f"Invalid response type: {type(result)}")
+                        raise ValueError(f"Invalid response type: {type(result)}")
                 builder = fbs.Builder(1024)
                 off = builder.CreateByteVector(result)
                 CustomResponse.CustomResponseStart(builder)
@@ -363,8 +363,7 @@ class HostAgent(object):
                 self._put_rpc_error(req_id, -32603, str(e), "Internal error: ")
             with self._inflight_requests_lock:
                 self._inflight_requests_count -= 1
-            logger.debug("Inflight requests: %d",
-                         self._inflight_requests_count)
+            logger.debug("Inflight requests: %d", self._inflight_requests_count)
 
         while True:
             rpc_data = self._get_rpc_data()
@@ -420,11 +419,9 @@ class HostAgent(object):
                                     builder
                                 )
                                 builder.Finish(end)
-                                self._put_rpc_response(
-                                    req.Id(), builder.Output())
+                                self._put_rpc_response(req.Id(), builder.Output())
                             except Exception as e:
-                                logger.error(
-                                    "Error: %s", traceback.format_exc())
+                                logger.error("Error: %s", traceback.format_exc())
                                 self._put_rpc_error(
                                     req.Id(), -32603, str(e), "Internal error: "
                                 )
@@ -451,8 +448,7 @@ class HostAgent(object):
                             custom_req.MethodStr().decode("utf-8")
                         )
                         if handler_obj is None:
-                            logger.error("Method not found: %s",
-                                         custom_req.MethodStr())
+                            logger.error("Method not found: %s", custom_req.MethodStr())
                             self._put_rpc_error(
                                 req.Id(),
                                 -32601,
@@ -684,6 +680,58 @@ class HostAgent(object):
             raise ValueError("handler must be a callable")
         self._sig_handlers[sig_type].append(handler)
         logger.debug("Registered signal handler for %s", sig_type)
+
+    def unregister_signal_handler(self, sig_type, handler: Callable):
+        """
+        unregister the signal handler for the signal type
+        """
+        if sig_type not in self._sig_handlers:
+            return
+        if handler in self._sig_handlers[sig_type]:
+            self._sig_handlers[sig_type].remove(handler)
+            logger.debug("Unregistered signal handler for %s", sig_type)
+        if not self._sig_handlers[sig_type]:
+            del self._sig_handlers[sig_type]
+
+    def _stream_top_handler(self, ctx: StreamRequestContext):
+        """
+        stream handler for the send thread
+        """
+        if ctx.stream_id not in self._stream_handlers:
+            logger.warning("No handler for stream id %d", ctx.stream_id)
+            return
+        handler = self._stream_handlers[ctx.stream_id]
+        if not isinstance(handler, Callable):
+            logger.error("Handler for stream id %d is not callable", ctx.stream_id)
+            return
+        handler(ctx)
+
+    def register_stream_handler(self, stream_id: int, handler: Callable):
+        """
+        register the stream handler for the stream id
+        """
+        if not isinstance(stream_id, int):
+            raise ValueError("stream_id must be an integer")
+        if not isinstance(handler, Callable):
+            raise ValueError("handler must be a callable")
+        if stream_id not in self._handlers:
+            self.register_signal_handler(
+                Signal.Signal.StreamData, self._stream_top_handler
+            )
+        self._stream_handlers[stream_id] = handler
+
+    def unregister_stream_handler(self, stream_id: int):
+        """
+        unregister the stream handler for the stream id
+        """
+        if not isinstance(stream_id, int):
+            raise ValueError("stream_id must be an integer")
+        if stream_id in self._stream_handlers:
+            del self._stream_handlers[stream_id]
+        if not self._stream_handlers:
+            self.unregister_signal_handler(
+                Signal.Signal.StreamData, self._stream_top_handler
+            )
 
     def register_handler(
         self,
@@ -1021,8 +1069,7 @@ class HostAgent(object):
                 # data = strdata.encode("utf-8")
                 length = len(data)
                 lendata = length.to_bytes(8, byteorder="little")
-                self._client.sendall(lendata)
-                self._client.sendall(data)
+                self._client.sendall(lendata + data)
             # send a data with length 0
             lendata = (0).to_bytes(8, byteorder="little")
             self._client.sendall(lendata)
@@ -1035,9 +1082,16 @@ class HostAgent(object):
             # get the length of utf8 string
             length = len(data)
             lendata = length.to_bytes(8, byteorder="little")
-            # send the length of the data
-            self._client.sendall(lendata)
-            self._client.sendall(data)
+            # send the length and the data
+            while True:
+                try:
+                    self._client.sendall(lendata + data)
+                    break
+                except BlockingIOError as e:
+                    logger.warning("socket error: %s. errno: %d", str(e), e.errno)
+                except Exception as e:
+                    logger.error("Error sending data: %s", str(e))
+                    return
 
         sel = selectors.DefaultSelector()
         sel.register(self._stop_event_r, selectors.EVENT_READ)
@@ -1128,7 +1182,7 @@ def handle(method: Callable):
     return method
 
 
-def handle_stream(method: Callable):
+def _handle_stream(stream_id: int, method: Callable):
     """
     Decorator to register a function as a stream handler
     """
@@ -1136,8 +1190,50 @@ def handle_stream(method: Callable):
         raise ValueError("method must be a callable")
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")
-    _global_agent.register_signal_handler(Signal.Signal.StreamData, method)
+    _global_agent.register_stream_handler(stream_id, method)
     return method
+
+
+def handle_stream(*args):
+    """
+    Decorator to register a function as a stream handler
+    """
+    if len(args) != 1:
+        raise ValueError("invalid arguments")
+    if isinstance(args[0], Callable):
+        # if only one argument is passed and it is a callable
+        return _handle_stream(0, args[0])
+    elif isinstance(args[0], int):
+        # if one argument is passed and it is an int, return a decorator
+        def decorator(method: Callable):
+            return _handle_stream(args[0], method)
+
+        return decorator
+
+
+def register_stream_handler(stream_id: int, handler: Callable):
+    """
+    Register a stream handler for the given stream id
+    """
+    if not isinstance(stream_id, int):
+        raise ValueError("stream_id must be an integer")
+    if not isinstance(handler, Callable):
+        raise ValueError("handler must be a callable")
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.register_stream_handler(stream_id, handler)
+    return handler
+
+
+def unregister_stream_handler(stream_id: int):
+    """
+    Unregister a stream handler for the given stream id
+    """
+    if not isinstance(stream_id, int):
+        raise ValueError("stream_id must be an integer")
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.unregister_stream_handler(stream_id)
 
 
 def init():

@@ -2,6 +2,7 @@
 import logging
 import sys
 import uuid
+from typing import Callable
 
 import flatbuffers as fbs
 import spear.client as client
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def create_stream(agent: client.HostAgent, class_name: str) -> int:
+def create_stream(agent: client.HostAgent, class_name: str, handler: Callable) -> int:
     """
     Create a stream
     """
@@ -50,6 +51,7 @@ def create_stream(agent: client.HostAgent, class_name: str) -> int:
     if resp.StreamId() <= 0:
         raise ValueError(f"Invalid stream ID: {resp.StreamId()}")
     logger.info("Stream created with ID: %d", resp.StreamId())
+    client.register_stream_handler(resp.StreamId(), handler)
     return resp.StreamId()
 
 
@@ -80,3 +82,4 @@ def close_stream(agent: client.HostAgent, stream_id: int) -> None:
     if resp.RequestId() != req_id:
         raise ValueError(f"Invalid request ID: {resp.RequestId()}")
     logger.info("Stream closed with ID: %d", resp.StreamId())
+    client.unregister_stream_handler(stream_id)

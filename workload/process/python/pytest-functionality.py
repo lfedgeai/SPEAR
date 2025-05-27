@@ -75,11 +75,10 @@ def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestCont
     # test("text-embedding-ada-002")
     # test("bge-large-en-v1.5")
     if ctx.stream_id == client.SYS_IO_STREAM_ID:
-        ctx.send_raw(client.global_agent(), f"[Hi I got the context: {ctx}]")
+        ctx.send_raw(f"[Hi I got the context: {ctx}]")
     elif not ctx.is_raw:
         logger.info("event target: %s", ctx.name)
         ctx.send_notification(
-            client.global_agent(),
             FUNCTION_NAME,
             NotificationEventType.Completed,
             f"[Reply from streamdata event handler: {ctx}]",

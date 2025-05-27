@@ -3,7 +3,6 @@ import logging
 import sys
 
 import spear.client as client
-import spear.proto.transport.Signal as Signal
 
 logging.basicConfig(
     level=logging.DEBUG,  # Set the desired logging level
@@ -15,12 +14,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-agent = client.HostAgent()
-
 # global counter
 counter = 0
 
 
+@client.handle_stream
 def handle_stream(ctx):
     """
     handle the request
@@ -31,12 +29,9 @@ def handle_stream(ctx):
     logger.info("Handling request: %s", ctx)
     if counter > 5:
         return
-    return f'I got your message"{ctx}"'
+    ctx.send_raw(f"I got your message {ctx}")
+    return
 
 
 if __name__ == "__main__":
-    agent.register_signal_handler(
-        Signal.Signal.StreamData,
-        handle_stream,
-    )
-    agent.run()
+    client.init()

@@ -714,7 +714,7 @@ class HostAgent(object):
             raise ValueError("stream_id must be an integer")
         if not isinstance(handler, Callable):
             raise ValueError("handler must be a callable")
-        if stream_id not in self._handlers:
+        if Signal.Signal.StreamData not in self._sig_handlers:
             self.register_signal_handler(
                 Signal.Signal.StreamData, self._stream_top_handler
             )

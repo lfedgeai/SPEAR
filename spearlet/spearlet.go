@@ -504,7 +504,7 @@ func (w *Spearlet) streamSignalHandler(t task.Task, rawdata []byte) error {
 	}
 	sc, ok := w.commMgr.StreamBiChannels[t][streamId]
 	if !ok {
-		return fmt.Errorf("error: stream channel not found: %d for event",
+		return fmt.Errorf("error: stream channel %d not found for event",
 			streamId)
 	}
 	sc.WriteStreamDataForHost(rawdata)

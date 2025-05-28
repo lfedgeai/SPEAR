@@ -11,7 +11,7 @@ DEST = "localhost:8080/stream"
 
 def on_message(ws, message):
     """called when a message is received"""
-    print(f"received data:\n\"{message}\"")
+    print(f'received data:\n"{message}"')
 
 
 def on_error(ws, error):
@@ -76,7 +76,6 @@ if __name__ == "__main__":
         default=False,
         help="use secure connection",
     )
-    parser.add_argument("-d", "--dest", type=str,
-                        default=DEST, help="destination URL")
+    parser.add_argument("-d", "--dest", type=str, default=DEST, help="destination URL")
     args = parser.parse_args()
     main(args)

@@ -78,17 +78,17 @@ func (c *CommunicationManager) InitializeTaskData(t task.Task) error {
 			if transRaw.DataType() == transport.TransportMessageRaw_DataTransportRequest {
 				err := c.doResponse(t, transRaw)
 				if err != nil {
-					log.Errorf("Error processing response: %v", err)
+					log.Warnf("Response handler: %v", err)
 				}
 			} else if transRaw.DataType() == transport.TransportMessageRaw_DataTransportResponse {
 				err := c.doRequest(t, transRaw)
 				if err != nil {
-					log.Errorf("Error processing request: %v", err)
+					log.Warnf("Request handler: %v", err)
 				}
 			} else if transRaw.DataType() == transport.TransportMessageRaw_DataTransportSignal {
 				err := c.doSignal(t, transRaw)
 				if err != nil {
-					log.Errorf("Error processing signal: %v", err)
+					log.Warnf("Signal handler: %v", err)
 				}
 			} else {
 				log.Errorf("Invalid transport message type: %d", transRaw.DataType())

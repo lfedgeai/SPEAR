@@ -32,7 +32,7 @@ CLASS_NAME = "dummy"
 
 
 @client.handle
-def handle(ctx):
+def handle_input(ctx):
     """
     handle the request
     """
@@ -66,7 +66,9 @@ def handle(ctx):
 
 
 @client.handle_stream
-def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestContext):
+def handle_stream_input(
+    ctx: client.StreamRequestContext | client.RawStreamRequestContext,
+):
     """
     handle streaming request
     """
@@ -76,13 +78,8 @@ def handle_stream(ctx: client.StreamRequestContext | client.RawStreamRequestCont
     # test("bge-large-en-v1.5")
     if ctx.stream_id == client.SYS_IO_STREAM_ID:
         ctx.send_raw(f"[Hi I got the context: {ctx}]")
-    elif not ctx.is_raw:
-        logger.info("event target: %s", ctx.name)
-        ctx.send_notification(
-            FUNCTION_NAME,
-            NotificationEventType.Completed,
-            f"[Reply from streamdata event handler: {ctx}]",
-        )
+    else:
+        logger.error("Unknown stream ID: %d", ctx.stream_id)
 
 
 def test_chat(model):
@@ -170,20 +167,33 @@ def test_tool(model):
     logger.info(resp)
 
 
+def _handle_stream(ctx: client.StreamRequestContext):
+    """
+    handle the stream data event
+    """
+    logger.info("event target: %s", ctx.name)
+    ctx.send_notification(
+        FUNCTION_NAME,
+        NotificationEventType.Completed,
+        f"[Reply from streamdata event handler: {ctx}]",
+    )
+
+
 def test_stream_data():
     """
     test streamdata
     """
     logger.info("Testing streamdata")
-    stream_id = create_stream(client.global_agent(), CLASS_NAME)
+    stream_id = create_stream(client.global_agent(), CLASS_NAME, _handle_stream)
     logger.info("Stream ID: %d", stream_id)
 
     client.global_agent().send_operation_event(
         stream_id, FUNCTION_NAME, OperationType.Create, b"test data"
     )
 
-    time.sleep(5)
-    # close stream
+    time.sleep(4)
+
+    # close the stream
     close_stream(client.global_agent(), stream_id)
     logger.info("Stream closed")
 

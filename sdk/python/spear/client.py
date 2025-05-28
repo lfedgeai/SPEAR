@@ -263,12 +263,13 @@ class HostAgent(object):
     _instance = None
 
     def __init__(self):
-        self._send_queue = queue.Queue(512)
-        self._recv_queue = queue.Queue(512)
+        self._send_queue = queue.Queue(1024)
+        self._recv_queue = queue.Queue(1024)
         self._global_id = 1
         self._send_task = None
         self._send_task_pipe_r, self._send_task_pipe_w = os.pipe()
         self._recv_task = None
+        self._main_loop_thread = None
         self._handlers = {}
         self._internal_tools = {}
         event_sock_r, event_sock_w = socket.socketpair()
@@ -284,6 +285,7 @@ class HostAgent(object):
         self._stream_handlers = {}
         self._stream_sequence_ids = {}
         self._stream_sequence_ids_lock = threading.Lock()
+        self._exit_event = threading.Event()
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -305,7 +307,20 @@ class HostAgent(object):
         self._client.setblocking(False)
         self._global_id = 0
 
-    def run(self, host_addr=None, host_secret=None):
+    def loop(self, *args, **kwargs):
+        """
+        run the agent and return when finished
+        """
+        self.start(*args, **kwargs, main_in_thread=False)
+
+    def wait(self):
+        """
+        wait for the agent to finish
+        """
+        # wait for exit event
+        self._exit_event.wait()
+
+    def start(self, host_addr=None, host_secret=None, main_in_thread: bool = True):
         """
         start the agent
         """
@@ -331,7 +346,13 @@ class HostAgent(object):
         recv_thread.start()
         self._recv_task = recv_thread
 
-        self._main_loop()
+        if main_in_thread:
+            mainloop_thread = threading.Thread(target=self._main_loop)
+            mainloop_thread.start()
+            self._main_loop_thread = mainloop_thread
+        else:
+            # run the main loop in the current thread
+            self._main_loop()
 
     def _main_loop(self):
         """
@@ -899,7 +920,9 @@ class HostAgent(object):
 
         self._put_signal(Signal.Signal.StreamData, stream_event_data)
 
-    def send_rawdata_event(self, stream_id: int, data: bytes, last_message: bool):
+    def send_rawdata_event(
+        self, stream_id: int, data: bytes, last_message: bool = False
+    ):
         """
         send the rpc signal
         """
@@ -1096,7 +1119,9 @@ class HostAgent(object):
                     logger.error("Error sending data: %s", str(e))
                     return
             else:
-                logger.error("Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS)
+                logger.error(
+                    "Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS
+                )
                 return
 
         sel = selectors.DefaultSelector()
@@ -1164,10 +1189,13 @@ class HostAgent(object):
             self._stop_event_w.send(b"\x01")
             self._send_task.join()
             self._recv_task.join()
+            if self._main_loop_thread is not None:
+                self._main_loop_thread.join()
             logger.debug("Stopping the agent")
             self._client.close()
             os._exit(0)
 
+        self._exit_event.set()
         # create a thread to stop the agent
         threading.Thread(target=stop_worker).start()
 
@@ -1248,8 +1276,18 @@ def init():
     """
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")
-    _global_agent.run()
+    _global_agent.start()
     logger.info("_global_agent initialized")
+
+
+def wait():
+    """
+    Wait for the global HostAgent instance to finish
+    """
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.wait()
+    logger.info("_global_agent finished")
 
 
 def global_agent() -> HostAgent:

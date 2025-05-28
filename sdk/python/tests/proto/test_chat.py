@@ -47,9 +47,12 @@ class TestChatProto(unittest.TestCase):
         t.daemon = True
         t.start()
 
-        agent.run("localhost:12345", 12345)
+        agent.loop("localhost:12345", 12345)
 
     def test_case2(self):
+        """
+        Test case 2 for chat functionality
+        """
         pass
 
 

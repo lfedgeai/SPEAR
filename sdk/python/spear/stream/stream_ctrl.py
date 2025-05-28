@@ -22,11 +22,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def create_stream(agent: client.HostAgent, class_name: str, handler: Callable) -> int:
+def create_stream(class_name: str, handler: Callable) -> int:
     """
     Create a stream
     """
     logger.info("Creating stream")
+    agent = client.global_agent()
 
     # Generate a unique 32-bit signed request ID
     req_id = uuid.uuid4().int & 0x7FFFFFFF  # Ensure it's within int32 positive range
@@ -55,11 +56,12 @@ def create_stream(agent: client.HostAgent, class_name: str, handler: Callable) -
     return resp.StreamId()
 
 
-def close_stream(agent: client.HostAgent, stream_id: int) -> None:
+def close_stream(stream_id: int) -> None:
     """
     Close a stream
     """
     logger.info("Closing stream with ID: %d", stream_id)
+    agent = client.global_agent()
 
     # Generate a unique 32-bit signed request ID
     req_id = uuid.uuid4().int & 0x7FFFFFFF  # Ensure it's within int32 positive range

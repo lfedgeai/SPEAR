@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 
+	log "github.com/sirupsen/logrus"
+
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/lfedgeai/spear/pkg/spear/proto/stream"
 	hcommon "github.com/lfedgeai/spear/spearlet/core"
@@ -42,6 +44,7 @@ func StreamCtrl(inv *hcommon.InvocationInfo,
 		stream.StreamControlResponseAddRequestId(builder, req.RequestId())
 		stream.StreamControlResponseAddStreamId(builder, streamId)
 		builder.Finish(stream.StreamControlResponseEnd(builder))
+		log.Debugf("Created new stream %d for task %s", streamId, inv.Task.Name())
 		return builder.FinishedBytes(), nil
 	case stream.StreamControlOpsClose:
 		streamId := req.StreamId()
@@ -59,6 +62,7 @@ func StreamCtrl(inv *hcommon.InvocationInfo,
 		stream.StreamControlResponseAddRequestId(builder, req.RequestId())
 		stream.StreamControlResponseAddStreamId(builder, streamId)
 		builder.Finish(stream.StreamControlResponseEnd(builder))
+		log.Debugf("Closed stream %d for task %s", streamId, inv.Task.Name())
 		return builder.FinishedBytes(), nil
 	}
 	return nil, fmt.Errorf("unsupported stream control operation %d", req.Op())

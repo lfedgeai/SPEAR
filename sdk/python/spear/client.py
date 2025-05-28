@@ -1096,7 +1096,9 @@ class HostAgent(object):
                     logger.error("Error sending data: %s", str(e))
                     return
             else:
-                logger.error("Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS)
+                logger.error(
+                    "Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS
+                )
                 return
 
         sel = selectors.DefaultSelector()

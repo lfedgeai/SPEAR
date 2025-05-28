@@ -184,7 +184,7 @@ def test_stream_data():
     test streamdata
     """
     logger.info("Testing streamdata")
-    stream_id = create_stream(client.global_agent(), CLASS_NAME, _handle_stream)
+    stream_id = create_stream(CLASS_NAME, _handle_stream)
     logger.info("Stream ID: %d", stream_id)
 
     client.global_agent().send_operation_event(
@@ -194,7 +194,7 @@ def test_stream_data():
     time.sleep(4)
 
     # close the stream
-    close_stream(client.global_agent(), stream_id)
+    close_stream(stream_id)
     logger.info("Stream closed")
 
 

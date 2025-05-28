@@ -27,17 +27,50 @@ def handle_stream(ctx):
     return
 
 
-def handle_rt_asr(ctx):
+class RealtimeASRStreamHandler:
     """
-    Handle real-time ASR stream requests.
+    Handler for real-time ASR streams.
+    This class can be extended to handle specific ASR stream logic.
     """
-    logger.info("Handling real-time ASR request: %s", ctx)
+
+    def handle_rt_asr(self, ctx):
+        """
+        Handle real-time ASR stream requests.
+        """
+        logger.info("Handling real-time ASR request: %s", ctx)
+        if ctx.is_opeartion_event:
+            self.operation(ctx)
+        elif ctx.is_notification_event:
+            self.notification(ctx)
+        elif ctx.is_raw:
+            self.raw()
+
+    def notification(self, ctx):
+        """
+        Handle notifications from the ASR stream.
+        """
+        logger.info("Received notification: %s", ctx)
+
+    def operation(self, ctx):
+        """
+        Handle operation events from the ASR stream.
+        """
+        logger.info("Received operation event: %s", ctx)
+
+    def raw(self):
+        """
+        Handle raw data from the ASR stream.
+        This method can be extended to process raw audio data.
+        """
+        logger.info("Received raw data from ASR stream.")
 
 
 def main():
     """Main function to initialize the client."""
+    asr_instance = RealtimeASRStreamHandler()
     client.init()
-    rt_asr_id = create_stream("rt-asr", handle_rt_asr)
+    rt_asr_id = create_stream("rt-asr", asr_instance.handle_rt_asr)
+    client.wait()
     close_stream(rt_asr_id)
 
 

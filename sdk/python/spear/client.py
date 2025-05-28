@@ -920,7 +920,9 @@ class HostAgent(object):
 
         self._put_signal(Signal.Signal.StreamData, stream_event_data)
 
-    def send_rawdata_event(self, stream_id: int, data: bytes, last_message: bool):
+    def send_rawdata_event(
+        self, stream_id: int, data: bytes, last_message: bool = False
+    ):
         """
         send the rpc signal
         """
@@ -1277,6 +1279,7 @@ def init():
     _global_agent.start()
     logger.info("_global_agent initialized")
 
+
 def wait():
     """
     Wait for the global HostAgent instance to finish
@@ -1285,6 +1288,7 @@ def wait():
         raise ValueError("_global_agent is not initialized")
     _global_agent.wait()
     logger.info("_global_agent finished")
+
 
 def global_agent() -> HostAgent:
     """

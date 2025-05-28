@@ -56,4 +56,4 @@ def handle(ctx):
 
 if __name__ == "__main__":
     agent.register_handler("handle", handle)
-    agent.run()
+    agent.loop()

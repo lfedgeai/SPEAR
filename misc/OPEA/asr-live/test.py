@@ -23,7 +23,7 @@ def handle_stream(ctx):
     if nothing is returned or exception is raised, the stream will be closed
     """
     logger.info("Handling request: %s", ctx)
-    ctx.send_raw(f"Got msg: {ctx.payload}")
+    ctx.send_raw(f"Got msg: {ctx.data}")
     return
 
 
@@ -37,9 +37,7 @@ def handle_rt_asr(ctx):
 def main():
     """Main function to initialize the client."""
     client.init()
-
     rt_asr_id = create_stream("rt-asr", handle_rt_asr)
-
     close_stream(rt_asr_id)
 
 

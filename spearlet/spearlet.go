@@ -658,7 +658,7 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 			log.Debugf("Sending message to client: %s", msg)
 			err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
 			if err != nil {
-				log.Warnf("Error writing message: %v", err)
+				log.Warnf("Failed writing message: %v", err)
 				break
 			}
 		}

@@ -200,3 +200,4 @@ def test_stream_data():
 
 if __name__ == "__main__":
     client.init()
+    client.wait()

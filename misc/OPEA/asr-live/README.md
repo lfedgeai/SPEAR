@@ -21,7 +21,7 @@ On the client side, run:
 
 ## Running Unit Tests
 
-To execute the unit tests for the ASR Live module, use:
+To execute the unit tests for the ASR Live module, get into the sail directory and run the following command:
 
 ```bash
 PYTHONPATH=./ ./sail/test.py

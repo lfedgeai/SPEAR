@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import argparse
-import ssl
-import threading
 import logging
+import ssl
 import sys
+import threading
 
 import websocket
 

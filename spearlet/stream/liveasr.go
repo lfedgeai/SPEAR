@@ -45,7 +45,7 @@ var (
 
 func init() {
 	core.RegisterStreamClass(rtASRStreamClass)
-	if err := rtASRStreamClass.RegisterStreamFunction(NewDummyStreamFunction()); err != nil {
+	if err := rtASRStreamClass.RegisterStreamFunction(NewRtASRStreamFunction()); err != nil {
 		panic(err)
 	}
 }

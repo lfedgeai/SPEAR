@@ -52,7 +52,7 @@ class Header:
         byte1 = (self.message_type << 4) | self.flags
         byte2 = (self.serialization << 4) | self.compression
         byte3 = 0  # Reserved byte
-        return struct.pack('!4B', byte0, byte1, byte2, byte3)
+        return struct.pack("!4B", byte0, byte1, byte2, byte3)
 
     @classmethod
     def unpack(cls, data):
@@ -60,7 +60,7 @@ class Header:
         if len(data) < 4:
             raise ValueError("Header data too short")
 
-        byte0, byte1, byte2, byte3 = struct.unpack('!4B', data[:4])
+        byte0, byte1, byte2, byte3 = struct.unpack("!4B", data[:4])
         version = (byte0 >> 4) & 0x0F
         header_size = byte0 & 0x0F
 
@@ -108,7 +108,7 @@ class FullClientRequest(BaseMessage):
 
         # Deserialize based on format
         if serialization == SERIALIZATION_JSON:
-            return json.loads(payload_bytes.decode('utf-8'))
+            return json.loads(payload_bytes.decode("utf-8"))
         else:
             # For unsupported serialization, return raw bytes
             return payload_bytes
@@ -122,7 +122,7 @@ class FullClientRequest(BaseMessage):
         """Serialize payload into binary format"""
         # Serialize based on format
         if self.header.serialization == SERIALIZATION_JSON:
-            payload_bytes = json.dumps(self.payload_data).encode('utf-8')
+            payload_bytes = json.dumps(self.payload_data).encode("utf-8")
         else:
             payload_bytes = self.payload_data  # Assume already bytes
 
@@ -139,7 +139,7 @@ class AudioOnlyRequest(BaseMessage):
     def __init__(self, header, audio_data):
         super().__init__(header)
         self.audio_data = audio_data
-        self.is_last = (header.flags == FLAG_LAST_AUDIO)
+        self.is_last = header.flags == FLAG_LAST_AUDIO
 
     @classmethod
     def parse_payload(cls, payload_bytes, compression):
@@ -176,7 +176,7 @@ class FullServerResponse(BaseMessage):
         """Serialize response payload into binary format"""
         # Serialize based on format
         if self.header.serialization == SERIALIZATION_JSON:
-            payload_bytes = json.dumps(self.response_data).encode('utf-8')
+            payload_bytes = json.dumps(self.response_data).encode("utf-8")
         else:
             payload_bytes = self.response_data  # Assume already bytes
 
@@ -203,7 +203,7 @@ class ErrorResponse(BaseMessage):
         """Serialize error payload into binary format"""
         # Serialize based on format
         if self.header.serialization == SERIALIZATION_JSON:
-            return json.dumps(self.error_data).encode('utf-8')
+            return json.dumps(self.error_data).encode("utf-8")
         return self.error_data  # Assume already bytes
 
 
@@ -218,7 +218,7 @@ class SAILProtocolHandler:
         """Parse incoming binary data into appropriate message object"""
         # Parse header (first 4 bytes)
         header = Header.unpack(data[:4])
-        payload_bytes = data[4+4:]  # Skip header and payload size
+        payload_bytes = data[4 + 4 :]  # Skip header and payload size
 
         # Handle different message types
         if header.message_type == MSG_FULL_CLIENT_REQUEST:
@@ -228,47 +228,34 @@ class SAILProtocolHandler:
 
             # Parse payload
             payload = FullClientRequest.parse_payload(
-                payload_bytes,
-                header.serialization,
-                header.compression
+                payload_bytes, header.serialization, header.compression
             )
             return FullClientRequest(header, payload)
 
         elif header.message_type == MSG_AUDIO_ONLY_REQUEST:
             # Parse audio payload
             audio_data = AudioOnlyRequest.parse_payload(
-                payload_bytes,
-                header.compression
+                payload_bytes, header.compression
             )
             return AudioOnlyRequest(header, audio_data)
 
         else:
-            raise ValueError(
-                f"Unsupported message type: {header.message_type}")
+            raise ValueError(f"Unsupported message type: {header.message_type}")
 
     def create_full_response(self, sequence, result_data, is_last=False):
         """Create FullServerResponse message"""
         flags = FLAG_LAST_RESPONSE if is_last else FLAG_NORMAL
         header = Header(
-            MSG_FULL_SERVER_RESPONSE,
-            flags,
-            self.serialization,
-            self.compression
+            MSG_FULL_SERVER_RESPONSE, flags, self.serialization, self.compression
         )
         return FullServerResponse(header, sequence, result_data)
 
     def create_error_response(self, error_code, error_message):
         """Create ErrorResponse message"""
         header = Header(
-            MSG_ERROR_RESPONSE,
-            FLAG_NORMAL,
-            SERIALIZATION_JSON,
-            COMPRESSION_NONE
+            MSG_ERROR_RESPONSE, FLAG_NORMAL, SERIALIZATION_JSON, COMPRESSION_NONE
         )
-        error_data = {
-            "code": error_code,
-            "message": error_message
-        }
+        error_data = {"code": error_code, "message": error_message}
         return ErrorResponse(header, error_code, error_data)
 
     def serialize_message(self, message):
@@ -281,23 +268,23 @@ class SAILProtocolHandler:
             # Pack payload size and payload
             payload = message.pack_payload()
             payload_size = len(payload)
-            data += struct.pack('!I', payload_size)
+            data += struct.pack("!I", payload_size)
             data += payload
 
         elif isinstance(message, FullServerResponse):
             # Pack sequence number, payload size, and payload
-            data += struct.pack('!I', message.sequence)
+            data += struct.pack("!I", message.sequence)
             payload = message.pack_payload()
             payload_size = len(payload)
-            data += struct.pack('!I', payload_size)
+            data += struct.pack("!I", payload_size)
             data += payload
 
         elif isinstance(message, ErrorResponse):
             # Pack error code, payload size, and payload
-            data += struct.pack('!I', message.error_code)
+            data += struct.pack("!I", message.error_code)
             payload = message.pack_payload()
             payload_size = len(payload)
-            data += struct.pack('!I', payload_size)
+            data += struct.pack("!I", payload_size)
             data += payload
 
         else:

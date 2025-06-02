@@ -365,7 +365,7 @@ func (w *Spearlet) metaDataToTaskCfg(meta TaskMetaData) *task.TaskConfig {
 			}
 		}
 		if execName == "" || execPath == "" {
-			log.Errorf("Error: exec name %s and path %s not found",
+			log.Errorf("Error: exec name \"%s\" and path \"%s\" not found",
 				meta.ExecName, execPath)
 			return nil
 		}
@@ -667,7 +667,7 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 	t, _, err := w.ExecuteTask(taskId, taskName, funcType, "handle",
 		inData, inStream, outStream)
 	if err != nil {
-		respError(resp, fmt.Sprintf("Error: %v", err))
+		streamRespError(conn, fmt.Sprintf("Error: %v", err))
 		return
 	}
 
@@ -857,4 +857,19 @@ func respError(resp http.ResponseWriter, msg string) {
 	log.Warnf("Returning error %s", msg)
 	resp.WriteHeader(http.StatusInternalServerError)
 	resp.Write([]byte(msg))
+}
+
+func streamRespError(conn *websocket.Conn, msg string) {
+	if conn == nil {
+		log.Errorf("Error: %s", msg)
+		return
+	}
+	errMsg := websocket.FormatCloseMessage(websocket.CloseUnsupportedData,
+		fmt.Sprintf("Error: %s", msg))
+	err := conn.WriteControl(websocket.CloseMessage, errMsg,
+		time.Now().Add(5*time.Second))
+	if err != nil {
+		log.Errorf("Error sending control message: %v", err)
+		return
+	}
 }

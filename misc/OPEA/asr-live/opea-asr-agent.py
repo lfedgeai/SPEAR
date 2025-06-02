@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-
 @client.handle_stream
 def handle_stream(ctx):
     """
@@ -77,4 +76,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

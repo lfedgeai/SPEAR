@@ -3,10 +3,24 @@
 import argparse
 import ssl
 import threading
+import logging
+import sys
 
 import websocket
 
 DEST = "localhost:8080/stream"
+AGENT_NAME = "test.py"  # "opea-asr-agent.py"
+
+
+logging.basicConfig(
+    level=logging.DEBUG,  # Set the desired logging level
+    # Customize the log format
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(stream=sys.stderr)],  # Log to stderr
+)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 def on_message(ws, message):
@@ -16,12 +30,14 @@ def on_message(ws, message):
 
 def on_error(ws, error):
     """called when an error is encountered"""
-    print(f"error: {error}")
+    logger.error(f"Error encountered: {error}")
 
 
 def on_close(ws, close_status_code, close_msg):
     """called when the connection is closed"""
-    print("### closed ###")
+    logger.info(
+        f"Connection closed with status code {close_status_code} and message: {close_msg}"
+    )
 
 
 def on_open(ws):
@@ -29,12 +45,15 @@ def on_open(ws):
 
     def run(*_):
         """send a message to the server"""
-        while True:
-            message = input("Enter message: ")
-            if message.lower() == "exit":
-                ws.close()
-                break
-            ws.send(message)
+        try:
+            while True:
+                message = input("Enter message: ")
+                if message.lower() == "exit":
+                    ws.close()
+                    break
+                ws.send(message)
+        except websocket.WebSocketConnectionClosedException as e:
+            logger.info(f"Connection closed: {e}")
 
     threading.Thread(target=run).start()
 
@@ -52,7 +71,7 @@ def main(args):
         dest,
         header={
             "Spear-Func-Type": "2",
-            "Spear-Func-Name": "test.py",
+            "Spear-Func-Name": AGENT_NAME,
         },
         on_open=on_open,
         on_message=on_message,

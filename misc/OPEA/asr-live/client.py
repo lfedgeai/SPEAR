@@ -9,7 +9,7 @@ import sys
 import websocket
 
 DEST = "localhost:8080/stream"
-AGENT_NAME = "test.py"  # "opea-asr-agent.py"
+AGENT_NAME = "opea-asr-agent.py"
 
 
 logging.basicConfig(

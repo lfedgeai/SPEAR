@@ -2,6 +2,7 @@
 import logging
 import sys
 
+import sail.proto as sailproto
 import spear.client as client
 from spear.stream import close_stream, create_stream
 
@@ -15,15 +16,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+handler = sailproto.SAILProtocolHandler()
+
 
 @client.handle_stream
 def handle_stream(ctx):
     """
     handle the request
-    if nothing is returned or exception is raised, the stream will be closed
     """
     logger.info("Handling request: %s", ctx)
-    ctx.send_raw(f"Got msg: {ctx.data}")
+    # ctx.send_raw(f"Got msg: {ctx.data}")
+    req = handler.parse_message(ctx.data)
+    if isinstance(req, sailproto.FullClientRequest):
+        pass
+    elif isinstance(req, sailproto.AudioOnlyRequest):
+        pass
+    else:
+        logger.error("Unknown request type: %s", type(req))
     return
 
 

@@ -11,7 +11,7 @@ HEADER_SIZE_VALUE = 1  # Header size in units of 4 bytes (1*4=4 bytes)
 MSG_FULL_CLIENT_REQUEST = 0b0001
 MSG_AUDIO_ONLY_REQUEST = 0b0010
 MSG_FULL_SERVER_RESPONSE = 0b1001
-MSG_ERROR_RESPONSE = 0b1111
+MSG_SERVER_ERROR = 0b1111
 
 # Message type specific flags
 FLAG_NORMAL = 0b0000
@@ -33,6 +33,13 @@ ERR_EMPTY_AUDIO = 45000002
 ERR_TIMEOUT = 45000081
 ERR_AUDIO_FORMAT = 45000151
 ERR_SERVER_BUSY = 55000031
+
+
+def ERR_INTERNAL_ERROR(code):
+    """Generate an internal error code based on the provided code"""
+    if code < 0 or code > 99999:
+        raise ValueError("Error code must be a 5-digit positive integer")
+    return 550_00000 + code
 
 
 class Header:
@@ -132,6 +139,95 @@ class FullClientRequest(BaseMessage):
 
         return payload_bytes
 
+    @property
+    def user_uid(self):
+        return self.payload_data.get("user", {}).get("uid")
+
+    @property
+    def user_did(self):
+        return self.payload_data.get("user", {}).get("did")
+
+    @property
+    def user_platform(self):
+        return self.payload_data.get("user", {}).get("platform")
+
+    @property
+    def user_sdk_version(self):
+        return self.payload_data.get("user", {}).get("sdk_version")
+
+    @property
+    def user_app_version(self):
+        return self.payload_data.get("user", {}).get("app_version")
+
+    @property
+    def audio_format(self):
+        return self.payload_data.get("audio", {}).get("format")
+
+    @property
+    def audio_codec(self):
+        # Default
+        return self.payload_data.get("audio", {}).get("codec", "raw")
+
+    @property
+    def audio_rate(self):
+        return self.payload_data.get("audio", {}).get("rate", 16000)  # Default
+
+    @property
+    def audio_bits(self):
+        return self.payload_data.get("audio", {}).get("bits", 16)  # Default
+
+    @property
+    def audio_channel(self):
+        return self.payload_data.get("audio", {}).get("channel", 1)  # Default
+
+    @property
+    def request_model_name(self):
+        return self.payload_data.get("request", {}).get("model_name")
+
+    @property
+    def request_enable_itn(self):
+        # Default
+        return self.payload_data.get("request", {}).get("enable_itn", False)
+
+    @property
+    def request_enable_punc(self):
+        # Default
+        return self.payload_data.get("request", {}).get("enable_punc", False)
+
+    @property
+    def request_enable_ddc(self):
+        # Default
+        return self.payload_data.get("request", {}).get("enable_ddc", False)
+
+    @property
+    def request_show_utterances(self):
+        return self.payload_data.get("request", {}).get("show_utterances")
+
+    @property
+    def request_sensitive_words_filter(self):
+        return self.payload_data.get("request", {}).get("sensitive_words_filter")
+
+    @property
+    def request_corpus(self):
+        return self.payload_data.get("request", {}).get("corpus", {})
+
+    @property
+    def request_boosting_table_name(self):
+        return self.request_corpus.get("boosting_table_name")
+
+    @property
+    def request_correct_table_name(self):
+        return self.request_corpus.get("correct_table_name")
+
+    @property
+    def request_context(self):
+        return self.request_corpus.get("context")
+
+    @property
+    def request_result_type(self):
+        # Default
+        return self.payload_data.get("request", {}).get("result_type", "full")
+
 
 class AudioOnlyRequest(BaseMessage):
     """Represents audio data packets from client"""
@@ -161,12 +257,97 @@ class AudioOnlyRequest(BaseMessage):
 
 
 class FullServerResponse(BaseMessage):
-    """Represents server responses with recognition results"""
-
     def __init__(self, header, sequence, response_data):
         super().__init__(header)
         self.sequence = sequence
         self.response_data = response_data
+
+    # Top-level properties
+    @property
+    def audio_duration(self):
+        return self.response_data.get("audio_info", {}).get("duration")
+
+    @property
+    def result(self):
+        return self.response_data.get("result", {})
+
+    # Result-level properties
+    @property
+    def full_text(self):
+        return self.result.get("text")
+
+    @property
+    def confidence(self):
+        return self.result.get("confidence")
+
+    @property
+    def utterances(self):
+        return self.result.get("utterances", [])
+
+    # Utterance-level access
+    def get_utterance_text(self, index):
+        return (
+            self.utterances[index].get("text") if index < len(self.utterances) else None
+        )
+
+    def get_utterance_start(self, index):
+        return (
+            self.utterances[index].get("start_time")
+            if index < len(self.utterances)
+            else None
+        )
+
+    def get_utterance_end(self, index):
+        return (
+            self.utterances[index].get("end_time")
+            if index < len(self.utterances)
+            else None
+        )
+
+    def is_utterance_definite(self, index):
+        return (
+            self.utterances[index].get("definite")
+            if index < len(self.utterances)
+            else None
+        )
+
+    def get_utterance_words(self, index):
+        return (
+            self.utterances[index].get("words", [])
+            if index < len(self.utterances)
+            else []
+        )
+
+    # Word-level access within utterances
+    def get_word_text(self, utterance_index, word_index):
+        words = self.get_utterance_words(utterance_index)
+        return words[word_index].get("text") if word_index < len(words) else None
+
+    def get_word_start(self, utterance_index, word_index):
+        words = self.get_utterance_words(utterance_index)
+        return words[word_index].get("start_time") if word_index < len(words) else None
+
+    def get_word_end(self, utterance_index, word_index):
+        words = self.get_utterance_words(utterance_index)
+        return words[word_index].get("end_time") if word_index < len(words) else None
+
+    def get_word_blank_duration(self, utterance_index, word_index):
+        words = self.get_utterance_words(utterance_index)
+        return (
+            words[word_index].get("blank_duration") if word_index < len(words) else None
+        )
+
+    # Convenience properties
+    @property
+    def utterance_count(self):
+        return len(self.utterances)
+
+    def word_count(self, utterance_index):
+        return (
+            len(self.get_utterance_words(utterance_index))
+            if utterance_index < self.utterance_count
+            else 0
+        )
 
     def get_payload_size(self):
         payload = self.pack_payload()
@@ -188,23 +369,36 @@ class FullServerResponse(BaseMessage):
 
 
 class ErrorResponse(BaseMessage):
-    """Represents error responses from server"""
-
-    def __init__(self, header, error_code, error_data):
+    def __init__(self, header, error_code, error_message: str):
         super().__init__(header)
+        if not isinstance(error_message, str):
+            raise TypeError("Error message must be a UTF-8 string")
         self.error_code = error_code
-        self.error_data = error_data
-
-    def get_payload_size(self):
-        payload = self.pack_payload()
-        return len(payload)
+        self.error_message = error_message  # UTF-8 string
 
     def pack_payload(self):
-        """Serialize error payload into binary format"""
-        # Serialize based on format
-        if self.header.serialization == SERIALIZATION_JSON:
-            return json.dumps(self.error_data).encode("utf-8")
-        return self.error_data  # Assume already bytes
+        """Serialize error payload according to new format"""
+        # Encode error message to UTF-8 bytes
+        return self.error_message.encode("utf-8")
+
+    def get_payload_size(self):
+        """Calculate payload size: 4B (error_code) + 4B (size) + message length"""
+        return 8 + len(self.error_message.encode("utf-8"))
+
+    @classmethod
+    def parse_payload(cls, payload_bytes):
+        """Parse error payload from binary data"""
+        # Unpack first 8 bytes: error_code (4B) + message_size (4B)
+        if len(payload_bytes) < 8:
+            raise ValueError("Error response payload too short")
+
+        error_code, message_size = struct.unpack("!II", payload_bytes[:8])
+        # Extract message
+        message_bytes = payload_bytes[8 : 8 + message_size]
+        if len(message_bytes) != message_size:
+            raise ValueError("Error message size mismatch")
+
+        return error_code, message_bytes.decode("utf-8")
 
 
 class SAILProtocolHandler:
@@ -238,7 +432,25 @@ class SAILProtocolHandler:
                 payload_bytes, header.compression
             )
             return AudioOnlyRequest(header, audio_data)
+        elif header.message_type == MSG_SERVER_ERROR:
+            # Skip header and parse payload directly
+            payload_bytes = data[4:]
 
+            try:
+                error_code, error_message = ErrorResponse.parse_payload(payload_bytes)
+                return ErrorResponse(header, error_code, error_message)
+            except Exception as e:
+                # Create a new error for parsing failure
+                return ErrorResponse(
+                    Header(
+                        MSG_SERVER_ERROR,
+                        FLAG_NORMAL,
+                        SERIALIZATION_NONE,
+                        COMPRESSION_NONE,
+                    ),
+                    ERR_INVALID_PARAM,
+                    f"Error parsing error response: {str(e)}",
+                )
         else:
             raise ValueError(f"Unsupported message type: {header.message_type}")
 
@@ -253,10 +465,13 @@ class SAILProtocolHandler:
     def create_error_response(self, error_code, error_message):
         """Create ErrorResponse message"""
         header = Header(
-            MSG_ERROR_RESPONSE, FLAG_NORMAL, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_SERVER_ERROR,
+            FLAG_NORMAL,
+            SERIALIZATION_NONE,  # Changed from JSON to NONE
+            COMPRESSION_NONE,
         )
-        error_data = {"code": error_code, "message": error_message}
-        return ErrorResponse(header, error_code, error_data)
+        # Now passing error_message directly as string
+        return ErrorResponse(header, error_code, error_message)
 
     def serialize_message(self, message):
         """Convert message object to binary data for sending"""

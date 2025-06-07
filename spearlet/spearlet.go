@@ -632,7 +632,10 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 				log.Errorf("Error reading message: %v", err)
 				return
 			}
-			inStream <- task.Message(msg)
+			if len(msg) != 0 {
+				log.Debugf("Received message from client: %+v", msg)
+				inStream <- task.Message(msg)
+			}
 		}
 	}()
 
@@ -655,8 +658,8 @@ func (w *Spearlet) handleStream(resp http.ResponseWriter, req *http.Request) {
 		defer wg.Done()
 		wg.Add(1)
 		for msg := range outStream {
-			log.Debugf("Sending message to client: %s", msg)
-			err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
+			log.Debugf("Sending message to client: %s", fmt.Sprintf("% x", msg))
+			err := conn.WriteMessage(websocket.BinaryMessage, []byte(msg))
 			if err != nil {
 				log.Warnf("Failed writing message: %v", err)
 				break

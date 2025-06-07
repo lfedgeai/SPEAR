@@ -16,7 +16,7 @@ Run the following command from the repository root to start the ASR Live server:
 On the client side, run:
 
 ```bash
-./client.py
+PYTHONPATH=./ ./client.py
 ```
 
 ## Running Unit Tests

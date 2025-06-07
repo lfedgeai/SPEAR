@@ -6,8 +6,8 @@ import unittest
 
 from sail.proto import (COMPRESSION_GZIP, COMPRESSION_NONE, ERR_AUDIO_FORMAT,
                         ERR_EMPTY_AUDIO, ERR_INVALID_PARAM, ERR_SERVER_BUSY,
-                        ERR_SUCCESS, ERR_TIMEOUT, FLAG_LAST_AUDIO,
-                        FLAG_LAST_RESPONSE, FLAG_NORMAL, HEADER_SIZE_VALUE,
+                        ERR_SUCCESS, ERR_TIMEOUT, FLAG_LAST_PACKET, FLAG_RESPONSE,
+                        FLAG_NORMAL, HEADER_SIZE_VALUE,
                         MSG_AUDIO_ONLY_REQUEST, MSG_FULL_CLIENT_REQUEST,
                         MSG_FULL_SERVER_RESPONSE, MSG_SERVER_ERROR,
                         PROTOCOL_VERSION, SERIALIZATION_JSON,
@@ -40,7 +40,7 @@ class TestHeader(unittest.TestCase):
         data = struct.pack(
             "!4B",
             (PROTOCOL_VERSION << 4) | HEADER_SIZE_VALUE,
-            (MSG_AUDIO_ONLY_REQUEST << 4) | FLAG_LAST_AUDIO,
+            (MSG_AUDIO_ONLY_REQUEST << 4) | FLAG_LAST_PACKET,
             (SERIALIZATION_NONE << 4) | COMPRESSION_NONE,
             0,
         )
@@ -51,7 +51,7 @@ class TestHeader(unittest.TestCase):
         self.assertEqual(header.version, PROTOCOL_VERSION)
         self.assertEqual(header.header_size, HEADER_SIZE_VALUE)
         self.assertEqual(header.message_type, MSG_AUDIO_ONLY_REQUEST)
-        self.assertEqual(header.flags, FLAG_LAST_AUDIO)
+        self.assertEqual(header.flags, FLAG_LAST_PACKET)
         self.assertEqual(header.serialization, SERIALIZATION_NONE)
         self.assertEqual(header.compression, COMPRESSION_NONE)
 
@@ -126,7 +126,7 @@ class TestAudioOnlyRequest(unittest.TestCase):
         self.audio_data = b"\x00\x01\x02\x03" * 100  # 400 bytes of fake audio
         self.header = Header(
             MSG_AUDIO_ONLY_REQUEST,
-            FLAG_LAST_AUDIO,
+            FLAG_LAST_PACKET,
             SERIALIZATION_NONE,
             COMPRESSION_NONE,
         )
@@ -160,7 +160,7 @@ class TestAudioOnlyRequest(unittest.TestCase):
         # With last audio flag
         last_header = Header(
             MSG_AUDIO_ONLY_REQUEST,
-            FLAG_LAST_AUDIO,
+            FLAG_LAST_PACKET,
             SERIALIZATION_NONE,
             COMPRESSION_NONE,
         )
@@ -180,7 +180,7 @@ class TestServerResponses(unittest.TestCase):
         response_data = {"result": {"text": "Hello world", "confidence": 95}}
         header = Header(
             MSG_FULL_SERVER_RESPONSE,
-            FLAG_LAST_RESPONSE,
+            FLAG_LAST_PACKET | FLAG_RESPONSE,
             SERIALIZATION_JSON,
             COMPRESSION_GZIP,
         )
@@ -299,7 +299,7 @@ class TestProtocolHandler(unittest.TestCase):
     def test_serialize_messages(self):
         # Test serialization of FullServerResponse
         header = Header(
-            MSG_FULL_SERVER_RESPONSE, FLAG_NORMAL, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_FULL_SERVER_RESPONSE, FLAG_RESPONSE, SERIALIZATION_JSON, COMPRESSION_NONE
         )
         response = FullServerResponse(header, 1, {"text": "Hello"})
         serialized = self.handler.serialize_message(response)
@@ -515,7 +515,7 @@ class TestFullServerResponseFields(unittest.TestCase):
             },
         }
         header = Header(
-            MSG_FULL_SERVER_RESPONSE, FLAG_NORMAL, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_FULL_SERVER_RESPONSE, FLAG_RESPONSE, SERIALIZATION_JSON, COMPRESSION_NONE
         )
         self.response = FullServerResponse(header, 1, self.response_data)
 
@@ -564,7 +564,7 @@ class TestFullServerResponseFields(unittest.TestCase):
         # Test with minimal response data
         minimal_data = {"result": {"text": "Hello world"}}
         header = Header(
-            MSG_FULL_SERVER_RESPONSE, FLAG_NORMAL, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_FULL_SERVER_RESPONSE, FLAG_RESPONSE, SERIALIZATION_JSON, COMPRESSION_NONE
         )
         minimal_response = FullServerResponse(header, 1, minimal_data)
 

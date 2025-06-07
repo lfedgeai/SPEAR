@@ -2,6 +2,8 @@
 import gzip
 import json
 import struct
+import sys
+import logging
 
 # Constants for protocol version
 PROTOCOL_VERSION = 1
@@ -15,8 +17,8 @@ MSG_SERVER_ERROR = 0b1111
 
 # Message type specific flags
 FLAG_NORMAL = 0b0000
-FLAG_LAST_AUDIO = 0b0010
-FLAG_LAST_RESPONSE = 0b0011
+FLAG_LAST_PACKET = 0b0010
+FLAG_RESPONSE = 0b0001
 
 # Serialization methods
 SERIALIZATION_NONE = 0b0000
@@ -42,6 +44,16 @@ def ERR_INTERNAL_ERROR(code):
     return 550_00000 + code
 
 
+logging.basicConfig(
+    level=logging.DEBUG,  # Set the desired logging level
+    # Customize the log format
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(stream=sys.stderr)],  # Log to stderr
+)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 class Header:
     """Represents the 4-byte header of SAIL ASR protocol messages"""
 
@@ -65,7 +77,7 @@ class Header:
     def unpack(cls, data):
         """Parse 4-byte binary data into Header object"""
         if len(data) < 4:
-            raise ValueError("Header data too short")
+            raise ValueError(f"Header data too short: {len(data)} bytes {data}")
 
         byte0, byte1, byte2, byte3 = struct.unpack("!4B", data[:4])
         version = (byte0 >> 4) & 0x0F
@@ -136,7 +148,6 @@ class FullClientRequest(BaseMessage):
         # Compress if needed
         if self.header.compression == COMPRESSION_GZIP:
             payload_bytes = gzip.compress(payload_bytes)
-
         return payload_bytes
 
     @property
@@ -235,7 +246,7 @@ class AudioOnlyRequest(BaseMessage):
     def __init__(self, header, audio_data):
         super().__init__(header)
         self.audio_data = audio_data
-        self.is_last = header.flags == FLAG_LAST_AUDIO
+        self.is_last = header.flags == FLAG_LAST_PACKET
 
     @classmethod
     def parse_payload(cls, payload_bytes, compression):
@@ -363,6 +374,7 @@ class FullServerResponse(BaseMessage):
 
         # Compress if needed
         if self.header.compression == COMPRESSION_GZIP:
+            # Compress the payload
             payload_bytes = gzip.compress(payload_bytes)
 
         return payload_bytes
@@ -456,7 +468,8 @@ class SAILProtocolHandler:
 
     def create_full_response(self, sequence, result_data, is_last=False):
         """Create FullServerResponse message"""
-        flags = FLAG_LAST_RESPONSE if is_last else FLAG_NORMAL
+        flags = FLAG_RESPONSE
+        flags |= FLAG_LAST_PACKET if is_last else FLAG_NORMAL
         header = Header(
             MSG_FULL_SERVER_RESPONSE, flags, self.serialization, self.compression
         )
@@ -466,7 +479,7 @@ class SAILProtocolHandler:
         """Create ErrorResponse message"""
         header = Header(
             MSG_SERVER_ERROR,
-            FLAG_NORMAL,
+            FLAG_RESPONSE,
             SERIALIZATION_NONE,  # Changed from JSON to NONE
             COMPRESSION_NONE,
         )
@@ -488,8 +501,9 @@ class SAILProtocolHandler:
 
         elif isinstance(message, FullServerResponse):
             # Pack sequence number, payload size, and payload
-            data += struct.pack("!I", message.sequence)
-            payload = message.pack_payload()
+            if message.header.flags & FLAG_RESPONSE != 0:
+                data += struct.pack("!I", message.sequence)
+                payload = message.pack_payload()
             payload_size = len(payload)
             data += struct.pack("!I", payload_size)
             data += payload

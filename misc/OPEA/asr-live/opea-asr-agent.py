@@ -17,20 +17,85 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 handler = sailproto.SAILProtocolHandler()
+global_sequence = None
 
+def create_server_response(sequence):
+    response_data = {
+        "audio_info": {"duration": 3696},
+        "result": {
+            "text": "这是字节跳动，今日头条母公司。",
+            "confidence": 95,
+            "utterances": [
+                {
+                    "definite": True,
+                    "end_time": 1705,
+                    "start_time": 0,
+                    "text": "这是字节跳动，",
+                    "words": [
+                        {
+                            "blank_duration": 0,
+                            "end_time": 860,
+                            "start_time": 740,
+                            "text": "这",
+                        },
+                        {
+                            "blank_duration": 0,
+                            "end_time": 1020,
+                            "start_time": 860,
+                            "text": "是",
+                        },
+                    ],
+                },
+                {
+                    "definite": True,
+                    "end_time": 3696,
+                    "start_time": 2110,
+                    "text": "今日头条母公司。",
+                    "words": [
+                        {
+                            "blank_duration": 0,
+                            "end_time": 3070,
+                            "start_time": 2910,
+                            "text": "今",
+                        },
+                        {
+                            "blank_duration": 0,
+                            "end_time": 3230,
+                            "start_time": 3070,
+                            "text": "日",
+                        },
+                    ],
+                },
+            ],
+        },
+    }
+    res = handler.create_full_response(
+        sequence,
+        response_data
+    )
+    return res
 
 @client.handle_stream
-def handle_stream(ctx):
+def handle_stream(ctx: client.RawStreamRequestContext):
     """
     handle the request
     """
-    logger.info("Handling request: %s", ctx)
+    global global_sequence
+    if global_sequence is None:
+        global_sequence = 1
+    # logger.info("Handling request: %s", ctx)
+    if ctx.last_message and len(ctx.data) == 0:
+        logger.info("got last message")
+        return
     # ctx.send_raw(f"Got msg: {ctx.data}")
     req = handler.parse_message(ctx.data)
     if isinstance(req, sailproto.FullClientRequest):
-        pass
+        logger.info("Received FullClientRequest: %s", req)
+        resp = create_server_response(global_sequence)
+        global_sequence += 1
+        ctx.send_raw(handler.serialize_message(resp))
     elif isinstance(req, sailproto.AudioOnlyRequest):
-        pass
+        logger.info("Received AudioOnlyRequest: %s", req)
     else:
         logger.error("Unknown request type: %s", type(req))
     return

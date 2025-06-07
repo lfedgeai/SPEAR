@@ -19,6 +19,7 @@ logger.setLevel(logging.DEBUG)
 handler = sailproto.SAILProtocolHandler()
 global_sequence = None
 
+
 def create_server_response(sequence):
     response_data = {
         "audio_info": {"duration": 3696},
@@ -69,11 +70,9 @@ def create_server_response(sequence):
             ],
         },
     }
-    res = handler.create_full_response(
-        sequence,
-        response_data
-    )
+    res = handler.create_full_response(sequence, response_data)
     return res
+
 
 @client.handle_stream
 def handle_stream(ctx: client.RawStreamRequestContext):
@@ -96,6 +95,9 @@ def handle_stream(ctx: client.RawStreamRequestContext):
         ctx.send_raw(handler.serialize_message(resp))
     elif isinstance(req, sailproto.AudioOnlyRequest):
         logger.info("Received AudioOnlyRequest: %s", req)
+        resp = create_server_response(global_sequence)
+        global_sequence += 1
+        ctx.send_raw(handler.serialize_message(resp))
     else:
         logger.error("Unknown request type: %s", type(req))
     return

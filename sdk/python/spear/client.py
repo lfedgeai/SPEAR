@@ -379,8 +379,7 @@ class HostAgent(object):
                     if isinstance(result, str):
                         result = result.encode("utf-8")
                     if not isinstance(result, bytes):
-                        raise ValueError(
-                            f"Invalid response type: {type(result)}")
+                        raise ValueError(f"Invalid response type: {type(result)}")
                 builder = fbs.Builder(1024)
                 off = builder.CreateByteVector(result)
                 CustomResponse.CustomResponseStart(builder)
@@ -394,8 +393,7 @@ class HostAgent(object):
                 self._put_rpc_error(req_id, -32603, str(e), "Internal error: ")
             with self._inflight_requests_lock:
                 self._inflight_requests_count -= 1
-            logger.debug("Inflight requests: %d",
-                         self._inflight_requests_count)
+            logger.debug("Inflight requests: %d", self._inflight_requests_count)
 
         while True:
             rpc_data = self._get_rpc_data()
@@ -451,11 +449,9 @@ class HostAgent(object):
                                     builder
                                 )
                                 builder.Finish(end)
-                                self._put_rpc_response(
-                                    req.Id(), builder.Output())
+                                self._put_rpc_response(req.Id(), builder.Output())
                             except Exception as e:
-                                logger.error(
-                                    "Error: %s", traceback.format_exc())
+                                logger.error("Error: %s", traceback.format_exc())
                                 self._put_rpc_error(
                                     req.Id(), -32603, str(e), "Internal error: "
                                 )
@@ -482,8 +478,7 @@ class HostAgent(object):
                             custom_req.MethodStr().decode("utf-8")
                         )
                         if handler_obj is None:
-                            logger.error("Method not found: %s",
-                                         custom_req.MethodStr())
+                            logger.error("Method not found: %s", custom_req.MethodStr())
                             self._put_rpc_error(
                                 req.Id(),
                                 -32601,
@@ -737,8 +732,7 @@ class HostAgent(object):
             return
         handler = self._stream_handlers[ctx.stream_id]
         if not callable(handler):
-            logger.error(
-                "Handler for stream id %d is not callable", ctx.stream_id)
+            logger.error("Handler for stream id %d is not callable", ctx.stream_id)
             return
         handler(ctx)
 
@@ -1128,8 +1122,7 @@ class HostAgent(object):
                     self._client.sendall(lendata + data)
                     break
                 except BlockingIOError as e:
-                    logger.warning(
-                        "socket error: %s. errno: %d", str(e), e.errno)
+                    logger.warning("socket error: %s. errno: %d", str(e), e.errno)
                     time.sleep(0.1)  # Brief pause before retrying
                 except Exception as e:
                     logger.error("Error sending data: %s", str(e))

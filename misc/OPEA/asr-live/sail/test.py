@@ -6,8 +6,8 @@ import unittest
 
 from sail.proto import (COMPRESSION_GZIP, COMPRESSION_NONE, ERR_AUDIO_FORMAT,
                         ERR_EMPTY_AUDIO, ERR_INVALID_PARAM, ERR_SERVER_BUSY,
-                        ERR_SUCCESS, ERR_TIMEOUT, FLAG_LAST_PACKET, FLAG_RESPONSE,
-                        FLAG_NORMAL, HEADER_SIZE_VALUE,
+                        ERR_SUCCESS, ERR_TIMEOUT, FLAG_LAST_PACKET,
+                        FLAG_NORMAL, FLAG_RESPONSE, HEADER_SIZE_VALUE,
                         MSG_AUDIO_ONLY_REQUEST, MSG_FULL_CLIENT_REQUEST,
                         MSG_FULL_SERVER_RESPONSE, MSG_SERVER_ERROR,
                         PROTOCOL_VERSION, SERIALIZATION_JSON,
@@ -299,7 +299,10 @@ class TestProtocolHandler(unittest.TestCase):
     def test_serialize_messages(self):
         # Test serialization of FullServerResponse
         header = Header(
-            MSG_FULL_SERVER_RESPONSE, FLAG_RESPONSE, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_FULL_SERVER_RESPONSE,
+            FLAG_RESPONSE,
+            SERIALIZATION_JSON,
+            COMPRESSION_NONE,
         )
         response = FullServerResponse(header, 1, {"text": "Hello"})
         serialized = self.handler.serialize_message(response)
@@ -515,7 +518,10 @@ class TestFullServerResponseFields(unittest.TestCase):
             },
         }
         header = Header(
-            MSG_FULL_SERVER_RESPONSE, FLAG_RESPONSE, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_FULL_SERVER_RESPONSE,
+            FLAG_RESPONSE,
+            SERIALIZATION_JSON,
+            COMPRESSION_NONE,
         )
         self.response = FullServerResponse(header, 1, self.response_data)
 
@@ -564,7 +570,10 @@ class TestFullServerResponseFields(unittest.TestCase):
         # Test with minimal response data
         minimal_data = {"result": {"text": "Hello world"}}
         header = Header(
-            MSG_FULL_SERVER_RESPONSE, FLAG_RESPONSE, SERIALIZATION_JSON, COMPRESSION_NONE
+            MSG_FULL_SERVER_RESPONSE,
+            FLAG_RESPONSE,
+            SERIALIZATION_JSON,
+            COMPRESSION_NONE,
         )
         minimal_response = FullServerResponse(header, 1, minimal_data)
 

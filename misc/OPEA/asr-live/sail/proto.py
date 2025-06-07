@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import gzip
 import json
+import logging
 import struct
 import sys
-import logging
 
 # Constants for protocol version
 PROTOCOL_VERSION = 1
@@ -53,6 +53,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
 
 class Header:
     """Represents the 4-byte header of SAIL ASR protocol messages"""

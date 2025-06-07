@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -69,6 +70,23 @@ func (p *ProcessTaskRuntime) CreateTask(cfg *TaskConfig) (Task, error) {
 	cmd.Env = append(cmd.Env, fmt.Sprintf("SERVICE_ADDR=127.0.0.1:%s", p.listenPort))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("SECRET=%d", task.secret))
 	cmd.Dir = cfg.WorkDir
+
+	if strings.HasSuffix(cfg.Cmd, ".py") {
+		// if the command has .py extension, we assume it's a Python script
+		// we need to add env var PYTHONPATH
+
+		// check if PYTHONPATH exists in the environment
+		pythonPathExists := false
+		for _, env := range cmd.Env {
+			if strings.HasPrefix(env, "PYTHONPATH=") {
+				pythonPathExists = true
+				break
+			}
+		}
+		if !pythonPathExists {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("PYTHONPATH=%s", cfg.WorkDir))
+		}
+	}
 
 	task.cmd = cmd
 

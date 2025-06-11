@@ -90,7 +90,7 @@ func (p *ProcessTask) Start() error {
 	go func() {
 		if err := p.cmd.Wait(); err != nil {
 			// get stderr output
-			log.Infof("Wait error. %v, command %s", err, p.cmd.String())
+			log.Infof("Wait failed. %v, command %s", err, p.cmd.String())
 		}
 
 		// set status to stopped

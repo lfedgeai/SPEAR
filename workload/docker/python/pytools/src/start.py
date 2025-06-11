@@ -125,4 +125,4 @@ if __name__ == "__main__":
     addr, secret = parse_args()
     agent.register_handler("handle", handle)
     agent.register_handler("sleep", sleep)
-    agent.run()
+    agent.loop()

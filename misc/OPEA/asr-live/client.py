@@ -9,7 +9,7 @@ import threading
 import websocket
 
 DEST = "localhost:8080/stream"
-AGENT_NAME = "opea-asr-agent.py"
+AGENT_NAME = "opea-live-asr.py"
 
 
 logging.basicConfig(

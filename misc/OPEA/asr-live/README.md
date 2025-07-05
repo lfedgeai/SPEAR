@@ -8,7 +8,8 @@
 Run the following command from the repository root to start the ASR Live server:
 
 ```bash
-./bin/spearlet -L /Users/bytedance/Documents/GitHub/bge/spear/misc/OPEA/asr-live serve
+REPO_ROOT=<repo_root>
+./bin/spearlet -L $REPO_ROOT/misc/OPEA/asr-live serve
 ```
 
 ### Step 2: Start the Client
@@ -16,7 +17,9 @@ Run the following command from the repository root to start the ASR Live server:
 On the client side, run:
 
 ```bash
-PYTHONPATH=./ ./client.py
+REPO_ROOT=<repo_root>
+cd $REPO_ROOT/misc/OPEA/asr-live
+PYTHONPATH=./ ./ws_client.py
 ```
 
 ## Running Unit Tests

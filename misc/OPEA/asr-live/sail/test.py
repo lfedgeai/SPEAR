@@ -471,26 +471,26 @@ class TestFullServerResponseFields(unittest.TestCase):
         self.response_data = {
             "audio_info": {"duration": 3696},
             "result": {
-                "text": "这是字节跳动，今日头条母公司。",
+                "text": "1 2 3 4 5. 6 7 8 9 10.",
                 "confidence": 95,
                 "utterances": [
                     {
                         "definite": True,
                         "end_time": 1705,
                         "start_time": 0,
-                        "text": "这是字节跳动，",
+                        "text": "1 2 3 4 5.",
                         "words": [
                             {
                                 "blank_duration": 0,
                                 "end_time": 860,
                                 "start_time": 740,
-                                "text": "这",
+                                "text": "1",
                             },
                             {
                                 "blank_duration": 0,
                                 "end_time": 1020,
                                 "start_time": 860,
-                                "text": "是",
+                                "text": "2",
                             },
                         ],
                     },
@@ -498,19 +498,19 @@ class TestFullServerResponseFields(unittest.TestCase):
                         "definite": True,
                         "end_time": 3696,
                         "start_time": 2110,
-                        "text": "今日头条母公司。",
+                        "text": "6 7 8 9 10.",
                         "words": [
                             {
                                 "blank_duration": 0,
                                 "end_time": 3070,
                                 "start_time": 2910,
-                                "text": "今",
+                                "text": "6",
                             },
                             {
                                 "blank_duration": 0,
                                 "end_time": 3230,
                                 "start_time": 3070,
-                                "text": "日",
+                                "text": "7",
                             },
                         ],
                     },
@@ -527,20 +527,20 @@ class TestFullServerResponseFields(unittest.TestCase):
 
     def test_top_level_fields(self):
         self.assertEqual(self.response.audio_duration, 3696)
-        self.assertEqual(self.response.full_text, "这是字节跳动，今日头条母公司。")
+        self.assertEqual(self.response.full_text, "1 2 3 4 5. 6 7 8 9 10.")
         self.assertEqual(self.response.confidence, 95)
         self.assertEqual(self.response.utterance_count, 2)
 
     def test_utterance_fields(self):
         # First utterance
-        self.assertEqual(self.response.get_utterance_text(0), "这是字节跳动，")
+        self.assertEqual(self.response.get_utterance_text(0), "1 2 3 4 5.")
         self.assertEqual(self.response.get_utterance_start(0), 0)
         self.assertEqual(self.response.get_utterance_end(0), 1705)
         self.assertTrue(self.response.is_utterance_definite(0))
         self.assertEqual(self.response.word_count(0), 2)
 
         # Second utterance
-        self.assertEqual(self.response.get_utterance_text(1), "今日头条母公司。")
+        self.assertEqual(self.response.get_utterance_text(1), "6 7 8 9 10.")
         self.assertEqual(self.response.get_utterance_start(1), 2110)
         self.assertEqual(self.response.get_utterance_end(1), 3696)
         self.assertTrue(self.response.is_utterance_definite(1))

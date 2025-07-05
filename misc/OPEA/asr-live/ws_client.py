@@ -8,6 +8,7 @@ import logging
 import multiprocessing
 import os
 import subprocess
+import threading
 import time
 import uuid
 import wave
@@ -17,6 +18,7 @@ from typing import Generator, List, Tuple
 
 import aiofiles
 import aiohttp
+import pyaudio
 import websockets
 
 PROTOCOL_VERSION = 0b0001
@@ -78,13 +80,6 @@ def generate_header(
     req_meta_data=bytes(),
     extension_header=bytes(),
 ):
-    """
-    protocol_version(4 bits), header_size(4 bits),
-    message_type(4 bits), message_type_specific_flags(4 bits)
-    serialization_method(4 bits) message_compression(4 bits)
-    reserved （8bits) 保留字段
-    header_extensions 扩展头(大小等于 8 * 4 * (header_size - 1) )
-    """
     header = bytearray()
     header_size = int(len(extension_header) / 4) + 1
     header.append((version << 4) | header_size)
@@ -125,14 +120,6 @@ def generate_before_payload(sequence: int, event: int, session_id: str):
 
 
 def parse_response(res):
-    """
-    protocol_version(4 bits), header_size(4 bits),
-    message_type(4 bits), message_type_specific_flags(4 bits)
-    serialization_method(4 bits) message_compression(4 bits)
-    reserved （8bits) 保留字段
-    header_extensions 扩展头(大小等于 8 * 4 * (header_size - 1) )
-    payload 类似与http 请求体
-    """
     protocol_version = res[0] >> 4
     header_size = res[0] & 0x0F
     message_type = res[1] >> 4
@@ -257,8 +244,9 @@ def convert_wav_with_url(url, sample_rate) -> bytes:
 
 
 class AudioType(Enum):
-    LOCAL = 1  # 使用本地音频文件
-    URL = 2  # 使用音频url
+    LOCAL = 1
+    URL = 2
+    MIC = 3
 
 
 class AsrWsClient:
@@ -329,12 +317,6 @@ class AsrWsClient:
     def slice_data(
         data: bytes, chunk_size: int
     ) -> Generator[Tuple[bytes, bool], None, None]:
-        """
-        slice data
-        :param data: wav data
-        :param chunk_size: the segment size in one request
-        :return: segment data, last flag
-        """
         data_len = len(data)
         offset = 0
         while offset + chunk_size < data_len:
@@ -354,11 +336,7 @@ class AsrWsClient:
             generate_full_default_header(message_type_specific_flags=NO_SEQUENCE)
         )
         # full_client_request.extend(generate_before_payload(sequence=seq, event=self.req_event, session_id=reqid))
-        full_client_request.extend(
-            (len(payload_bytes)).to_bytes(4, "big")
-        )  # payload size(4 bytes)
-        # req_str = ' '.join(format(byte, '02x') for byte in full_client_request)
-        # print("seq", seq, "req", req_str)
+        full_client_request.extend((len(payload_bytes)).to_bytes(4, "big"))
         full_client_request.extend(payload_bytes)  # payload
         header = {}
         print("reqid", reqid)
@@ -368,9 +346,16 @@ class AsrWsClient:
         header[ConnectIdHeader] = reqid
         header[RequestIdHeader] = reqid
         header[SpearFuncTypeHeader] = 2
-        header[SpearFuncNameHeader] = "opea-asr-agent.py"
-        # header["X-Use-Ppe"] = "1"
-        # header["X-Tt-Env"] = "ppe_console_v1_0"
+        header[SpearFuncNameHeader] = "opea-live-asr.py"
+
+        async def recv_worker(ws):
+            while True:
+                try:
+                    res = await ws.recv()
+                    result = parse_response(res)
+                    print("seq", seq, "res", result)
+                except websockets.ConnectionClosed:
+                    break
 
         print(self.ws_url)
         async with websockets.connect(
@@ -382,12 +367,9 @@ class AsrWsClient:
             await ws.send(full_client_request)
             res = await ws.recv()
             print(f"Received response: {res.hex(' ')}")
-            # res_str = ' '.join(format(byte, '02x') for byte in res)
-            # print(res_str)
             result = parse_response(res)
             print(result)
-            # if 'payload_msg' in result and result['payload_msg']['code'] != self.success_code:
-            #     return result
+            print(f" segment_size: {segment_size}")
             for _, (chunk, last) in enumerate(
                 AsrWsClient.slice_data(wav_data, segment_size), 1
             ):
@@ -412,36 +394,52 @@ class AsrWsClient:
                 audio_only_request.extend(
                     (len(payload_bytes)).to_bytes(4, "big")
                 )  # payload size(4 bytes)
-                # req_str = " ".join(format(byte, "02x") for byte in audio_only_request)
-                # print("seq", seq, "req", req_str)
                 audio_only_request.extend(payload_bytes)  # payload
                 await ws.send(audio_only_request)
-                res = await ws.recv()
-                # print("seq", seq, "res", res)
-                # res_str = " ".join(format(byte, "02x") for byte in res)
-                # print("seq", seq, "res", res_str)
-                result = parse_response(res)
-                print("seq", seq, "res", result)
-                # if 'payload_msg' in result and result['payload_msg']['code'] != self.success_code:
-                #     return result
+
                 if self.streaming:
                     sleep_time = max(
                         0, (self.seg_duration / 1000.0 - (time.time() - start))
                     )
                     await asyncio.sleep(sleep_time)
+            # wait for the last response
+            await recv_worker(ws)
         return result
 
     async def execute(self):
         if self.audio_type == AudioType.LOCAL:
             async with aiofiles.open(self.audio_path, mode="rb") as _f:
                 data = await _f.read()
-        else:
+        elif self.audio_type == AudioType.URL:
             async with aiohttp.ClientSession() as _session:
                 async with _session.get(self.audio_path) as resp:
                     data = await resp.content.read()
+        elif self.audio_type == AudioType.MIC:
+            # get audio data from mic using pyaudio
+            audio = pyaudio.PyAudio()
+            stream = audio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=24000,
+                input=True,
+                frames_per_buffer=1024,
+            )
+            frames = []
+            print("Recording...")
+            while True:
+                try:
+                    data = stream.read(1024, exception_on_overflow=False)
+                    frames.append(data)
+                except KeyboardInterrupt:
+                    break
+            print("Finished recording.")
+            stream.stop_stream()
+            stream.close()
+            audio.terminate()
+            data = b"".join(frames)
+
         audio_data = bytes(data)
         if self.format in ("mp3", "ogg", "pcm"):
-            # mp3 暂时全量发送
             segment_size = self.seg_duration
             return await self.segment_data_processor(audio_data, segment_size)
         if self.format == "any":
@@ -465,7 +463,6 @@ class AsrWsClient:
 
 def execute_one(audio_item, **kwargs):
     """
-
     :param audio_item: {"id": xxx, "path": "xxx"}
     :return:
     """
@@ -473,10 +470,13 @@ def execute_one(audio_item, **kwargs):
     assert "path" in audio_item
     audio_id = audio_item["id"]
     audio_path = audio_item["path"]
-    if str(audio_path).startswith("http"):
-        audio_type = AudioType.URL
+    if not audio_path:
+        audio_type = AudioType.MIC
     else:
-        audio_type = AudioType.LOCAL
+        if str(audio_path).startswith("http"):
+            audio_type = AudioType.URL
+        else:
+            audio_type = AudioType.LOCAL
     asr_http_client = AsrWsClient(
         audio_path=audio_path, audio_type=audio_type, **kwargs
     )
@@ -484,78 +484,23 @@ def execute_one(audio_item, **kwargs):
     return {"id": audio_id, "path": audio_path, "result": result}
 
 
-def execute_multi(audio_list: List[dict], parallel: int):
-    """
-    :param audio_list: [{"id": xxx, "path": "xxx"}]
-    :param parallel: 10
-    :return:
-    """
-    task = functools.partial(execute_one)
-    with multiprocessing.Pool(parallel) as _pool:
-        results = _pool.map(task, audio_list)
-    return results
-
-
-def test_multi():
-    print("测试多条")
-    audio_list = [
-        {
-            "id": i,
-            "path": "https://tosv.byted.org/obj/lab-speech-pelican-testset/smart_dog_201912_993_1_6687362551523098635.wav",
-        }
-        for i in range(10)
-    ]
-    results = execute_multi(audio_list, parallel=10)
-    print(results)
-
-
-def test_one():
-    print("测试单条")
-    result = execute_one(
-        {
-            "id": 1,
-            "path": "https://tosv.byted.org/obj/ailab-speech-hproject-product/robot_eh_00_479d27a9-3923-4b80-8548-d97078c813d0.ogg",
-        },
-        format="ogg",
-        codec="opus",
-    )
-    print(result)
-
-
 def test_stream():
     result = execute_one(
         {
             "id": 1,
-            "path": f"{filedir}/../asr/english_male_tts.wav",
+            "path": "",
         },
         seg_duration=100,
         appkey="",
         access_key="",
         resource_id="asr.streaming.model.big",
-        # format="ogg",
-        # format="pcm",
+        format="pcm",
     )
     print(result)
-    with open("sauc_result.json", "w") as f:
+    with open("result.json", "w") as f:
         f.write(json.dumps(result["result"], ensure_ascii=False, indent=2))
-
-
-def test_url():
-    print("测试http request参数使用url")
-    result = execute_one(
-        {
-            "id": 1,
-            "path": "https://voiceage.com/wbsamples/in_mono/Conference.wav",
-        },
-        seg_duration=100,
-        appkey="",
-        access_key="",
-        resource_id="asr.streaming.model.big",
-    )
-    print(result)
 
 
 if __name__ == "__main__":
     # print the current working directory
     test_stream()
-    test_url()

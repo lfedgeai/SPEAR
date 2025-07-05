@@ -52,7 +52,11 @@ union StreamDataWrapper {
 table StreamData {
     // The stream ID to which this request belongs.
     stream_id: int32 = -1;
-    sequence_id: int64 = -1;
+
+    sequence: int64 = -1;
+    request_id: int64 = -1;
+    is_reply: bool = false; // if this is true, the request_id is the ID of the request this is a reply to.
+
     data: StreamDataWrapper (required);
     final: bool = false;
 }

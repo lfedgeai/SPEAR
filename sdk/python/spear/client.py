@@ -141,7 +141,7 @@ class RawStreamRequestContext(object):
 
     def __repr__(self):
         return (
-            f"StreamRequestContext(data={self._data}, "
+            f"RawStreamRequestContext(data={self._data}, "
             + f"type={self._type}, "
             + f"last_message={self._last_message}), "
             + f"stream_id={self._stream_id})"
@@ -254,6 +254,85 @@ class StreamRequestContext(RawStreamRequestContext):
             final,
         )
 
+    def __repr__(self):
+        return (
+            f"StreamRequestContext(data={self._data}, "
+            + f"type={self._type}, "
+            + f"last_message={self._last_message}, "
+            + f"stream_id={self._stream_id}, "
+            + f"name={self._name})"
+        )
+
+
+class NotificationStreamRequestContext(StreamRequestContext):
+    """
+    NotificationStreamRequestContext is the context of the notification stream request
+    """
+
+    def __init__(
+        self,
+        notification_type: NotificationEventType,
+        data,
+        ty: int,
+        last_message=False,
+        stream_id: int = None,
+        name: str = None,
+    ):
+        super().__init__(data, ty, last_message, stream_id, name)
+        self._notification_type = notification_type
+
+    @property
+    def notification_type(self) -> NotificationEventType:
+        """
+        get the notification type
+        """
+        return self._notification_type
+
+    def __repr__(self):
+        return (
+            f"NotificationStreamRequestContext(data={self._data}, "
+            + f"type={self._type}, "
+            + f"last_message={self._last_message}, "
+            + f"stream_id={self._stream_id}, "
+            + f"name={self._name}, "
+            + f"notification_type={self._notification_type})"
+        )
+
+
+class OperationStreamRequestContext(StreamRequestContext):
+    """
+    OperationStreamRequestContext is the context of the operation stream request
+    """
+
+    def __init__(
+        self,
+        operation_type: OperationType,
+        data,
+        ty: int,
+        last_message=False,
+        stream_id: int = None,
+        name: str = None,
+    ):
+        super().__init__(data, ty, last_message, stream_id, name)
+        self._operation_type = operation_type
+
+    @property
+    def operation_type(self) -> OperationType:
+        """
+        get the operation type
+        """
+        return self._operation_type
+
+    def __repr__(self):
+        return (
+            f"OperationStreamRequestContext(data={self._data}, "
+            + f"type={self._type}, "
+            + f"last_message={self._last_message}, "
+            + f"stream_id={self._stream_id}, "
+            + f"name={self._name}, "
+            + f"operation_type={self._operation_type})"
+        )
+
 
 class HostAgent(object):
     """
@@ -263,12 +342,13 @@ class HostAgent(object):
     _instance = None
 
     def __init__(self):
-        self._send_queue = queue.Queue(512)
-        self._recv_queue = queue.Queue(512)
+        self._send_queue = queue.Queue(1024)
+        self._recv_queue = queue.Queue(1024)
         self._global_id = 1
         self._send_task = None
         self._send_task_pipe_r, self._send_task_pipe_w = os.pipe()
         self._recv_task = None
+        self._main_loop_thread = None
         self._handlers = {}
         self._internal_tools = {}
         event_sock_r, event_sock_w = socket.socketpair()
@@ -282,8 +362,9 @@ class HostAgent(object):
         self._client = None
         self._sig_handlers = {}
         self._stream_handlers = {}
-        self._stream_sequence_ids = {}
-        self._stream_sequence_ids_lock = threading.Lock()
+        self._stream_sequence_nums = {}
+        self._stream_sequence_nums_lock = threading.Lock()
+        self._exit_event = threading.Event()
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -305,7 +386,20 @@ class HostAgent(object):
         self._client.setblocking(False)
         self._global_id = 0
 
-    def run(self, host_addr=None, host_secret=None):
+    def loop(self, *args, **kwargs):
+        """
+        run the agent and return when finished
+        """
+        self.start(*args, **kwargs, main_in_thread=False)
+
+    def wait(self):
+        """
+        wait for the agent to finish
+        """
+        # wait for exit event
+        self._exit_event.wait()
+
+    def start(self, host_addr=None, host_secret=None, main_in_thread: bool = True):
         """
         start the agent
         """
@@ -331,7 +425,13 @@ class HostAgent(object):
         recv_thread.start()
         self._recv_task = recv_thread
 
-        self._main_loop()
+        if main_in_thread:
+            mainloop_thread = threading.Thread(target=self._main_loop)
+            mainloop_thread.start()
+            self._main_loop_thread = mainloop_thread
+        else:
+            # run the main loop in the current thread
+            self._main_loop()
 
     def _main_loop(self):
         """
@@ -359,7 +459,7 @@ class HostAgent(object):
 
                 self._put_rpc_response(req_id, builder.Output())
             except Exception as e:
-                logger.error("Error: %s", traceback.format_exc())
+                logger.error("Error in handle_worker: %s", traceback.format_exc())
                 self._put_rpc_error(req_id, -32603, str(e), "Internal error: ")
             with self._inflight_requests_lock:
                 self._inflight_requests_count -= 1
@@ -421,7 +521,10 @@ class HostAgent(object):
                                 builder.Finish(end)
                                 self._put_rpc_response(req.Id(), builder.Output())
                             except Exception as e:
-                                logger.error("Error: %s", traceback.format_exc())
+                                logger.error(
+                                    "Error calling internal tool handler: %s",
+                                    traceback.format_exc(),
+                                )
                                 self._put_rpc_error(
                                     req.Id(), -32603, str(e), "Internal error: "
                                 )
@@ -525,9 +628,16 @@ class HostAgent(object):
                     if resp.Id() not in self._pending_requests:
                         logger.error("Invalid response id: %d", resp.Id())
                     else:
-                        req = self._pending_requests[resp.Id()]
-                        req["cb"](resp)
-                        del self._pending_requests[resp.Id()]
+
+                        def handle_response():
+                            req = self._pending_requests[resp.Id()]
+                            req["cb"](resp)
+                            del self._pending_requests[resp.Id()]
+
+                        self.exec_thread_worker(
+                            f"response_handler_{resp.Id()}",
+                            handle_response,
+                        )
             elif (
                 rpc_data.DataType()
                 == TransportMessageRaw_Data.TransportMessageRaw_Data.TransportSignal
@@ -563,19 +673,11 @@ class HostAgent(object):
                                 for handler in self._sig_handlers[
                                     Signal.Signal.StreamData
                                 ]:
-                                    try:
-                                        res = handler(ctx)
-                                        if res is not None:
-                                            logger.warning(
-                                                (
-                                                    "Handler is not supposed to return a value, "
-                                                    + "got: %s. "
-                                                    + " Use context to send data back."
-                                                ),
-                                                res,
-                                            )
-                                    except Exception as e:
-                                        logger.error("Error: %s", str(e))
+                                    self.exec_thread_worker(
+                                        f"stream_raw_handler_{sdata.StreamId()}",
+                                        handler,
+                                        ctx,
+                                    )
                             else:
                                 logger.error("No handler for stream data")
                         elif (
@@ -588,7 +690,8 @@ class HostAgent(object):
                                 data = opdata.DataAsNumpy()
                             else:
                                 data = b""
-                            ctx = StreamRequestContext(
+                            ctx = OperationStreamRequestContext(
+                                operation_type=opdata.Op(),
                                 data=data,
                                 ty=StreamDataWrapper.StreamDataWrapper.StreamOperationEvent,
                                 last_message=sdata.Final(),
@@ -599,10 +702,11 @@ class HostAgent(object):
                                 for handler in self._sig_handlers[
                                     Signal.Signal.StreamData
                                 ]:
-                                    try:
-                                        handler(ctx)
-                                    except Exception as e:
-                                        logger.error("Error: %s", str(e))
+                                    self.exec_thread_worker(
+                                        f"stream_operation_handler_{sdata.StreamId()}",
+                                        handler,
+                                        ctx,
+                                    )
                             else:
                                 logger.error("No handler for stream data")
                         elif (
@@ -615,7 +719,8 @@ class HostAgent(object):
                                 data = ndata.DataAsNumpy()
                             else:
                                 data = b""
-                            ctx = StreamRequestContext(
+                            ctx = NotificationStreamRequestContext(
+                                notification_type=ndata.Type(),
                                 data=data,
                                 ty=StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent,
                                 last_message=sdata.Final(),
@@ -626,10 +731,11 @@ class HostAgent(object):
                                 for handler in self._sig_handlers[
                                     Signal.Signal.StreamData
                                 ]:
-                                    try:
-                                        handler(ctx)
-                                    except Exception as e:
-                                        logger.error("Error: %s", str(e))
+                                    self.exec_thread_worker(
+                                        f"stream_notification_handler_{sdata.StreamId()}",
+                                        handler,
+                                        ctx,
+                                    )
                             else:
                                 logger.error("No handler for stream data")
                         else:
@@ -644,6 +750,33 @@ class HostAgent(object):
             else:
                 logger.error("Invalid rpc data")
                 raise ValueError("Invalid rpc data")
+
+    def exec_thread_worker(self, name: str, func: Callable, *args, **kwargs):
+        """
+        run the function in a thread
+        """
+        if not callable(func):
+            raise ValueError("func must be a callable")
+
+        def func_wrapper():
+            try:
+                res = func(*args, **kwargs)
+                # fn is not supposed to return anything, but if it does, warn about it
+                if res is not None:
+                    logger.warning("Function %s returned a value: %s", name, res)
+            except Exception as e:
+                logger.error(
+                    "Error in thread worker %s: %s", name, traceback.format_exc()
+                )
+                raise e
+
+        thread = threading.Thread(
+            target=func_wrapper,
+            name=name,
+        )
+        thread.daemon = True
+        thread.start()
+        return thread
 
     def set_internal_tool(self, tid: int, handler):
         """
@@ -809,17 +942,17 @@ class HostAgent(object):
                 raise RuntimeError(resp.Message())
             return resp.ResponseAsNumpy()
 
-    def generate_sequence_id(self, stream_id: int) -> int:
+    def generate_sequence_num(self, stream_id: int) -> int:
         """
         generate a sequence id for the stream
         """
-        with self._stream_sequence_ids_lock:
-            if stream_id in self._stream_sequence_ids:
-                seq_id = self._stream_sequence_ids[stream_id]
-                self._stream_sequence_ids[stream_id] += 1
+        with self._stream_sequence_nums_lock:
+            if stream_id in self._stream_sequence_nums:
+                seq_id = self._stream_sequence_nums[stream_id]
+                self._stream_sequence_nums[stream_id] += 1
             else:
                 seq_id = 0
-                self._stream_sequence_ids[stream_id] = 0
+                self._stream_sequence_nums[stream_id] = 0
         return seq_id
 
     def send_operation_event(
@@ -833,6 +966,11 @@ class HostAgent(object):
         """
         send the operation event
         """
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        if not isinstance(data, bytes):
+            raise ValueError("data must be bytes or str")
+
         builder = fbs.Builder(len(data) + 1024)
         data_off = builder.CreateByteVector(data)
         name_off = builder.CreateString(name)
@@ -844,11 +982,11 @@ class HostAgent(object):
         StreamOperationEvent.AddLength(builder, len(data))
         stream_op_event_off = StreamOperationEvent.End(builder)
 
-        seq_id = self.generate_sequence_id(stream_id)
+        seq_id = self.generate_sequence_num(stream_id)
 
         StreamData.StreamDataStart(builder)
         StreamData.AddStreamId(builder, stream_id)
-        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddSequence(builder, seq_id)
         StreamData.AddDataType(
             builder, StreamDataWrapper.StreamDataWrapper.StreamOperationEvent
         )
@@ -882,11 +1020,11 @@ class HostAgent(object):
         StreamNotificationEvent.AddType(builder, ty)
         stream_notification_event_off = StreamNotificationEvent.End(builder)
 
-        seq_id = self.generate_sequence_id(stream_id)
+        seq_id = self.generate_sequence_num(stream_id)
 
         StreamData.StreamDataStart(builder)
         StreamData.AddStreamId(builder, stream_id)
-        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddSequence(builder, seq_id)
         StreamData.AddDataType(
             builder, StreamDataWrapper.StreamDataWrapper.StreamNotificationEvent
         )
@@ -899,7 +1037,9 @@ class HostAgent(object):
 
         self._put_signal(Signal.Signal.StreamData, stream_event_data)
 
-    def send_rawdata_event(self, stream_id: int, data: bytes, last_message: bool):
+    def send_rawdata_event(
+        self, stream_id: int, data: bytes, last_message: bool = False
+    ):
         """
         send the rpc signal
         """
@@ -912,11 +1052,11 @@ class HostAgent(object):
         StreamRawData.AddLength(builder, data_len)
         stream_raw_data_off = StreamRawData.End(builder)
 
-        seq_id = self.generate_sequence_id(stream_id)
+        seq_id = self.generate_sequence_num(stream_id)
 
         StreamData.StreamDataStart(builder)
         StreamData.AddStreamId(builder, stream_id)
-        StreamData.AddSequenceId(builder, seq_id)
+        StreamData.AddSequence(builder, seq_id)
         StreamData.AddDataType(
             builder, StreamDataWrapper.StreamDataWrapper.StreamRawData
         )
@@ -1096,7 +1236,9 @@ class HostAgent(object):
                     logger.error("Error sending data: %s", str(e))
                     return
             else:
-                logger.error("Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS)
+                logger.error(
+                    "Failed to send data within %d seconds timeout.", TIMEOUT_SECONDS
+                )
                 return
 
         sel = selectors.DefaultSelector()
@@ -1164,10 +1306,13 @@ class HostAgent(object):
             self._stop_event_w.send(b"\x01")
             self._send_task.join()
             self._recv_task.join()
+            if self._main_loop_thread is not None:
+                self._main_loop_thread.join()
             logger.debug("Stopping the agent")
             self._client.close()
             os._exit(0)
 
+        self._exit_event.set()
         # create a thread to stop the agent
         threading.Thread(target=stop_worker).start()
 
@@ -1248,8 +1393,28 @@ def init():
     """
     if _global_agent is None:
         raise ValueError("_global_agent is not initialized")
-    _global_agent.run()
+    _global_agent.start()
     logger.info("_global_agent initialized")
+
+
+def wait():
+    """
+    Wait for the global HostAgent instance to finish
+    """
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.wait()
+    logger.info("_global_agent finished")
+
+
+def stop():
+    """
+    Stop the global HostAgent instance
+    """
+    if _global_agent is None:
+        raise ValueError("_global_agent is not initialized")
+    _global_agent.stop()
+    logger.info("_global_agent stopped")
 
 
 def global_agent() -> HostAgent:

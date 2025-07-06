@@ -36,20 +36,24 @@ def chat_msg(msg: str):
     old_len = len(msg_memory)
     msg_memory.append(("user", msg))
 
-    rtn = chat.chat(
-        msg_memory,
-        model=LLM_MODEL,
-        builtin_tools=[
-            BuiltinToolID.BuiltinToolID.Datetime,
-            BuiltinToolID.BuiltinToolID.FullScreenshot,
-            BuiltinToolID.BuiltinToolID.MouseRightClick,
-            BuiltinToolID.BuiltinToolID.SearchContactEmail,
-            BuiltinToolID.BuiltinToolID.SendEmailDraftWindow,
-            BuiltinToolID.BuiltinToolID.ComposeEmail,
-            BuiltinToolID.BuiltinToolID.ListOpenEmails,
-            BuiltinToolID.BuiltinToolID.OpenURL,
-        ],
-    )
+    try:
+        rtn = chat.chat(
+            msg_memory,
+            model=LLM_MODEL,
+            builtin_tools=[
+                BuiltinToolID.BuiltinToolID.Datetime,
+                BuiltinToolID.BuiltinToolID.FullScreenshot,
+                BuiltinToolID.BuiltinToolID.MouseRightClick,
+                BuiltinToolID.BuiltinToolID.SearchContactEmail,
+                BuiltinToolID.BuiltinToolID.SendEmailDraftWindow,
+                BuiltinToolID.BuiltinToolID.ComposeEmail,
+                BuiltinToolID.BuiltinToolID.ListOpenEmails,
+                BuiltinToolID.BuiltinToolID.OpenURL,
+            ],
+        )
+    except RuntimeError as e:
+        logger.error("Error in chat: %s", e)
+        return None
     msg_memory = [(e[0], e[1]) if e[0] != "tool" else ("user", e[1]) for e in rtn]
 
     resp = rtn[old_len:]
@@ -136,6 +140,8 @@ class RealtimeASRStreamHandler(AbstractStreamHandler):
                 if isinstance(data, np.ndarray):
                     data = data.tobytes()
                 resp = chat_msg(data.decode("utf-8"))
+                if resp is None:
+                    return
                 g_ctx.send_raw(
                     json.dumps(resp),
                     final=False,

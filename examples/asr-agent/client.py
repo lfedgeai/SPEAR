@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+import json
 import logging
 
-import json
 import pyaudio
+import pyttsx3
 import websocket
+import websockets
 from websockets.sync.client import connect
 
 logging.basicConfig(
@@ -17,6 +19,18 @@ logger.setLevel(logging.INFO)
 
 SpearFuncTypeHeader = "Spear-Func-Type"
 SpearFuncNameHeader = "Spear-Func-Name"
+
+
+def speak(text: str):
+    """Convert text to speech using pyttsx3."""
+    if not text:
+        return
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 150)  # Set speech rate
+    engine.setProperty("volume", 1)  # Set volume level (0.0 to 1.0)
+    engine.say(text)
+    engine.runAndWait()
+    engine.stop()
 
 
 def main():
@@ -53,26 +67,40 @@ def main():
         )
 
         try:
-            logger.info("Recording audio...")
+            logger.info("Please start speaking...")
             while True:
-                data = stream.read(1024)
+                stream.start_stream()
+                data = stream.read(
+                    stream.get_read_available(), exception_on_overflow=False
+                )
                 ws.send(data)
                 # receive response without blocking
                 try:
                     response = ws.recv(timeout=0.01, decode=True)
+                    stream.stop_stream()
                     data = json.loads(response)
                     if not isinstance(data, list):
                         logger.error(f"Unexpected response format: {data}")
                         continue
                     if len(data) == 0:
                         continue
-                    logger.info(f"YOU SAID: {data[0]}")
+                    assert isinstance(data[0], list) and len(data[0]) == 2
+                    logger.info(f"YOU SAID: {data[0][1]}")
                     for i in data[1:]:
-                        logger.info(f"Response: {i}")
+                        assert isinstance(i, list) and len(i) == 2
+                        if i[0] == "assistant":
+                            # print in green color
+                            logger.info(f"\033[92m{i[1]}\033[0m")
+                            speak(i[1])  # Speak the first item in the response
                 except TimeoutError:
                     pass
+                except websockets.exceptions.ConnectionClosedError as e:
+                    logger.info(f"Connection closed: {e}")
+                    break
         except websocket.WebSocketConnectionClosedException as e:
             logger.info(f"Connection closed: {e}")
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt received. Stopping the client.")
         finally:
             stream.stop_stream()
             stream.close()

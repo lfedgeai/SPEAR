@@ -24,7 +24,9 @@ logger.setLevel(logging.INFO)
 DEFAULT_ASR_MODEL = "whisper-1"
 
 
-def audio_asr(agent: client.HostAgent, data, model=DEFAULT_ASR_MODEL) -> str:
+def audio_asr(
+    data, model=DEFAULT_ASR_MODEL, agent: client.HostAgent = client.global_agent()
+) -> str:
     """
     convert audio to text
     """

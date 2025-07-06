@@ -42,7 +42,7 @@ def test_asr(model):
     # ../../../misc/opea/asr/english_male_tts.wav
     with open(WAV_FILE, "rb") as f:
         data = f.read()
-        res = speech.audio_asr(agent, data, model=model)
+        res = speech.audio_asr(data, model=model, agent=agent)
         logger.info(res)
 
 

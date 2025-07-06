@@ -11,6 +11,7 @@ import traceback
 from typing import Callable
 
 import flatbuffers as fbs
+import numpy as np
 
 from spear.proto.custom import (CustomRequest, CustomResponse,
                                 NormalRequestInfo, RequestInfo)
@@ -968,6 +969,8 @@ class HostAgent(object):
         """
         if isinstance(data, str):
             data = data.encode("utf-8")
+        if isinstance(data, np.ndarray):
+            data = data.tobytes()
         if not isinstance(data, bytes):
             raise ValueError("data must be bytes or str")
 

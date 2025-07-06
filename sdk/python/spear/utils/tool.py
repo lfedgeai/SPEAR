@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 def register_internal_tool(
-    agent: client.HostAgent, cb: callable, name: str = None, desc: str = None
+    cb: callable,
+    name: str = None,
+    desc: str = None,
+    agent: client.HostAgent = client.global_agent(),
 ) -> int:
     """
     register internal tool

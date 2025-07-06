@@ -16,7 +16,7 @@ from spear.proto.transform import (TransformOperation, TransformRequest,
 from spear.proto.transport import Method
 
 logging.basicConfig(
-    level=logging.DEBUG,  # Set the desired logging level
+    level=logging.INFO,  # Set the desired logging level
     # Customize the log format
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(stream=sys.stderr)],  # Log to stderr
@@ -29,11 +29,11 @@ DEFAULT_LLM_MODEL = "llama"  # "gpt-4o"
 
 
 def chat(
-    agent: client.HostAgent,
     message: Union[str, list[str], list[Tuple[str, str]]],
     model: str = DEFAULT_LLM_MODEL,
     builtin_tools: list[int] = [],
     internal_tools: list[int] = [],
+    agent: client.HostAgent = client.global_agent(),
 ):
     """
     handle the llm request

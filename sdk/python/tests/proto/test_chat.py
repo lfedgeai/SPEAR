@@ -33,11 +33,11 @@ class TestChatProto(unittest.TestCase):
         def run_cmd():
             time.sleep(3)
 
-            resp = chat.chat(agent, "hello world")
+            resp = chat.chat("hello world", agent=agent)
             print(resp)
             time.sleep(2)
 
-            resp = io.input(agent, "input")
+            resp = io.input("input", agent=agent)
             print(resp)
             time.sleep(2)
 

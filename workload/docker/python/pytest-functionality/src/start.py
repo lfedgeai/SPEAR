@@ -60,15 +60,15 @@ def test_chat(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = chat.chat(agent, "hi", model=model)
+    resp = chat.chat("hi", model=model, agent=agent)
     logger.info(resp)
     resp = chat.chat(
-        agent,
         "what is the time now?",
         model=model,
         builtin_tools=[
             BuiltinToolID.BuiltinToolID.Datetime,
         ],
+        agent=agent,
     )
     logger.info(resp)
 
@@ -79,7 +79,7 @@ def test_speak(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = io.speak(agent, "test test test", dryrun=True)
+    resp = io.speak("test test test", dryrun=True, agent=agent)
     assert resp is not None
 
 
@@ -89,7 +89,7 @@ def test_record(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = io.record(agent, "recording test", dryrun=True)
+    resp = io.record("recording test", dryrun=True, agent=agent)
     assert resp is not None
 
 
@@ -99,7 +99,7 @@ def test_input():
     """
     logger.info("Testing input")
 
-    resp = io.input(agent, "input", True)
+    resp = io.input("input", True, agent=agent)
     logger.info(resp)
 
 
@@ -120,13 +120,12 @@ def test_tool(model):
     test the model
     """
     logger.info("Testing tool")
-    tid = register_internal_tool(agent, test_tool_cb)
+    tid = register_internal_tool(test_tool_cb, agent=agent)
     logger.info("Registered tool: %d", tid)
 
-    resp = chat.chat(agent, "hi", model=model)
+    resp = chat.chat("hi", model=model, agent=agent)
     logger.info(resp)
     resp = chat.chat(
-        agent,
         ["hi", "what is sum of 123 and 456?"],
         model=model,
         builtin_tools=[
@@ -135,10 +134,10 @@ def test_tool(model):
         internal_tools=[
             tid,
         ],
+        agent=agent,
     )
     logger.info(resp)
     resp = chat.chat(
-        agent,
         [("system", "you are a calculator"), ("user", "what is sum of 123 and 456?")],
         model=model,
         builtin_tools=[
@@ -147,6 +146,7 @@ def test_tool(model):
         internal_tools=[
             tid,
         ],
+        agent=agent,
     )
     logger.info(resp)
 

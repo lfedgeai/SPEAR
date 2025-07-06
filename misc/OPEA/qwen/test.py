@@ -53,13 +53,12 @@ def test_tool(model):
     test the model
     """
     logger.info("Testing tool")
-    tid = register_internal_tool(agent, test_tool_cb)
+    tid = register_internal_tool(test_tool_cb, agent=agent)
     logger.info("Registered tool: %d", tid)
 
-    resp = chat.chat(agent, "hi", model=model)
+    resp = chat.chat("hi", model=model, agent=agent)
     logger.info(resp)
     resp = chat.chat(
-        agent,
         "what is sum of 123 and 321?",
         model=model,
         builtin_tools=[
@@ -68,6 +67,7 @@ def test_tool(model):
         internal_tools=[
             tid,
         ],
+        agent=agent,
     )
     logger.info(resp)
 

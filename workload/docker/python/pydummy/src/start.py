@@ -34,7 +34,7 @@ def test(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = chat.chat(agent, "hi", model=model)
+    resp = chat.chat("hi", model=model, agent=agent)
     logger.info(resp)
 
     agent.stop()

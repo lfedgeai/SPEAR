@@ -24,12 +24,12 @@ def test_builtin_tool():
     test builtin tool
     """
     resp = chat.chat(
-        agent,
         "help me to open sjsu's homepage",
         model="gpt-4o",
         builtin_tools=[
             BuiltinToolID.BuiltinToolID.OpenURL,
         ],
+        agent=agent,
     )
     print(resp, file=sys.stderr)
 
@@ -60,14 +60,14 @@ def test_internal_tool():
     """
     test internal tool
     """
-    tid = register_internal_tool(agent, test_tool_cb)
+    tid = register_internal_tool(test_tool_cb, agent=agent)
     resp = chat.chat(
-        agent,
         "help me to display a html page with one button to say hello",
         model="gpt-4o",
         internal_tools=[
             tid,
         ],
+        agent=agent,
     )
     print(resp, file=sys.stderr)
 

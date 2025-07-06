@@ -88,10 +88,9 @@ def test_chat(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = chat.chat(client.global_agent(), "hi", model=model)
+    resp = chat.chat("hi", model=model)
     logger.info(resp)
     resp = chat.chat(
-        client.global_agent(),
         "what is the time now?",
         model=model,
         builtin_tools=[
@@ -107,7 +106,7 @@ def test_speak(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = io.speak(client.global_agent(), "test test test", dryrun=True)
+    resp = io.speak("test test test", dryrun=True)
     assert resp is not None
 
 
@@ -117,7 +116,7 @@ def test_record(model):
     """
     logger.info("Testing model: %s", model)
 
-    resp = io.record(client.global_agent(), "recording test", dryrun=True)
+    resp = io.record("recording test", dryrun=True)
     assert resp is not None
 
 
@@ -127,7 +126,7 @@ def test_input():
     """
     logger.info("Testing input")
 
-    resp = io.input(client.global_agent(), "input", True)
+    resp = io.input("input", True)
     logger.info(resp)
 
 
@@ -148,13 +147,12 @@ def test_tool(model):
     test the model
     """
     logger.info("Testing tool")
-    tid = register_internal_tool(client.global_agent(), test_tool_cb)
+    tid = register_internal_tool(test_tool_cb)
     logger.info("Registered tool: %d", tid)
 
-    resp = chat.chat(client.global_agent(), "hi", model=model)
+    resp = chat.chat("hi", model=model)
     logger.info(resp)
     resp = chat.chat(
-        client.global_agent(),
         ["hi", "what is sum of 123 and 456?"],
         model=model,
         builtin_tools=[

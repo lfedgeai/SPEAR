@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -139,7 +140,7 @@ func CreateRealtimeTranscriptionSession(cfg RealtimeTranscriptionSessionConfig) 
 		return nil, err
 	}
 
-	apiKey := "" //os.Getenv("OPENAI_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		log.Warn("OPENAI_API_KEY is not set, using default API key")
 		apiKey = DefaultOpenAIAPIKey

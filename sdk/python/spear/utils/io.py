@@ -11,7 +11,9 @@ from spear.proto.transport import Method
 logger = logging.getLogger(__name__)
 
 
-def input(agent: client.HostAgent, prompt: str, dryrun: bool = False) -> str:
+def input(
+    prompt: str, dryrun: bool = False, agent: client.HostAgent = client.global_agent()
+) -> str:
     """
     get user input
     """
@@ -33,12 +35,12 @@ def input(agent: client.HostAgent, prompt: str, dryrun: bool = False) -> str:
 
 
 def speak(
-    agent: client.HostAgent,
     data: str,
     model: str = None,
     voice: str = None,
     fmt: str = None,
     dryrun=False,
+    agent: client.HostAgent = client.global_agent(),
 ) -> bytes:
     """
     get user input
@@ -73,7 +75,10 @@ def speak(
 
 
 def record(
-    agent: client.HostAgent, prompt: str, model: str = "whisper-1", dryrun=False
+    prompt: str,
+    model: str = "whisper-1",
+    dryrun=False,
+    agent: client.HostAgent = client.global_agent(),
 ) -> str:
     """
     get user input

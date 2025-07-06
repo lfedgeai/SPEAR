@@ -51,7 +51,7 @@ def handle(ctx):
         )
     ]
     while True:
-        user_input = io.input(agent, "(? for help) > ")
+        user_input = io.input("(? for help) > ", agent=agent)
 
         # trim the user input, remove space and newline
         user_input = user_input.strip().decode("utf-8")
@@ -66,7 +66,7 @@ r: record voice input"""
             print(help_msg, flush=True)
             continue
         if user_input == "r":
-            user_input = io.record(agent, "Assistant is listening")
+            user_input = io.record("Assistant is listening", agent=agent)
             if user_input:
                 print(f"User: {user_input}", flush=True)
             else:
@@ -76,7 +76,6 @@ r: record voice input"""
         msg_memory.append(("user", user_input))
 
         resp = chat.chat(
-            agent,
             msg_memory,
             model=LLM_MODEL,
             builtin_tools=[
@@ -89,6 +88,7 @@ r: record voice input"""
                 BuiltinToolID.BuiltinToolID.ListOpenEmails,
                 BuiltinToolID.BuiltinToolID.OpenURL,
             ],
+            agent=agent,
         )
 
         tmp_msgs = resp[len(msg_memory) :]
@@ -99,7 +99,7 @@ r: record voice input"""
             # and not msg.metadata.tool_calls
             if role == "assistant" and len(msg) > 0:
                 if SPEAK_MESSAGE:
-                    io.speak(agent, msg)
+                    io.speak(msg, agent=agent)
 
         msg_memory = [(e[0], e[1]) if e[0] != "tool" else ("user", e[1]) for e in resp]
 

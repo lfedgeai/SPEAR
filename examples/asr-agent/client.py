@@ -88,8 +88,14 @@ def speak(text: str):
                 os.remove(temp_file_path)
             except Exception as cleanup_error:
                 logger.warning(f"Failed to delete temporary file {temp_file_path}: {cleanup_error}")
+    except requests.RequestException as e:
+        logger.error(f"HTTP request error occurred while trying to speak: {e}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Subprocess error occurred while trying to play audio: {e}")
+    except OSError as e:
+        logger.error(f"OS error occurred while handling audio file: {e}")
     except Exception as e:
-        logger.error(f"Error occurred while trying to speak: {e}")
+        logger.error(f"An unexpected error occurred while trying to speak: {e}")
 
 
 def main():

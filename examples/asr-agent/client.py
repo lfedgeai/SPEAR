@@ -70,17 +70,24 @@ def speak(text: str):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
             temp_file.write(response.content)
             temp_file_path = temp_file.name
-        # play the audio
-        if platform.system() == "Windows":
-            os.startfile(temp_file_path)  # Windows-specific way to play audio
-        elif platform.system() == "Darwin":
-            subprocess.call(
-                ["afplay", temp_file_path]
-            )  # macOS-specific way to play audio
-        else:
-            subprocess.call(
-                ["aplay", temp_file_path]
-            )  # Linux-specific way to play audio
+        try:
+            # play the audio
+            if platform.system() == "Windows":
+                os.startfile(temp_file_path)  # Windows-specific way to play audio
+            elif platform.system() == "Darwin":
+                subprocess.call(
+                    ["afplay", temp_file_path]
+                )  # macOS-specific way to play audio
+            else:
+                subprocess.call(
+                    ["aplay", temp_file_path]
+                )  # Linux-specific way to play audio
+        finally:
+            # Clean up the temporary file
+            try:
+                os.remove(temp_file_path)
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to delete temporary file {temp_file_path}: {cleanup_error}")
     except Exception as e:
         logger.error(f"Error occurred while trying to speak: {e}")
 

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import json
 import logging
+import os
+import platform
+import subprocess
+import tempfile
 
 import pyaudio
-import pyttsx3
+import requests
 import websocket
 import websockets
 from websockets.sync.client import connect
@@ -25,12 +29,60 @@ def speak(text: str):
     """Convert text to speech using pyttsx3."""
     if not text:
         return
-    engine = pyttsx3.init()
-    engine.setProperty("rate", 150)  # Set speech rate
-    engine.setProperty("volume", 1)  # Set volume level (0.0 to 1.0)
-    engine.say(text)
-    engine.runAndWait()
-    engine.stop()
+    # run following command example
+    #     curl https://api.openai.com/v1/audio/speech \
+    #   -H "Authorization: Bearer $OPENAI_API_KEY" \
+    #   -H "Content-Type: application/json" \
+    #   -d '{
+    #     "model": "gpt-4o-mini-tts",
+    #     "input": "Today is a wonderful day to build something people love!",
+    #     "voice": "coral",
+    #     "instructions": "Speak in a cheerful and positive tone.",
+    #     "response_format": "wav"
+    #   }' | ffplay -i -
+    try:
+        # get environment variable OPENAI_API_KEY
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            logger.error("OPENAI_API_KEY environment variable is not set.")
+            return
+        # send request to OpenAI API
+        response = requests.post(
+            "https://api.openai.com/v1/audio/speech",
+            headers={
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "tts-1",
+                "input": text,
+                "voice": "fable",
+                "response_format": "wav",
+            },
+            timeout=10,
+        )
+        if response.status_code != 200:
+            logger.error(
+                f"Failed to get response from OpenAI API: {response.status_code} - {response.text}"
+            )
+            return
+        # save the response content to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            temp_file.write(response.content)
+            temp_file_path = temp_file.name
+        # play the audio
+        if platform.system() == "Windows":
+            os.startfile(temp_file_path)  # Windows-specific way to play audio
+        elif platform.system() == "Darwin":
+            subprocess.call(
+                ["afplay", temp_file_path]
+            )  # macOS-specific way to play audio
+        else:
+            subprocess.call(
+                ["aplay", temp_file_path]
+            )  # Linux-specific way to play audio
+    except Exception as e:
+        logger.error(f"Error occurred while trying to speak: {e}")
 
 
 def main():

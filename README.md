@@ -173,6 +173,12 @@ Also, you need to set the environment variable `OPENAI_API_KEY` to your OpenAI A
 
 Contributions are welcome! Please open an issue or submit a pull request to discuss new features, bug fixes, or enhancements.
 
+## Discussion
+
+To participate in our project discussion, please join our weekly meeting in Lark. 
+[https://applink.larkoffice.com/client/chat/chatter/add_by_link?link_token=098n6035-a680-49e9-b028-246cd3921f1v
+](https://applink.larkoffice.com/client/chat/chatter/add_by_link?link_token=412lb6da-7d0d-4e8d-b393-17b04a087b8i)
+
 ## License
 
 This project is licensed under the Apache License 2.0.

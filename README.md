@@ -175,8 +175,19 @@ Contributions are welcome! Please open an issue or submit a pull request to disc
 
 ## Discussion
 
-To participate in our project discussion, please join our weekly meeting in Lark. 
-[https://applink.larkoffice.com/client/chat/chatter/add_by_link?link_token=cb8o4e51-7ff3-4b13-85d0-a3e88fc6b42g](https://applink.larkoffice.com/client/chat/chatter/add_by_link?link_token=cb8o4e51-7ff3-4b13-85d0-a3e88fc6b42g)
+To participate in our project discussion, please join our weekly meeting in Lark or WeChat:
+
+Add us on Lark:
+
+<img src="misc/img/lark_group.png" alt="SPEAR Lark Meeting" width="500"/>
+
+Add us on WeChat: 
+
+<img src="misc/img/wechat.jpg" alt="SPEAR Wechat" width="500"/>
+
+To join our weekly meeting, please scan the QR code below:
+
+<img src="misc/img/weekly_meeting.png" alt="SPEAR Weekly Meeting" width="500"/>
 
 ## License
 

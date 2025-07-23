@@ -185,6 +185,9 @@ Add us on WeChat:
 
 <img src="misc/img/wechat.jpg" alt="SPEAR Wechat" width="500"/>
 
+To join our weekly meeting, please scan the QR code below:
+
+<img src="misc/img/weekly_meeting.png" alt="SPEAR Weekly Meeting" width="500"/>
 
 ## License
 

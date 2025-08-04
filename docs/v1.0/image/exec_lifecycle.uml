@@ -1,0 +1,40 @@
+@startuml
+title SPEAR Task Execution Lifecycle
+
+actor CLI
+participant "SN (Local)" as SN1
+participant "SMS (Metadata Server)" as SMS
+participant "SN (Remote)" as SN2
+participant "Object Store" as Store
+
+CLI -> SN1 : SubmitTask(task)
+SN1 -> SMS : RegisterTask(task) [if Distributed Mode]
+note right of SMS : Task state = Pending
+SN1 -> SN1 : RegisterTask(task) [if Local Mode]
+
+SN1 -> SN1 : CheckLocalResources()
+
+alt Local Resources Available
+    SN1 -> SN1 : Start Task Locally
+    SN1 -> SMS : UpdateTaskStatus(Running)
+else Local Resources Insufficient
+    SN1 -> SMS : GetAvailableNodes()
+    SMS -> SN1 : Return SN list
+    SN1 -> SN2 : SubmitTask(task) via RPC
+    SN2 -> SN2 : CheckLocalResources()
+    alt Remote Resources Available
+        SN2 -> SN2 : Start Task
+        SN2 -> SMS : UpdateTaskStatus(Running)
+    else Remote Resources Insufficient
+        SN2 -> SMS : UpdateTaskStatus(Failed)
+    end
+end
+
+alt Task Completed Successfully
+    SNx -> SMS : UpdateTaskStatus(Completed)
+    SNx -> Store : SaveResult(object)
+else Task Failed
+    SNx -> SMS : UpdateTaskStatus(Failed)
+end
+
+@enduml

@@ -6,5 +6,5 @@
 
 # Client-side: Start the ASR Live client
 cd ./examples/asr-agent
-PYTHONPATH=./ ./asr-client.py
+PYTHONPATH=./ ./client.py
 ```

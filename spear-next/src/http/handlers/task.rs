@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use tonic::Request;
 use tracing::{debug, error, info};
 
+use crate::constants::{NO_STATUS_FILTER, NO_PRIORITY_FILTER};
 use crate::proto::sms::{
     RegisterTaskRequest, ListTasksRequest, GetTaskRequest, 
     UnregisterTaskRequest, TaskStatus, TaskPriority
@@ -205,13 +206,13 @@ pub async fn list_tasks(
         .as_ref()
         .and_then(|s| parse_task_status(s))
         .map(|s| s as i32)
-        .unwrap_or(-1); // Use -1 to indicate no filter
+        .unwrap_or(NO_STATUS_FILTER); // Use constant to indicate no filter / 使用常量表示无过滤器
 
     // Only apply priority filter if provided / 仅在提供优先级过滤器时应用  
     let priority_filter = params.priority
         .as_ref()
         .map(|p| parse_task_priority(p) as i32)
-        .unwrap_or(-1); // Use -1 to indicate no filter
+        .unwrap_or(NO_PRIORITY_FILTER); // Use constant to indicate no filter / 使用常量表示无过滤器
 
     let request = Request::new(ListTasksRequest {
         node_uuid: params.node_uuid.unwrap_or_default(),

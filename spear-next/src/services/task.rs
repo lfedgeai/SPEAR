@@ -8,6 +8,7 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
+use crate::constants::{NO_STATUS_FILTER, NO_PRIORITY_FILTER};
 use crate::proto::sms::{
     task_service_server::TaskService as TaskServiceTrait,
     Task, TaskStatus, TaskPriority,
@@ -206,8 +207,8 @@ impl TaskServiceTrait for TaskService {
         debug!("Listing tasks with filters");
 
         let node_filter = if req.node_uuid.is_empty() { None } else { Some(req.node_uuid.as_str()) };
-        let status_filter = if req.status_filter == -1 { None } else { TaskStatus::try_from(req.status_filter).ok() };
-        let priority_filter = if req.priority_filter == -1 { None } else { TaskPriority::try_from(req.priority_filter).ok() };
+        let status_filter = if req.status_filter == NO_STATUS_FILTER { None } else { TaskStatus::try_from(req.status_filter).ok() };
+        let priority_filter = if req.priority_filter == NO_PRIORITY_FILTER { None } else { TaskPriority::try_from(req.priority_filter).ok() };
 
         match self.list_tasks_internal(node_filter, status_filter, priority_filter).await {
             Ok(mut tasks) => {

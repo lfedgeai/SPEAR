@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package sms;
+
+// Node basic information / 节点基本信息
+message Node {
+  string uuid = 1;          // Node unique identifier / 节点唯一标识符
+  string ip_address = 2;    // Node IP address / 节点IP地址
+  int32 port = 3;           // Node port / 节点端口
+  string status = 4;        // Node status (active, inactive, etc.) / 节点状态
+  int64 last_heartbeat = 5; // Last heartbeat timestamp / 最后心跳时间戳
+  int64 registered_at = 6;  // Node registration timestamp / 节点注册时间戳
+  map<string, string> metadata = 7; // Additional node metadata / 额外节点元数据
+}
+
+// Node resource information / 节点资源信息
+message NodeResource {
+  string node_uuid = 1;     // Node unique identifier / 节点唯一标识符
+  double cpu_usage_percent = 2; // CPU usage percentage (0-100) / CPU使用率百分比 (0-100)
+  double memory_usage_percent = 3; // Memory usage percentage (0-100) / 内存使用率百分比 (0-100)
+  int64 total_memory_bytes = 4; // Total memory in bytes / 总内存字节数
+  int64 used_memory_bytes = 5; // Used memory in bytes / 已使用内存字节数
+  int64 available_memory_bytes = 6; // Available memory in bytes / 可用内存字节数
+  double disk_usage_percent = 7; // Disk usage percentage (0-100) / 磁盘使用率百分比 (0-100)
+  int64 total_disk_bytes = 8; // Total disk space in bytes / 总磁盘空间字节数
+  int64 used_disk_bytes = 9; // Used disk space in bytes / 已使用磁盘空间字节数
+  int64 network_rx_bytes_per_sec = 10; // Network receive bytes per second / 网络接收字节数每秒
+  int64 network_tx_bytes_per_sec = 11; // Network transmit bytes per second / 网络发送字节数每秒
+  double load_average_1m = 12; // Load average (1 minute) / 负载平均值 (1分钟)
+  double load_average_5m = 13; // Load average (5 minutes) / 负载平均值 (5分钟)
+  double load_average_15m = 14; // Load average (15 minutes) / 负载平均值 (15分钟)
+  int64 updated_at = 15;    // Resource update timestamp / 资源更新时间戳
+  map<string, string> resource_metadata = 16; // Additional resource metadata / 额外资源元数据
+}
+
+// Node registration request / 节点注册请求
+message RegisterNodeRequest {
+  Node node = 1;
+}
+
+// Node registration response / 节点注册响应
+message RegisterNodeResponse {
+  bool success = 1;
+  string message = 2;
+  string node_uuid = 3;
+}
+
+// Node update request / 节点更新请求
+message UpdateNodeRequest {
+  string uuid = 1;
+  Node node = 2;
+}
+
+// Node update response / 节点更新响应
+message UpdateNodeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Node deletion request / 节点删除请求
+message DeleteNodeRequest {
+  string uuid = 1;
+}
+
+// Node deletion response / 节点删除响应
+message DeleteNodeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Heartbeat request / 心跳请求
+message HeartbeatRequest {
+  string uuid = 1;
+  int64 timestamp = 2;
+  map<string, string> health_info = 3; // Health check information / 健康检查信息
+}
+
+// Heartbeat response / 心跳响应
+message HeartbeatResponse {
+  bool success = 1;
+  string message = 2;
+  int64 server_timestamp = 3;
+}
+
+// List nodes request / 列出节点请求
+message ListNodesRequest {
+  string status_filter = 1; // Optional status filter / 可选状态过滤器
+}
+
+// List nodes response / 列出节点响应
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+// Get node request / 获取节点请求
+message GetNodeRequest {
+  string uuid = 1;
+}
+
+// Get node response / 获取节点响应
+message GetNodeResponse {
+  bool found = 1;
+  Node node = 2;
+}
+
+// Update node resource request / 更新节点资源请求
+message UpdateNodeResourceRequest {
+  NodeResource resource = 1;
+}
+
+// Update node resource response / 更新节点资源响应
+message UpdateNodeResourceResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Get node resource request / 获取节点资源请求
+message GetNodeResourceRequest {
+  string node_uuid = 1;
+}
+
+// Get node resource response / 获取节点资源响应
+message GetNodeResourceResponse {
+  bool found = 1;
+  NodeResource resource = 2;
+}
+
+// List node resources request / 列出节点资源请求
+message ListNodeResourcesRequest {
+  repeated string node_uuids = 1; // Optional filter by node UUIDs / 可选按节点UUID过滤
+}
+
+// List node resources response / 列出节点资源响应
+message ListNodeResourcesResponse {
+  repeated NodeResource resources = 1;
+}
+
+// Get node with resource request / 获取节点及资源请求
+message GetNodeWithResourceRequest {
+  string uuid = 1;
+}
+
+// Get node with resource response / 获取节点及资源响应
+message GetNodeWithResourceResponse {
+  bool found = 1;
+  Node node = 2;
+  NodeResource resource = 3;
+}
+
+// Node management service definition / 节点管理服务定义
+service NodeService {
+  // Register a new node / 注册新节点
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  
+  // Update an existing node / 更新现有节点
+  rpc UpdateNode(UpdateNodeRequest) returns (UpdateNodeResponse);
+  
+  // Delete a node / 删除节点
+  rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse);
+  
+  // Send heartbeat / 发送心跳
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  
+  // List all nodes / 列出所有节点
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  
+  // Get specific node / 获取特定节点
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  
+  // Update node resource information / 更新节点资源信息
+  rpc UpdateNodeResource(UpdateNodeResourceRequest) returns (UpdateNodeResourceResponse);
+  
+  // Get node resource information / 获取节点资源信息
+  rpc GetNodeResource(GetNodeResourceRequest) returns (GetNodeResourceResponse);
+  
+  // List node resources / 列出节点资源信息
+  rpc ListNodeResources(ListNodeResourcesRequest) returns (ListNodeResourcesResponse);
+  
+  // Get node with resource information / 获取节点及其资源信息
+  rpc GetNodeWithResource(GetNodeWithResourceRequest) returns (GetNodeWithResourceResponse);
+}

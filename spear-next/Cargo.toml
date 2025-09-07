@@ -1,0 +1,86 @@
+[package]
+name = "spear-next"
+version = "0.1.0"
+edition = "2021"
+
+# SMS binary configuration / SMS二进制配置
+[[bin]]
+name = "sms"
+path = "src/bin/sms/main.rs"
+
+[dependencies]
+# Async runtime / 异步运行时
+tokio = { version = "1.0", features = ["full"] }
+
+# gRPC framework / gRPC框架
+tonic = "0.12"
+tonic-web = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+
+# HTTP server / HTTP服务器
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "timeout"] }
+
+# Configuration management / 配置管理
+figment = { version = "0.10", features = ["toml", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Command line argument parsing / 命令行参数解析
+clap = { version = "4.0", features = ["derive"] }
+
+# Logging / 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# UUID generation / UUID生成
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Time handling / 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling / 错误处理
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Static file embedding / 静态文件嵌入
+rust-embed = "8.0"
+
+# Cryptographic hashing / 加密哈希
+sha2 = "0.10"
+
+# Base64 encoding/decoding / Base64编码解码
+base64 = "0.21"
+
+# Database / 数据库
+sled = { version = "0.34", optional = true }
+rocksdb = { version = "0.22", optional = true }
+
+# Async trait support / 异步trait支持
+async-trait = "0.1"
+
+[dev-dependencies]
+# Testing utilities / 测试工具
+tempfile = "3.0"
+tokio-test = "0.4"
+axum-test = "14.0"
+tower = "0.4"
+tokio-stream = { version = "0.1", features = ["net"] }
+
+# Benchmarking / 基准测试
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+futures = "0.3"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[[bench]]
+name = "kv_storage_benchmarks"
+harness = false
+
+[features]
+default = []
+sled = ["dep:sled"]
+rocksdb = ["dep:rocksdb"]

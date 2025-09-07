@@ -1,0 +1,37 @@
+# Node Service Configuration with Sled Backend
+# 使用Sled后端的节点服务配置
+
+[sms]
+# gRPC server address / gRPC服务器地址
+grpc_addr = "0.0.0.0:50051"
+
+# HTTP gateway address / HTTP网关地址
+http_addr = "0.0.0.0:8080"
+
+# Node cleanup interval in seconds / 节点清理间隔（秒）
+cleanup_interval = 300
+
+# Node heartbeat timeout in seconds / 节点心跳超时（秒）
+heartbeat_timeout = 120
+
+# Enable Swagger UI / 启用Swagger UI
+enable_swagger = true
+
+# KV Store Configuration with Sled Backend / 使用Sled后端的KV存储配置
+[sms.kv_store]
+# Backend type: "sled" for persistent storage / 后端类型："sled" 用于持久化存储
+backend = "sled"
+
+# Additional parameters for Sled backend / Sled后端的额外参数
+[sms.kv_store.params]
+# Database path for Sled / Sled数据库路径
+path = "./data/node-service.db"
+
+# Cache capacity for Sled / Sled的缓存容量
+cache_capacity = "10000"
+
+# Flush interval in milliseconds / 刷新间隔（毫秒）
+flush_every_ms = "5000"
+
+# Enable compression / 启用压缩
+compression = "true"

@@ -1,0 +1,34 @@
+# SMS (Spear Management Service) Configuration
+# SMS（Spear管理服务）配置
+
+[sms]
+# gRPC server address / gRPC服务器地址
+grpc_addr = "0.0.0.0:50051"
+
+# HTTP gateway address / HTTP网关地址
+http_addr = "0.0.0.0:8080"
+
+# Node cleanup interval in seconds / 节点清理间隔（秒）
+cleanup_interval = 300
+
+# Node heartbeat timeout in seconds / 节点心跳超时（秒）
+heartbeat_timeout = 120
+
+# Enable Swagger UI / 启用Swagger UI
+enable_swagger = true
+
+# KV Store Configuration / KV存储配置
+[sms.kv_store]
+# Backend type: "memory" or "sled" / 后端类型："memory" 或 "sled"
+backend = "memory"
+
+# Sled database path (only used when backend = "sled") / Sled数据库路径（仅当backend = "sled"时使用）
+sled_path = "./data/sms.db"
+
+# Additional parameters / 额外参数
+[sms.kv_store.params]
+# Cache size for memory backend / 内存后端的缓存大小
+cache_size = "1000"
+
+# Compression enabled for sled backend / Sled后端启用压缩
+compression = "true"

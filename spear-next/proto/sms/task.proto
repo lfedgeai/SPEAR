@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package sms;
+
+// Task status enumeration / 任务状态枚举
+enum TaskStatus {
+  TASK_STATUS_UNKNOWN = 0;      // Unknown status / 未知状态
+  TASK_STATUS_REGISTERED = 1;   // Task is registered / 任务已注册
+  TASK_STATUS_ACTIVE = 2;       // Task is active / 任务活跃
+  TASK_STATUS_INACTIVE = 3;     // Task is inactive / 任务非活跃
+  TASK_STATUS_UNREGISTERED = 4; // Task is unregistered / 任务已注销
+}
+
+// Task priority enumeration / 任务优先级枚举
+enum TaskPriority {
+  TASK_PRIORITY_UNKNOWN = 0;  // Unknown priority / 未知优先级
+  TASK_PRIORITY_LOW = 1;      // Low priority / 低优先级
+  TASK_PRIORITY_NORMAL = 2;   // Normal priority / 普通优先级
+  TASK_PRIORITY_HIGH = 3;     // High priority / 高优先级
+  TASK_PRIORITY_URGENT = 4;   // Urgent priority / 紧急优先级
+}
+
+// Task definition / 任务定义
+message Task {
+  string task_id = 1;                    // Unique task identifier / 唯一任务标识符
+  string name = 2;                       // Task name / 任务名称
+  string description = 3;                // Task description / 任务描述
+  TaskStatus status = 4;                 // Current task status / 当前任务状态
+  TaskPriority priority = 5;             // Task priority / 任务优先级
+  string node_uuid = 6;                  // Node UUID where task is registered / 任务注册的节点UUID
+  string endpoint = 7;                   // Task endpoint URL / 任务端点URL
+  string version = 8;                    // Task version / 任务版本
+  repeated string capabilities = 9;      // Task capabilities / 任务能力
+  int64 registered_at = 10;              // Task registration timestamp / 任务注册时间戳
+  int64 last_heartbeat = 11;             // Last heartbeat timestamp / 最后心跳时间戳
+  map<string, string> metadata = 12;     // Additional task metadata / 额外任务元数据
+  map<string, string> config = 13;       // Task configuration / 任务配置
+}
+
+// Task registration request / 任务注册请求
+message RegisterTaskRequest {
+  string name = 1;                       // Task name / 任务名称
+  string description = 2;                // Task description / 任务描述
+  TaskPriority priority = 3;             // Task priority / 任务优先级
+  string node_uuid = 4;                  // Node UUID where task is registered / 任务注册的节点UUID
+  string endpoint = 5;                   // Task endpoint URL / 任务端点URL
+  string version = 6;                    // Task version / 任务版本
+  repeated string capabilities = 7;      // Task capabilities / 任务能力
+  map<string, string> metadata = 8;      // Additional task metadata / 额外任务元数据
+  map<string, string> config = 9;        // Task configuration / 任务配置
+}
+
+// Task registration response / 任务注册响应
+message RegisterTaskResponse {
+  bool success = 1;                      // Whether registration was successful / 注册是否成功
+  string message = 2;                    // Response message / 响应消息
+  string task_id = 3;                    // Assigned task ID / 分配的任务ID
+  Task task = 4;                         // Registered task details / 注册的任务详情
+}
+
+// List tasks request / 列出任务请求
+message ListTasksRequest {
+  string node_uuid = 1;                  // Filter by node UUID (optional) / 按节点UUID过滤（可选）
+  TaskStatus status_filter = 2;          // Filter by status (optional) / 按状态过滤（可选）
+  TaskPriority priority_filter = 3;      // Filter by priority (optional) / 按优先级过滤（可选）
+  int32 limit = 4;                       // Maximum number of tasks to return / 返回的最大任务数
+  int32 offset = 5;                      // Offset for pagination / 分页偏移量
+}
+
+// List tasks response / 列出任务响应
+message ListTasksResponse {
+  repeated Task tasks = 1;               // List of tasks / 任务列表
+  int32 total_count = 2;                 // Total number of tasks / 任务总数
+}
+
+// Get task request / 获取任务请求
+message GetTaskRequest {
+  string task_id = 1;                    // Task ID / 任务ID
+}
+
+// Get task response / 获取任务响应
+message GetTaskResponse {
+  bool found = 1;                        // Whether task was found / 是否找到任务
+  Task task = 2;                         // Task details / 任务详情
+}
+
+// Unregister task request / 注销任务请求
+message UnregisterTaskRequest {
+  string task_id = 1;                    // Task ID to unregister / 要注销的任务ID
+  string reason = 2;                     // Reason for unregistration / 注销原因
+}
+
+// Unregister task response / 注销任务响应
+message UnregisterTaskResponse {
+  bool success = 1;                      // Whether unregistration was successful / 注销是否成功
+  string message = 2;                    // Response message / 响应消息
+  string task_id = 3;                    // Unregistered task ID / 已注销的任务ID
+}
+
+// Task service definition / 任务服务定义
+service TaskService {
+  // Register a new task / 注册新任务
+  rpc RegisterTask(RegisterTaskRequest) returns (RegisterTaskResponse);
+  
+  // List tasks with optional filtering / 列出任务（可选过滤）
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  
+  // Get task details by ID / 根据ID获取任务详情
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  
+  // Unregister a task / 注销任务
+  rpc UnregisterTask(UnregisterTaskRequest) returns (UnregisterTaskResponse);
+}

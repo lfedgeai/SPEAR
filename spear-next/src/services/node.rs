@@ -272,7 +272,9 @@ impl NodeService {
         self.kv_store.delete(&key).await?;
         
         // Remove associated resource data / 移除关联的资源数据
-        let _ = self.resource_service.remove_resource(uuid).await;
+        if let Err(e) = self.resource_service.remove_resource(uuid).await {
+            eprintln!("Warning: Failed to remove associated resource for node {}: {:?}", uuid, e);
+        }
         
         Ok(node)
     }

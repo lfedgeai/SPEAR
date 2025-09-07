@@ -40,7 +40,7 @@ impl SmsServiceImpl {
         // Create a KV store instance
         let kv_store = create_kv_store_from_config(&kv_config)
             .await
-            .expect("Failed to create KV store from config");
+            .unwrap_or_else(|e| panic!("Failed to create KV store from config (type: {:?}): {}", kv_config, e));
         
         // Create NodeService with the KV store (it will create its own ResourceService internally)
         let node_service = NodeService::new_with_kv_store(kv_store);

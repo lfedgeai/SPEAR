@@ -157,13 +157,13 @@ impl ResourceService {
     }
 
     /// Update resource information / 更新资源信息
-    pub async fn update_resource(&mut self, mut resource: NodeResourceInfo) -> Result<(), SmsError> {
+    pub async fn update_resource(&self, mut resource: NodeResourceInfo) -> Result<(), SmsError> {
         resource.update_timestamp();
         self.store_resource_direct(resource).await
     }
     
     /// Store resource directly without timestamp update / 直接存储资源而不更新时间戳
-    async fn store_resource_direct(&mut self, resource: NodeResourceInfo) -> Result<(), SmsError> {
+    async fn store_resource_direct(&self, resource: NodeResourceInfo) -> Result<(), SmsError> {
         let key = keys::resource_key(&resource.node_uuid);
         let serialized = serialization::serialize(&resource)?;
         self.kv_store.put(&key, &serialized).await?;

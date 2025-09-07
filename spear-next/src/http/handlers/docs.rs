@@ -278,7 +278,7 @@ pub async fn openapi_spec() -> Json<serde_json::Value> {
                                     "properties": {
                                         "name": {"type": "string"},
                                         "description": {"type": "string"},
-                                        "priority": {"type": "string", "enum": ["low", "normal", "high", "critical"]},
+                                        "priority": {"type": "string", "enum": ["low", "normal", "high", "urgent"]},
                                         "node_uuid": {"type": "string"},
                                         "endpoint": {"type": "string"},
                                         "version": {"type": "string"},
@@ -317,7 +317,7 @@ pub async fn openapi_spec() -> Json<serde_json::Value> {
                             "in": "query",
                             "schema": {
                                 "type": "string",
-                                "enum": ["low", "normal", "high", "critical"]
+                                "enum": ["low", "normal", "high", "urgent"]
                             }
                         },
                         {

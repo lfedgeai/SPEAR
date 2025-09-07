@@ -141,14 +141,7 @@ impl Default for SmsConfig {
     }
 }
 
-/// Load configuration from file and environment variables
-/// 从文件和环境变量加载配置
-pub fn load_config() -> Result<SmsConfig, figment::Error> {
-    Figment::new()
-        .merge(Toml::file("config.toml"))
-        .merge(Env::prefixed("SPEAR_"))
-        .extract()
-}
+
 
 impl AppConfig {
     /// Load configuration from file and environment / 从文件和环境变量加载配置

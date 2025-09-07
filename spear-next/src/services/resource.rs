@@ -263,26 +263,28 @@ impl ResourceService {
         Ok(self.resource_count().await? == 0)
     }
 
-    /// Get average CPU usage across all nodes / 获取所有节点的平均CPU使用率
-    pub async fn get_average_cpu_usage(&self) -> Result<f64, SmsError> {
+    /// Helper function to calculate average of a field across all resources / 计算所有资源中某个字段的平均值的辅助函数
+    async fn calculate_average_field<F>(&self, field_extractor: F) -> Result<f64, SmsError>
+    where
+        F: Fn(&NodeResourceInfo) -> f64,
+    {
         let resources = self.list_resources().await?;
         if resources.is_empty() {
             return Ok(0.0);
         }
         
-        let total: f64 = resources.iter().map(|r| r.cpu_usage_percent).sum();
+        let total: f64 = resources.iter().map(field_extractor).sum();
         Ok(total / resources.len() as f64)
+    }
+
+    /// Get average CPU usage across all nodes / 获取所有节点的平均CPU使用率
+    pub async fn get_average_cpu_usage(&self) -> Result<f64, SmsError> {
+        self.calculate_average_field(|r| r.cpu_usage_percent).await
     }
 
     /// Get average memory usage across all nodes / 获取所有节点的平均内存使用率
     pub async fn get_average_memory_usage(&self) -> Result<f64, SmsError> {
-        let resources = self.list_resources().await?;
-        if resources.is_empty() {
-            return Ok(0.0);
-        }
-        
-        let total: f64 = resources.iter().map(|r| r.memory_usage_percent).sum();
-        Ok(total / resources.len() as f64)
+        self.calculate_average_field(|r| r.memory_usage_percent).await
     }
 
     /// Get total memory across all nodes / 获取所有节点的总内存

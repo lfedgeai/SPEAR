@@ -1,0 +1,18 @@
+# SMS (SPEAR Metadata Server) Configuration Example
+# SMS（SPEAR元数据服务器）配置示例
+
+[sms]
+# gRPC server address / gRPC服务器地址
+grpc_addr = "0.0.0.0:50053"
+
+# HTTP gateway address / HTTP网关地址  
+http_addr = "0.0.0.0:8082"
+
+# Node cleanup interval in seconds / 节点清理间隔（秒）
+cleanup_interval = 600
+
+# Node heartbeat timeout in seconds / 节点心跳超时（秒）
+heartbeat_timeout = 180
+
+# Enable Swagger UI / 启用Swagger UI
+enable_swagger = true

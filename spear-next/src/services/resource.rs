@@ -184,7 +184,7 @@ impl ResourceService {
 
     /// Remove resource information for a node / 移除节点的资源信息
     /// Returns the removed resource if it existed / 如果存在则返回被移除的资源
-    pub async fn remove_resource(&mut self, node_uuid: &Uuid) -> Result<Option<NodeResourceInfo>, SmsError> {
+    pub async fn remove_resource(&self, node_uuid: &Uuid) -> Result<Option<NodeResourceInfo>, SmsError> {
         let key = keys::resource_key(node_uuid);
         
         // Get the resource before removing / 移除前获取资源

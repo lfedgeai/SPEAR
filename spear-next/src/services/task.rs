@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use crate::constants::{NO_STATUS_FILTER, NO_PRIORITY_FILTER};
+use crate::constants::FilterState;
 use crate::proto::sms::{
     task_service_server::TaskService as TaskServiceTrait,
     Task, TaskStatus, TaskPriority,
@@ -207,10 +207,13 @@ impl TaskServiceTrait for TaskService {
         debug!("Listing tasks with filters");
 
         let node_filter = if req.node_uuid.is_empty() { None } else { Some(req.node_uuid.as_str()) };
-        let status_filter = if req.status_filter == NO_STATUS_FILTER { None } else { TaskStatus::try_from(req.status_filter).ok() };
-        let priority_filter = if req.priority_filter == NO_PRIORITY_FILTER { None } else { TaskPriority::try_from(req.priority_filter).ok() };
+        let status_filter = FilterState::from_i32(req.status_filter);
+        let priority_filter = FilterState::from_i32(req.priority_filter);
+        
+        let status_filter_value = if status_filter.is_none() { None } else { TaskStatus::try_from(req.status_filter).ok() };
+        let priority_filter_value = if priority_filter.is_none() { None } else { TaskPriority::try_from(req.priority_filter).ok() };
 
-        match self.list_tasks_internal(node_filter, status_filter, priority_filter).await {
+        match self.list_tasks_internal(node_filter, status_filter_value, priority_filter_value).await {
             Ok(mut tasks) => {
                 // Apply pagination / 应用分页
                 let total_count = tasks.len() as i32;

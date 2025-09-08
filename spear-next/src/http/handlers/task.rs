@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use tonic::Request;
 use tracing::{debug, error, info};
 
-use crate::constants::{NO_STATUS_FILTER, NO_PRIORITY_FILTER};
+use crate::constants::FilterState;
 use crate::proto::sms::{
     RegisterTaskRequest, ListTasksRequest, GetTaskRequest, 
     UnregisterTaskRequest, TaskStatus, TaskPriority
@@ -201,18 +201,20 @@ pub async fn list_tasks(
 ) -> Result<Json<ListTasksResponse>, (StatusCode, Json<ErrorResponse>)> {
     debug!("HTTP: Listing tasks with filters: {:?}", params);
 
-    // Only apply status filter if provided / 仅在提供状态过滤器时应用
+    // Convert optional filters to FilterState and then to i32 for protobuf compatibility
+    // 将可选过滤器转换为FilterState，然后转换为i32以兼容protobuf
     let status_filter = params.status
         .as_ref()
         .and_then(|s| parse_task_status(s))
-        .map(|s| s as i32)
-        .unwrap_or(NO_STATUS_FILTER); // Use constant to indicate no filter / 使用常量表示无过滤器
-
-    // Only apply priority filter if provided / 仅在提供优先级过滤器时应用  
+        .map(|s| FilterState::Value(s as i32))
+        .unwrap_or(FilterState::None)
+        .to_i32();
+    
     let priority_filter = params.priority
         .as_ref()
-        .map(|p| parse_task_priority(p) as i32)
-        .unwrap_or(NO_PRIORITY_FILTER); // Use constant to indicate no filter / 使用常量表示无过滤器
+        .map(|p| FilterState::Value(parse_task_priority(p) as i32))
+        .unwrap_or(FilterState::None)
+        .to_i32();
 
     let request = Request::new(ListTasksRequest {
         node_uuid: params.node_uuid.unwrap_or_default(),

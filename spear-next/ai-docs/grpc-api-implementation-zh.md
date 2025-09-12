@@ -2,7 +2,7 @@
 
 ## 概述
 
-本文档描述了SMS（Spear管理系统）项目中基于gRPC的Task和ObjectRef服务的实现。该实现为管理计算任务和对象引用提供了gRPC和HTTP REST API接口。
+本文档描述了SMS（SPEAR元数据服务器）项目中基于gRPC的Task和ObjectRef服务的实现。该实现为管理计算任务和对象引用提供了gRPC和HTTP REST API接口。
 
 ## 架构
 

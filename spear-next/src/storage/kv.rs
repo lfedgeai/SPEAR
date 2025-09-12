@@ -13,7 +13,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::services::error::SmsError;
+use crate::sms::services::error::SmsError;
+use crate::config::base::StorageConfig;
 
 #[cfg(feature = "sled")]
 use crate::{spawn_blocking_task, handle_sled_error};
@@ -93,6 +94,15 @@ impl KvStoreConfig {
         }
     }
 
+    /// Create evmap configuration / 创建 evmap 配置
+    #[cfg(feature = "evmap")]
+    pub fn evmap() -> Self {
+        Self {
+            backend: "evmap".to_string(),
+            params: HashMap::new(),
+        }
+    }
+
     /// Create a new Sled store config / 创建新的Sled存储配置
     #[cfg(feature = "sled")]
     pub fn sled<P: AsRef<str>>(path: P) -> Self {
@@ -168,6 +178,25 @@ impl KvStoreConfig {
         }
         
         Ok(Self { backend, params })
+    }
+
+    /// Convert from StorageConfig to KvStoreConfig / 从StorageConfig转换为KvStoreConfig
+    pub fn from_storage_config(storage_config: &StorageConfig) -> Self {
+        let mut params = HashMap::new();
+        
+        // Add data directory parameter / 添加数据目录参数
+        params.insert("path".to_string(), storage_config.data_dir.clone());
+        
+        // Add max cache size parameter / 添加最大缓存大小参数
+        params.insert("max_cache_size_mb".to_string(), storage_config.max_cache_size_mb.to_string());
+        
+        // Add compression parameter / 添加压缩参数
+        params.insert("compression_enabled".to_string(), storage_config.compression_enabled.to_string());
+        
+        Self {
+            backend: storage_config.backend.clone(),
+            params,
+        }
     }
 }
 
@@ -263,6 +292,8 @@ impl KvStoreFactory for DefaultKvStoreFactory {
         
         match config.backend.as_str() {
             "memory" => Ok(Box::new(MemoryKvStore::new())),
+            #[cfg(feature = "evmap")]
+            "evmap" => Ok(Box::new(EvmapKvStore::new())),
             #[cfg(feature = "sled")]
             "sled" => {
                 let path = config.get_param("path")
@@ -288,7 +319,14 @@ impl KvStoreFactory for DefaultKvStoreFactory {
     }
     
     fn supported_backends(&self) -> Vec<String> {
+        #[cfg(any(feature = "sled", feature = "rocksdb", feature = "evmap"))]
         let mut backends = vec!["memory".to_string()];
+        
+        #[cfg(not(any(feature = "sled", feature = "rocksdb", feature = "evmap")))]
+        let backends = vec!["memory".to_string()];
+        
+        #[cfg(feature = "evmap")]
+        backends.push("evmap".to_string());
         
         #[cfg(feature = "sled")]
         backends.push("sled".to_string());
@@ -544,6 +582,8 @@ pub enum KvStoreType {
     Sled { path: String },
     #[cfg(feature = "rocksdb")]
     RocksDb { path: String },
+    #[cfg(feature = "evmap")]
+    Evmap,
 }
 
 /// Sled KV store implementation / Sled KV存储实现
@@ -1005,6 +1045,218 @@ impl KvStore for RocksDbKvStore {
     }
 }
 
+/// High-performance concurrent KV store using evmap / 使用evmap的高性能并发KV存储
+/// 
+/// EvmapKvStore provides extremely fast read operations with eventual consistency.
+/// It's optimized for read-heavy workloads where writes are less frequent.
+/// EvmapKvStore提供极快的读取操作和最终一致性。
+/// 它针对读取密集型工作负载进行了优化，其中写入频率较低。
+#[cfg(feature = "evmap")]
+#[derive(Debug)]
+pub struct EvmapKvStore {
+    /// Write handle for the evmap / evmap的写入句柄
+    writer: Arc<tokio::sync::Mutex<evmap::WriteHandle<KvKey, KvValue>>>,
+    /// Read handle for the evmap / evmap的读取句柄
+    reader: Arc<tokio::sync::Mutex<evmap::ReadHandle<KvKey, KvValue>>>,
+}
+
+#[cfg(feature = "evmap")]
+impl EvmapKvStore {
+    /// Create a new EvmapKvStore / 创建新的EvmapKvStore
+    pub fn new() -> Self {
+        let (reader, writer) = evmap::new();
+        Self {
+            writer: Arc::new(tokio::sync::Mutex::new(writer)),
+            reader: Arc::new(tokio::sync::Mutex::new(reader)),
+        }
+    }
+}
+
+#[cfg(feature = "evmap")]
+impl Default for EvmapKvStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "evmap")]
+#[async_trait]
+impl KvStore for EvmapKvStore {
+    async fn get(&self, key: &KvKey) -> Result<Option<KvValue>, SmsError> {
+        // evmap returns a guard with multiple values, we take the first one
+        // evmap返回包含多个值的守卫，我们取第一个值
+        let reader = self.reader.lock().await;
+        let result = reader.get_one(key).map(|value| value.clone());
+        Ok(result)
+    }
+
+    async fn put(&self, key: &KvKey, value: &KvValue) -> Result<(), SmsError> {
+        let mut writer = self.writer.lock().await;
+        // Clear existing values for this key and insert new one
+        // 清除此键的现有值并插入新值
+        writer.clear(key.clone());
+        writer.insert(key.clone(), value.clone());
+        writer.refresh();
+        Ok(())
+    }
+
+    async fn delete(&self, key: &KvKey) -> Result<bool, SmsError> {
+        let existed = self.exists(key).await?;
+        if existed {
+            let mut writer = self.writer.lock().await;
+            writer.empty(key.clone());
+            writer.refresh();
+            // 释放 writer 锁，让 refresh 完全生效
+            drop(writer);
+            // 给一个很短的时间让 refresh 完全生效
+            tokio::task::yield_now().await;
+        }
+        Ok(existed)
+    }
+
+    async fn exists(&self, key: &KvKey) -> Result<bool, SmsError> {
+        let reader = self.reader.lock().await;
+        Ok(reader.contains_key(key))
+    }
+
+    async fn keys_with_prefix(&self, prefix: &str) -> Result<Vec<KvKey>, SmsError> {
+        let reader = self.reader.lock().await;
+        let mut keys = Vec::new();
+        
+        // Read the map and iterate through all keys
+        // 读取映射并遍历所有键
+        if let Some(map_ref) = reader.read() {
+            for (key, _values) in map_ref.iter() {
+                if key.starts_with(prefix) {
+                    keys.push(key.clone());
+                }
+            }
+        }
+        
+        Ok(keys)
+    }
+
+    async fn scan_prefix(&self, prefix: &str) -> Result<Vec<KvPair>, SmsError> {
+        let reader = self.reader.lock().await;
+        let mut pairs = Vec::new();
+        
+        // Read the map and iterate through all key-value pairs
+        // 读取映射并遍历所有键值对
+        if let Some(map_ref) = reader.read() {
+            for (key, values) in map_ref.iter() {
+                if key.starts_with(prefix) {
+                    // evmap can store multiple values per key, we take the first one
+                    // evmap可以为每个键存储多个值，我们取第一个
+                    if let Some(value) = values.iter().next() {
+                        pairs.push(KvPair {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        
+        Ok(pairs)
+    }
+
+    async fn range(&self, options: &RangeOptions) -> Result<Vec<KvPair>, SmsError> {
+        // evmap doesn't support efficient range queries, so we implement it by iterating all entries
+        // evmap不支持高效的范围查询，所以我们通过遍历所有条目来实现
+        let reader = self.reader.lock().await;
+        
+        let mut pairs: Vec<KvPair> = Vec::new();
+        
+        // Read the map and iterate through all keys
+        // 读取映射并遍历所有键
+        if let Some(map_ref) = reader.read() {
+            for (key, values) in map_ref.iter() {
+                // evmap can store multiple values per key, we take the first one
+                // evmap可以为每个键存储多个值，我们取第一个
+                if let Some(value) = values.iter().next() {
+                    // Apply range filters / 应用范围过滤器
+                    let mut include = true;
+                    
+                    // Filter by start key (inclusive) / 按起始键过滤（包含）
+                    if let Some(ref start) = options.start_key {
+                        if key < start {
+                            include = false;
+                        }
+                    }
+                    
+                    // Filter by end key (exclusive) / 按结束键过滤（不包含）
+                    if let Some(ref end) = options.end_key {
+                        if key >= end {
+                            include = false;
+                        }
+                    }
+                    
+                    if include {
+                        pairs.push(KvPair {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Sort pairs by key for consistent ordering / 按键排序以保证一致的顺序
+        pairs.sort_by(|a, b| a.key.cmp(&b.key));
+        
+        // Apply reverse order / 应用逆序
+        if options.reverse {
+            pairs.reverse();
+        }
+        
+        // Apply limit / 应用限制
+        if let Some(limit) = options.limit {
+            pairs.truncate(limit);
+        }
+        
+        Ok(pairs)
+    }
+
+    async fn count(&self) -> Result<usize, SmsError> {
+        let reader = self.reader.lock().await;
+        
+        // Count all keys in the map
+        // 计算映射中的所有键
+        let count = if let Some(map_ref) = reader.read() {
+            map_ref.len()
+        } else {
+            0
+        };
+        
+        Ok(count)
+    }
+
+    async fn clear(&self) -> Result<(), SmsError> {
+        let mut writer = self.writer.lock().await;
+        
+        // Get all keys first
+        // 首先获取所有键
+        let reader = self.reader.lock().await;
+        let mut keys_to_remove = Vec::new();
+        
+        if let Some(map_ref) = reader.read() {
+            for (key, _values) in map_ref.iter() {
+                keys_to_remove.push(key.clone());
+            }
+        }
+        drop(reader);
+        
+        // Remove all keys
+        // 删除所有键
+        for key in keys_to_remove {
+            writer.empty(key);
+        }
+        writer.refresh();
+        
+        Ok(())
+    }
+}
+
 /// Create a KV store instance / 创建KV存储实例
 pub fn create_kv_store(store_type: KvStoreType) -> Result<Box<dyn KvStore>, SmsError> {
     match store_type {
@@ -1019,14 +1271,16 @@ pub fn create_kv_store(store_type: KvStoreType) -> Result<Box<dyn KvStore>, SmsE
             let store = RocksDbKvStore::new(path)?;
             Ok(Box::new(store))
         }
+        #[cfg(feature = "evmap")]
+        KvStoreType::Evmap => Ok(Box::new(EvmapKvStore::new())),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::test_utils::TestDataGenerator;
-    use crate::services::node::NodeInfo;
+    use crate::sms::services::test_utils::TestDataGenerator;
+    use crate::sms::services::node_service::NodeInfo;
 
     #[tokio::test]
     async fn test_memory_kv_basic_operations() {
@@ -1148,13 +1402,14 @@ mod tests {
         use serialization::*;
         
         let node = TestDataGenerator::create_sample_node();
-        let uuid = node.uuid;
+        let uuid_str = node.uuid.clone();
+        let uuid = Uuid::parse_str(&uuid_str).unwrap();
         
         // Test node serialization / 测试节点序列化
         let serialized = serialize(&node).unwrap();
-        let deserialized: NodeInfo = deserialize(&serialized).unwrap();
-        assert_eq!(deserialized.uuid, uuid);
-        assert_eq!(deserialized.address(), node.address());
+        let deserialized: crate::proto::sms::Node = deserialize(&serialized).unwrap();
+        assert_eq!(deserialized.uuid, uuid_str);
+        assert_eq!(deserialized.ip_address, node.ip_address);
         
         // Test key generation / 测试键生成
         let node_key = node_key(&uuid);
@@ -1422,6 +1677,8 @@ mod tests {
         
         // Test delete / 测试删除
         assert!(store.delete(&key).await.unwrap());
+        // 给 evmap 一点时间让 refresh 完全生效
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         assert!(!store.exists(&key).await.unwrap());
         assert!(!store.delete(&key).await.unwrap()); // Second delete should return false
         
@@ -1527,5 +1784,107 @@ mod tests {
             params: HashMap::new(),
         };
         assert!(factory.validate_config(&invalid_config).is_err());
+    }
+
+    #[cfg(feature = "evmap")]
+    #[tokio::test]
+    async fn test_evmap_kv_basic_operations() {
+        let store = EvmapKvStore::new();
+        
+        // Test put and get / 测试存储和获取
+        let key = "test_key".to_string();
+        let value = b"test_value".to_vec();
+        
+        store.put(&key, &value).await.unwrap();
+        let retrieved = store.get(&key).await.unwrap();
+        assert_eq!(retrieved, Some(value.clone()));
+        
+        // Test exists / 测试存在性检查
+        assert!(store.exists(&key).await.unwrap());
+        assert!(!store.exists(&"non_existent".to_string()).await.unwrap());
+        
+        // Test delete / 测试删除
+        assert!(store.delete(&key).await.unwrap());
+        assert!(!store.exists(&key).await.unwrap());
+        assert!(!store.delete(&key).await.unwrap()); // Second delete should return false
+    }
+
+    #[cfg(feature = "evmap")]
+    #[tokio::test]
+    async fn test_evmap_kv_range_operations() {
+        let store = EvmapKvStore::new();
+        
+        // Insert test data / 插入测试数据
+        let pairs = vec![
+            ("key1".to_string(), b"value1".to_vec()),
+            ("key2".to_string(), b"value2".to_vec()),
+            ("key3".to_string(), b"value3".to_vec()),
+            ("key5".to_string(), b"value5".to_vec()),
+        ];
+        
+        for (key, value) in &pairs {
+            store.put(key, value).await.unwrap();
+        }
+        
+        // Test range with start and end key / 测试带起始和结束键的范围查询
+        let options = RangeOptions::new()
+            .start_key("key2")
+            .end_key("key4");
+        let result = store.range(&options).await.unwrap();
+        assert_eq!(result.len(), 2); // key2, key3
+        assert_eq!(result[0].key, "key2");
+        assert_eq!(result[1].key, "key3");
+        
+        // Test range with limit / 测试带限制的范围查询
+        let options = RangeOptions::new().limit(2);
+        let result = store.range(&options).await.unwrap();
+        assert_eq!(result.len(), 2);
+        
+        // Test reverse range / 测试逆序范围查询
+        let options = RangeOptions::new().reverse(true);
+        let result = store.range(&options).await.unwrap();
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].key, "key5"); // Should be in reverse order
+        
+        // Test prefix operations / 测试前缀操作
+        let prefix_keys = store.keys_with_prefix("key").await.unwrap();
+        assert_eq!(prefix_keys.len(), 4);
+        
+        let prefix_pairs = store.scan_prefix("key").await.unwrap();
+        assert_eq!(prefix_pairs.len(), 4);
+        
+        // Test count / 测试计数
+        let count = store.count().await.unwrap();
+        assert_eq!(count, 4);
+        
+        // Test clear / 测试清空
+        store.clear().await.unwrap();
+        let count_after_clear = store.count().await.unwrap();
+        assert_eq!(count_after_clear, 0);
+    }
+
+    #[cfg(feature = "evmap")]
+    #[tokio::test]
+    async fn test_evmap_kv_store_factory() {
+        let factory = DefaultKvStoreFactory::new();
+        let config = KvStoreConfig::evmap();
+        
+        // Test factory creation / 测试工厂创建
+        let store = factory.create(&config).await.unwrap();
+        
+        // Test basic operation through factory-created store / 通过工厂创建的存储测试基本操作
+        let key = "factory_test_key".to_string();
+        let value = b"factory_test_value".to_vec();
+        
+        store.put(&key, &value).await.unwrap();
+        let retrieved = store.get(&key).await.unwrap();
+        assert_eq!(retrieved, Some(value));
+        
+        // Test that evmap is in supported backends / 测试evmap在支持的后端中
+        let backends = factory.supported_backends();
+        assert!(backends.contains(&"evmap".to_string()));
+        
+        // Test config validation / 测试配置验证
+        assert!(factory.validate_config(&config).is_ok());
     }
 }

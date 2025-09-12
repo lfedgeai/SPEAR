@@ -1,0 +1,116 @@
+# Tarpaulin Configuration for Code Coverage / Tarpaulin代码覆盖率配置
+# This file configures cargo-tarpaulin for code coverage analysis
+# 此文件配置cargo-tarpaulin进行代码覆盖率分析
+
+[report]
+# Coverage output formats / 覆盖率输出格式
+# Available formats: Html, Lcov, Json, Stdout, Xml, Cobertura
+out = ["Html", "Lcov", "Json"]
+
+# Output directory for coverage reports / 覆盖率报告输出目录
+output-dir = "target/coverage"
+
+# Exclude files from coverage / 从覆盖率中排除文件
+exclude = [
+    # Generated proto files / 生成的proto文件
+    "src/proto/*",
+    # Build scripts / 构建脚本
+    "build.rs",
+    # Test files / 测试文件
+    "tests/*",
+    # Benchmark files / 基准测试文件
+    "benches/*",
+    # Main entry points / 主入口点
+    "src/main.rs",
+    "src/bin/*",
+]
+
+# Include only source files / 仅包含源文件
+include = [
+    "src/config/*",
+    "src/services/*", 
+    "src/sms/*",
+    "src/spearlet/*",
+    "src/storage/*",
+    "src/utils/*",
+    "src/network/*",
+]
+
+# Minimum coverage threshold (percentage) / 最小覆盖率阈值（百分比）
+fail-under = 70
+
+# Run tests with all features / 使用所有特性运行测试
+all-features = true
+
+# Timeout for individual tests (seconds) / 单个测试超时时间（秒）
+timeout = "120s"
+
+# Number of parallel test threads / 并行测试线程数
+jobs = 4
+
+# Verbose output / 详细输出
+verbose = true
+
+# Follow symbolic links / 跟随符号链接
+follow-exec = true
+
+
+# Run ignored tests / 运行被忽略的测试
+run-ignored = false
+
+# Count hits instead of just coverage / 计算命中次数而不仅仅是覆盖率
+count = true
+
+# Include doc tests / 包含文档测试
+doc = false
+
+# Exclude lines with specific patterns / 排除包含特定模式的行
+exclude-lines = [
+    # Debug print statements / 调试打印语句
+    "println!",
+    "eprintln!",
+    "dbg!",
+    # Unreachable code / 不可达代码
+    "unreachable!",
+    "unimplemented!",
+    "todo!",
+    # Panic statements / panic语句
+    "panic!",
+    # Test-only code / 仅测试代码
+    "#\\[cfg\\(test\\)\\]",
+]
+
+# Engine configuration / 引擎配置
+engine = "Llvm"
+
+# Target directory / 目标目录
+target-dir = "target"
+
+# Workspace configuration / 工作空间配置
+workspace = true
+
+# Release mode / 发布模式
+release = false
+
+# No default features / 不使用默认特性
+no-default-features = false
+
+# Offline mode / 离线模式
+offline = false
+
+# Frozen lockfile / 冻结锁文件
+frozen = false
+
+# Locked dependencies / 锁定依赖
+locked = false
+
+# Z flags for unstable features / 不稳定特性的Z标志
+Z = []
+
+# Additional rustflags / 额外的rustflags
+rustflags = ""
+
+# Environment variables / 环境变量
+[config.env]
+RUST_LOG = "debug"
+RUST_BACKTRACE = "1"

@@ -8,7 +8,8 @@ use axum_test::TestServer;
 use serde_json;
 use serde_json::json;
 use uuid::Uuid;
-use spear_next::http::{create_gateway_router, GatewayState};
+use spear_next::sms::routes::create_routes;
+use spear_next::sms::gateway::GatewayState;
 
 // Test utilities for Task HTTP integration / Task HTTP集成测试工具
 mod task_test_utils {
@@ -40,13 +41,14 @@ mod task_test_utils {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         
-        let sms_service = spear_next::SmsServiceImpl::with_kv_config(60, spear_next::storage::KvStoreConfig::memory()).await;
-        let task_service = spear_next::services::TaskService::new_with_memory();
+        let mut storage_config = spear_next::config::base::StorageConfig::default();
+        storage_config.backend = "memory".to_string();
+        let sms_service = spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
         
         let handle = tokio::spawn(async move {
             Server::builder()
-                .add_service(NodeServiceServer::new(sms_service))
-                .add_service(TaskServiceServer::new(task_service))
+                .add_service(NodeServiceServer::new(sms_service.clone()))
+                .add_service(TaskServiceServer::new(sms_service))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();
@@ -79,7 +81,7 @@ mod task_test_utils {
         };
         
         // Create HTTP router / 创建HTTP路由器
-        let app = create_gateway_router(state);
+        let app = create_routes(state);
         let server = TestServer::new(app).unwrap();
         
         (server, grpc_handle)

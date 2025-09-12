@@ -2,11 +2,11 @@
 
 ## Overview
 
-This document describes the optimization of the TaskService by removing the unnecessary `node_uuid` field. This change simplifies the service architecture and aligns with the principle that SMS (Spear Management Service) itself is not a spearlet and therefore doesn't need a UUID.
+This document describes the optimization of the TaskService by removing the unnecessary `node_uuid` field. This change simplifies the service architecture and aligns with the principle that SMS (SPEAR Metadata Server) itself is not a spearlet and therefore doesn't need a UUID.
 
 ## Background
 
-During the Task API refactoring, it was identified that the `node_uuid` field in the `TaskService` struct was not being used anywhere in the codebase. This field was originally included based on the assumption that the service might need to track its own node identity, but SMS operates as a management service rather than a worker node (spearlet).
+During the Task API refactoring, it was identified that the `node_uuid` field in the `TaskService` struct was not being used anywhere in the codebase. This field was originally included based on the assumption that the service might need to track its own node identity, but SMS operates as a management service rather than a core agent component (SPEARlet).
 
 ## Changes Made
 
@@ -72,7 +72,7 @@ The following files were updated to remove the `node_uuid` parameter:
 ## Benefits
 
 1. **Simplified Architecture**: Removed unnecessary complexity from the TaskService
-2. **Clearer Semantics**: Makes it explicit that SMS is a management service, not a worker node
+2. **Clearer Semantics**: Makes it explicit that SMS is a management service, not a core agent component
 3. **Reduced Memory Usage**: Eliminates storage of unused string data
 4. **Easier Testing**: Simplified test setup with fewer parameters
 5. **Better Maintainability**: Less code to maintain and fewer potential points of confusion
@@ -81,13 +81,13 @@ The following files were updated to remove the `node_uuid` parameter:
 
 This change reinforces the architectural distinction between:
 
-- **SMS (Spear Management Service)**: A centralized management service that coordinates tasks and resources
-- **Spearlets**: Worker nodes that execute tasks and have their own UUIDs for identification
+- **SMS (SPEAR Metadata Server)**: A centralized management service that coordinates tasks and resources
+- **SPEARlets**: Core agent components similar to kubelet that have their own UUIDs for identification
 
 The SMS doesn't need a UUID because:
 - It's a singleton management service
-- It doesn't register itself as a worker node
-- It manages other nodes rather than being managed
+- It doesn't register itself as a core agent component
+- It manages other components rather than being managed
 
 ## Testing
 

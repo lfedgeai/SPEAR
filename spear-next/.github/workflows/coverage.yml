@@ -1,0 +1,233 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run coverage analysis weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  coverage:
+    name: Code Coverage Analysis
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        rust-version: [stable]
+        features:
+          - default
+          - sled
+          - rocksdb
+          - all-features
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ matrix.rust-version }}
+        components: rustfmt, clippy
+
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          pkg-config \
+          libssl-dev \
+          protobuf-compiler
+
+    - name: Install cargo-tarpaulin
+      run: cargo install cargo-tarpaulin
+
+    - name: Run tests to ensure they pass
+      run: |
+        if [ "${{ matrix.features }}" = "all-features" ]; then
+          cargo test --all-features
+        elif [ "${{ matrix.features }}" = "default" ]; then
+          cargo test
+        else
+          cargo test --features ${{ matrix.features }}
+        fi
+
+    - name: Generate code coverage
+      run: |
+        mkdir -p target/coverage
+        if [ "${{ matrix.features }}" = "all-features" ]; then
+          cargo tarpaulin --all-features --config tarpaulin.toml --out xml --output-dir target/coverage
+        elif [ "${{ matrix.features }}" = "default" ]; then
+          cargo tarpaulin --config tarpaulin.toml --out xml --output-dir target/coverage
+        else
+          cargo tarpaulin --features ${{ matrix.features }} --config tarpaulin.toml --out xml --output-dir target/coverage
+        fi
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: target/coverage/cobertura.xml
+        flags: ${{ matrix.features }}
+        name: coverage-${{ matrix.features }}
+        fail_ci_if_error: false
+
+    - name: Archive coverage results
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report-${{ matrix.features }}
+        path: |
+          target/coverage/
+        retention-days: 30
+
+  coverage-summary:
+    name: Coverage Summary
+    runs-on: ubuntu-latest
+    needs: coverage
+    if: always()
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          pkg-config \
+          libssl-dev \
+          protobuf-compiler
+
+    - name: Install cargo-tarpaulin
+      run: cargo install cargo-tarpaulin
+
+    - name: Generate comprehensive coverage report
+      run: |
+        mkdir -p target/coverage-summary
+        cargo tarpaulin --all-features --config tarpaulin.toml \
+          --out Html --out Json --out Stdout \
+          --output-dir target/coverage-summary
+
+    - name: Extract coverage percentage
+      id: coverage
+      run: |
+        COVERAGE=$(cargo tarpaulin --all-features --config tarpaulin.toml --out Stdout | grep -oP '\d+\.\d+%' | tail -1)
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "Coverage: $COVERAGE"
+
+    - name: Comment coverage on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const coverage = '${{ steps.coverage.outputs.percentage }}';
+          const body = `## 📊 Code Coverage Report
+          
+          **Overall Coverage: ${coverage}**
+          
+          - ✅ **Target**: 70% minimum
+          - 🎯 **Goal**: 80%+
+          - 🚀 **Excellence**: 90%+
+          
+          ### Coverage by Features
+          - Default features: See artifacts
+          - Sled backend: See artifacts  
+          - RocksDB backend: See artifacts
+          - All features: See artifacts
+          
+          📈 [View detailed HTML report in artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+
+    - name: Check coverage threshold
+      run: |
+        COVERAGE_NUM=$(echo "${{ steps.coverage.outputs.percentage }}" | sed 's/%//')
+        THRESHOLD=70
+        
+        if (( $(echo "$COVERAGE_NUM < $THRESHOLD" | bc -l) )); then
+          echo "❌ Coverage ${{ steps.coverage.outputs.percentage }} is below threshold ${THRESHOLD}%"
+          exit 1
+        else
+          echo "✅ Coverage ${{ steps.coverage.outputs.percentage }} meets threshold ${THRESHOLD}%"
+        fi
+
+    - name: Upload comprehensive coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-summary-report
+        path: |
+          target/coverage-summary/
+        retention-days: 90
+
+  coverage-badge:
+    name: Update Coverage Badge
+    runs-on: ubuntu-latest
+    needs: coverage-summary
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          pkg-config \
+          libssl-dev \
+          protobuf-compiler
+
+    - name: Install cargo-tarpaulin
+      run: cargo install cargo-tarpaulin
+
+    - name: Generate coverage for badge
+      run: |
+        COVERAGE=$(cargo tarpaulin --all-features --config tarpaulin.toml --out Stdout | grep -oP '\d+\.\d+%' | tail -1)
+        echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+
+    - name: Create coverage badge
+      uses: schneegans/dynamic-badges-action@v1.6.0
+      with:
+        auth: ${{ secrets.GITHUB_TOKEN }}
+        gistID: ${{ secrets.COVERAGE_GIST_ID }}
+        filename: spear-next-coverage.json
+        label: Coverage
+        message: ${{ env.COVERAGE }}
+        color: |
+          ${{ 
+            env.COVERAGE >= '90' && 'brightgreen' ||
+            env.COVERAGE >= '80' && 'green' ||
+            env.COVERAGE >= '70' && 'yellow' ||
+            'red'
+          }}

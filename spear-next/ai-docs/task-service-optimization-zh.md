@@ -2,7 +2,7 @@
 
 ## 概述
 
-本文档描述了通过移除不必要的 `node_uuid` 字段来优化 TaskService 的过程。这个改动简化了服务架构，并符合 SMS（Spear Management Service）本身不是 spearlet 因此不需要 UUID 的原则。
+本文档描述了通过移除不必要的 `node_uuid` 字段来优化 TaskService 的过程。这个改动简化了服务架构，并符合 SMS（SPEAR Metadata Server）本身不是 spearlet 因此不需要 UUID 的原则。
 
 ## 背景
 
@@ -81,13 +81,13 @@ pub fn new_with_memory() -> Self {
 
 这个改动强化了以下架构区别：
 
-- **SMS (Spear Management Service)**: 协调任务和资源的集中式管理服务
-- **Spearlets**: 执行任务并拥有自己 UUID 用于识别的工作节点
+- **SMS (SPEAR Metadata Server)**: 协调任务和资源的集中式管理服务
+- **SPEARlets**: 类似kubelet的核心代理组件，拥有自己的UUID用于识别
 
 SMS 不需要 UUID 因为：
 - 它是单例管理服务
-- 它不会将自己注册为工作节点
-- 它管理其他节点而不是被管理
+- 它不会将自己注册为核心代理组件
+- 它管理其他组件而不是被管理
 
 ## 测试
 

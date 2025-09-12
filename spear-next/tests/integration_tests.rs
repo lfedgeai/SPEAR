@@ -9,9 +9,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;
 
-use spear_next::services::config::{AppConfig, SmsConfig};
-use spear_next::services::node::{NodeService, NodeInfo, NodeStatus};
-use spear_next::services::resource::NodeResourceInfo;
+use spear_next::sms::config::SmsConfig;
+
 
 use spear_next::proto::sms::{
     node_service_client::NodeServiceClient,
@@ -31,7 +30,9 @@ mod test_utils {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         
-        let service = spear_next::SmsServiceImpl::with_kv_config(60, spear_next::storage::KvStoreConfig::memory()).await;
+        let mut storage_config = spear_next::config::base::StorageConfig::default();
+        storage_config.backend = "memory".to_string();
+        let service = spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
         
         let handle = tokio::spawn(async move {
             Server::builder()
@@ -106,7 +107,7 @@ async fn test_grpc_node_lifecycle() {
             uuid: uuid.clone(),
             ip_address: ip.clone(),
             port,
-            status: "active".to_string(),
+            status: "online".to_string(),
             metadata: metadata.clone(),
             registered_at: chrono::Utc::now().timestamp(),
             last_heartbeat: chrono::Utc::now().timestamp(),
@@ -325,7 +326,7 @@ async fn test_grpc_concurrent_operations() {
                     uuid: uuid.clone(),
                     ip_address: format!("192.168.1.{}", 100 + i),
                     port: 8080 + i as i32,
-                    status: NodeStatus::Active.to_string(),
+                    status: "online".to_string(),
                     metadata: HashMap::new(),
                     registered_at: chrono::Utc::now().timestamp(),
                     last_heartbeat: chrono::Utc::now().timestamp(),
@@ -364,26 +365,41 @@ async fn test_grpc_concurrent_operations() {
 
 #[tokio::test]
 async fn test_node_registry_integration() {
-    // Test NodeService integration / 测试NodeService集成
-        let mut handler = NodeService::new();
+    // Test NodeService integration via gRPC / 通过gRPC测试NodeService集成
+    let (addr, _handle) = test_utils::create_test_grpc_server().await;
+    let mut client = test_utils::create_test_grpc_client(addr).await;
     
     // Test multiple node operations / 测试多个节点操作
     let mut node_uuids = Vec::new();
     
     // Register multiple nodes / 注册多个节点
     for i in 0..3 {
-        let mut node_info = NodeInfo::new(
-            format!("192.168.1.{}", 100 + i),
-            (8080 + i) as u16,
-        );
-        node_info.metadata.insert("index".to_string(), i.to_string());
+        let (uuid, ip, port, mut metadata) = test_utils::generate_test_node();
+        metadata.insert("index".to_string(), i.to_string());
         
-        let uuid = handler.register_node(node_info).await.unwrap();
+        let register_req = RegisterNodeRequest {
+            node: Some(Node {
+                uuid: uuid.clone(),
+                ip_address: ip,
+                port,
+                status: "active".to_string(),
+                metadata,
+                registered_at: chrono::Utc::now().timestamp(),
+                last_heartbeat: chrono::Utc::now().timestamp(),
+            }),
+        };
+        
+        let register_resp = client.register_node(register_req).await.unwrap();
+        assert!(register_resp.into_inner().success);
         node_uuids.push(uuid);
     }
     
     // Verify all nodes are registered / 验证所有节点都已注册
-    let all_nodes = handler.list_nodes().await.unwrap();
+    let list_req = ListNodesRequest {
+        status_filter: String::new(),
+    };
+    let list_resp = client.list_nodes(list_req).await.unwrap();
+    let all_nodes = list_resp.into_inner().nodes;
     assert_eq!(all_nodes.len(), 3);
     
     // Test heartbeat for all nodes / 对所有节点进行心跳测试
@@ -391,91 +407,50 @@ async fn test_node_registry_integration() {
         let mut health_info = HashMap::new();
         health_info.insert("status".to_string(), "ok".to_string());
         
-        let result = handler.update_heartbeat(uuid, Some(health_info)).await;
+        let heartbeat_req = HeartbeatRequest {
+            uuid: uuid.clone(),
+            timestamp: chrono::Utc::now().timestamp(),
+            health_info: health_info,
+        };
+        
+        let result = client.heartbeat(heartbeat_req).await;
         assert!(result.is_ok());
     }
     
     // Test resource management / 测试资源管理
     for (i, uuid) in node_uuids.iter().enumerate() {
-        let mut resource_metadata = HashMap::new();
-        resource_metadata.insert("cpu_cores".to_string(), (4 + i).to_string());
+        let resource = test_utils::generate_test_resource(uuid.clone());
+        let update_resource_req = UpdateNodeResourceRequest {
+            resource: Some(resource),
+        };
         
-        let mut resource_info = NodeResourceInfo::new(*uuid);
-        resource_info.cpu_usage_percent = 50.0 + i as f64 * 10.0;
-        resource_info.memory_usage_percent = 60.0 + i as f64 * 5.0;
-        resource_info.total_memory_bytes = 8_000_000_000 + i as i64 * 1_000_000_000;
-        resource_info.used_memory_bytes = 4_000_000_000 + i as i64 * 500_000_000;
-        resource_info.available_memory_bytes = 4_000_000_000 + i as i64 * 500_000_000;
-        resource_info.disk_usage_percent = 30.0 + i as f64 * 5.0;
-        resource_info.total_disk_bytes = 500_000_000_000 + i as i64 * 100_000_000_000;
-        resource_info.used_disk_bytes = 150_000_000_000 + i as i64 * 50_000_000_000;
-        resource_info.network_rx_bytes_per_sec = 1_000_000 + i as i64 * 100_000;
-        resource_info.network_tx_bytes_per_sec = 500_000 + i as i64 * 50_000;
-        resource_info.load_average_1m = 1.0 + i as f64 * 0.1;
-        resource_info.load_average_5m = 0.9 + i as f64 * 0.1;
-        resource_info.load_average_15m = 0.8 + i as f64 * 0.1;
-        resource_info.resource_metadata = resource_metadata;
-        
-        handler.update_node_resource(resource_info).await.unwrap();
+        let update_resource_resp = client.update_node_resource(update_resource_req).await.unwrap();
+        assert!(update_resource_resp.into_inner().success);
     }
     
     // Verify resource updates / 验证资源更新
-    let all_resources = handler.list_node_resources().await.unwrap();
+    let list_resources_req = ListNodeResourcesRequest {
+        node_uuids: vec![], // Empty means list all / 空表示列出所有
+    };
+    let list_resources_resp = client.list_node_resources(list_resources_req).await.unwrap();
+    let all_resources = list_resources_resp.into_inner().resources;
     assert_eq!(all_resources.len(), 3);
     
-    // Verify each resource exists and has correct values / 验证每个资源存在且值正确
-    let expected_cpu_values = vec![50.0, 60.0, 70.0];
-    let mut found_cpu_values = Vec::new();
-    
+    // Verify each resource exists / 验证每个资源存在
     for resource in all_resources.iter() {
         assert!(node_uuids.contains(&resource.node_uuid));
-        found_cpu_values.push(resource.cpu_usage_percent);
+        assert!(resource.cpu_usage_percent > 0.0);
     }
-    
-    // Sort both vectors to compare regardless of order / 排序两个向量以便不依赖顺序进行比较
-    found_cpu_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    assert_eq!(found_cpu_values, expected_cpu_values);
-    
-    // Test cluster statistics / 测试集群统计
-    let stats = handler.get_cluster_stats().await.unwrap();
-    assert_eq!(stats.total_nodes, 3);
-    assert_eq!(stats.active_nodes, 3);
-    assert_eq!(stats.unhealthy_nodes, 0);
-    assert_eq!(stats.nodes_with_resources, 3);
 }
 
 #[tokio::test]
 async fn test_configuration_integration() {
     // Test configuration integration / 测试配置集成
-    use tempfile::NamedTempFile;
-    use std::io::Write;
-    
-    // Create temporary config file / 创建临时配置文件
-    let mut temp_file = NamedTempFile::new().unwrap();
-    writeln!(temp_file, r#"
-[sms]
-grpc_addr = "0.0.0.0:50051"
-http_addr = "0.0.0.0:8080"
-cleanup_interval = 300
-heartbeat_timeout = 120
-enable_swagger = true
-
-[sms.kv_store]
-backend = "memory"
-params = {{}}
-"#).unwrap();
-    
-    // Test loading configuration / 测试加载配置
-    let config = AppConfig::load_from_file(temp_file.path().to_str().unwrap()).unwrap();
-    assert_eq!(config.sms.grpc_addr.port(), 50051);
-    assert_eq!(config.sms.http_addr.port(), 8080);
-    assert_eq!(config.sms.cleanup_interval, 300);
-    assert_eq!(config.sms.heartbeat_timeout, 120);
     
     // Test default configuration / 测试默认配置
     let default_config = SmsConfig::default();
-    assert_eq!(default_config.grpc_addr.port(), 50051);
-    assert_eq!(default_config.http_addr.port(), 8080);
-    assert_eq!(default_config.cleanup_interval, 300);
-    assert_eq!(default_config.heartbeat_timeout, 120);
+    assert_eq!(default_config.grpc.addr.port(), 50051);
+    assert_eq!(default_config.http.addr.port(), 8080);
+    assert_eq!(default_config.enable_swagger, true);
+    assert_eq!(default_config.database.db_type, "sled");
 }

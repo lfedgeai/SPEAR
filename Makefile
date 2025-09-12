@@ -12,7 +12,7 @@ endif
 all: clean spearlet workload sdk
 
 
-SUBDIRS := $(shell find $(REPO_ROOT) -mindepth 1 -maxdepth 3 -type d -exec test -e {}/Makefile \; -exec echo {} \;)
+SUBDIRS := $(shell find $(REPO_ROOT) -mindepth 1 -maxdepth 3 -type d -exec test -e {}/Makefile \; -exec echo {} \; | grep -v spear-next)
 WORKLOAD_SUBDIRS := $(shell find $(REPO_ROOT)/workload -mindepth 1 -maxdepth 3 -type d -exec test -e {}/Makefile \; -exec echo {} \;)
 
 clean:

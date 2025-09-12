@@ -1,16 +1,16 @@
-# Spear-Next
+# SPEAR-Next
 
-Next generation Spear components built with Rust and modern async technologies.
+Next generation SPEAR components built with Rust and modern async technologies.
 
-下一代Spear组件，使用Rust和现代异步技术构建。
+下一代SPEAR组件，使用Rust和现代异步技术构建。
 
 ## Components / 组件
 
-### SMS (Spear Management Service)
+### SMS (SPEAR Metadata Server)
 
-SMS is a node management service that provides gRPC APIs for node registration, updates, deletion, and heartbeat operations.
+SMS is a metadata server that provides gRPC APIs for node registration, updates, deletion, and heartbeat operations.
 
-SMS是一个节点管理服务，提供用于节点注册、更新、删除和心跳操作的gRPC API。
+SMS是一个元数据服务器，提供用于节点注册、更新、删除和心跳操作的gRPC API。
 
 #### Features / 特性
 

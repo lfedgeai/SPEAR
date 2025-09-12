@@ -2,7 +2,7 @@
 
 ## Overview / 概述
 
-This document records the complete removal of the ObjectRef API from the SMS (Spear Management Service) project. The ObjectRef API was determined to be unnecessary and has been systematically removed from all components of the system.
+This document records the complete removal of the ObjectRef API from the SMS (SPEAR Metadata Server) project. The ObjectRef API was determined to be unnecessary and has been systematically removed from all components of the system.
 
 ## Removal Summary / 移除摘要
 

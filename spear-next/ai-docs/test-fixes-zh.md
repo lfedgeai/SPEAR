@@ -6,6 +6,50 @@
 
 本文档记录了SPEAR Next项目中集成测试的修复过程和技术细节。
 
+## 最新修复 (2024年最新)
+
+### HTTP模块重构后的测试路径修复
+
+**问题描述：**
+在将HTTP Gateway和Routes模块从 `src/http/` 移动到 `src/sms/` 后，测试文件中的导入路径变得无效，导致 `cargo test` 编译失败。
+
+**错误信息：**
+```
+error[E0433]: failed to resolve: could not find `http` in `spear_next`
+error[E0432]: unresolved import `spear_next::http`
+```
+
+**受影响的测试文件：**
+- `tests/http_integration_tests.rs` - HTTP集成测试
+- `tests/task_integration_tests.rs` - 任务集成测试
+
+**修复内容：**
+
+1. **导入路径更新**
+   ```rust
+   // 修复前
+   use spear_next::http::create_gateway_router;
+   use spear_next::http::gateway::GatewayState;
+   
+   // 修复后
+   use spear_next::sms::routes::create_routes;
+   use spear_next::sms::gateway::GatewayState;
+   ```
+
+2. **函数调用更新**
+   ```rust
+   // 修复前
+   let app = create_gateway_router(state);
+   
+   // 修复后
+   let app = create_routes(state);
+   ```
+
+**修复结果：**
+- HTTP集成测试: 6个测试全部通过
+- 任务集成测试: 5个测试全部通过
+- 总体结果: `test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
+
 ## 修复的问题
 
 ### 1. ObjectRef集成测试查询参数问题

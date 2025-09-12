@@ -8,7 +8,8 @@ use axum_test::TestServer;
 use serde_json;
 use serde_json::json;
 use uuid::Uuid;
-use spear_next::http::{create_gateway_router, GatewayState};
+use spear_next::sms::routes::create_routes;
+use spear_next::sms::gateway::GatewayState;
 
 // Test utilities for HTTP integration / HTTP集成测试工具
 mod http_test_utils {
@@ -25,7 +26,9 @@ mod http_test_utils {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         
-        let service = spear_next::SmsServiceImpl::with_kv_config(60, spear_next::storage::KvStoreConfig::memory()).await;
+        let mut storage_config = spear_next::config::base::StorageConfig::default();
+        storage_config.backend = "memory".to_string();
+        let service = spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
         
         let handle = tokio::spawn(async move {
             Server::builder()
@@ -55,7 +58,7 @@ mod http_test_utils {
         let sms_client = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel.clone());
         let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
         let state = GatewayState { node_client: sms_client, task_client };
-        let app = create_gateway_router(state);
+        let app = create_routes(state);
         (TestServer::new(app).unwrap(), grpc_handle)
     }
     
@@ -203,7 +206,7 @@ async fn test_http_node_lifecycle() {
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
     let filter_state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter };
     
-    let filter_app = create_gateway_router(filter_state);
+    let filter_app = create_routes(filter_state);
     let filter_request = Request::builder()
         .method(Method::GET)
         .uri("/api/v1/nodes?status=active")
@@ -302,7 +305,7 @@ async fn test_http_resource_management() {
     let sms_client_filter = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
     let state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter };
-    let app = create_gateway_router(state);
+    let app = create_routes(state);
     
     let request = axum::http::Request::builder()
         .method("GET")

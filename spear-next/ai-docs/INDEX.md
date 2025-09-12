@@ -6,6 +6,8 @@
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
+| Project Architecture | [../ARCHITECTURE-en.md](../ARCHITECTURE-en.md) | [../ARCHITECTURE-zh.md](../ARCHITECTURE-zh.md) | 项目整体架构设计 |
+| Project Refactoring | [project-refactoring-en.md](./project-refactoring-en.md) | [project-refactoring-zh.md](./project-refactoring-zh.md) | 模块化架构重构文档 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
 | ObjectRef API Removal | [objectref-api-removal-en.md](./objectref-api-removal-en.md) | [objectref-api-removal-zh.md](./objectref-api-removal-zh.md) | ObjectRef API移除文档 |
 
@@ -41,6 +43,14 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | gRPC API Implementation | [grpc-api-implementation-en.md](./grpc-api-implementation-en.md) | [grpc-api-implementation-zh.md](./grpc-api-implementation-zh.md) | gRPC API实现文档 |
+| gRPC Error Handling Fix | [grpc-error-handling-fix-en.md](./grpc-error-handling-fix-en.md) | [grpc-error-handling-fix-zh.md](./grpc-error-handling-fix-zh.md) | gRPC错误处理修复文档 |
+| Registration.proto Removal Analysis | [registration-proto-removal-analysis-en.md](./registration-proto-removal-analysis-en.md) | [registration-proto-removal-analysis-zh.md](./registration-proto-removal-analysis-zh.md) | Registration.proto删除可行性分析 |
+
+### 🧹 Code Cleanup & Maintenance / 代码清理与维护
+
+| 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
+|---|---|---|---|
+| Middleware Cleanup | [middleware-cleanup-en.md](./middleware-cleanup-en.md) | [middleware-cleanup-zh.md](./middleware-cleanup-zh.md) | 未使用中间件清理文档 |
 
 ### 🔧 Troubleshooting & Operations / 故障排除与运维
 
@@ -57,6 +67,9 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Test Fixes | [test-fixes-en.md](./test-fixes-en.md) | [test-fixes-zh.md](./test-fixes-zh.md) | 测试修复和改进 |
+| Cargo Test Fix Summary | [cargo-test-fix-summary-en.md](./cargo-test-fix-summary-en.md) | [cargo-test-fix-summary-zh.md](./cargo-test-fix-summary-zh.md) | Cargo测试修复完整总结 |
+| Code Coverage Testing | [code-coverage-en.md](./code-coverage-en.md) | [code-coverage-zh.md](./code-coverage-zh.md) | 代码覆盖率测试指南 |
+| Code Coverage Setup Summary | [code-coverage-setup-summary-en.md](./code-coverage-setup-summary-en.md) | [code-coverage-setup-summary-zh.md](./code-coverage-setup-summary-zh.md) | 代码覆盖率设置总结 |
 | Code Cleanup | [code-cleanup-en.md](./code-cleanup-en.md) | [code-cleanup-zh.md](./code-cleanup-zh.md) | 代码清理文档 |
 | Code Cleanup Summary | [code-cleanup-summary-en.md](./code-cleanup-summary-en.md) | [code-cleanup-summary-zh.md](./code-cleanup-summary-zh.md) | 代码清理摘要 |
 | File Cleanup Summary | [file-cleanup-summary-en.md](./file-cleanup-summary-en.md) | [file-cleanup-summary-zh.md](./file-cleanup-summary-zh.md) | 文件清理摘要 |
@@ -67,6 +80,12 @@
 |---|---|
 | [kv-factory-examples.rs](./kv-factory-examples.rs) | KV工厂模式使用示例 |
 | [kv-factory-implementation-summary.md](./kv-factory-implementation-summary.md) | KV工厂实现摘要 |
+
+### 🔄 Proto File Management / Proto文件管理
+
+| 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
+|---|---|---|---|
+| Proto File Regeneration | [proto-regeneration-en.md](./proto-regeneration-en.md) | [proto-regeneration-zh.md](./proto-regeneration-zh.md) | Proto文件重新生成记录 |
 
 ## 最新更新 / Latest Updates
 

@@ -122,7 +122,7 @@ grpcurl -plaintext localhost:50051 list
 ### Normal Startup Logs
 
 ```
-INFO sms: Starting Node Service (Spear Node Management Service)...
+INFO sms: Starting Node Service (SPEAR Node Management Service)...
 INFO sms: Configuration loaded:
 INFO sms:   gRPC server: 0.0.0.0:50051
 INFO sms:   HTTP gateway: 0.0.0.0:8080

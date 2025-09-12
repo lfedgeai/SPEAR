@@ -140,7 +140,7 @@ async fn custom_factory_implementation() -> Result<(), Box<dyn std::error::Error
     
     #[async_trait::async_trait]
     impl KvStoreFactory for LoggingKvStoreFactory {
-        async fn create(&self, config: &KvStoreConfig) -> Result<Box<dyn KvStore>, spear_next::services::error::SmsError> {
+        async fn create(&self, config: &KvStoreConfig) -> Result<Box<dyn KvStore>, spear_next::sms::error::SmsError> {
             println!("Creating KV store with backend: {}", config.backend);
             for (key, value) in &config.params {
                 println!("  Parameter: {} = {}", key, value);
@@ -152,7 +152,7 @@ async fn custom_factory_implementation() -> Result<(), Box<dyn std::error::Error
             self.inner.supported_backends()
         }
         
-        fn validate_config(&self, config: &KvStoreConfig) -> Result<(), spear_next::services::error::SmsError> {
+        fn validate_config(&self, config: &KvStoreConfig) -> Result<(), spear_next::sms::error::SmsError> {
             println!("Validating config for backend: {}", config.backend);
             self.inner.validate_config(config)
         }

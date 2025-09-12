@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package spearlet;
+
+// Object metadata / 对象元数据
+message ObjectMeta {
+  string key = 1;                    // Object key / 对象键
+  int64 size = 2;                    // Object size in bytes / 对象大小（字节）
+  int64 created_at = 3;              // Creation timestamp / 创建时间戳
+  int64 updated_at = 4;              // Last update timestamp / 最后更新时间戳
+  int32 ref_count = 5;               // Reference count / 引用计数
+  bool pinned = 6;                   // Whether object is pinned / 对象是否被固定
+  map<string, string> metadata = 7;  // Additional metadata / 额外元数据
+}
+
+// Object data / 对象数据
+message Object {
+  string key = 1;                    // Object key / 对象键
+  bytes value = 2;                   // Object value / 对象值
+  int64 size = 3;                    // Object size in bytes / 对象大小（字节）
+  int64 created_at = 4;              // Creation timestamp / 创建时间戳
+  int64 updated_at = 5;              // Last update timestamp / 最后更新时间戳
+  int32 ref_count = 6;               // Reference count / 引用计数
+  bool pinned = 7;                   // Whether object is pinned / 对象是否被固定
+  map<string, string> metadata = 8;  // Additional metadata / 额外元数据
+}
+
+// Put object request / 存储对象请求
+message PutObjectRequest {
+  string key = 1;                    // Object key / 对象键
+  bytes value = 2;                   // Object value / 对象值
+  map<string, string> metadata = 3;  // Object metadata / 对象元数据
+  bool overwrite = 4;                // Whether to overwrite existing object / 是否覆盖现有对象
+}
+
+// Put object response / 存储对象响应
+message PutObjectResponse {
+  bool success = 1;                  // Operation success / 操作成功
+  string message = 2;                // Response message / 响应消息
+  ObjectMeta object_meta = 3;        // Object metadata / 对象元数据
+}
+
+// Get object request / 获取对象请求
+message GetObjectRequest {
+  string key = 1;                    // Object key / 对象键
+  bool include_value = 2;            // Whether to include object value / 是否包含对象值
+}
+
+// Get object response / 获取对象响应
+message GetObjectResponse {
+  bool found = 1;                    // Whether object was found / 是否找到对象
+  Object object = 2;                 // Object data (if found) / 对象数据（如果找到）
+  string message = 3;                // Response message / 响应消息
+}
+
+// List objects request / 列出对象请求
+message ListObjectsRequest {
+  string prefix = 1;                 // Key prefix filter / 键前缀过滤器
+  int32 limit = 2;                   // Maximum number of objects to return / 返回对象的最大数量
+  string start_after = 3;            // Start listing after this key / 在此键之后开始列出
+  bool include_values = 4;           // Whether to include object values / 是否包含对象值
+}
+
+// List objects response / 列出对象响应
+message ListObjectsResponse {
+  repeated Object objects = 1;       // List of objects / 对象列表
+  bool has_more = 2;                 // Whether there are more objects / 是否还有更多对象
+  string next_start_after = 3;       // Next start_after value for pagination / 分页的下一个start_after值
+}
+
+// Add object reference request / 添加对象引用请求
+message AddObjectRefRequest {
+  string key = 1;                    // Object key / 对象键
+  int32 count = 2;                   // Number of references to add / 要添加的引用数量
+}
+
+// Add object reference response / 添加对象引用响应
+message AddObjectRefResponse {
+  bool success = 1;                  // Operation success / 操作成功
+  string message = 2;                // Response message / 响应消息
+  int32 new_ref_count = 3;           // New reference count / 新的引用计数
+}
+
+// Remove object reference request / 移除对象引用请求
+message RemoveObjectRefRequest {
+  string key = 1;                    // Object key / 对象键
+  int32 count = 2;                   // Number of references to remove / 要移除的引用数量
+}
+
+// Remove object reference response / 移除对象引用响应
+message RemoveObjectRefResponse {
+  bool success = 1;                  // Operation success / 操作成功
+  string message = 2;                // Response message / 响应消息
+  int32 new_ref_count = 3;           // New reference count / 新的引用计数
+  bool deleted = 4;                  // Whether object was deleted due to zero refs / 是否因引用为零而删除对象
+}
+
+// Pin object request / 固定对象请求
+message PinObjectRequest {
+  string key = 1;                    // Object key / 对象键
+}
+
+// Pin object response / 固定对象响应
+message PinObjectResponse {
+  bool success = 1;                  // Operation success / 操作成功
+  string message = 2;                // Response message / 响应消息
+}
+
+// Unpin object request / 取消固定对象请求
+message UnpinObjectRequest {
+  string key = 1;                    // Object key / 对象键
+}
+
+// Unpin object response / 取消固定对象响应
+message UnpinObjectResponse {
+  bool success = 1;                  // Operation success / 操作成功
+  string message = 2;                // Response message / 响应消息
+}
+
+// Delete object request / 删除对象请求
+message DeleteObjectRequest {
+  string key = 1;                    // Object key / 对象键
+  bool force = 2;                    // Force delete even if pinned / 即使被固定也强制删除
+}
+
+// Delete object response / 删除对象响应
+message DeleteObjectResponse {
+  bool success = 1;                  // Operation success / 操作成功
+  string message = 2;                // Response message / 响应消息
+  bool deleted = 3;                  // Whether object was actually deleted / 对象是否实际被删除
+}
+
+// Object service definition / 对象服务定义
+service ObjectService {
+  // Store an object / 存储对象
+  rpc PutObject(PutObjectRequest) returns (PutObjectResponse);
+  
+  // Retrieve an object / 检索对象
+  rpc GetObject(GetObjectRequest) returns (GetObjectResponse);
+  
+  // List objects / 列出对象
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+  
+  // Add object reference / 添加对象引用
+  rpc AddObjectRef(AddObjectRefRequest) returns (AddObjectRefResponse);
+  
+  // Remove object reference / 移除对象引用
+  rpc RemoveObjectRef(RemoveObjectRefRequest) returns (RemoveObjectRefResponse);
+  
+  // Pin object (prevent deletion) / 固定对象（防止删除）
+  rpc PinObject(PinObjectRequest) returns (PinObjectResponse);
+  
+  // Unpin object / 取消固定对象
+  rpc UnpinObject(UnpinObjectRequest) returns (UnpinObjectResponse);
+  
+  // Delete object / 删除对象
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+}

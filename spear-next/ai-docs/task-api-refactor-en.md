@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the comprehensive refactoring of the Task API in the Spear-Next project. The refactoring simplified the task management operations from a complex lifecycle model to a straightforward registration-based model.
+This document describes the comprehensive refactoring of the Task API in the SPEAR-Next project. The refactoring simplified the task management operations from a complex lifecycle model to a straightforward registration-based model.
 
 ## Changes Made
 

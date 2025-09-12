@@ -1,5 +1,5 @@
-# SMS (Spear Management Service) Configuration
-# SMS（Spear管理服务）配置
+# SMS (SPEAR Metadata Server) Configuration
+# SMS（SPEAR元数据服务器）配置
 
 [sms]
 # gRPC server address / gRPC服务器地址

@@ -5,9 +5,10 @@
 //! in different scenarios within the spear-next project.
 //! 此文件包含在spear-next项目中不同场景下如何使用KV抽象层的实际示例。
 
-use std::collections::HashMap;
 use spear_next::storage::{KvStore, RangeOptions, KvPair};
-use spear_next::services::error::SmsError;
+use spear_next::sms::error::SmsError;
+use uuid;
+use chrono;
 
 // Note: These examples are for documentation purposes and may not compile
 // without proper imports and dependencies in a real project.
@@ -52,7 +53,7 @@ async fn example_basic_operations() -> Result<(), Box<dyn std::error::Error>> {
 /// 示例2：处理序列化数据
 async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
     use spear_next::storage::{MemoryKvStore, KvStore, serialization};
-    use spear_next::services::node::NodeInfo;
+    use spear_next::sms::services::node_service::NodeInfo;
     
     println!("=== Serialized Data Example ===");
     println!("=== 序列化数据示例 ===");
@@ -60,16 +61,26 @@ async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
     let store = MemoryKvStore::new();
     
     // Create some nodes / 创建一些节点
-    let mut node1 = NodeInfo::new("192.168.1.10".to_string(), 8080);
-    let mut node2 = NodeInfo::new("192.168.1.11".to_string(), 8081);
-    
-    // Add some metadata / 添加一些元数据
-    node1.update_metadata("role".to_string(), "primary".to_string());
-    node2.update_metadata("role".to_string(), "secondary".to_string());
+    let node1 = NodeInfo {
+        uuid: uuid::Uuid::new_v4().to_string(),
+        name: "node-1".to_string(),
+        address: "192.168.1.10".to_string(),
+        port: 8080,
+        capabilities: vec!["storage".to_string(), "primary".to_string()],
+    };
+    let node2 = NodeInfo {
+        uuid: uuid::Uuid::new_v4().to_string(),
+        name: "node-2".to_string(),
+        address: "192.168.1.11".to_string(),
+        port: 8081,
+        capabilities: vec!["storage".to_string(), "secondary".to_string()],
+    };
     
     // Serialize and store nodes / 序列化并存储节点
-    let key1 = serialization::node_key(&node1.uuid);
-    let key2 = serialization::node_key(&node2.uuid);
+    let uuid1 = uuid::Uuid::parse_str(&node1.uuid).unwrap();
+    let uuid2 = uuid::Uuid::parse_str(&node2.uuid).unwrap();
+    let key1 = serialization::node_key(&uuid1);
+    let key2 = serialization::node_key(&uuid2);
     
     let value1 = serialization::serialize(&node1)?;
     let value2 = serialization::serialize(&node2)?;
@@ -82,7 +93,7 @@ async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
         let retrieved_node: NodeInfo = serialization::deserialize(&data)?;
         println!("Retrieved node: {} at {}:{}", 
                 retrieved_node.uuid, 
-                retrieved_node.ip_address, 
+                retrieved_node.address, 
                 retrieved_node.port);
     }
     
@@ -96,11 +107,11 @@ async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
     for key in all_node_keys {
         if let Some(data) = store.get(&key).await? {
             let node: NodeInfo = serialization::deserialize(&data)?;
-            println!("Node {}: {}:{} (role: {:?})", 
+            println!("Node {}: {}:{} (capabilities: {:?})", 
                     node.uuid, 
-                    node.ip_address, 
+                    node.address, 
                     node.port,
-                    node.metadata.get("role"));
+                    node.capabilities);
         }
     }
     
@@ -244,63 +255,69 @@ async fn example_batch_operations() -> Result<(), Box<dyn std::error::Error>> {
 /// 示例5：与KvNodeRegistry一起使用
 async fn example_kv_node_registry() -> Result<(), Box<dyn std::error::Error>> {
     use spear_next::storage::{MemoryKvStore, KvStore};
-    use spear_next::services::node::{NodeService, NodeInfo, NodeStatus};
+    use spear_next::sms::services::node_service::NodeService;
     
     println!("=== KvNodeRegistry Example ===");
     println!("=== KvNodeRegistry示例 ===");
     
     // Create KV store and registry / 创建KV存储和注册表
-    let kv_store: Box<dyn KvStore> = Box::new(MemoryKvStore::new());
-    let mut registry = NodeService::new_with_kv_store(kv_store);
+    let _kv_store: Box<dyn KvStore> = Box::new(MemoryKvStore::new());
+    let mut registry = NodeService::new();
     
-    // Register some nodes / 注册一些节点
-    let mut node1 = NodeInfo::new("10.0.1.10".to_string(), 8080);
-    let mut node2 = NodeInfo::new("10.0.1.11".to_string(), 8080);
-    let mut node3 = NodeInfo::new("10.0.1.12".to_string(), 8080);
+    // Create some nodes using proto Node structure / 使用proto Node结构创建一些节点
+    use spear_next::proto::sms::Node;
+    use std::collections::HashMap;
     
-    node1.update_metadata("datacenter".to_string(), "us-west-1".to_string());
-    node2.update_metadata("datacenter".to_string(), "us-west-1".to_string());
-    node3.update_metadata("datacenter".to_string(), "us-east-1".to_string());
+    let node1 = Node {
+        uuid: uuid::Uuid::new_v4().to_string(),
+        ip_address: "10.0.1.10".to_string(),
+        port: 8080,
+        status: "online".to_string(),
+        last_heartbeat: chrono::Utc::now().timestamp(),
+        registered_at: chrono::Utc::now().timestamp(),
+        metadata: HashMap::new(),
+    };
+    let node2 = Node {
+        uuid: uuid::Uuid::new_v4().to_string(),
+        ip_address: "10.0.1.11".to_string(),
+        port: 8081,
+        status: "online".to_string(),
+        last_heartbeat: chrono::Utc::now().timestamp(),
+        registered_at: chrono::Utc::now().timestamp(),
+        metadata: HashMap::new(),
+    };
+    let node3 = Node {
+        uuid: uuid::Uuid::new_v4().to_string(),
+        ip_address: "10.0.1.12".to_string(),
+        port: 8082,
+        status: "online".to_string(),
+        last_heartbeat: chrono::Utc::now().timestamp(),
+        registered_at: chrono::Utc::now().timestamp(),
+        metadata: HashMap::new(),
+    };
     
-    let uuid1 = registry.register_node(node1).await?;
-    let uuid2 = registry.register_node(node2).await?;
-    let uuid3 = registry.register_node(node3).await?;
+    // Register nodes / 注册节点
+    registry.register_node(node1.clone()).await?;
+    registry.register_node(node2.clone()).await?;
+    registry.register_node(node3.clone()).await?;
     
-    println!("Registered 3 nodes");
+    println!("Registered nodes: {}, {}, {}", node1.uuid, node2.uuid, node3.uuid);
     
-    // Update node status / 更新节点状态
-    if let Some(mut node) = registry.get_node(&uuid2).await? {
-        node.status = NodeStatus::Inactive;
-        registry.update_node(uuid2, node).await?;
-        println!("Updated node {} status to Inactive", uuid2);
-    }
+    // Update heartbeat / 更新心跳
+    registry.update_heartbeat(&node1.uuid, chrono::Utc::now().timestamp()).await?;
+    println!("Updated heartbeat for node {}", node1.uuid);
     
-    // List nodes by status / 按状态列出节点
-    let active_nodes = registry.list_nodes_by_status(&NodeStatus::Active).await?;
-    let inactive_nodes = registry.list_nodes_by_status(&NodeStatus::Inactive).await?;
+    // List all nodes / 列出所有节点
+    let all_nodes = registry.list_nodes().await?;
+    println!("Total nodes: {}", all_nodes.len());
     
-    println!("Active nodes: {}", active_nodes.len());
-    println!("Inactive nodes: {}", inactive_nodes.len());
+    // Get node count / 获取节点数量
+    let count = registry.node_count().await?;
+    println!("Node count: {}", count);
     
-    // Update heartbeats / 更新心跳
-    let mut health_info = HashMap::new();
-    health_info.insert("cpu_usage".to_string(), "45.2".to_string());
-    health_info.insert("memory_usage".to_string(), "67.8".to_string());
-    
-    registry.update_heartbeat(&uuid1, Some(health_info)).await?;
-    println!("Updated heartbeat for node {}", uuid1);
-    
-    // Get cluster statistics / 获取集群统计信息
-    let stats = registry.get_cluster_stats().await?;
-    println!("Cluster stats: {} total, {} active, {} inactive", 
-             stats.total_nodes, stats.active_nodes, stats.inactive_nodes);
-    
-    // Clean up / 清理
-    let removed_node = registry.remove_node(&uuid3).await?;
-    println!("Removed node: {}:{}", removed_node.ip_address, removed_node.port);
-    
-    let final_count = registry.node_count().await?;
-    println!("Final node count: {}", final_count);
+    // Remove a node / 移除节点
+    registry.remove_node(&node3.uuid).await?;
+    println!("Node {} removed successfully", node3.uuid);
     
     Ok(())
 }
@@ -366,8 +383,8 @@ async fn example_sled_persistence() -> Result<(), Box<dyn std::error::Error>> {
 /// 示例7：错误处理模式
 async fn example_error_handling() -> Result<(), Box<dyn std::error::Error>> {
     use spear_next::storage::{MemoryKvStore, KvStore, serialization};
-    use spear_next::services::error::SmsError;
-use spear_next::services::node::NodeInfo;
+    use spear_next::sms::error::SmsError;
+    use spear_next::sms::services::node_service::NodeInfo;
     
     println!("=== Error Handling Example ===");
     println!("=== 错误处理示例 ===");

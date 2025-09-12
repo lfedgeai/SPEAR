@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the implementation of gRPC-based Task and ObjectRef services in the SMS (Spear Management System) project. The implementation provides both gRPC and HTTP REST API interfaces for managing computational tasks and object references.
+This document describes the implementation of gRPC-based Task and ObjectRef services in the SMS (SPEAR Metadata Server) project. The implementation provides both gRPC and HTTP REST API interfaces for managing computational tasks and object references.
 
 ## Architecture
 

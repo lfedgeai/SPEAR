@@ -6,6 +6,50 @@
 
 This document records the fixing process and technical details of integration tests in the SPEAR Next project.
 
+## Latest Fixes (2024 Latest)
+
+### Test Path Fixes After HTTP Module Refactoring
+
+**Problem Description:**
+After moving the HTTP Gateway and Routes modules from `src/http/` to `src/sms/`, the import paths in test files became invalid, causing `cargo test` compilation failures.
+
+**Error Messages:**
+```
+error[E0433]: failed to resolve: could not find `http` in `spear_next`
+error[E0432]: unresolved import `spear_next::http`
+```
+
+**Affected Test Files:**
+- `tests/http_integration_tests.rs` - HTTP integration tests
+- `tests/task_integration_tests.rs` - Task integration tests
+
+**Fix Details:**
+
+1. **Import Path Updates**
+   ```rust
+   // Before Fix
+   use spear_next::http::create_gateway_router;
+   use spear_next::http::gateway::GatewayState;
+   
+   // After Fix
+   use spear_next::sms::routes::create_routes;
+   use spear_next::sms::gateway::GatewayState;
+   ```
+
+2. **Function Call Updates**
+   ```rust
+   // Before Fix
+   let app = create_gateway_router(state);
+   
+   // After Fix
+   let app = create_routes(state);
+   ```
+
+**Fix Results:**
+- HTTP Integration Tests: All 6 tests passed
+- Task Integration Tests: All 5 tests passed
+- Overall Results: `test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
+
 ## Fixed Issues
 
 ### 1. ObjectRef Integration Test Query Parameter Issues

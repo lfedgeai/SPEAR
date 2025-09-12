@@ -5,3 +5,8 @@ pub mod sms {
     //! SMS service protobuf definitions / SMS服务protobuf定义
     tonic::include_proto!("sms");
 }
+
+pub mod spearlet {
+    //! Spearlet service protobuf definitions / Spearlet服务protobuf定义
+    tonic::include_proto!("spearlet");
+}

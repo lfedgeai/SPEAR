@@ -4,8 +4,12 @@ CURRENT_DIR := $(shell pwd)
 OUTPUT_DIR := $(shell pwd)/bin
 PROJ_NAME := $(shell basename $(CURRENT_DIR))
 
+ifdef PLATFORM
+DOCKER_PLATFORM_PREFIX := DOCKER_DEFAULT_PLATFORM=$(PLATFORM) 
+endif
+
 all: build
-	docker compose build --no-cache
+	$(DOCKER_PLATFORM_PREFIX)docker compose build --no-cache
 
 start:
 	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT_DIR)/start \

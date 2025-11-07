@@ -2,14 +2,13 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, error};
+
 use uuid::Uuid;
 
 use crate::sms::services::{
     node_service::NodeService, 
     task_service::TaskService as TaskServiceImpl,
     resource_service::ResourceService,
-    error::{SmsError, SmsResult},
 };
 use crate::sms::config::SmsConfig;
 
@@ -48,6 +47,7 @@ use crate::proto::sms::{
 pub struct SmsServiceImpl {
     node_service: Arc<RwLock<NodeService>>,
     resource_service: Arc<ResourceService>,
+    #[allow(dead_code)]
     config: Arc<SmsConfig>,
     task_service: Arc<RwLock<TaskServiceImpl>>,
 }
@@ -71,6 +71,7 @@ impl SmsServiceImpl {
     }
 
     /// Convert proto Node to internal NodeInfo / 将proto Node转换为内部NodeInfo
+    #[allow(dead_code)]
     fn proto_node_to_node_info(proto_node: crate::proto::sms::Node) -> crate::sms::services::node_service::NodeInfo {
         use crate::sms::services::node_service::NodeInfo;
 
@@ -85,6 +86,7 @@ impl SmsServiceImpl {
     }
 
     /// Convert internal NodeInfo to proto Node / 将内部NodeInfo转换为proto Node
+    #[allow(dead_code)]
     fn node_info_to_proto_node(node_info: &crate::sms::services::node_service::NodeInfo) -> crate::proto::sms::Node {
         // Parse IP and port from address
         let (ip, port) = if let Some(colon_pos) = node_info.address.rfind(':') {

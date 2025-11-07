@@ -39,6 +39,7 @@
 //! - `service`: Main SMS service implementation / 主要SMS服务实现
 
 pub mod config;
+pub mod types;
 pub mod services;
 pub mod handlers;
 pub mod grpc_server;
@@ -61,6 +62,7 @@ pub mod routes_test;
 pub mod gateway_test;
 
 // Re-export commonly used types / 重新导出常用类型
+pub use types::*;
 pub use services::*;
 pub use handlers::*;
 pub use grpc_server::GrpcServer;

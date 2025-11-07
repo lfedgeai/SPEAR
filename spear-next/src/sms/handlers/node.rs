@@ -114,9 +114,21 @@ pub async fn list_nodes(
         Ok(response) => {
             let resp = response.into_inner();
             info!("Listed {} nodes via HTTP", resp.nodes.len());
+            // 手动构建节点数组以避免 serde 版本冲突 / Manually build node array to avoid serde version conflicts
+            let nodes_json: Vec<serde_json::Value> = resp.nodes.into_iter().map(|node| {
+                json!({
+                    "uuid": node.uuid,
+                    "ip_address": node.ip_address,
+                    "port": node.port,
+                    "status": node.status,
+                    "last_heartbeat": node.last_heartbeat,
+                    "registered_at": node.registered_at,
+                    "metadata": node.metadata
+                })
+            }).collect();
             Ok(Json(json!({
                 "success": true,
-                "nodes": resp.nodes
+                "nodes": nodes_json
             })))
         }
         Err(e) => {
@@ -139,9 +151,23 @@ pub async fn get_node(
         Ok(response) => {
             let resp = response.into_inner();
             if resp.found {
+                // 手动构建节点对象以避免 serde 版本冲突 / Manually build node object to avoid serde version conflicts
+                let node_json = if let Some(node) = resp.node {
+                    json!({
+                        "uuid": node.uuid,
+                        "ip_address": node.ip_address,
+                        "port": node.port,
+                        "status": node.status,
+                        "last_heartbeat": node.last_heartbeat,
+                        "registered_at": node.registered_at,
+                        "metadata": node.metadata
+                    })
+                } else {
+                    serde_json::Value::Null
+                };
                 Ok((StatusCode::OK, Json(json!({
                     "success": true,
-                    "node": resp.node
+                    "node": node_json
                 }))))
             } else {
                 Ok((StatusCode::NOT_FOUND, Json(json!({

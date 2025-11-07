@@ -59,13 +59,13 @@ install-deps:
 	fi
 	@if ! command -v cargo-audit >/dev/null 2>&1; then \
 		echo -e "$(YELLOW)Installing cargo-audit... / 安装cargo-audit...$(NC)"; \
-		$(CARGO) install cargo-audit; \
+		$(CARGO) install cargo-audit || echo -e "$(YELLOW)⚠️  cargo-audit installation failed (version compatibility issue) / cargo-audit安装失败（版本兼容性问题）$(NC)"; \
 	fi
 	@if ! command -v cargo-outdated >/dev/null 2>&1; then \
 		echo -e "$(YELLOW)Installing cargo-outdated... / 安装cargo-outdated...$(NC)"; \
-		$(CARGO) install cargo-outdated; \
+		$(CARGO) install cargo-outdated || echo -e "$(YELLOW)⚠️  cargo-outdated installation failed / cargo-outdated安装失败$(NC)"; \
 	fi
-	@echo -e "$(GREEN)✅ Development dependencies installed / 开发依赖安装完成$(NC)"
+	@echo -e "$(GREEN)✅ Development dependencies installation completed / 开发依赖安装完成$(NC)"
 
 # Build the project / 构建项目
 build:
@@ -122,6 +122,17 @@ coverage-quick:
 	@echo -e "$(BLUE)📊 Running quick coverage analysis... / 运行快速覆盖率分析...$(NC)"
 	@./scripts/quick-coverage.sh
 	@echo -e "$(GREEN)✅ Quick coverage analysis completed / 快速覆盖率分析完成$(NC)"
+
+# Run coverage analysis without failure threshold / 运行覆盖率分析但不检查失败阈值
+coverage-no-fail:
+	@echo -e "$(BLUE)📊 Running coverage analysis (no failure threshold)... / 运行覆盖率分析（无失败阈值）...$(NC)"
+	@if ! command -v cargo-tarpaulin >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)Installing cargo-tarpaulin... / 安装cargo-tarpaulin...$(NC)"; \
+		$(CARGO) install cargo-tarpaulin; \
+	fi
+	@mkdir -p target/coverage
+	@$(CARGO) tarpaulin --config tarpaulin.toml --output-dir target/coverage --out Html --out Lcov --out Json --timeout 120 --verbose --ignore-panics || true
+	@echo -e "$(GREEN)✅ Coverage analysis completed (check target/coverage/tarpaulin-report.html) / 覆盖率分析完成（查看target/coverage/tarpaulin-report.html）$(NC)"
 
 # Open coverage report / 打开覆盖率报告
 coverage-open:
@@ -183,14 +194,22 @@ bench:
 # Security audit / 安全审计
 audit: install-deps
 	@echo -e "$(BLUE)🔒 Running security audit... / 运行安全审计...$(NC)"
-	$(CARGO) audit
-	@echo -e "$(GREEN)✅ Security audit completed / 安全审计完成$(NC)"
+	@if command -v cargo-audit >/dev/null 2>&1; then \
+		$(CARGO) audit; \
+		echo -e "$(GREEN)✅ Security audit completed / 安全审计完成$(NC)"; \
+	else \
+		echo -e "$(YELLOW)⚠️  cargo-audit not available, skipping security audit / cargo-audit不可用，跳过安全审计$(NC)"; \
+	fi
 
 # Check for outdated dependencies / 检查过时的依赖
 outdated: install-deps
 	@echo -e "$(BLUE)📦 Checking for outdated dependencies... / 检查过时的依赖...$(NC)"
-	$(CARGO) outdated
-	@echo -e "$(GREEN)✅ Dependency check completed / 依赖检查完成$(NC)"
+	@if command -v cargo-outdated >/dev/null 2>&1; then \
+		$(CARGO) outdated; \
+		echo -e "$(GREEN)✅ Dependency check completed / 依赖检查完成$(NC)"; \
+	else \
+		echo -e "$(YELLOW)⚠️  cargo-outdated not available, skipping dependency check / cargo-outdated不可用，跳过依赖检查$(NC)"; \
+	fi
 
 # Full CI pipeline / 完整CI流水线
 ci: format-check lint check test coverage-quick

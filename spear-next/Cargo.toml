@@ -3,6 +3,11 @@ name = "spear-next"
 version = "0.1.0"
 edition = "2021"
 
+# Library configuration / 库配置
+[lib]
+name = "spear_next"
+path = "src/lib.rs"
+
 # SMS binary configuration / SMS二进制配置
 [[bin]]
 name = "sms"
@@ -11,6 +16,7 @@ path = "src/bin/sms/main.rs"
 [dependencies]
 # Async runtime / 异步运行时
 tokio = { version = "1.0", features = ["full"] }
+tokio-stream = "0.1"
 
 # gRPC framework / gRPC框架
 tonic = "0.12"
@@ -62,6 +68,24 @@ rocksdb = { version = "0.22", optional = true }
 # Async trait support / 异步trait支持
 async-trait = "0.1"
 
+# High-performance synchronization primitives / 高性能同步原语
+parking_lot = "0.12"
+
+# Concurrent hash map / 并发哈希映射
+dashmap = "5.5"
+
+# High-performance concurrent map / 高性能并发映射
+evmap = { version = "10.0", optional = true }
+
+# System calls / 系统调用
+libc = "0.2"
+
+# MD5 hashing / MD5哈希
+md5 = "0.7"
+
+# Random number generation / 随机数生成
+rand = "0.8"
+
 [dev-dependencies]
 # Testing utilities / 测试工具
 tempfile = "3.0"
@@ -86,3 +110,4 @@ harness = false
 default = []
 sled = ["dep:sled"]
 rocksdb = ["dep:rocksdb"]
+evmap = ["dep:evmap"]

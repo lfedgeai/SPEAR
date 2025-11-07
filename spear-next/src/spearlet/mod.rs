@@ -28,6 +28,8 @@
 //! ```
 
 pub mod config;
+pub mod execution;
+pub mod function_service;
 pub mod grpc_server;
 pub mod http_gateway;
 pub mod object_service;
@@ -35,6 +37,8 @@ pub mod registration;
 
 #[cfg(test)]
 mod config_test;
+#[cfg(test)]
+mod function_service_test;
 #[cfg(test)]
 mod grpc_server_test;
 #[cfg(test)]
@@ -46,6 +50,7 @@ mod registration_test;
 
 // Re-export commonly used types / 重新导出常用类型
 pub use config::{AppConfig, CliArgs, SpearletConfig};
+pub use function_service::{FunctionServiceImpl, FunctionServiceStats};
 pub use grpc_server::{GrpcServer, HealthService};
 pub use http_gateway::HttpGateway;
 pub use object_service::ObjectServiceImpl;

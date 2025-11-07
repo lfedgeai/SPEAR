@@ -1,0 +1,349 @@
+syntax = "proto3";
+
+package spearlet;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+// Function invocation type enumeration / 函数调用类型枚举
+enum InvocationType {
+  INVOCATION_TYPE_UNKNOWN = 0;     // Unknown type / 未知类型
+  INVOCATION_TYPE_NEW_TASK = 1;    // Create new task / 创建新任务
+  INVOCATION_TYPE_EXISTING_TASK = 2; // Invoke existing task / 调用现有任务
+}
+
+// Function execution mode enumeration / 函数执行模式枚举
+enum ExecutionMode {
+  EXECUTION_MODE_UNKNOWN = 0;      // Unknown mode / 未知模式
+  EXECUTION_MODE_SYNC = 1;         // Synchronous execution / 同步执行
+  EXECUTION_MODE_ASYNC = 2;        // Asynchronous execution / 异步执行
+  EXECUTION_MODE_STREAM = 3;       // Streaming execution / 流式执行
+}
+
+// Function execution status enumeration / 函数执行状态枚举
+enum ExecutionStatus {
+  EXECUTION_STATUS_UNKNOWN = 0;    // Unknown status / 未知状态
+  EXECUTION_STATUS_PENDING = 1;    // Pending execution / 等待执行
+  EXECUTION_STATUS_RUNNING = 2;    // Currently running / 正在运行
+  EXECUTION_STATUS_COMPLETED = 3;  // Completed successfully / 成功完成
+  EXECUTION_STATUS_FAILED = 4;     // Failed with error / 执行失败
+  EXECUTION_STATUS_CANCELLED = 5;  // Cancelled by user / 用户取消
+  EXECUTION_STATUS_TIMEOUT = 6;    // Execution timeout / 执行超时
+}
+
+// Task artifact specification / 任务制品规范
+message ArtifactSpec {
+  string artifact_id = 1;           // Artifact identifier / 制品标识符
+  string artifact_type = 2;         // Artifact type (binary, zip, image, etc.) / 制品类型（二进制、zip、镜像等）
+  string location = 3;              // Artifact location (path, URL, registry) / 制品位置（路径、URL、仓库）
+  string version = 4;               // Artifact version / 制品版本
+  string checksum = 5;              // Artifact checksum for verification / 制品校验和
+  map<string, string> metadata = 6; // Additional artifact metadata / 额外制品元数据
+}
+
+// Function parameter definition / 函数参数定义
+message FunctionParameter {
+  string name = 1;                  // Parameter name / 参数名称
+  string type = 2;                  // Parameter type / 参数类型
+  google.protobuf.Any value = 3;    // Parameter value / 参数值
+  bool required = 4;                // Whether parameter is required / 参数是否必需
+  string description = 5;           // Parameter description / 参数描述
+}
+
+// Function execution context / 函数执行上下文
+message ExecutionContext {
+  string execution_id = 1;          // Unique execution identifier / 唯一执行标识符
+  string session_id = 2;            // Session identifier / 会话标识符
+  string user_id = 3;               // User identifier / 用户标识符
+  map<string, string> environment = 4; // Environment variables / 环境变量
+  map<string, string> headers = 5;  // Request headers / 请求头
+  int64 timeout_ms = 6;             // Execution timeout in milliseconds / 执行超时时间（毫秒）
+  int32 max_retries = 7;            // Maximum retry attempts / 最大重试次数
+}
+
+// Function execution result / 函数执行结果
+message ExecutionResult {
+  ExecutionStatus status = 1;       // Execution status / 执行状态
+  google.protobuf.Any result = 2;   // Execution result data / 执行结果数据
+  string error_message = 3;         // Error message if failed / 失败时的错误消息
+  string error_code = 4;            // Error code if failed / 失败时的错误代码
+  int64 execution_time_ms = 5;      // Execution time in milliseconds / 执行时间（毫秒）
+  int64 memory_used_bytes = 6;      // Memory used in bytes / 使用的内存（字节）
+  map<string, string> metrics = 7;  // Additional execution metrics / 额外执行指标
+  google.protobuf.Timestamp started_at = 8;  // Execution start time / 执行开始时间
+  google.protobuf.Timestamp completed_at = 9; // Execution completion time / 执行完成时间
+}
+
+// Invoke function request / 调用函数请求
+message InvokeFunctionRequest {
+  // Invocation type and target / 调用类型和目标
+  InvocationType invocation_type = 1; // Type of invocation / 调用类型
+  
+  // For new task creation / 用于新任务创建
+  string task_name = 2;             // Task name (for new task) / 任务名称（新任务）
+  string task_description = 3;      // Task description (for new task) / 任务描述（新任务）
+  ArtifactSpec artifact_spec = 4;   // Artifact specification (for new task) / 制品规范（新任务）
+  
+  // For existing task invocation / 用于现有任务调用
+  string task_id = 5;               // Task ID (for existing task) / 任务ID（现有任务）
+  
+  // Function invocation details / 函数调用详情
+  string function_name = 6;         // Function name to invoke / 要调用的函数名称
+  repeated FunctionParameter parameters = 7; // Function parameters / 函数参数
+  ExecutionMode execution_mode = 8; // Execution mode / 执行模式
+  ExecutionContext context = 9;     // Execution context / 执行上下文
+  
+  // Additional options / 额外选项
+  bool create_if_not_exists = 10;   // Create task if it doesn't exist / 如果任务不存在则创建
+  bool force_new_instance = 11;     // Force creation of new instance / 强制创建新实例
+  map<string, string> invocation_metadata = 12; // Invocation metadata / 调用元数据
+}
+
+// Invoke function response / 调用函数响应
+message InvokeFunctionResponse {
+  bool success = 1;                 // Whether invocation was successful / 调用是否成功
+  string message = 2;               // Response message / 响应消息
+  string execution_id = 3;          // Execution identifier / 执行标识符
+  string task_id = 4;               // Task identifier / 任务标识符
+  string instance_id = 5;           // Instance identifier / 实例标识符
+  
+  // Execution result (for sync mode) / 执行结果（同步模式）
+  ExecutionResult result = 6;       // Execution result / 执行结果
+  
+  // Async execution info / 异步执行信息
+  string status_endpoint = 7;       // Endpoint to check execution status / 检查执行状态的端点
+  int64 estimated_completion_ms = 8; // Estimated completion time / 预计完成时间
+}
+
+// Get execution status request / 获取执行状态请求
+message GetExecutionStatusRequest {
+  string execution_id = 1;          // Execution identifier / 执行标识符
+  bool include_result = 2;          // Whether to include result data / 是否包含结果数据
+  bool include_logs = 3;            // Whether to include execution logs / 是否包含执行日志
+}
+
+// Get execution status response / 获取执行状态响应
+message GetExecutionStatusResponse {
+  bool found = 1;                   // Whether execution was found / 是否找到执行
+  ExecutionResult result = 2;       // Execution result / 执行结果
+  repeated string logs = 3;         // Execution logs / 执行日志
+  string message = 4;               // Response message / 响应消息
+}
+
+// Cancel execution request / 取消执行请求
+message CancelExecutionRequest {
+  string execution_id = 1;          // Execution identifier / 执行标识符
+  string reason = 2;                // Cancellation reason / 取消原因
+  bool force = 3;                   // Force cancellation / 强制取消
+}
+
+// Cancel execution response / 取消执行响应
+message CancelExecutionResponse {
+  bool success = 1;                 // Whether cancellation was successful / 取消是否成功
+  string message = 2;               // Response message / 响应消息
+  ExecutionStatus final_status = 3; // Final execution status / 最终执行状态
+}
+
+// Stream execution result (for streaming mode) / 流式执行结果（流式模式）
+message StreamExecutionResult {
+  string execution_id = 1;          // Execution identifier / 执行标识符
+  ExecutionStatus status = 2;       // Current execution status / 当前执行状态
+  google.protobuf.Any chunk_data = 3; // Streaming data chunk / 流式数据块
+  bool is_final = 4;                // Whether this is the final chunk / 是否为最后一个数据块
+  string error_message = 5;         // Error message if any / 错误消息（如有）
+  map<string, string> metadata = 6; // Chunk metadata / 数据块元数据
+}
+
+// Function service definition / 函数服务定义
+service FunctionService {
+  // Invoke a function (sync/async) / 调用函数（同步/异步）
+  rpc InvokeFunction(InvokeFunctionRequest) returns (InvokeFunctionResponse);
+  
+  // Get execution status / 获取执行状态
+  rpc GetExecutionStatus(GetExecutionStatusRequest) returns (GetExecutionStatusResponse);
+  
+  // Cancel execution / 取消执行
+  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+  
+  // Stream function execution (for streaming mode) / 流式函数执行（流式模式）
+  rpc StreamFunction(InvokeFunctionRequest) returns (stream StreamExecutionResult);
+  
+  // Task management operations / 任务管理操作
+  
+  // List tasks / 列出任务
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  
+  // Get task details / 获取任务详情
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  
+  // Delete task / 删除任务
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
+  
+  // List executions for a task / 列出任务的执行记录
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
+  
+  // Health and monitoring operations / 健康检查和监控操作
+  
+  // Get service health status / 获取服务健康状态
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
+  
+  // Get service statistics / 获取服务统计信息
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+// Task management messages / 任务管理消息
+
+// List tasks request / 列出任务请求
+message ListTasksRequest {
+  string prefix = 1;                 // Task name prefix filter / 任务名称前缀过滤器
+  int32 limit = 2;                   // Maximum number of tasks to return / 返回任务的最大数量
+  string start_after = 3;            // Start listing after this task / 在此任务之后开始列出
+  bool include_details = 4;          // Whether to include task details / 是否包含任务详情
+}
+
+// List tasks response / 列出任务响应
+message ListTasksResponse {
+  repeated TaskInfo tasks = 1;       // List of tasks / 任务列表
+  bool has_more = 2;                 // Whether there are more tasks / 是否还有更多任务
+  string next_start_after = 3;       // Next start_after value for pagination / 分页的下一个start_after值
+}
+
+// Task information / 任务信息
+message TaskInfo {
+  string task_id = 1;                // Task identifier / 任务标识符
+  string task_name = 2;              // Task name / 任务名称
+  ArtifactSpec artifact_spec = 3;    // Artifact specification / 制品规范
+  int64 created_at = 4;              // Creation timestamp / 创建时间戳
+  int64 updated_at = 5;              // Last update timestamp / 最后更新时间戳
+  int32 execution_count = 6;         // Number of executions / 执行次数
+  ExecutionStatus last_status = 7;   // Last execution status / 最后执行状态
+  map<string, string> metadata = 8;  // Task metadata / 任务元数据
+}
+
+// Get task request / 获取任务请求
+message GetTaskRequest {
+  string task_id = 1;                // Task identifier / 任务标识符
+  bool include_executions = 2;       // Whether to include recent executions / 是否包含最近的执行记录
+  int32 execution_limit = 3;         // Limit for recent executions / 最近执行记录的限制
+}
+
+// Get task response / 获取任务响应
+message GetTaskResponse {
+  bool found = 1;                    // Whether task was found / 是否找到任务
+  TaskInfo task = 2;                 // Task information / 任务信息
+  repeated ExecutionInfo executions = 3; // Recent executions / 最近的执行记录
+  string message = 4;                // Response message / 响应消息
+}
+
+// Delete task request / 删除任务请求
+message DeleteTaskRequest {
+  string task_id = 1;                // Task identifier / 任务标识符
+  bool force = 2;                    // Force delete even if running / 即使正在运行也强制删除
+  bool cleanup_executions = 3;       // Whether to cleanup execution history / 是否清理执行历史
+}
+
+// Delete task response / 删除任务响应
+message DeleteTaskResponse {
+  bool success = 1;                  // Whether deletion was successful / 删除是否成功
+  string message = 2;                // Response message / 响应消息
+  bool deleted = 3;                  // Whether task was actually deleted / 任务是否实际被删除
+  int32 cleaned_executions = 4;      // Number of cleaned execution records / 清理的执行记录数量
+}
+
+// List executions request / 列出执行记录请求
+message ListExecutionsRequest {
+  string task_id = 1;                // Task identifier / 任务标识符
+  int32 limit = 2;                   // Maximum number of executions to return / 返回执行记录的最大数量
+  string start_after = 3;            // Start listing after this execution / 在此执行之后开始列出
+  ExecutionStatus status_filter = 4; // Filter by execution status / 按执行状态过滤
+}
+
+// List executions response / 列出执行记录响应
+message ListExecutionsResponse {
+  repeated ExecutionInfo executions = 1; // List of executions / 执行记录列表
+  bool has_more = 2;                 // Whether there are more executions / 是否还有更多执行记录
+  string next_start_after = 3;       // Next start_after value for pagination / 分页的下一个start_after值
+}
+
+// Execution information / 执行信息
+message ExecutionInfo {
+  string execution_id = 1;           // Execution identifier / 执行标识符
+  string task_id = 2;                // Task identifier / 任务标识符
+  string function_name = 3;          // Function name / 函数名称
+  ExecutionMode execution_mode = 4;  // Execution mode / 执行模式
+  ExecutionStatus status = 5;        // Execution status / 执行状态
+  google.protobuf.Timestamp started_at = 6;  // Execution start time / 执行开始时间
+  google.protobuf.Timestamp completed_at = 7; // Execution completion time / 执行完成时间
+  int64 execution_time_ms = 8;       // Execution time in milliseconds / 执行时间（毫秒）
+  int64 memory_used_bytes = 9;       // Memory used in bytes / 使用的内存（字节）
+  string error_message = 10;         // Error message if failed / 失败时的错误消息
+  map<string, string> metadata = 11; // Execution metadata / 执行元数据
+}
+
+// Health and monitoring messages / 健康检查和监控消息
+
+// Get health request / 获取健康状态请求
+message GetHealthRequest {
+  bool include_details = 1;          // Whether to include detailed health info / 是否包含详细健康信息
+}
+
+// Get health response / 获取健康状态响应
+message GetHealthResponse {
+  string status = 1;                 // Health status (healthy, degraded, unhealthy) / 健康状态
+  string message = 2;                // Health message / 健康消息
+  int64 uptime_seconds = 3;          // Service uptime in seconds / 服务运行时间（秒）
+  HealthDetails details = 4;         // Detailed health information / 详细健康信息
+}
+
+// Health details / 健康详情
+message HealthDetails {
+  int32 active_tasks = 1;            // Number of active tasks / 活跃任务数量
+  int32 running_executions = 2;      // Number of running executions / 正在运行的执行数量
+  int32 pending_executions = 3;      // Number of pending executions / 等待执行的数量
+  int64 total_memory_used = 4;       // Total memory used in bytes / 总使用内存（字节）
+  int64 total_executions = 5;        // Total number of executions / 总执行次数
+  map<string, string> system_info = 6; // System information / 系统信息
+}
+
+// Get stats request / 获取统计信息请求
+message GetStatsRequest {
+  bool include_task_stats = 1;       // Whether to include task statistics / 是否包含任务统计
+  bool include_execution_stats = 2;  // Whether to include execution statistics / 是否包含执行统计
+  int32 time_range_hours = 3;        // Time range for statistics in hours / 统计时间范围（小时）
+}
+
+// Get stats response / 获取统计信息响应
+message GetStatsResponse {
+  ServiceStats service_stats = 1;    // Service statistics / 服务统计
+  TaskStats task_stats = 2;          // Task statistics / 任务统计
+  ExecutionStats execution_stats = 3; // Execution statistics / 执行统计
+}
+
+// Service statistics / 服务统计
+message ServiceStats {
+  int64 uptime_seconds = 1;          // Service uptime in seconds / 服务运行时间（秒）
+  int32 total_tasks = 2;             // Total number of tasks / 总任务数量
+  int32 total_executions = 3;        // Total number of executions / 总执行次数
+  int64 total_memory_used = 4;       // Total memory used in bytes / 总使用内存（字节）
+  double cpu_usage_percent = 5;      // CPU usage percentage / CPU使用百分比
+  double memory_usage_percent = 6;   // Memory usage percentage / 内存使用百分比
+}
+
+// Task statistics / 任务统计
+message TaskStats {
+  int32 active_tasks = 1;            // Number of active tasks / 活跃任务数量
+  int32 idle_tasks = 2;              // Number of idle tasks / 空闲任务数量
+  map<string, int32> tasks_by_type = 3; // Tasks grouped by artifact type / 按制品类型分组的任务
+  repeated TaskInfo most_active_tasks = 4; // Most active tasks / 最活跃的任务
+}
+
+// Execution statistics / 执行统计
+message ExecutionStats {
+  int32 running_executions = 1;      // Number of running executions / 正在运行的执行数量
+  int32 pending_executions = 2;      // Number of pending executions / 等待执行的数量
+  int32 completed_executions = 3;    // Number of completed executions / 已完成的执行数量
+  int32 failed_executions = 4;       // Number of failed executions / 失败的执行数量
+  double average_execution_time_ms = 5; // Average execution time / 平均执行时间
+  double success_rate_percent = 6;   // Success rate percentage / 成功率百分比
+  map<string, int32> executions_by_function = 7; // Executions grouped by function / 按函数分组的执行
+}

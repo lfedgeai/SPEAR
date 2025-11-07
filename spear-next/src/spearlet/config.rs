@@ -1,6 +1,6 @@
 //! SPEARlet configuration / SPEARlet配置
 
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 /// SPEARlet command line arguments / SPEARlet命令行参数
@@ -239,7 +239,7 @@ impl Default for HttpConfig {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
-            backend: "rocksdb".to_string(),
+            backend: "memory".to_string(), // Changed from rocksdb to memory / 从rocksdb改为memory
             data_dir: "./data/spearlet".to_string(),
             max_cache_size_mb: 512,
             compression_enabled: true,

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use tonic::Request;
 use tracing::{debug, error, info};
 
-use crate::constants::FilterState;
+use crate::sms::FilterState;
 use crate::proto::sms::{
     RegisterTaskRequest, ListTasksRequest, GetTaskRequest, 
     UnregisterTaskRequest, TaskStatus, TaskPriority

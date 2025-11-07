@@ -15,6 +15,7 @@ use crate::spearlet::config::{SpearletConfig, HttpConfig, GrpcConfig, StorageCon
 use crate::spearlet::http_gateway::HttpGateway;
 use crate::spearlet::grpc_server::HealthService;
 use crate::spearlet::object_service::ObjectServiceImpl;
+use crate::spearlet::function_service::FunctionServiceImpl;
 
 /// Create test configuration / 创建测试配置
 fn create_test_config() -> SpearletConfig {
@@ -44,18 +45,18 @@ fn create_test_config() -> SpearletConfig {
 }
 
 /// Create test HTTP gateway / 创建测试HTTP网关
-fn create_test_gateway() -> HttpGateway {
+async fn create_test_gateway() -> HttpGateway {
     let config = Arc::new(create_test_config());
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let health_service = Arc::new(HealthService::new(object_service));
-    
+    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let health_service = Arc::new(HealthService::new(object_service, function_service));
     HttpGateway::new(config, health_service)
 }
 
 #[tokio::test]
 async fn test_http_gateway_creation() {
     // Test HTTP gateway creation / 测试HTTP网关创建
-    let gateway = create_test_gateway();
+    let _gateway = create_test_gateway().await;
     
     // Gateway should be created successfully / 网关应该成功创建
     // Note: We can't easily test the internal state without exposing it
@@ -71,7 +72,8 @@ async fn test_gateway_config() {
     config.http.swagger_enabled = false;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let health_service = Arc::new(HealthService::new(object_service));
+    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
     // Gateway should be created with custom config / 网关应该使用自定义配置创建
@@ -87,7 +89,8 @@ async fn test_gateway_with_different_storage_sizes() {
         config.storage.max_object_size = size;
         
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(size));
-        let health_service = Arc::new(HealthService::new(object_service));
+        let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+        let health_service = Arc::new(HealthService::new(object_service, function_service));
         let gateway = HttpGateway::new(Arc::new(config), health_service);
         
         // Gateway should be created with different storage sizes / 网关应该使用不同存储大小创建
@@ -101,7 +104,8 @@ async fn test_gateway_swagger_enabled() {
     config.http.swagger_enabled = true;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let health_service = Arc::new(HealthService::new(object_service));
+    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
     // Gateway should be created with Swagger enabled / 网关应该启用Swagger创建
@@ -114,7 +118,8 @@ async fn test_gateway_swagger_disabled() {
     config.http.swagger_enabled = false;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let health_service = Arc::new(HealthService::new(object_service));
+    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
     // Gateway should be created with Swagger disabled / 网关应该禁用Swagger创建
@@ -128,7 +133,8 @@ async fn test_invalid_http_address() {
     config.http.port = 8080;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let health_service = Arc::new(HealthService::new(object_service));
+    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
     // Gateway creation should succeed, but start() would fail
@@ -146,8 +152,11 @@ async fn test_multiple_gateways() {
     let object_service1 = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let object_service2 = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     
-    let health_service1 = Arc::new(HealthService::new(object_service1));
-    let health_service2 = Arc::new(HealthService::new(object_service2));
+    let function_service1 = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service2 = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    
+    let health_service1 = Arc::new(HealthService::new(object_service1, function_service1));
+    let health_service2 = Arc::new(HealthService::new(object_service2, function_service2));
     
     let gateway1 = HttpGateway::new(config1, health_service1);
     let gateway2 = HttpGateway::new(config2, health_service2);
@@ -270,7 +279,8 @@ mod integration_tests {
         // Test complete HTTP gateway lifecycle / 测试完整的HTTP网关生命周期
         let config = Arc::new(create_test_config());
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-        let health_service = Arc::new(HealthService::new(object_service.clone()));
+        let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+        let health_service = Arc::new(HealthService::new(object_service.clone(), function_service));
         
         // Create gateway / 创建网关
         let gateway = HttpGateway::new(config.clone(), health_service.clone());
@@ -344,7 +354,8 @@ mod integration_tests {
         
         for config in configs {
             let object_service = Arc::new(ObjectServiceImpl::new_with_memory(config.storage.max_object_size));
-            let health_service = Arc::new(HealthService::new(object_service));
+            let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+            let health_service = Arc::new(HealthService::new(object_service, function_service));
             let gateway = HttpGateway::new(Arc::new(config), health_service);
             
             // Each gateway should be created successfully / 每个网关都应该成功创建

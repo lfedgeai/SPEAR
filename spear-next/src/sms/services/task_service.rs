@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::proto::sms::Task;
-use crate::sms::error::{SmsError, SmsResult};
+use crate::sms::error::SmsResult;
 
 /// Task service for managing distributed tasks / 管理分布式任务的服务
 #[derive(Debug, Clone)]

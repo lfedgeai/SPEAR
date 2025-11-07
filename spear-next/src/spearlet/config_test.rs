@@ -36,7 +36,7 @@ mod tests {
         assert_eq!(config.grpc.port, 50052);
         assert_eq!(config.http.address, "0.0.0.0");
         assert_eq!(config.http.port, 8081);
-        assert_eq!(config.storage.backend, "rocksdb");
+        assert_eq!(config.storage.backend, "memory"); // Updated to match new default / 更新以匹配新的默认值
         assert_eq!(config.storage.data_dir, "./data/spearlet");
         assert_eq!(config.sms_addr, "127.0.0.1:50051");
         assert!(!config.auto_register);
@@ -72,7 +72,7 @@ mod tests {
         // Test default StorageConfig / 测试默认StorageConfig
         let config = StorageConfig::default();
         
-        assert_eq!(config.backend, "rocksdb");
+        assert_eq!(config.backend, "memory"); // Updated to match new default / 更新以匹配新的默认值
         assert_eq!(config.data_dir, "./data/spearlet");
         assert_eq!(config.max_cache_size_mb, 512);
         assert!(config.compression_enabled);

@@ -6,6 +6,7 @@
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
+| Project Architecture Overview | [project-architecture-overview-en.md](./project-architecture-overview-en.md) | [project-architecture-overview-zh.md](./project-architecture-overview-zh.md) | 项目架构全面概述 |
 | Project Architecture | [../ARCHITECTURE-en.md](../ARCHITECTURE-en.md) | [../ARCHITECTURE-zh.md](../ARCHITECTURE-zh.md) | 项目整体架构设计 |
 | Project Refactoring | [project-refactoring-en.md](./project-refactoring-en.md) | [project-refactoring-zh.md](./project-refactoring-zh.md) | 模块化架构重构文档 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
@@ -30,6 +31,12 @@
 | Resource Service Refactoring | [resource-service-refactoring-en.md](./resource-service-refactoring-en.md) | [resource-service-refactoring-zh.md](./resource-service-refactoring-zh.md) | 资源服务代码重构指南 |
 | Config Service Refactoring | [config-service-refactoring-en.md](./config-service-refactoring-en.md) | [config-service-refactoring-zh.md](./config-service-refactoring-zh.md) | 配置服务代码重构指南 |
 
+### 🚀 Runtime Layer / 运行时层
+
+| 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
+|---|---|---|---|
+| Kubernetes Runtime Implementation | [kubernetes-runtime-implementation-en.md](./kubernetes-runtime-implementation-en.md) | [kubernetes-runtime-implementation-zh.md](./kubernetes-runtime-implementation-zh.md) | Kubernetes运行时实现文档 |
+
 ### 🌐 HTTP Layer / HTTP层
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
@@ -43,13 +50,16 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | gRPC API Implementation | [grpc-api-implementation-en.md](./grpc-api-implementation-en.md) | [grpc-api-implementation-zh.md](./grpc-api-implementation-zh.md) | gRPC API实现文档 |
+| Function Service Implementation | [function-service-implementation-en.md](./function-service-implementation-en.md) | [function-service-implementation-zh.md](./function-service-implementation-zh.md) | 函数服务gRPC实现文档 |
 | gRPC Error Handling Fix | [grpc-error-handling-fix-en.md](./grpc-error-handling-fix-en.md) | [grpc-error-handling-fix-zh.md](./grpc-error-handling-fix-zh.md) | gRPC错误处理修复文档 |
 | Registration.proto Removal Analysis | [registration-proto-removal-analysis-en.md](./registration-proto-removal-analysis-en.md) | [registration-proto-removal-analysis-zh.md](./registration-proto-removal-analysis-zh.md) | Registration.proto删除可行性分析 |
+| Function Invocation Sync-Async Analysis | [function-invocation-sync-async-analysis-en.md](./function-invocation-sync-async-analysis-en.md) | [function-invocation-sync-async-analysis-zh.md](./function-invocation-sync-async-analysis-zh.md) | 同步异步支持现状分析 |
 
 ### 🧹 Code Cleanup & Maintenance / 代码清理与维护
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
+| Constants Module Refactoring | [constants-refactoring-en.md](./constants-refactoring-en.md) | [constants-refactoring-zh.md](./constants-refactoring-zh.md) | Constants模块重构文档 |
 | Middleware Cleanup | [middleware-cleanup-en.md](./middleware-cleanup-en.md) | [middleware-cleanup-zh.md](./middleware-cleanup-zh.md) | 未使用中间件清理文档 |
 
 ### 🔧 Troubleshooting & Operations / 故障排除与运维
@@ -66,6 +76,8 @@
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
+| Test Validation & Warning Cleanup | [test-validation-and-warning-cleanup-en.md](./test-validation-and-warning-cleanup-en.md) | [test-validation-and-warning-cleanup-zh.md](./test-validation-and-warning-cleanup-zh.md) | 测试验证和警告清理完整指南 |
+| Code Coverage Analysis Usage Guide | [coverage-usage-en.md](./coverage-usage-en.md) | [coverage-usage-zh.md](./coverage-usage-zh.md) | 代码覆盖率分析使用指南 |
 | Test Fixes | [test-fixes-en.md](./test-fixes-en.md) | [test-fixes-zh.md](./test-fixes-zh.md) | 测试修复和改进 |
 | Cargo Test Fix Summary | [cargo-test-fix-summary-en.md](./cargo-test-fix-summary-en.md) | [cargo-test-fix-summary-zh.md](./cargo-test-fix-summary-zh.md) | Cargo测试修复完整总结 |
 | Code Coverage Testing | [code-coverage-en.md](./code-coverage-en.md) | [code-coverage-zh.md](./code-coverage-zh.md) | 代码覆盖率测试指南 |
@@ -112,6 +124,13 @@
    - 新增 Swagger UI API 路径修复指南
    - 包含常见问题解决方案和最佳实践
    - 支持 Swagger UI 和 curl 命令行工具使用
+
+5. **🚀 Kubernetes Runtime 实现** / **Kubernetes Runtime Implementation**
+   - 完整实现了 Kubernetes 运行时支持
+   - 支持 Kubernetes Jobs 的创建、管理和监控
+   - 提供资源管理、健康检查和指标收集功能
+   - 包含全面的错误处理和配置验证
+   - 所有编译和测试通过，集成到运行时工厂
 
 ## 使用指南 / Usage Guide
 

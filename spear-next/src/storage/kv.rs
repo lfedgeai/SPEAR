@@ -193,6 +193,9 @@ impl KvStoreConfig {
         // Add compression parameter / 添加压缩参数
         params.insert("compression_enabled".to_string(), storage_config.compression_enabled.to_string());
         
+        // Add pool size parameter / 添加连接池大小参数
+        params.insert("pool_size".to_string(), storage_config.pool_size.to_string());
+        
         Self {
             backend: storage_config.backend.clone(),
             params,
@@ -516,6 +519,9 @@ impl KvStore for MemoryKvStore {
 /// Serialization helpers for common types / 常见类型的序列化辅助函数
 pub mod serialization {
     use super::*;
+    // Explicitly import serde traits to avoid namespace conflicts
+    // 明确导入 serde trait 以避免命名空间冲突
+    use serde::{Serialize, Deserialize};
 
     /// Serialize a value to bytes / 将值序列化为字节
     pub fn serialize<T: Serialize>(value: &T) -> Result<KvValue, SmsError> {
@@ -1399,17 +1405,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_serialization_helpers() {
-        use serialization::*;
+        // Import serialization functions directly to avoid namespace conflicts
+        // 直接导入序列化函数以避免命名空间冲突
+        use crate::storage::serialization::{serialize, deserialize, node_key, resource_key, extract_uuid_from_node_key};
         
-        let node = TestDataGenerator::create_sample_node();
-        let uuid_str = node.uuid.clone();
-        let uuid = Uuid::parse_str(&uuid_str).unwrap();
+        // Create a simple test structure that implements serde traits
+        // 创建一个实现 serde trait 的简单测试结构体
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct TestNode {
+            uuid: String,
+            ip_address: String,
+            port: u32,
+        }
+        
+        let uuid = Uuid::new_v4();
+        let uuid_str = uuid.to_string();
+        let test_node = TestNode {
+            uuid: uuid_str.clone(),
+            ip_address: "192.168.1.100".to_string(),
+            port: 8080,
+        };
         
         // Test node serialization / 测试节点序列化
-        let serialized = serialize(&node).unwrap();
-        let deserialized: crate::proto::sms::Node = deserialize(&serialized).unwrap();
+        let serialized = serialize(&test_node).unwrap();
+        let deserialized: TestNode = deserialize(&serialized).unwrap();
         assert_eq!(deserialized.uuid, uuid_str);
-        assert_eq!(deserialized.ip_address, node.ip_address);
+        assert_eq!(deserialized.ip_address, test_node.ip_address);
+        assert_eq!(deserialized.port, test_node.port);
         
         // Test key generation / 测试键生成
         let node_key = node_key(&uuid);

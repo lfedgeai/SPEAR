@@ -4,7 +4,6 @@
 use anyhow;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
 use crate::config::base::{ServerConfig, LogConfig};
 
 /// SMS command line arguments / SMS命令行参数
@@ -94,7 +93,7 @@ impl SmsConfig {
         let mut config = Self::default();
 
         // Load from config file if specified / 如果指定了配置文件则加载
-        if let Some(config_path) = &args.config {
+        if let Some(_config_path) = &args.config {
             // TODO: Implement config file loading / 待实现：配置文件加载
             // For now, use default configuration / 目前使用默认配置
             tracing::info!("Config file loading not yet implemented, using defaults");

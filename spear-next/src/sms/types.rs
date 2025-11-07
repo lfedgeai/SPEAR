@@ -1,5 +1,8 @@
-//! Constants and types used throughout the application
-//! 应用程序中使用的常量和类型
+//! SMS module types and constants
+//! SMS模块类型和常量
+//!
+//! This module contains common types and constants used throughout the SMS module.
+//! 此模块包含SMS模块中使用的通用类型和常量。
 
 /// Generic constant representing "no filter" for any filtering operation
 /// 表示任何过滤操作中"无过滤器"的通用常量
@@ -54,5 +57,40 @@ impl FilterState {
             FilterState::None => None,
             FilterState::Value(v) => Some(v),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_state_to_i32() {
+        assert_eq!(FilterState::None.to_i32(), NO_FILTER);
+        assert_eq!(FilterState::Value(42).to_i32(), 42);
+    }
+
+    #[test]
+    fn test_filter_state_from_i32() {
+        assert_eq!(FilterState::from_i32(NO_FILTER), FilterState::None);
+        assert_eq!(FilterState::from_i32(42), FilterState::Value(42));
+    }
+
+    #[test]
+    fn test_filter_state_is_active() {
+        assert!(!FilterState::None.is_active());
+        assert!(FilterState::Value(42).is_active());
+    }
+
+    #[test]
+    fn test_filter_state_is_none() {
+        assert!(FilterState::None.is_none());
+        assert!(!FilterState::Value(42).is_none());
+    }
+
+    #[test]
+    fn test_filter_state_value() {
+        assert_eq!(FilterState::None.value(), None);
+        assert_eq!(FilterState::Value(42).value(), Some(42));
     }
 }

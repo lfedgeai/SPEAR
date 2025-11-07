@@ -8,8 +8,13 @@ use tonic::transport::Server;
 use tracing::{info, error};
 
 use crate::spearlet::config::SpearletConfig;
+use crate::spearlet::function_service::FunctionServiceImpl;
 use crate::spearlet::object_service::ObjectServiceImpl;
 use crate::proto::spearlet::object_service_server::ObjectServiceServer;
+// use crate::proto::spearlet::function_service_server::FunctionService;
+// TODO: Add FunctionServiceServer import when proto is regenerated
+// TODO: 当proto重新生成时添加FunctionServiceServer导入
+// use crate::proto::spearlet::function_service_server::FunctionServiceServer;
 
 /// gRPC server for spearlet / spearlet的gRPC服务器
 pub struct GrpcServer {
@@ -17,22 +22,31 @@ pub struct GrpcServer {
     config: Arc<SpearletConfig>,
     /// Object service implementation / 对象服务实现
     object_service: Arc<ObjectServiceImpl>,
+    /// Function service implementation / 函数服务实现
+    function_service: Arc<FunctionServiceImpl>,
 }
 
 impl GrpcServer {
     /// Create new gRPC server / 创建新的gRPC服务器
-    pub fn new(config: Arc<SpearletConfig>) -> Self {
+    pub async fn new(config: Arc<SpearletConfig>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(config.storage.max_object_size));
+        let function_service = Arc::new(FunctionServiceImpl::new().await?);
         
-        Self {
+        Ok(Self {
             config,
             object_service,
-        }
+            function_service,
+        })
     }
 
     /// Get object service reference / 获取对象服务引用
     pub fn get_object_service(&self) -> Arc<ObjectServiceImpl> {
         self.object_service.clone()
+    }
+
+    /// Get function service reference / 获取函数服务引用
+    pub fn get_function_service(&self) -> Arc<FunctionServiceImpl> {
+        self.function_service.clone()
     }
 
     /// Start gRPC server / 启动gRPC服务器
@@ -69,21 +83,32 @@ impl GrpcServer {
 /// Health service for monitoring / 用于监控的健康服务
 pub struct HealthService {
     object_service: Arc<ObjectServiceImpl>,
+    function_service: Arc<FunctionServiceImpl>,
 }
 
 impl HealthService {
-    pub fn new(object_service: Arc<ObjectServiceImpl>) -> Self {
-        Self { object_service }
+    pub fn new(
+        object_service: Arc<ObjectServiceImpl>,
+        function_service: Arc<FunctionServiceImpl>,
+    ) -> Self {
+        Self { 
+            object_service,
+            function_service,
+        }
     }
 
     /// Get current health status / 获取当前健康状态
     pub async fn get_health_status(&self) -> HealthStatus {
-        let stats = self.object_service.get_stats().await;
+        let object_stats = self.object_service.get_stats().await;
+        let function_stats = self.function_service.get_stats().await;
         HealthStatus {
             status: "healthy".to_string(),
-            object_count: stats.object_count,
-            total_object_size: stats.total_size,
-            pinned_object_count: stats.pinned_count,
+            object_count: object_stats.object_count,
+            total_object_size: object_stats.total_size,
+            pinned_object_count: object_stats.pinned_count,
+            task_count: function_stats.task_count,
+            execution_count: function_stats.execution_count,
+            running_executions: function_stats.running_executions,
         }
     }
 }
@@ -95,4 +120,7 @@ pub struct HealthStatus {
     pub object_count: usize,
     pub total_object_size: u64,
     pub pinned_object_count: usize,
+    pub task_count: usize,
+    pub execution_count: usize,
+    pub running_executions: usize,
 }

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::Json,
+    response::{Json, Html, IntoResponse},
     routing::{get, post, put, delete},
     Router,
 };
@@ -58,9 +58,35 @@ impl HttpGateway {
         
         info!("Starting HTTP gateway on {}", addr);
 
-        // Connect to local gRPC server / 连接到本地gRPC服务器
+        // Connect to local gRPC server with retry / 连接到本地gRPC服务器（带重试）
         let grpc_endpoint = format!("http://{}:{}", self.config.grpc.address, self.config.grpc.port);
-        let grpc_client = ObjectServiceClient::connect(grpc_endpoint).await?;
+        info!("Connecting to gRPC server at {}", grpc_endpoint);
+        
+        let mut grpc_client = None;
+        let max_retries = 5;
+        let mut retry_count = 0;
+        
+        while retry_count < max_retries {
+            match ObjectServiceClient::connect(grpc_endpoint.clone()).await {
+                Ok(client) => {
+                    info!("Successfully connected to gRPC server");
+                    grpc_client = Some(client);
+                    break;
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= max_retries {
+                        error!("Failed to connect to gRPC server after {} retries: {}", max_retries, e);
+                        return Err(e.into());
+                    }
+                    info!("Failed to connect to gRPC server (attempt {}/{}): {}, retrying in 1s...", 
+                          retry_count, max_retries, e);
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
+        
+        let grpc_client = grpc_client.unwrap();
 
         let state = AppState {
             grpc_client,
@@ -84,12 +110,24 @@ impl HttpGateway {
 
         // Add Swagger UI if enabled / 如果启用则添加Swagger UI
         if self.config.http.swagger_enabled {
-            app = app.route("/api-docs", get(api_docs));
+            app = app
+                .route("/api-docs", get(api_docs))
+                .route("/api/openapi.json", get(api_docs))
+                .route("/swagger-ui", get(swagger_ui))
+                .route("/docs", get(swagger_ui));
         }
 
         // Start server / 启动服务器
         let listener = tokio::net::TcpListener::bind(addr).await?;
         info!("HTTP gateway listening on {}", addr);
+        
+        // Log Swagger UI URLs if enabled / 如果启用则记录Swagger UI URL
+        if self.config.http.swagger_enabled {
+            info!("Swagger UI available at:");
+            info!("  - http://{}/swagger-ui", addr);
+            info!("  - http://{}/docs", addr);
+            info!("  - OpenAPI JSON: http://{}/api/openapi.json", addr);
+        }
         
         axum::serve(listener, app).await?;
         
@@ -241,8 +279,22 @@ async fn list_objects(
     match client.list_objects(request).await {
         Ok(response) => {
             let resp = response.into_inner();
+            // Manually build JSON response since proto types don't have serde support
+            // 手动构建JSON响应，因为proto类型不支持serde
+            let objects: Vec<serde_json::Value> = resp.objects.into_iter().map(|obj| {
+                serde_json::json!({
+                    "key": obj.key,
+                    "size": obj.size,
+                    "created_at": obj.created_at,
+                    "updated_at": obj.updated_at,
+                    "metadata": obj.metadata,
+                    "ref_count": obj.ref_count,
+                    "is_pinned": obj.pinned
+                })
+            }).collect();
+            
             Ok(Json(serde_json::json!({
-                "objects": resp.objects,
+                "objects": objects,
                 "continuation_token": resp.next_start_after,
                 "has_more": resp.has_more
             })))
@@ -418,72 +470,916 @@ async fn api_docs() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "openapi": "3.0.0",
         "info": {
-            "title": "SPEARlet Core Agent API",
-"version": "1.0.0",
-"description": "RESTful API for SPEARlet core agent component"
+            "title": "SPEARlet API",
+            "description": "SPEARlet HTTP Gateway API - SPEAR core agent component / SPEARlet HTTP网关API - SPEAR核心代理组件",
+            "version": "0.1.0",
+            "contact": {
+                "name": "SPEAR Team",
+                "url": "https://github.com/spear-ai/spear"
+            }
         },
+        "servers": [
+            {
+                "url": "/",
+                "description": "Local server / 本地服务器"
+            }
+        ],
+        "tags": [
+            {
+                "name": "System",
+                "description": "System health and status endpoints / 系统健康和状态端点"
+            },
+            {
+                "name": "Objects",
+                "description": "Object storage, reference and pinning operations / 对象存储、引用和固定操作"
+            },
+            {
+                "name": "Functions",
+                "description": "Function execution and task management / 函数执行和任务管理"
+            },
+            {
+                "name": "Monitoring",
+                "description": "Service monitoring and statistics / 服务监控和统计"
+            }
+        ],
         "paths": {
             "/health": {
                 "get": {
-                    "summary": "Health check",
+                    "tags": ["System"],
+                    "summary": "Health check / 健康检查",
+                    "description": "Check if the SPEARlet service is healthy / 检查SPEARlet服务是否健康",
                     "responses": {
                         "200": {
-                            "description": "Service is healthy"
+                            "description": "Service is healthy / 服务健康",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "service": {
+                                                "type": "string",
+                                                "example": "spearlet"
+                                            },
+                                            "status": {
+                                                "type": "string",
+                                                "example": "healthy"
+                                            },
+                                            "timestamp": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "example": "2024-01-01T00:00:00Z"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             },
             "/status": {
                 "get": {
-                    "summary": "Service status",
+                    "tags": ["System"],
+                    "summary": "Get node status / 获取节点状态",
+                    "description": "Get detailed status information about the SPEARlet node / 获取SPEARlet节点的详细状态信息",
                     "responses": {
                         "200": {
-                            "description": "Service status information"
+                            "description": "Node status information / 节点状态信息",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "node_id": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "object_count": {"type": "integer"},
+                                            "total_object_size": {"type": "integer"},
+                                            "pinned_object_count": {"type": "integer"}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/objects": {
+                "get": {
+                    "tags": ["Objects"],
+                    "summary": "List objects / 列出对象",
+                    "description": "List all stored objects / 列出所有存储的对象",
+                    "parameters": [
+                        {
+                            "name": "prefix",
+                            "in": "query",
+                            "description": "Filter objects by prefix / 按前缀过滤对象",
+                            "schema": {"type": "string"}
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "description": "Maximum number of objects to return / 返回对象的最大数量",
+                            "schema": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1000,
+                                "default": 100
+                            }
+                        },
+                        {
+                            "name": "continuation_token",
+                            "in": "query",
+                            "description": "Token for pagination / 分页令牌",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "List of objects / 对象列表",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "objects": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "key": {"type": "string"},
+                                                        "size": {"type": "integer"},
+                                                        "created_at": {"type": "string", "format": "date-time"},
+                                                        "updated_at": {"type": "string", "format": "date-time"},
+                                                        "ref_count": {"type": "integer"},
+                                                        "is_pinned": {"type": "boolean"}
+                                                    }
+                                                }
+                                            },
+                                            "continuation_token": {"type": "string"},
+                                            "has_more": {"type": "boolean"}
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             },
             "/objects/{key}": {
                 "put": {
-                    "summary": "Store an object",
+                    "tags": ["Objects"],
+                    "summary": "Store object / 存储对象",
+                    "description": "Store an object with the specified key / 使用指定键存储对象",
                     "parameters": [
                         {
                             "name": "key",
                             "in": "path",
                             "required": true,
-                            "schema": {
-                                "type": "string"
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "requestBody": {
+                        "description": "Object data / 对象数据",
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "value": {
+                                            "type": "string",
+                                            "description": "Base64 encoded object value / Base64编码的对象值"
+                                        },
+                                        "metadata": {
+                                            "type": "object",
+                                            "additionalProperties": {"type": "string"},
+                                            "description": "Object metadata / 对象元数据"
+                                        },
+                                        "overwrite": {
+                                            "type": "boolean",
+                                            "default": false,
+                                            "description": "Whether to overwrite existing object / 是否覆盖现有对象"
+                                        }
+                                    },
+                                    "required": ["value"]
+                                }
                             }
                         }
-                    ]
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Object stored successfully / 对象存储成功",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "success": {"type": "boolean"},
+                                            "message": {"type": "string"},
+                                            "key": {"type": "string"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": {"description": "Bad request / 请求错误"}
+                    }
                 },
                 "get": {
-                    "summary": "Retrieve an object",
+                    "tags": ["Objects"],
+                    "summary": "Get object / 获取对象",
+                    "description": "Retrieve an object by its key / 通过键检索对象",
                     "parameters": [
                         {
                             "name": "key",
                             "in": "path",
                             "required": true,
-                            "schema": {
-                                "type": "string"
-                            }
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
                         }
-                    ]
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Object data / 对象数据",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "found": {"type": "boolean"},
+                                            "key": {"type": "string"},
+                                            "value": {"type": "string", "description": "Base64 encoded value"},
+                                            "metadata": {"type": "object"},
+                                            "size": {"type": "integer"},
+                                            "created_at": {"type": "string", "format": "date-time"},
+                                            "updated_at": {"type": "string", "format": "date-time"},
+                                            "ref_count": {"type": "integer"},
+                                            "pinned": {"type": "boolean"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "404": {"description": "Object not found / 对象未找到"}
+                    }
                 },
                 "delete": {
-                    "summary": "Delete an object",
+                    "tags": ["Objects"],
+                    "summary": "Delete object / 删除对象",
+                    "description": "Delete an object by its key / 通过键删除对象",
                     "parameters": [
                         {
                             "name": "key",
                             "in": "path",
                             "required": true,
-                            "schema": {
-                                "type": "string"
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
+                        },
+                        {
+                            "name": "force",
+                            "in": "query",
+                            "description": "Force delete even if object has references / 即使对象有引用也强制删除",
+                            "schema": {"type": "boolean", "default": false}
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Object deleted successfully / 对象删除成功",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "success": {"type": "boolean"},
+                                            "message": {"type": "string"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "404": {"description": "Object not found / 对象未找到"}
+                    }
+                }
+            },
+            "/objects/{key}/refs": {
+                "post": {
+                    "tags": ["Objects"],
+                    "summary": "Add object reference / 添加对象引用",
+                    "description": "Add a reference to an object / 为对象添加引用",
+                    "parameters": [
+                        {
+                            "name": "key",
+                            "in": "path",
+                            "required": true,
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "requestBody": {
+                        "description": "Reference count / 引用计数",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "count": {"type": "integer", "default": 1}
+                                    }
+                                }
                             }
                         }
-                    ]
+                    },
+                    "responses": {
+                        "200": {"description": "Reference added / 引用已添加"},
+                        "404": {"description": "Object not found / 对象未找到"}
+                    }
+                },
+                "delete": {
+                    "tags": ["Objects"],
+                    "summary": "Remove object reference / 移除对象引用",
+                    "description": "Remove a reference from an object / 从对象移除引用",
+                    "parameters": [
+                        {
+                            "name": "key",
+                            "in": "path",
+                            "required": true,
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "requestBody": {
+                        "description": "Reference count to remove / 要移除的引用计数",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "count": {"type": "integer", "default": 1}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {"description": "Reference removed / 引用已移除"},
+                        "404": {"description": "Object not found / 对象未找到"}
+                    }
+                }
+            },
+            "/objects/{key}/pin": {
+                "post": {
+                    "tags": ["Objects"],
+                    "summary": "Pin object / 固定对象",
+                    "description": "Pin an object to prevent it from being garbage collected / 固定对象以防止被垃圾回收",
+                    "parameters": [
+                        {
+                            "name": "key",
+                            "in": "path",
+                            "required": true,
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Object pinned / 对象已固定"},
+                        "404": {"description": "Object not found / 对象未找到"}
+                    }
+                },
+                "delete": {
+                    "tags": ["Objects"],
+                    "summary": "Unpin object / 取消固定对象",
+                    "description": "Unpin an object to allow it to be garbage collected / 取消固定对象以允许被垃圾回收",
+                    "parameters": [
+                        {
+                            "name": "key",
+                            "in": "path",
+                            "required": true,
+                            "description": "Object key / 对象键",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Object unpinned / 对象已取消固定"},
+                        "404": {"description": "Object not found / 对象未找到"}
+                    }
+                }
+            },
+            "/functions/invoke": {
+                "post": {
+                    "tags": ["Functions"],
+                    "summary": "Invoke function / 调用函数",
+                    "description": "Execute a function with specified parameters / 使用指定参数执行函数",
+                    "requestBody": {
+                        "description": "Function invocation request / 函数调用请求",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["function_name"],
+                                    "properties": {
+                                        "function_name": {
+                                            "type": "string",
+                                            "description": "Name of the function to invoke / 要调用的函数名称"
+                                        },
+                                        "parameters": {
+                                            "type": "object",
+                                            "description": "Function parameters / 函数参数",
+                                            "additionalProperties": true
+                                        },
+                                        "invocation_type": {
+                                            "type": "string",
+                                            "enum": ["SYNC", "ASYNC"],
+                                            "default": "SYNC",
+                                            "description": "Invocation type / 调用类型"
+                                        },
+                                        "execution_mode": {
+                                            "type": "string",
+                                            "enum": ["NORMAL", "DEBUG"],
+                                            "default": "NORMAL",
+                                            "description": "Execution mode / 执行模式"
+                                        },
+                                        "timeout_seconds": {
+                                            "type": "integer",
+                                            "description": "Execution timeout in seconds / 执行超时时间（秒）"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Function execution result / 函数执行结果",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "execution_id": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "result": {"type": "object"},
+                                            "error": {"type": "string"},
+                                            "execution_time_ms": {"type": "integer"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": {"description": "Invalid request / 无效请求"},
+                        "500": {"description": "Execution error / 执行错误"}
+                    }
+                }
+            },
+            "/functions/executions/{execution_id}/status": {
+                "get": {
+                    "tags": ["Functions"],
+                    "summary": "Get execution status / 获取执行状态",
+                    "description": "Get the status of a function execution / 获取函数执行的状态",
+                    "parameters": [
+                        {
+                            "name": "execution_id",
+                            "in": "path",
+                            "required": true,
+                            "description": "Execution ID / 执行ID",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Execution status / 执行状态",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "execution_id": {"type": "string"},
+                                            "status": {
+                                                "type": "string",
+                                                "enum": ["PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
+                                            },
+                                            "result": {"type": "object"},
+                                            "error": {"type": "string"},
+                                            "start_time": {"type": "string", "format": "date-time"},
+                                            "end_time": {"type": "string", "format": "date-time"},
+                                            "execution_time_ms": {"type": "integer"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "404": {"description": "Execution not found / 执行未找到"}
+                    }
+                }
+            },
+            "/functions/executions/{execution_id}/cancel": {
+                "post": {
+                    "tags": ["Functions"],
+                    "summary": "Cancel execution / 取消执行",
+                    "description": "Cancel a running function execution / 取消正在运行的函数执行",
+                    "parameters": [
+                        {
+                            "name": "execution_id",
+                            "in": "path",
+                            "required": true,
+                            "description": "Execution ID / 执行ID",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Execution cancelled / 执行已取消"},
+                        "404": {"description": "Execution not found / 执行未找到"},
+                        "409": {"description": "Cannot cancel execution / 无法取消执行"}
+                    }
+                }
+            },
+            "/functions/stream": {
+                "post": {
+                    "tags": ["Functions"],
+                    "summary": "Stream function execution / 流式函数执行",
+                    "description": "Execute a function with streaming results / 执行函数并流式返回结果",
+                    "requestBody": {
+                        "description": "Function streaming request / 函数流式请求",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["function_name"],
+                                    "properties": {
+                                        "function_name": {"type": "string"},
+                                        "parameters": {"type": "object", "additionalProperties": true},
+                                        "execution_mode": {
+                                            "type": "string",
+                                            "enum": ["NORMAL", "DEBUG"],
+                                            "default": "NORMAL"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Streaming execution results / 流式执行结果",
+                            "content": {
+                                "text/event-stream": {
+                                    "schema": {
+                                        "type": "string",
+                                        "description": "Server-sent events stream / 服务器发送事件流"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/tasks": {
+                "get": {
+                    "tags": ["Functions"],
+                    "summary": "List tasks / 列出任务",
+                    "description": "Get a list of all tasks / 获取所有任务的列表",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "description": "Maximum number of tasks to return / 返回的最大任务数",
+                            "schema": {"type": "integer", "default": 100}
+                        },
+                        {
+                            "name": "offset",
+                            "in": "query", 
+                            "description": "Number of tasks to skip / 跳过的任务数",
+                            "schema": {"type": "integer", "default": 0}
+                        },
+                        {
+                            "name": "status",
+                            "in": "query",
+                            "description": "Filter by task status / 按任务状态过滤",
+                            "schema": {
+                                "type": "string",
+                                "enum": ["PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "List of tasks / 任务列表",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "tasks": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "task_id": {"type": "string"},
+                                                        "function_name": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                        "created_at": {"type": "string", "format": "date-time"},
+                                                        "updated_at": {"type": "string", "format": "date-time"},
+                                                        "execution_count": {"type": "integer"}
+                                                    }
+                                                }
+                                            },
+                                            "total": {"type": "integer"},
+                                            "limit": {"type": "integer"},
+                                            "offset": {"type": "integer"}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/tasks/{task_id}": {
+                "get": {
+                    "tags": ["Functions"],
+                    "summary": "Get task details / 获取任务详情",
+                    "description": "Get detailed information about a specific task / 获取特定任务的详细信息",
+                    "parameters": [
+                        {
+                            "name": "task_id",
+                            "in": "path",
+                            "required": true,
+                            "description": "Task ID / 任务ID",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Task details / 任务详情",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "task_id": {"type": "string"},
+                                            "function_name": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "parameters": {"type": "object"},
+                                            "created_at": {"type": "string", "format": "date-time"},
+                                            "updated_at": {"type": "string", "format": "date-time"},
+                                            "execution_count": {"type": "integer"},
+                                            "last_execution": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "execution_id": {"type": "string"},
+                                                    "status": {"type": "string"},
+                                                    "result": {"type": "object"},
+                                                    "error": {"type": "string"}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "404": {"description": "Task not found / 任务未找到"}
+                    }
+                },
+                "delete": {
+                    "tags": ["Functions"],
+                    "summary": "Delete task / 删除任务",
+                    "description": "Delete a specific task / 删除特定任务",
+                    "parameters": [
+                        {
+                            "name": "task_id",
+                            "in": "path",
+                            "required": true,
+                            "description": "Task ID / 任务ID",
+                            "schema": {"type": "string"}
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Task deleted / 任务已删除"},
+                        "404": {"description": "Task not found / 任务未找到"},
+                        "409": {"description": "Cannot delete running task / 无法删除正在运行的任务"}
+                    }
+                }
+            },
+            "/tasks/{task_id}/executions": {
+                "get": {
+                    "tags": ["Functions"],
+                    "summary": "List task executions / 列出任务执行记录",
+                    "description": "Get execution history for a specific task / 获取特定任务的执行历史",
+                    "parameters": [
+                        {
+                            "name": "task_id",
+                            "in": "path",
+                            "required": true,
+                            "description": "Task ID / 任务ID",
+                            "schema": {"type": "string"}
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "description": "Maximum number of executions to return / 返回的最大执行记录数",
+                            "schema": {"type": "integer", "default": 50}
+                        },
+                        {
+                            "name": "offset",
+                            "in": "query",
+                            "description": "Number of executions to skip / 跳过的执行记录数",
+                            "schema": {"type": "integer", "default": 0}
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "List of task executions / 任务执行记录列表",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "executions": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "execution_id": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                        "start_time": {"type": "string", "format": "date-time"},
+                                                        "end_time": {"type": "string", "format": "date-time"},
+                                                        "execution_time_ms": {"type": "integer"},
+                                                        "result": {"type": "object"},
+                                                        "error": {"type": "string"}
+                                                    }
+                                                }
+                                            },
+                                            "total": {"type": "integer"},
+                                            "limit": {"type": "integer"},
+                                            "offset": {"type": "integer"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "404": {"description": "Task not found / 任务未找到"}
+                    }
+                }
+            },
+            "/functions/health": {
+                "get": {
+                    "tags": ["Monitoring"],
+                    "summary": "Get function service health / 获取函数服务健康状态",
+                    "description": "Get detailed health information about the function service / 获取函数服务的详细健康信息",
+                    "responses": {
+                        "200": {
+                            "description": "Function service health status / 函数服务健康状态",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "service": {"type": "string", "example": "function_service"},
+                                            "status": {
+                                                "type": "string",
+                                                "enum": ["HEALTHY", "UNHEALTHY", "DEGRADED"],
+                                                "example": "HEALTHY"
+                                            },
+                                            "timestamp": {"type": "string", "format": "date-time"},
+                                            "details": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "active_executions": {"type": "integer"},
+                                                    "pending_tasks": {"type": "integer"},
+                                                    "total_memory_usage": {"type": "integer"},
+                                                    "cpu_usage_percent": {"type": "number"},
+                                                    "uptime_seconds": {"type": "integer"}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/functions/stats": {
+                "get": {
+                    "tags": ["Monitoring"],
+                    "summary": "Get function service statistics / 获取函数服务统计信息",
+                    "description": "Get comprehensive statistics about function executions and performance / 获取函数执行和性能的综合统计信息",
+                    "responses": {
+                        "200": {
+                            "description": "Function service statistics / 函数服务统计信息",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "service_stats": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "total_executions": {"type": "integer"},
+                                                    "successful_executions": {"type": "integer"},
+                                                    "failed_executions": {"type": "integer"},
+                                                    "average_execution_time_ms": {"type": "number"},
+                                                    "total_execution_time_ms": {"type": "integer"},
+                                                    "active_executions": {"type": "integer"},
+                                                    "peak_concurrent_executions": {"type": "integer"}
+                                                }
+                                            },
+                                            "task_stats": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "total_tasks": {"type": "integer"},
+                                                    "active_tasks": {"type": "integer"},
+                                                    "completed_tasks": {"type": "integer"},
+                                                    "failed_tasks": {"type": "integer"},
+                                                    "average_task_duration_ms": {"type": "number"}
+                                                }
+                                            },
+                                            "execution_stats": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "executions_per_minute": {"type": "number"},
+                                                    "success_rate_percent": {"type": "number"},
+                                                    "average_queue_time_ms": {"type": "number"},
+                                                    "memory_usage_mb": {"type": "number"},
+                                                    "cpu_usage_percent": {"type": "number"}
+                                                }
+                                            },
+                                            "timestamp": {"type": "string", "format": "date-time"}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }))
+}
+
+/// Swagger UI HTML page / Swagger UI HTML页面
+async fn swagger_ui() -> impl IntoResponse {
+    let html = r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPEARlet API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+        .swagger-ui .topbar {
+            background-color: #1f2937;
+        }
+        .swagger-ui .topbar .download-url-wrapper {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: '/api/openapi.json',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                validatorUrl: null,
+                docExpansion: "list",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                displayRequestDuration: true,
+                tryItOutEnabled: true,
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true
+            });
+        };
+    </script>
+</body>
+</html>
+    "#;
+    
+    Html(html)
 }

@@ -20,6 +20,7 @@ use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::grpc_server::HealthService;
 use crate::proto::spearlet::{
     object_service_client::ObjectServiceClient,
+    function_service_client::FunctionServiceClient,
     PutObjectRequest, GetObjectRequest, ListObjectsRequest,
     AddObjectRefRequest, RemoveObjectRefRequest,
     PinObjectRequest, UnpinObjectRequest, DeleteObjectRequest,
@@ -36,7 +37,8 @@ pub struct HttpGateway {
 /// Application state / 应用状态
 #[derive(Clone)]
 struct AppState {
-    grpc_client: ObjectServiceClient<Channel>,
+    object_client: ObjectServiceClient<Channel>,
+    function_client: FunctionServiceClient<Channel>,
     health_service: Arc<HealthService>,
     config: Arc<SpearletConfig>,
 }
@@ -86,10 +88,16 @@ impl HttpGateway {
             }
         }
         
-        let grpc_client = grpc_client.unwrap();
+        let object_client = grpc_client.unwrap();
+        
+        // Connect to FunctionService / 连接到FunctionService
+        let function_client = FunctionServiceClient::connect(grpc_endpoint.clone())
+            .await
+            .map_err(|e| format!("Failed to connect to FunctionService: {}", e))?;
 
         let state = AppState {
-            grpc_client,
+            object_client,
+            function_client,
             health_service: self.health_service,
             config: self.config.clone(),
         };
@@ -106,6 +114,20 @@ impl HttpGateway {
             .route("/objects/:key/pin", post(pin_object))
             .route("/objects/:key/pin", delete(unpin_object))
             .route("/objects/:key", delete(delete_object))
+            
+            // Function execution endpoints / 函数执行端点
+            .route("/functions/execute", post(execute_function))
+            .route("/functions/executions/:execution_id", get(get_execution_status))
+            .route("/functions/executions/:execution_id/cancel", post(cancel_execution))
+            
+            // Task management endpoints / 任务管理端点
+            .route("/tasks", get(list_tasks))
+            .route("/tasks/:task_id", get(get_task))
+            .route("/tasks/:task_id/executions", get(get_task_executions))
+            
+            // Monitoring endpoints / 监控端点
+            .route("/monitoring/stats", get(get_stats))
+            .route("/monitoring/health", get(get_health_status))
             .with_state(state);
 
         // Add Swagger UI if enabled / 如果启用则添加Swagger UI
@@ -190,7 +212,7 @@ async fn put_object(
         overwrite: body.overwrite.unwrap_or(false),
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.put_object(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -220,7 +242,7 @@ async fn get_object(
         include_value: true,
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.get_object(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -275,7 +297,7 @@ async fn list_objects(
         include_values: true,
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.list_objects(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -325,7 +347,7 @@ async fn add_object_ref(
         count: body.count.unwrap_or(1),
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.add_object_ref(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -356,7 +378,7 @@ async fn remove_object_ref(
         count: body.count.unwrap_or(1),
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.remove_object_ref(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -385,7 +407,7 @@ async fn pin_object(
         key: key.clone(),
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.pin_object(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -413,7 +435,7 @@ async fn unpin_object(
         key: key.clone(),
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.unpin_object(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -448,7 +470,7 @@ async fn delete_object(
         force: params.force.unwrap_or(false),
     };
 
-    let mut client = state.grpc_client.clone();
+    let mut client = state.object_client.clone();
     match client.delete_object(request).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -462,6 +484,158 @@ async fn delete_object(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+// Function execution endpoints / 函数执行端点
+
+/// Execute function endpoint / 执行函数端点
+/// POST /functions/execute
+async fn execute_function(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("POST /functions/execute");
+    
+    // TODO: Implement function execution logic
+    // 待实现：函数执行逻辑
+    
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "Function execution endpoint - Not implemented yet",
+        "execution_id": "todo-generate-execution-id"
+    })))
+}
+
+/// Get execution status endpoint / 获取执行状态端点
+/// GET /functions/executions/:execution_id
+async fn get_execution_status(
+    State(state): State<AppState>,
+    Path(execution_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("GET /functions/executions/{}", execution_id);
+    
+    // TODO: Implement execution status retrieval
+    // 待实现：执行状态获取逻辑
+    
+    Ok(Json(serde_json::json!({
+        "execution_id": execution_id,
+        "status": "pending",
+        "message": "Execution status endpoint - Not implemented yet"
+    })))
+}
+
+/// Cancel execution endpoint / 取消执行端点
+/// POST /functions/executions/:execution_id/cancel
+async fn cancel_execution(
+    State(state): State<AppState>,
+    Path(execution_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("POST /functions/executions/{}/cancel", execution_id);
+    
+    // TODO: Implement execution cancellation
+    // 待实现：执行取消逻辑
+    
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "Execution cancellation endpoint - Not implemented yet",
+        "execution_id": execution_id
+    })))
+}
+
+// Task management endpoints / 任务管理端点
+
+/// List tasks endpoint / 列出任务端点
+/// GET /tasks
+async fn list_tasks(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("GET /tasks");
+    
+    // TODO: Implement task listing logic
+    // 待实现：任务列表获取逻辑
+    
+    Ok(Json(serde_json::json!({
+        "tasks": [],
+        "has_more": false,
+        "message": "Task listing endpoint - Not implemented yet"
+    })))
+}
+
+/// Get task details endpoint / 获取任务详情端点
+/// GET /tasks/:task_id
+async fn get_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("GET /tasks/{}", task_id);
+    
+    // TODO: Implement task details retrieval
+    // 待实现：任务详情获取逻辑
+    
+    Ok(Json(serde_json::json!({
+        "task_id": task_id,
+        "name": "example-task",
+        "status": "active",
+        "message": "Task details endpoint - Not implemented yet"
+    })))
+}
+
+/// Get task executions endpoint / 获取任务执行记录端点
+/// GET /tasks/:task_id/executions
+async fn get_task_executions(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("GET /tasks/{}/executions", task_id);
+    
+    // TODO: Implement task executions retrieval
+    // 待实现：任务执行记录获取逻辑
+    
+    Ok(Json(serde_json::json!({
+        "task_id": task_id,
+        "executions": [],
+        "message": "Task executions endpoint - Not implemented yet"
+    })))
+}
+
+// Monitoring endpoints / 监控端点
+
+/// Get statistics endpoint / 获取统计信息端点
+/// GET /monitoring/stats
+async fn get_stats(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("GET /monitoring/stats");
+    
+    // TODO: Implement statistics retrieval
+    // 待实现：统计信息获取逻辑
+    
+    Ok(Json(serde_json::json!({
+        "total_executions": 0,
+        "successful_executions": 0,
+        "failed_executions": 0,
+        "active_executions": 0,
+        "message": "Statistics endpoint - Not implemented yet"
+    })))
+}
+
+/// Get health status endpoint / 获取健康状态端点
+/// GET /monitoring/health
+async fn get_health_status(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    debug!("GET /monitoring/health");
+    
+    // TODO: Implement health status retrieval
+    // 待实现：健康状态获取逻辑
+    
+    Ok(Json(serde_json::json!({
+        "status": "healthy",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "message": "Health status endpoint - Not implemented yet"
+    })))
 }
 
 /// API documentation endpoint / API文档端点

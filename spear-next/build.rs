@@ -1,6 +1,12 @@
 // Build script for generating protobuf code / 用于生成protobuf代码的构建脚本
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("SKIP_PROTOC").is_ok() {
+        println!("cargo:rerun-if-env-changed=SKIP_PROTOC");
+        return Ok(());
+    }
+    let path = protoc_bin_vendored::protoc_bin_path()?;
+    std::env::set_var("PROTOC", &path);
     // Compile SMS protobuf files / 编译SMS protobuf文件
     tonic_build::configure()
         .build_server(true)

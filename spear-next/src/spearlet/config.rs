@@ -50,6 +50,12 @@ pub struct CliArgs {
     /// Log level / 日志级别
     #[arg(long, value_name = "LEVEL", help = "Log level (trace, debug, info, warn, error) / 日志级别")]
     pub log_level: Option<String>,
+
+    #[arg(long, value_name = "MS")]
+    pub sms_connect_timeout_ms: Option<u64>,
+
+    #[arg(long, value_name = "MS")]
+    pub sms_connect_retry_ms: Option<u64>,
 }
 
 /// Spearlet application configuration / Spearlet应用配置
@@ -84,6 +90,9 @@ impl AppConfig {
         if let Ok(v) = std::env::var("SPEARLET_LOG_LEVEL") { if !v.is_empty() { config.spearlet.logging.level = v; } }
         if let Ok(v) = std::env::var("SPEARLET_LOG_FORMAT") { if !v.is_empty() { config.spearlet.logging.format = v; } }
         if let Ok(v) = std::env::var("SPEARLET_LOG_FILE") { if !v.is_empty() { config.spearlet.logging.file = Some(v); } }
+
+        if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_TIMEOUT_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.sms_connect_timeout_ms = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_RETRY_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.sms_connect_retry_ms = n; } }
 
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.spear/config.toml
@@ -147,6 +156,9 @@ impl AppConfig {
         if let Some(log_level) = &args.log_level {
             config.spearlet.logging.level = log_level.clone();
         }
+
+        if let Some(t) = args.sms_connect_timeout_ms { config.spearlet.sms_connect_timeout_ms = t; }
+        if let Some(r) = args.sms_connect_retry_ms { config.spearlet.sms_connect_retry_ms = r; }
         
         Ok(config)
     }
@@ -182,6 +194,8 @@ pub struct SpearletConfig {
     pub heartbeat_interval: u64,
     /// Cleanup interval in seconds / 清理间隔(秒)
     pub cleanup_interval: u64,
+    pub sms_connect_timeout_ms: u64,
+    pub sms_connect_retry_ms: u64,
 }
 
 /// gRPC server configuration / gRPC服务器配置
@@ -237,6 +251,8 @@ impl Default for SpearletConfig {
             auto_register: false,
             heartbeat_interval: 30,
             cleanup_interval: 300,
+            sms_connect_timeout_ms: 15000,
+            sms_connect_retry_ms: 500,
         }
     }
 }

@@ -97,20 +97,31 @@ impl RegistrationService {
     }
 
     /// Connect to SMS service / 连接到SMS服务
-    async fn connect_to_sms(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect_to_sms(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let sms_url = format!("http://{}", self.config.sms_addr);
         debug!("Connecting to SMS at: {}", sms_url);
 
-        let channel = Channel::from_shared(sms_url)?
-            .connect()
-            .await?;
-
-        let client = NodeServiceClient::new(channel);
-        *self.node_client.write().await = Some(client);
-
-        info!("Connected to SMS successfully");
-        Ok(())
+        let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+        let deadline = Instant::now() + Duration::from_millis(self.config.sms_connect_timeout_ms);
+        while Instant::now() < deadline {
+            match Channel::from_shared(sms_url.clone())?.connect().await {
+                Ok(channel) => {
+                    let client = NodeServiceClient::new(channel);
+                    *self.node_client.write().await = Some(client);
+                    info!("Connected to SMS successfully");
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_err = Some(Box::new(e));
+                    warn!("Retrying SMS connection...");
+                    tokio::time::sleep(Duration::from_millis(self.config.sms_connect_retry_ms)).await;
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "unknown error"))))
     }
+
+    // kept for clarity: start() already calls connect_to_sms() / start()已调用connect_to_sms()
 
     /// Start registration task / 启动注册任务
     async fn start_registration_task(&self) {

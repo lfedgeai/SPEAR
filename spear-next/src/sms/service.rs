@@ -213,6 +213,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         
         match node_service.register_node(node.clone()).await {
             Ok(()) => {
+                tracing::info!(uuid = %node.uuid, ip = %node.ip_address, port = %node.port, "SPEARlet registered");
                 let response = RegisterNodeResponse {
                     node_uuid: node.uuid.clone(),
                     success: true,
@@ -267,6 +268,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         
         match node_service.remove_node(&node_uuid.to_string()).await {
             Ok(_) => {
+                tracing::info!(uuid = %node_uuid, "SPEARlet unregistered");
                 let response = DeleteNodeResponse {
                     success: true,
                     message: "Node deleted successfully".to_string(),
@@ -290,6 +292,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         
         match node_service.update_heartbeat(&node_uuid.to_string(), chrono::Utc::now().timestamp()).await {
             Ok(_) => {
+                tracing::debug!(uuid = %node_uuid, "Heartbeat received");
                 let response = HeartbeatResponse {
                     success: true,
                     message: "Heartbeat received".to_string(),

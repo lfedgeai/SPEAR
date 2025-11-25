@@ -1,34 +1,32 @@
-# SMS (SPEAR Metadata Server) Configuration
-# SMS (SPEAR元数据服务器) 配置
+# SMS (SPEAR Metadata Server) Configuration / SMS（SPEAR元数据服务器）配置
 
-[sms]
-# gRPC server address / gRPC服务器地址
-grpc_addr = "127.0.0.1:50051"
+[grpc]
+# gRPC bind address / gRPC绑定地址
+addr = "127.0.0.1:50051"
+# Enable TLS / 启用TLS
+enable_tls = false
 
-# HTTP gateway address / HTTP网关地址
-http_addr = "127.0.0.1:8080"
+[http]
+# HTTP bind address / HTTP绑定地址
+addr = "127.0.0.1:8080"
+# Enable TLS / 启用TLS
+enable_tls = false
 
 # Enable Swagger UI / 启用Swagger UI
 enable_swagger = true
 
-# Database configuration / 数据库配置
-[sms.database]
+[database]
 # Database type: "rocksdb" or "sled" / 数据库类型："rocksdb" 或 "sled"
 db_type = "sled"
-
 # Database path / 数据库路径
 path = "./data/sms.db"
-
 # Connection pool size / 连接池大小
 pool_size = 10
 
-# Logging configuration / 日志配置
-[sms.log]
-# Log level: "trace", "debug", "info", "warn", "error" / 日志级别
+[log]
+# Log level: trace/debug/info/warn/error / 日志级别
 level = "debug"
-
-# Log format: "json" or "pretty" / 日志格式："json" 或 "pretty"
+# Log format: json/pretty / 日志格式
 format = "json"
-
 # Log output file (optional) / 日志输出文件（可选）
 file = "./logs/sms.log"

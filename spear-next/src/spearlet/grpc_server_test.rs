@@ -5,20 +5,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 
-use crate::spearlet::config::{SpearletConfig, GrpcConfig, StorageConfig};
+use crate::spearlet::config::{SpearletConfig, StorageConfig};
+use crate::config::base::ServerConfig;
 use crate::spearlet::grpc_server::{GrpcServer, HealthService, HealthStatus};
 use crate::spearlet::function_service::FunctionServiceImpl;
 
 /// Create test configuration / 创建测试配置
 fn create_test_config() -> SpearletConfig {
     SpearletConfig {
-        grpc: GrpcConfig {
-            address: "127.0.0.1".to_string(),
-            port: 50052,
-            tls_enabled: false,
-            tls_cert_path: None,
-            tls_key_path: None,
-        },
+        grpc: ServerConfig { addr: "127.0.0.1:50052".parse().unwrap(), ..Default::default() },
         storage: StorageConfig {
             backend: "memory".to_string(),
             data_dir: "/tmp/test".to_string(),
@@ -45,8 +40,8 @@ async fn test_grpc_server_creation() {
 async fn test_grpc_server_config() {
     // Test gRPC server configuration / 测试gRPC服务器配置
     let mut config = create_test_config();
-    config.grpc.address = "0.0.0.0".to_string();
-    config.grpc.port = 8080;
+    config.grpc.addr = "0.0.0.0:8080".parse().unwrap();
+    config.grpc.addr = "0.0.0.0:8080".parse().unwrap();
     config.storage.max_object_size = 2 * 1024 * 1024; // 2MB
     
     let server = GrpcServer::new(Arc::new(config)).await.unwrap();
@@ -105,8 +100,7 @@ async fn test_health_status_structure() {
 async fn test_grpc_server_invalid_address() {
     // Test gRPC server with invalid address / 测试无效地址的gRPC服务器
     let mut config = create_test_config();
-    config.grpc.address = "invalid-address".to_string();
-    config.grpc.port = 8080;
+    config.grpc.addr = "0.0.0.0:8080".parse().unwrap();
     
     let server = GrpcServer::new(Arc::new(config)).await.unwrap();
     
@@ -138,9 +132,9 @@ async fn test_multiple_grpc_servers() {
 async fn test_grpc_server_tls_config() {
     // Test gRPC server with TLS configuration / 测试带TLS配置的gRPC服务器
     let mut config = create_test_config();
-    config.grpc.tls_enabled = true;
-    config.grpc.tls_cert_path = Some("/path/to/cert.pem".to_string());
-    config.grpc.tls_key_path = Some("/path/to/key.pem".to_string());
+    config.grpc.enable_tls = true;
+    config.grpc.cert_path = Some("/path/to/cert.pem".to_string());
+    config.grpc.key_path = Some("/path/to/key.pem".to_string());
     
     let server = GrpcServer::new(Arc::new(config)).await.unwrap();
     let object_service = server.get_object_service();
@@ -153,10 +147,10 @@ async fn test_grpc_server_tls_config() {
 async fn test_grpc_server_different_ports() {
     // Test gRPC servers on different ports / 测试不同端口的gRPC服务器
     let mut config1 = create_test_config();
-    config1.grpc.port = 50053;
+    config1.grpc.addr = "127.0.0.1:50053".parse().unwrap();
     
     let mut config2 = create_test_config();
-    config2.grpc.port = 50054;
+    config2.grpc.addr = "127.0.0.1:50054".parse().unwrap();
     
     let server1 = GrpcServer::new(Arc::new(config1)).await.unwrap();
     let server2 = GrpcServer::new(Arc::new(config2)).await.unwrap();
@@ -207,7 +201,7 @@ async fn test_grpc_server_edge_cases() {
     
     // Test with port 0 (should use random available port) / 测试端口0（应该使用随机可用端口）
     let mut config = create_test_config();
-    config.grpc.port = 0;
+    config.grpc.addr = "127.0.0.1:0".parse().unwrap();
     
     let server = GrpcServer::new(Arc::new(config)).await.unwrap();
     let object_service = server.get_object_service();
@@ -215,7 +209,7 @@ async fn test_grpc_server_edge_cases() {
     
     // Test with very high port number / 测试非常高的端口号
     let mut config2 = create_test_config();
-    config2.grpc.port = 65535;
+    config2.grpc.addr = "127.0.0.1:65535".parse().unwrap();
     
     let server2 = GrpcServer::new(Arc::new(config2)).await.unwrap();
     let object_service2 = server2.get_object_service();
@@ -253,7 +247,7 @@ async fn test_grpc_server_concurrent_creation() {
     // Create multiple servers concurrently / 并发创建多个服务器
     for i in 0..5 {
         let mut config = create_test_config();
-        config.grpc.port = 50060 + i;
+        config.grpc.addr = format!("127.0.0.1:{}", 50060 + i).parse().unwrap();
         
         join_set.spawn(async move {
             let server = GrpcServer::new(Arc::new(config)).await.unwrap();

@@ -1,40 +1,49 @@
-# SPEARlet Configuration
-# SPEARlet 配置
+# SPEARlet Configuration / SPEARlet 配置
 
 [spearlet]
-# gRPC server address / gRPC服务器地址
-grpc_addr = "0.0.0.0:50052"
-
-# HTTP gateway address / HTTP网关地址
-http_addr = "0.0.0.0:8081"
-
+# Node ID (auto-generated if empty) / 节点ID（为空时自动生成）
+node_id = ""
 # SMS service address / SMS服务地址
 sms_addr = "127.0.0.1:50051"
-
-# Node ID (auto-generated if not specified) / 节点ID（未指定时自动生成）
-node_id = ""
-
 # Auto register with SMS / 自动向SMS注册
 auto_register = true
+# Heartbeat interval (seconds) / 心跳间隔（秒）
+heartbeat_interval = 30
+# Cleanup interval (seconds) / 清理间隔（秒）
+cleanup_interval = 300
 
-# Storage configuration / 存储配置
+[spearlet.grpc]
+# gRPC bind address / gRPC绑定地址
+addr = "0.0.0.0:50052"
+# Enable TLS / 启用TLS
+enable_tls = false
+
+[spearlet.http]
+# Enable CORS / 启用CORS
+cors_enabled = true
+# Enable Swagger UI / 启用Swagger UI
+swagger_enabled = true
+
+[spearlet.http.server]
+# HTTP bind address / HTTP绑定地址
+addr = "0.0.0.0:8081"
+
 [spearlet.storage]
 # Storage backend: "memory" or "sled" / 存储后端："memory" 或 "sled"
 backend = "memory"
+# Data directory / 数据目录
+data_dir = "./data/spearlet"
+# Max cache size (MB) / 最大缓存大小（MB）
+max_cache_size_mb = 512
+# Enable compression / 启用压缩
+compression_enabled = true
+# Max object size (bytes) / 最大对象大小（字节）
+max_object_size = 67108864
 
-# Sled database path (only used when backend = "sled") / Sled数据库路径（仅当backend = "sled"时使用）
-sled_path = "./data/spearlet.db"
-
-# Logging configuration / 日志配置
 [spearlet.logging]
-# Log level: "trace", "debug", "info", "warn", "error" / 日志级别
+# Log level: trace/debug/info/warn/error / 日志级别
 level = "debug"
-
-# Log format: "pretty" or "json" / 日志格式："pretty" 或 "json"
+# Log format: json/pretty / 日志格式
 format = "pretty"
-
-# Enable file logging / 启用文件日志
-file_enabled = false
-
-# Log file path / 日志文件路径
-file_path = "./logs/spearlet.log"
+# Log output file (optional) / 日志输出文件（可选）
+file = "./logs/spearlet.log"

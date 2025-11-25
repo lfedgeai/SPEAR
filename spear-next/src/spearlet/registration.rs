@@ -166,10 +166,11 @@ impl RegistrationService {
             .as_mut()
             .ok_or("Node client not connected")?;
 
+        let node_addr = config.grpc.addr;
         let node = Node {
             uuid: config.node_id.clone(),
-            ip_address: config.grpc.address.clone(),
-            port: config.grpc.port as i32,
+            ip_address: node_addr.ip().to_string(),
+            port: node_addr.port() as i32,
             status: "active".to_string(),
             last_heartbeat: chrono::Utc::now().timestamp(),
             registered_at: chrono::Utc::now().timestamp(),

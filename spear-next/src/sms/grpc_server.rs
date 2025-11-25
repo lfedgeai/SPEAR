@@ -29,24 +29,45 @@ impl GrpcServer {
 
     /// Start the gRPC server / 启动gRPC服务器
     pub async fn start(self) -> Result<()> {
-        info!("Starting SMS gRPC server on {}", self.addr);
-
-        // Build the server with all services / 构建包含所有服务的服务器
-        // SmsServiceImpl implements NodeService and TaskService
-        // SmsServiceImpl实现了NodeService和TaskService
+        let (addr, sms_service) = self.prepare();
         let server = Server::builder()
-            .add_service(NodeServiceServer::new(self.sms_service.clone()))
-            .add_service(TaskServiceServer::new(self.sms_service))
-            .serve(self.addr);
+            .add_service(NodeServiceServer::new(sms_service.clone()))
+            .add_service(TaskServiceServer::new(sms_service))
+            .serve(addr);
 
-        info!("SMS gRPC server listening on {}", self.addr);
+        info!("SMS gRPC server listening on {}", addr);
 
-        // Start the server / 启动服务器
         if let Err(e) = server.await {
             error!("SMS gRPC server error: {}", e);
             return Err(e.into());
         }
 
         Ok(())
+    }
+
+    /// Start the gRPC server with shutdown signal / 使用关闭信号启动gRPC服务器
+    pub async fn start_with_shutdown<F>(self, shutdown: F) -> Result<()>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let (addr, sms_service) = self.prepare();
+        let server = Server::builder()
+            .add_service(NodeServiceServer::new(sms_service.clone()))
+            .add_service(TaskServiceServer::new(sms_service))
+            .serve_with_shutdown(addr, shutdown);
+
+        info!("SMS gRPC server listening on {}", addr);
+
+        if let Err(e) = server.await {
+            error!("SMS gRPC server error: {}", e);
+            return Err(e.into());
+        }
+
+        Ok(())
+    }
+
+    fn prepare(&self) -> (SocketAddr, SmsServiceImpl) {
+        info!("Starting SMS gRPC server on {}", self.addr);
+        (self.addr, self.sms_service.clone())
     }
 }

@@ -48,12 +48,36 @@ impl HttpGateway {
 
     /// Start the HTTP gateway / 启动HTTP网关
     pub async fn start(self) -> Result<()> {
+        let (listener, app) = self.prepare().await?;
+        if let Err(e) = axum::serve(listener, app).await {
+            error!("SMS HTTP gateway error: {}", e);
+            return Err(e.into());
+        }
+        Ok(())
+    }
+
+    /// Start HTTP gateway with shutdown signal / 使用关闭信号启动HTTP网关
+    pub async fn start_with_shutdown<F>(self, shutdown: F) -> Result<()>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let (listener, app) = self.prepare().await?;
+        if let Err(e) = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
+        {
+            error!("SMS HTTP gateway error: {}", e);
+            return Err(e.into());
+        }
+        Ok(())
+    }
+
+    async fn prepare(self) -> Result<(tokio::net::TcpListener, axum::Router)> {
         info!("Starting SMS HTTP gateway on {}", self.addr);
         info!("Connecting to gRPC server at {}", self.grpc_addr);
 
-        // Connect to gRPC server / 连接到gRPC服务器
         let grpc_url = format!("http://{}", self.grpc_addr);
-        
+
         let node_client = NodeServiceClient::connect(grpc_url.clone()).await
             .map_err(|e| {
                 error!("Failed to connect to gRPC server for node service: {}", e);
@@ -66,25 +90,13 @@ impl HttpGateway {
                 e
             })?;
 
-        // Create gateway state / 创建网关状态
-        let state = GatewayState {
-            node_client,
-            task_client,
-        };
-
-        // Create router / 创建路由器
+        let state = GatewayState { node_client, task_client };
         let app = create_gateway_router(state);
 
         info!("SMS HTTP gateway listening on {}", self.addr);
         info!("Swagger UI enabled: {}", self.enable_swagger);
 
-        // Start the server / 启动服务器
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
-        if let Err(e) = axum::serve(listener, app).await {
-            error!("SMS HTTP gateway error: {}", e);
-            return Err(e.into());
-        }
-
-        Ok(())
+        Ok((listener, app))
     }
 }

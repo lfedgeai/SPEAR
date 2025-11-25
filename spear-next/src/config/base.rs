@@ -6,8 +6,10 @@ use std::net::SocketAddr;
 
 /// Base server configuration / 基础服务器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerConfig {
     /// Server bind address / 服务器绑定地址
+    #[serde(deserialize_with = "deserialize_socket_addr")]
     pub addr: SocketAddr,
     /// Enable TLS / 启用TLS
     pub enable_tls: bool,
@@ -28,8 +30,17 @@ impl Default for ServerConfig {
     }
 }
 
+fn deserialize_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse().map_err(serde::de::Error::custom)
+}
+
 /// Base logging configuration / 基础日志配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LogConfig {
     /// Log level / 日志级别
     pub level: String,

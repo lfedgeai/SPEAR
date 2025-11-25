@@ -32,10 +32,8 @@ mod tests {
         let config = SpearletConfig::default();
         
         assert_eq!(config.node_id, "spearlet-node");
-        assert_eq!(config.grpc.address, "0.0.0.0");
-        assert_eq!(config.grpc.port, 50052);
-        assert_eq!(config.http.address, "0.0.0.0");
-        assert_eq!(config.http.port, 8081);
+        assert_eq!(config.grpc.addr.to_string(), "0.0.0.0:50052");
+        assert_eq!(config.http.server.addr.to_string(), "0.0.0.0:8081");
         assert_eq!(config.storage.backend, "memory"); // Updated to match new default / 更新以匹配新的默认值
         assert_eq!(config.storage.data_dir, "./data/spearlet");
         assert_eq!(config.sms_addr, "127.0.0.1:50051");
@@ -46,23 +44,19 @@ mod tests {
 
     #[test]
     fn test_grpc_config_default() {
-        // Test default GrpcConfig / 测试默认GrpcConfig
-        let config = GrpcConfig::default();
-        
-        assert_eq!(config.address, "0.0.0.0");
-        assert_eq!(config.port, 50052);
-        assert!(!config.tls_enabled);
-        assert_eq!(config.tls_cert_path, None);
-        assert_eq!(config.tls_key_path, None);
+        // Test default gRPC via SpearletConfig / 通过SpearletConfig测试默认gRPC
+        let config = SpearletConfig::default();
+        assert_eq!(config.grpc.addr.to_string(), "0.0.0.0:50052");
+        assert!(!config.grpc.enable_tls);
+        assert_eq!(config.grpc.cert_path, None);
+        assert_eq!(config.grpc.key_path, None);
     }
 
     #[test]
     fn test_http_config_default() {
         // Test default HttpConfig / 测试默认HttpConfig
         let config = HttpConfig::default();
-        
-        assert_eq!(config.address, "0.0.0.0");
-        assert_eq!(config.port, 8081);
+        assert_eq!(config.server.addr.to_string(), "0.0.0.0:8081");
         assert!(config.cors_enabled);
         assert!(config.swagger_enabled);
     }
@@ -82,11 +76,10 @@ mod tests {
     #[test]
     fn test_logging_config_default() {
         // Test default LoggingConfig / 测试默认LoggingConfig
-        let config = LoggingConfig::default();
-        
+        let config = crate::config::base::LogConfig::default();
         assert_eq!(config.level, "info");
         assert_eq!(config.format, "json");
-        assert_eq!(config.output_file, None);
+        assert_eq!(config.file, None);
     }
 
     #[test]
@@ -95,8 +88,8 @@ mod tests {
         let config = AppConfig::default();
         
         assert_eq!(config.spearlet.node_id, "spearlet-node");
-        assert_eq!(config.spearlet.grpc.port, 50052);
-        assert_eq!(config.spearlet.http.port, 8081);
+        assert_eq!(config.spearlet.grpc.addr.to_string(), "0.0.0.0:50052");
+        assert_eq!(config.spearlet.http.server.addr.to_string(), "0.0.0.0:8081");
     }
 
     #[test]
@@ -144,15 +137,15 @@ heartbeat_interval = 60
 cleanup_interval = 600
 
 [spearlet.grpc]
-address = "127.0.0.1"
-port = 50054
-tls_enabled = true
+addr = "127.0.0.1:50054"
+enable_tls = true
 
 [spearlet.http]
-address = "127.0.0.1"
-port = 8083
 cors_enabled = false
 swagger_enabled = false
+
+[spearlet.http.server]
+addr = "127.0.0.1:8083"
 
 [spearlet.storage]
 backend = "rocksdb"
@@ -164,7 +157,7 @@ max_object_size = 20971520
 [spearlet.logging]
 level = "trace"
 format = "text"
-output_file = "/tmp/spearlet.log"
+file = "/tmp/spearlet.log"
 "#;
         
         fs::write(&config_path, config_content).unwrap();
@@ -190,10 +183,9 @@ output_file = "/tmp/spearlet.log"
         assert!(config.spearlet.auto_register);
         assert_eq!(config.spearlet.heartbeat_interval, 60);
         assert_eq!(config.spearlet.cleanup_interval, 600);
-        assert_eq!(config.spearlet.grpc.address, "127.0.0.1");
-        assert_eq!(config.spearlet.grpc.port, 50054);
-        assert!(config.spearlet.grpc.tls_enabled);
-        assert_eq!(config.spearlet.http.port, 8083);
+        assert_eq!(config.spearlet.grpc.addr.to_string(), "127.0.0.1:50054");
+        assert!(config.spearlet.grpc.enable_tls);
+        assert_eq!(config.spearlet.http.server.addr.to_string(), "127.0.0.1:8083");
         assert!(!config.spearlet.http.cors_enabled);
         assert!(!config.spearlet.http.swagger_enabled);
         assert_eq!(config.spearlet.storage.backend, "rocksdb");
@@ -203,7 +195,7 @@ output_file = "/tmp/spearlet.log"
         assert_eq!(config.spearlet.storage.max_object_size, 20971520);
         assert_eq!(config.spearlet.logging.level, "trace");
         assert_eq!(config.spearlet.logging.format, "text");
-        assert_eq!(config.spearlet.logging.output_file, Some("/tmp/spearlet.log".to_string()));
+        assert_eq!(config.spearlet.logging.file, Some("/tmp/spearlet.log".to_string()));
     }
 
     #[test]
@@ -221,15 +213,15 @@ heartbeat_interval = 30
 cleanup_interval = 300
 
 [spearlet.grpc]
-address = "0.0.0.0"
-port = 50052
-tls_enabled = false
+addr = "0.0.0.0:50052"
+enable_tls = false
 
 [spearlet.http]
-address = "0.0.0.0"
-port = 8081
 cors_enabled = true
 swagger_enabled = true
+
+[spearlet.http.server]
+addr = "0.0.0.0:8081"
 
 [spearlet.storage]
 backend = "sled"
@@ -291,17 +283,15 @@ heartbeat_interval = 45
 cleanup_interval = 450
 
 [spearlet.grpc]
-address = "127.0.0.1"
-port = 50100
-tls_enabled = false
-tls_cert_path = ""
-tls_key_path = ""
+addr = "127.0.0.1:50100"
+enable_tls = false
 
 [spearlet.http]
-address = "127.0.0.1"
-port = 8090
 cors_enabled = true
 swagger_enabled = false
+
+[spearlet.http.server]
+addr = "127.0.0.1:8090"
 
 [spearlet.storage]
 backend = "sled"
@@ -313,7 +303,7 @@ max_object_size = 10485760
 [spearlet.logging]
 level = "warn"
 format = "json"
-output_file = "/tmp/home-spearlet.log"
+file = "/tmp/home-spearlet.log"
 "#;
 
         fs::write(&home_cfg_path, content).unwrap();
@@ -335,8 +325,8 @@ output_file = "/tmp/home-spearlet.log"
         let cfg = result.unwrap();
         assert_eq!(cfg.spearlet.node_id, "home-node");
         assert_eq!(cfg.spearlet.sms_addr, "10.0.0.1:50051");
-        assert_eq!(cfg.spearlet.grpc.port, 50100);
-        assert_eq!(cfg.spearlet.http.port, 8090);
+        assert_eq!(cfg.spearlet.grpc.addr.port(), 50100);
+        assert_eq!(cfg.spearlet.http.server.addr.port(), 8090);
         assert_eq!(cfg.spearlet.storage.backend, "sled");
         assert_eq!(cfg.spearlet.logging.level, "warn");
     }

@@ -51,21 +51,8 @@ impl GrpcServer {
 
     /// Start gRPC server / 启动gRPC服务器
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let addr: SocketAddr = format!("{}:{}", self.config.grpc.address, self.config.grpc.port)
-            .parse()
-            .map_err(|e| format!("Invalid gRPC address: {}", e))?;
-        
-        info!("Starting gRPC server on {}", addr);
-        
-        // Create gRPC service / 创建gRPC服务
-        let object_service = ObjectServiceServer::new(self.object_service.clone())
-            .max_decoding_message_size(self.config.storage.max_object_size as usize)
-            .max_encoding_message_size(self.config.storage.max_object_size as usize);
-
-        // Build and start server / 构建并启动服务器
-        let server = Server::builder()
-            .add_service(object_service)
-            .serve(addr);
+        let (addr, object_service) = self.prepare().await?;
+        let server = Server::builder().add_service(object_service).serve(addr);
 
         match server.await {
             Ok(_) => {
@@ -77,6 +64,40 @@ impl GrpcServer {
                 Err(Box::new(e))
             }
         }
+    }
+
+    /// Start gRPC server with shutdown signal / 使用关闭信号启动gRPC服务器
+    pub async fn start_with_shutdown<F>(self, shutdown: F) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let (addr, object_service) = self.prepare().await?;
+        let server = Server::builder().add_service(object_service).serve_with_shutdown(addr, shutdown);
+
+        match server.await {
+            Ok(_) => {
+                info!("gRPC server stopped gracefully");
+                Ok(())
+            }
+            Err(e) => {
+                error!("gRPC server error: {}", e);
+                Err(Box::new(e))
+            }
+        }
+    }
+
+    async fn prepare(self) -> Result<(
+        SocketAddr,
+        ObjectServiceServer<Arc<ObjectServiceImpl>>
+    ), Box<dyn std::error::Error + Send + Sync>> {
+        let addr: SocketAddr = self.config.grpc.addr;
+        info!("Starting gRPC server on {}", addr);
+
+        let object_service = ObjectServiceServer::new(self.object_service.clone())
+            .max_decoding_message_size(self.config.storage.max_object_size as usize)
+            .max_encoding_message_size(self.config.storage.max_object_size as usize);
+
+        Ok((addr, object_service))
     }
 }
 

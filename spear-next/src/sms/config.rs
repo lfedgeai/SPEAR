@@ -62,6 +62,7 @@ pub struct CliArgs {
 
 /// SMS service configuration / SMS服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SmsConfig {
     /// gRPC server configuration / gRPC服务器配置
     pub grpc: ServerConfig,
@@ -77,6 +78,7 @@ pub struct SmsConfig {
 
 /// Database configuration / 数据库配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DatabaseConfig {
     /// Database type (rocksdb, sled) / 数据库类型
     pub db_type: String,
@@ -105,54 +107,12 @@ impl SmsConfig {
                     .join("config.toml");
                 if home_path.exists() {
                     let cfg = std::fs::read_to_string(&home_path)?;
-                    // Try structured deserialization first / 先尝试结构化反序列化
-                    if let Ok(c) = toml::from_str::<Self>(&cfg) {
-                        config = c;
-                    } else {
-                        // Fallback: parse as toml::Value and manually map fields
-                        // 回退：解析为toml::Value并手动映射字段
-                        if let Ok(value) = toml::from_str::<toml::Value>(&cfg) {
-                            if let Some(grpc) = value.get("grpc") {
-                                if let Some(addr) = grpc.get("addr").and_then(|v| v.as_str()) {
-                                    if let Ok(a) = addr.parse() { config.grpc.addr = a; }
-                                }
-                                if let Some(tls) = grpc.get("enable_tls").and_then(|v| v.as_bool()) {
-                                    config.grpc.enable_tls = tls;
-                                }
-                            }
-                            if let Some(http) = value.get("http") {
-                                if let Some(addr) = http.get("addr").and_then(|v| v.as_str()) {
-                                    if let Ok(a) = addr.parse() { config.http.addr = a; }
-                                }
-                                if let Some(tls) = http.get("enable_tls").and_then(|v| v.as_bool()) {
-                                    config.http.enable_tls = tls;
-                                }
-                            }
-                            if let Some(log) = value.get("log") {
-                                if let Some(level) = log.get("level").and_then(|v| v.as_str()) {
-                                    config.log.level = level.to_string();
-                                }
-                                if let Some(format) = log.get("format").and_then(|v| v.as_str()) {
-                                    config.log.format = format.to_string();
-                                }
-                                if let Some(file) = log.get("file").and_then(|v| v.as_str()) {
-                                    config.log.file = Some(file.to_string());
-                                }
-                            }
-                            if let Some(swagger) = value.get("enable_swagger").and_then(|v| v.as_bool()) {
-                                config.enable_swagger = swagger;
-                            }
-                            if let Some(db) = value.get("database") {
-                                if let Some(db_type) = db.get("db_type").and_then(|v| v.as_str()) {
-                                    config.database.db_type = db_type.to_string();
-                                }
-                                if let Some(path) = db.get("path").and_then(|v| v.as_str()) {
-                                    config.database.path = path.to_string();
-                                }
-                                if let Some(pool) = db.get("pool_size").and_then(|v| v.as_integer()) {
-                                    config.database.pool_size = Some(pool as u32);
-                                }
-                            }
+                    eprintln!("SMS home config content:\n{}", cfg);
+                    match toml::from_str::<Self>(&cfg) {
+                        Ok(c) => { config = c; }
+                        Err(e) => {
+                            eprintln!("SMS home config parse error at {}: {}", home_path.display(), e);
+                            return Err(e.into());
                         }
                     }
                 }

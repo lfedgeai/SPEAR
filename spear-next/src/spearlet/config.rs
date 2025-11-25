@@ -4,6 +4,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::config;
+use crate::config::base::{ServerConfig, LogConfig};
 
 /// SPEARlet command line arguments / SPEARlet命令行参数
 #[derive(Parser, Debug, Clone)]
@@ -102,19 +103,11 @@ impl AppConfig {
         }
         
         if let Some(grpc_addr) = &args.grpc_addr {
-            let parts: Vec<&str> = grpc_addr.split(':').collect();
-            if parts.len() == 2 {
-                config.spearlet.grpc.address = parts[0].to_string();
-                config.spearlet.grpc.port = parts[1].parse()?;
-            }
+            config.spearlet.grpc.addr = grpc_addr.parse()?;
         }
         
         if let Some(http_addr) = &args.http_addr {
-            let parts: Vec<&str> = http_addr.split(':').collect();
-            if parts.len() == 2 {
-                config.spearlet.http.address = parts[0].to_string();
-                config.spearlet.http.port = parts[1].parse()?;
-            }
+            config.spearlet.http.server.addr = http_addr.parse()?;
         }
         
         if let Some(sms_addr) = &args.sms_addr {
@@ -151,17 +144,18 @@ impl Default for AppConfig {
 
 /// SPEARlet service configuration / SPEARlet服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SpearletConfig {
     /// Node identifier / 节点标识符
     pub node_id: String,
     /// gRPC server configuration / gRPC服务器配置
-    pub grpc: GrpcConfig,
+    pub grpc: ServerConfig,
     /// HTTP gateway configuration / HTTP网关配置
     pub http: HttpConfig,
     /// Storage configuration / 存储配置
     pub storage: StorageConfig,
     /// Logging configuration / 日志配置
-    pub logging: LoggingConfig,
+    pub logging: LogConfig,
     /// SMS service address / SMS服务地址
     pub sms_addr: String,
     /// Auto register with SMS / 自动向SMS注册
@@ -173,27 +167,14 @@ pub struct SpearletConfig {
 }
 
 /// gRPC server configuration / gRPC服务器配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrpcConfig {
-    /// Server bind address / 服务器绑定地址
-    pub address: String,
-    /// Server port / 服务器端口
-    pub port: u16,
-    /// Enable TLS / 启用TLS
-    pub tls_enabled: bool,
-    /// TLS certificate file path / TLS证书文件路径
-    pub tls_cert_path: Option<String>,
-    /// TLS private key file path / TLS私钥文件路径
-    pub tls_key_path: Option<String>,
-}
+// gRPC uses base ServerConfig / gRPC使用基础ServerConfig
 
 /// HTTP gateway configuration / HTTP网关配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HttpConfig {
-    /// Server bind address / 服务器绑定地址
-    pub address: String,
-    /// Server port / 服务器端口
-    pub port: u16,
+    /// HTTP server settings / HTTP服务器设置
+    pub server: ServerConfig,
     /// Enable CORS / 启用CORS
     pub cors_enabled: bool,
     /// Enable Swagger UI / 启用Swagger UI
@@ -230,10 +211,10 @@ impl Default for SpearletConfig {
     fn default() -> Self {
         Self {
             node_id: "spearlet-node".to_string(),
-            grpc: GrpcConfig::default(),
+            grpc: ServerConfig { addr: "0.0.0.0:50052".parse().unwrap(), ..Default::default() },
             http: HttpConfig::default(),
             storage: StorageConfig::default(),
-            logging: LoggingConfig::default(),
+            logging: LogConfig::default(),
             sms_addr: "127.0.0.1:50051".to_string(),
             auto_register: false,
             heartbeat_interval: 30,
@@ -242,23 +223,12 @@ impl Default for SpearletConfig {
     }
 }
 
-impl Default for GrpcConfig {
-    fn default() -> Self {
-        Self {
-            address: "0.0.0.0".to_string(),
-            port: 50052,
-            tls_enabled: false,
-            tls_cert_path: None,
-            tls_key_path: None,
-        }
-    }
-}
+// Grpc defaults provided via ServerConfig::default with override in SpearletConfig
 
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
-            address: "0.0.0.0".to_string(),
-            port: 8081,
+            server: ServerConfig { addr: "0.0.0.0:8081".parse().unwrap(), ..Default::default() },
             cors_enabled: true,
             swagger_enabled: true,
         }
@@ -277,25 +247,4 @@ impl Default for StorageConfig {
     }
 }
 
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            level: "info".to_string(),
-            format: "json".to_string(),
-            output_file: None,
-        }
-    }
-}
-
-impl LoggingConfig {
-    /// Convert to the common LoggingConfig used by init_tracing
-    /// 转换为init_tracing使用的通用LoggingConfig
-    pub fn to_common_config(&self) -> crate::config::LoggingConfig {
-        crate::config::LoggingConfig {
-            level: self.level.clone(),
-            format: self.format.clone(),
-            file_enabled: self.output_file.is_some(),
-            file_path: self.output_file.as_ref().map(|p| std::path::PathBuf::from(p)),
-        }
-    }
-}
+// Logging uses base LogConfig / 日志使用基础LogConfig

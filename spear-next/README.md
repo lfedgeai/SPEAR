@@ -91,38 +91,94 @@ SMS支持通过命令行参数进行灵活配置：
 
 #### Configuration / 配置
 
-Create a `config.toml` file or use environment variables with `SPEAR_` prefix:
+Current codebase uses configuration files with a home-first strategy and unified schema for both SMS and SPEARlet.
 
-创建`config.toml`文件或使用`SPEAR_`前缀的环境变量：
+当前代码使用“家目录优先”的配置加载策略，并为 SMS 与 SPEARlet 统一了配置结构。
 
+SMS config file location / SMS配置文件位置：
+- `~/.sms/config.toml` (preferred) / 优先
+- or `--config <path>` via CLI / 或通过CLI指定 `--config <路径>`
+- otherwise defaults / 否则使用默认值
+
+Example SMS config / SMS配置示例：
 ```toml
-[sms]
-grpc_addr = "0.0.0.0:50051"
-http_addr = "0.0.0.0:8080"
-cleanup_interval = 300
-heartbeat_timeout = 120
+[grpc]
+addr = "127.0.0.1:50051"
+enable_tls = false
+
+[http]
+addr = "127.0.0.1:8080"
+enable_tls = false
+
 enable_swagger = true
+
+[database]
+db_type = "sled"
+path = "./data/sms.db"
+pool_size = 10
+
+[log]
+level = "debug"
+format = "json"
+file = "./logs/sms.log"
 ```
 
-Environment variables / 环境变量:
-```bash
-export SPEAR_SMS_GRPC_ADDR="0.0.0.0:50051"
-export SPEAR_SMS_HTTP_ADDR="0.0.0.0:8080"
-export SPEAR_SMS_CLEANUP_INTERVAL=300
-export SPEAR_SMS_HEARTBEAT_TIMEOUT=120
-export SPEAR_SMS_ENABLE_SWAGGER=true
+SPEARlet config file location / SPEARlet配置文件位置：
+- `~/.spear/config.toml` (preferred) / 优先
+- or `--config <path>` via CLI / 或通过CLI指定 `--config <路径>`
+- otherwise defaults / 否则使用默认值
+
+Example SPEARlet config / SPEARlet配置示例：
+```toml
+[spearlet]
+node_id = ""
+sms_addr = "127.0.0.1:50051"
+auto_register = true
+heartbeat_interval = 30
+cleanup_interval = 300
+
+[spearlet.grpc]
+addr = "0.0.0.0:50052"
+enable_tls = false
+
+[spearlet.http]
+cors_enabled = true
+swagger_enabled = true
+
+[spearlet.http.server]
+addr = "0.0.0.0:8081"
+
+[spearlet.storage]
+backend = "memory"
+data_dir = "./data/spearlet"
+max_cache_size_mb = 512
+compression_enabled = true
+max_object_size = 67108864
+
+[spearlet.logging]
+level = "debug"
+format = "pretty"
+file = "./logs/spearlet.log"
 ```
 
-##### Configuration Priority / 配置优先级
+Configuration priority / 配置优先级：
+- 1) CLI `--config` path / CLI指定的`--config`路径（最高）
+- 2) Home config (`~/.sms/config.toml` or `~/.spear/config.toml`) / 家目录配置
+- 3) Environment variables / 环境变量（如 `SPEARLET_*`、`SMS_*`）
+- 4) Built-in defaults / 代码内置默认值
 
-The configuration is loaded in the following order (highest to lowest priority):
+Environment variables / 环境变量支持：
 
-配置按以下顺序加载（优先级从高到低）：
+SPEARlet (`SPEARLET_*`):
+- `SPEARLET_NODE_ID`, `SPEARLET_SMS_ADDR`, `SPEARLET_AUTO_REGISTER`, `SPEARLET_HEARTBEAT_INTERVAL`, `SPEARLET_CLEANUP_INTERVAL`
+- `SPEARLET_GRPC_ADDR`, `SPEARLET_HTTP_ADDR`
+- `SPEARLET_STORAGE_BACKEND`, `SPEARLET_STORAGE_DATA_DIR`, `SPEARLET_STORAGE_MAX_CACHE_MB`, `SPEARLET_STORAGE_COMPRESSION_ENABLED`, `SPEARLET_STORAGE_MAX_OBJECT_SIZE`
+- `SPEARLET_LOG_LEVEL`, `SPEARLET_LOG_FORMAT`, `SPEARLET_LOG_FILE`
 
-1. **Command line arguments** / **命令行参数**
-2. **Environment variables** / **环境变量** (with `SPEAR_` prefix)
-3. **Configuration file** / **配置文件** (TOML format)
-4. **Default values** / **默认值**
+SMS (`SMS_*`):
+- `SMS_GRPC_ADDR`, `SMS_HTTP_ADDR`, `SMS_ENABLE_SWAGGER`
+- `SMS_DB_TYPE`, `SMS_DB_PATH`, `SMS_DB_POOL_SIZE`
+- `SMS_LOG_LEVEL`, `SMS_LOG_FORMAT`, `SMS_LOG_FILE`
 
 #### API Examples / API示例
 
@@ -215,17 +271,24 @@ gRPC服务提供以下方法：
 
 2. **Build / 构建**:
    ```bash
+   make build
+   # 或
    cargo build
    ```
 
 3. **Test / 测试**:
    ```bash
+   make test
+   # 或
    cargo test
    ```
 
 4. **Run in development mode / 开发模式运行**:
    ```bash
-   RUST_LOG=debug cargo run --bin sms
+   # SMS
+   make run-sms
+   # SPEARlet
+   make run-spearlet
    ```
 
 #### Docker Support / Docker支持
@@ -328,27 +391,28 @@ cargo test storage --lib --features rocksdb
 
 ```
 spear-next/
-├── Cargo.toml              # Project configuration / 项目配置
-├── build.rs                # Build script for protobuf / protobuf构建脚本
-├── config.toml             # Example configuration / 示例配置
-├── proto/                  # Protocol buffer definitions / Protocol buffer定义
-│   └── sms/
-│       └── sms.proto
+├── Cargo.toml                   # Project configuration / 项目配置
+├── build.rs                     # Build script for protobuf / protobuf构建脚本
+├── config/
+│   ├── sms/config.toml          # SMS config / SMS配置
+│   └── spearlet/config.toml     # SPEARlet config / SPEARlet配置
+├── proto/
+│   └── sms/sms.proto            # Protobuf definitions / Protobuf定义
 ├── src/
-│   ├── lib.rs              # Library root / 库根文件
-│   ├── common/             # Common utilities / 通用工具
-│   │   ├── mod.rs
-│   │   ├── config.rs       # Configuration management / 配置管理
-│   │   ├── error.rs        # Error types / 错误类型
-│   │   └── node.rs         # Node data models / 节点数据模型
-│   ├── proto/              # Generated protobuf code / 生成的protobuf代码
-│   │   └── mod.rs
-│   └── bin/
-│       └── sms/            # SMS binary / SMS二进制
-│           ├── main.rs     # Main entry point / 主入口点
-│           ├── service.rs  # gRPC service implementation / gRPC服务实现
-│           └── gateway.rs  # HTTP gateway / HTTP网关
-└── README.md               # This file / 本文件
+│   ├── lib.rs                   # Library root / 库根文件
+│   ├── config/                  # Shared config types / 共享配置类型
+│   │   ├── base.rs              # ServerConfig, LogConfig / 基础配置结构
+│   │   └── mod.rs               # Logging init / 日志初始化
+│   ├── apps/
+│   │   ├── sms/main.rs          # SMS main / SMS主入口
+│   │   └── spearlet/main.rs     # SPEARlet main / SPEARlet主入口
+│   ├── sms/                     # SMS modules / SMS模块
+│   │   ├── grpc_server.rs       # gRPC server / gRPC服务器
+│   │   └── http_gateway.rs      # HTTP gateway / HTTP网关
+│   └── spearlet/                # SPEARlet modules / SPEARlet模块
+│       ├── grpc_server.rs       # gRPC server / gRPC服务器
+│       └── http_gateway.rs      # HTTP gateway / HTTP网关
+└── README.md                    # This file / 本文件
 ```
 
 ## License

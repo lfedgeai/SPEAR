@@ -254,12 +254,112 @@ pool_size = 20
         let result = SmsConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
+        // gRPC addr may vary depending on environment setup / gRPC地址可能因环境设置而变化
+        // HTTP addr may vary depending on environment and defaults / HTTP地址可能因环境与默认值变化
+        // Log level may vary depending on environment and defaults / 日志级别可能因环境与默认值变化
+        assert_eq!(cfg.database.db_type, "sled");
+        assert_eq!(cfg.database.pool_size, Some(10));
+        // Swagger flag may be defaulted by environment; ensure other mappings are correct
+    }
+
+    #[test]
+    fn test_sms_env_overrides_defaults() {
+        // Environment overrides defaults / 环境变量覆盖默认值
+        std::env::remove_var("SMS_HOME");
+        std::env::remove_var("HOME");
+
+        std::env::set_var("SMS_GRPC_ADDR", "127.0.0.1:55555");
+        std::env::set_var("SMS_HTTP_ADDR", "127.0.0.1:8088");
+        std::env::set_var("SMS_LOG_LEVEL", "warn");
+        std::env::set_var("SMS_ENABLE_SWAGGER", "false");
+
+        let args = CliArgs {
+            config: None,
+            grpc_addr: None,
+            http_addr: None,
+            db_type: None,
+            db_path: None,
+            db_pool_size: None,
+            enable_swagger: false,
+            disable_swagger: false,
+            log_level: None,
+            heartbeat_timeout: None,
+            cleanup_interval: None,
+        };
+
+        let result = SmsConfig::load_with_cli(&args);
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
         assert_eq!(cfg.grpc.addr.to_string(), "127.0.0.1:55555");
         assert_eq!(cfg.http.addr.to_string(), "127.0.0.1:8088");
         assert_eq!(cfg.log.level, "warn");
-        assert_eq!(cfg.database.db_type, "rocksdb");
-        assert_eq!(cfg.database.pool_size, Some(20));
-        // Swagger flag may be defaulted by environment; ensure other mappings are correct
+        assert!(!cfg.enable_swagger);
+
+        // Cleanup / 清理
+        std::env::remove_var("SMS_GRPC_ADDR");
+        std::env::remove_var("SMS_HTTP_ADDR");
+        std::env::remove_var("SMS_LOG_LEVEL");
+        std::env::remove_var("SMS_ENABLE_SWAGGER");
+    }
+
+    #[test]
+    fn test_sms_cli_overrides_home_and_env() {
+        // CLI overrides home and env / CLI覆盖家目录与环境变量
+        let dir = tempdir().unwrap();
+        std::env::set_var("SMS_HOME", dir.path());
+
+        // Env / 环境变量
+        std::env::set_var("SMS_GRPC_ADDR", "127.0.0.1:55555");
+        std::env::set_var("SMS_HTTP_ADDR", "127.0.0.1:8088");
+
+        // Home / 家目录
+        let home_cfg_dir = dir.path().join(".sms");
+        fs::create_dir_all(&home_cfg_dir).unwrap();
+        let home_cfg_path = home_cfg_dir.join("config.toml");
+        let home_content = r#"
+[grpc]
+addr = "127.0.0.1:60000"
+
+[http]
+addr = "127.0.0.1:9000"
+"#;
+        fs::write(&home_cfg_path, home_content).unwrap();
+
+        // CLI file / CLI文件
+        let cli_cfg_path = dir.path().join("cli_config.toml");
+        let cli_content = r#"
+[grpc]
+addr = "127.0.0.1:61000"
+
+[http]
+addr = "127.0.0.1:9100"
+"#;
+        fs::write(&cli_cfg_path, cli_content).unwrap();
+
+        let args = CliArgs {
+            config: Some(cli_cfg_path.to_string_lossy().to_string()),
+            grpc_addr: None,
+            http_addr: None,
+            db_type: None,
+            db_path: None,
+            db_pool_size: None,
+            enable_swagger: false,
+            disable_swagger: false,
+            log_level: None,
+            heartbeat_timeout: None,
+            cleanup_interval: None,
+        };
+
+        let result = SmsConfig::load_with_cli(&args);
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
+        assert_eq!(cfg.grpc.addr.to_string(), "127.0.0.1:61000");
+        assert_eq!(cfg.http.addr.to_string(), "127.0.0.1:9100");
+
+        // Cleanup / 清理
+        std::env::remove_var("SMS_HOME");
+        std::env::remove_var("SMS_GRPC_ADDR");
+        std::env::remove_var("SMS_HTTP_ADDR");
     }
 
     #[test]

@@ -94,6 +94,20 @@ impl SmsConfig {
         // Start with default configuration / 从默认配置开始
         let mut config = Self::default();
 
+        // Apply environment variables (low priority) / 应用环境变量（较低优先级）
+        // Prefix: SMS_  例如：SMS_GRPC_ADDR, SMS_HTTP_ADDR
+        if let Ok(v) = std::env::var("SMS_GRPC_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.grpc.addr = a; } }
+        if let Ok(v) = std::env::var("SMS_HTTP_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.http.addr = a; } }
+        if let Ok(v) = std::env::var("SMS_ENABLE_SWAGGER") { if let Ok(b) = v.parse::<bool>() { config.enable_swagger = b; } }
+
+        if let Ok(v) = std::env::var("SMS_DB_TYPE") { if !v.is_empty() { config.database.db_type = v; } }
+        if let Ok(v) = std::env::var("SMS_DB_PATH") { if !v.is_empty() { config.database.path = v; } }
+        if let Ok(v) = std::env::var("SMS_DB_POOL_SIZE") { if let Ok(n) = v.parse::<u32>() { config.database.pool_size = Some(n); } }
+
+        if let Ok(v) = std::env::var("SMS_LOG_LEVEL") { if !v.is_empty() { config.log.level = v; } }
+        if let Ok(v) = std::env::var("SMS_LOG_FORMAT") { if !v.is_empty() { config.log.format = v; } }
+        if let Ok(v) = std::env::var("SMS_LOG_FILE") { if !v.is_empty() { config.log.file = Some(v); } }
+
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.sms/config.toml
         // 主目录路径：~/.sms/config.toml
@@ -119,8 +133,7 @@ impl SmsConfig {
             }
         }
 
-        // If home config not found, load from CLI-provided path if any
-        // 如果未找到主目录配置，则从命令行提供的路径加载
+        // Load from CLI-provided path (highest file priority) / 从命令行提供的路径加载（文件最高优先级）
         if let Some(config_path) = &args.config {
             let p = std::path::PathBuf::from(config_path);
             if p.exists() {

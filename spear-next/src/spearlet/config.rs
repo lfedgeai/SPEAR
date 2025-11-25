@@ -64,6 +64,27 @@ impl AppConfig {
     pub fn load_with_cli(args: &CliArgs) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let mut config = AppConfig::default();
 
+        // Apply environment variables (low priority) / 应用环境变量（较低优先级）
+        // Prefix: SPEARLET_  例如：SPEARLET_GRPC_ADDR, SPEARLET_HTTP_ADDR
+        if let Ok(v) = std::env::var("SPEARLET_NODE_ID") { if !v.is_empty() { config.spearlet.node_id = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_ADDR") { if !v.is_empty() { config.spearlet.sms_addr = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_AUTO_REGISTER") { if let Ok(b) = v.parse::<bool>() { config.spearlet.auto_register = b; } }
+        if let Ok(v) = std::env::var("SPEARLET_HEARTBEAT_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.heartbeat_interval = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_CLEANUP_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.cleanup_interval = n; } }
+
+        if let Ok(v) = std::env::var("SPEARLET_GRPC_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.spearlet.grpc.addr = a; } }
+        if let Ok(v) = std::env::var("SPEARLET_HTTP_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.spearlet.http.server.addr = a; } }
+
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_BACKEND") { if !v.is_empty() { config.spearlet.storage.backend = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_DATA_DIR") { if !v.is_empty() { config.spearlet.storage.data_dir = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_CACHE_MB") { if let Ok(n) = v.parse::<u64>() { config.spearlet.storage.max_cache_size_mb = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_COMPRESSION_ENABLED") { if let Ok(b) = v.parse::<bool>() { config.spearlet.storage.compression_enabled = b; } }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_OBJECT_SIZE") { if let Ok(n) = v.parse::<u64>() { config.spearlet.storage.max_object_size = n; } }
+
+        if let Ok(v) = std::env::var("SPEARLET_LOG_LEVEL") { if !v.is_empty() { config.spearlet.logging.level = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_LOG_FORMAT") { if !v.is_empty() { config.spearlet.logging.format = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_LOG_FILE") { if !v.is_empty() { config.spearlet.logging.file = Some(v); } }
+
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.spear/config.toml
         // 主目录路径：~/.spear/config.toml
@@ -88,13 +109,10 @@ impl AppConfig {
             }
         }
 
-        // If home config not found, load from CLI-provided path if any
-        // 如果未找到主目录配置，则从命令行提供的路径加载
-        if args.config.is_some() {
-            if let Some(config_path) = &args.config {
-                let config_content = std::fs::read_to_string(config_path)?;
-                config = toml::from_str(&config_content)?;
-            }
+        // Load from CLI-provided path (highest file priority) / 从命令行提供的路径加载（文件最高优先级）
+        if let Some(config_path) = &args.config {
+            let config_content = std::fs::read_to_string(config_path)?;
+            config = toml::from_str(&config_content)?;
         }
         
         // Override with CLI arguments / 使用CLI参数覆盖

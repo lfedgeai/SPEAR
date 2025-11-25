@@ -291,6 +291,47 @@ gRPC服务提供以下方法：
    make run-spearlet
    ```
 
+### E2E Testing / 端到端测试
+
+Container-based E2E tests verify SPEARlet ↔ SMS connectivity using Docker:
+
+基于容器的端到端测试使用 Docker 验证 SPEARlet 与 SMS 的连通性：
+
+- Test file / 测试文件：`tests/testcontainers_e2e.rs`
+- Dev dependency / 开发依赖：`testcontainers = "0.15"`
+- Run (ignored by default) / 运行（默认忽略）：
+
+```bash
+cargo build
+DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
+# 或使用Make目标
+make e2e
+
+# 在macOS或非Linux主机上，建议先交叉编译Linux二进制：
+make e2e-linux
+```
+
+提示：E2E测试在容器中运行Linux环境，需要Linux目标的二进制。若本机为非Linux（如macOS），请使用 `make e2e-linux` 构建 `x86_64-unknown-linux-musl` 目标后再运行。
+```
+
+Documentation / 文档：
+- `ai-docs/e2e-testing-en.md`
+- `ai-docs/e2e-testing-zh.md`
+
+CLI-gated SMS connect / 通过CLI控制的SMS连接：
+- 指定 `--sms-addr` 时，SPEARlet 启动时将立即尝试连接到该 SMS 地址；如果连接失败，将退出进程
+- 未指定 `--sms-addr` 时，SPEARlet 启动不会主动连接 SMS
+- 可配合 `--auto-register` 使用：连接成功后立即执行注册，否则也会退出
+
+Examples / 使用示例：
+```bash
+# 不连接SMS（未指定地址）
+make run-spearlet
+
+# 连接并注册到SMS，如果连接失败则退出
+cargo run --bin spearlet -- --sms-addr 127.0.0.1:50051 --auto-register
+```
+
 #### Docker Support / Docker支持
 
 A Dockerfile will be provided for containerized deployment.

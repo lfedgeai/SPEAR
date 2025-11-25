@@ -63,12 +63,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
     
-    // Register with SMS if enabled / 如果启用，向SMS注册
-    if config.auto_register {
+    // CLI/env-gated SMS connect / 通过CLI或环境变量控制是否连接SMS
+    let connect_requested = args.sms_addr.is_some()
+        || std::env::var("SPEARLET_SMS_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
+    if connect_requested {
         let registration_service = RegistrationService::new(config.clone());
-        if let Err(e) = registration_service.force_register().await {
-            tracing::warn!("Failed to register with SMS: {}", e);
-        } else {
+        if let Err(e) = registration_service.connect_to_sms().await {
+            tracing::error!("Failed to connect to SMS: {}", e);
+            return Err(Box::<dyn std::error::Error + Send + Sync>::from(e));
+        }
+        tracing::info!("Connected to SMS as requested by CLI");
+
+        // Optionally auto register after connect / 可选在连接后自动注册
+        if config.auto_register {
+            if let Err(e) = registration_service.force_register().await {
+                tracing::error!("Registration with SMS failed: {}", e);
+                return Err(Box::<dyn std::error::Error + Send + Sync>::from(e));
+            }
             tracing::info!("Successfully registered with SMS");
         }
     }

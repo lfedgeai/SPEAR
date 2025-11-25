@@ -306,3 +306,84 @@ mod integration_tests {
         }
     }
 }
+    #[tokio::test]
+    async fn test_connect_fails_with_unreachable_sms() {
+        use std::sync::Arc;
+        use crate::spearlet::config::SpearletConfig;
+        use crate::config::base::ServerConfig;
+        use super::RegistrationService;
+
+        let cfg = SpearletConfig {
+            node_id: "test-node".to_string(),
+            grpc: ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() },
+            http: crate::spearlet::config::HttpConfig::default(),
+            storage: crate::spearlet::config::StorageConfig::default(),
+            logging: crate::config::base::LogConfig::default(),
+            sms_addr: "127.0.0.1:65535".to_string(),
+            auto_register: false,
+            heartbeat_interval: 5,
+            cleanup_interval: 60,
+            sms_connect_timeout_ms: 15000,
+            sms_connect_retry_ms: 500,
+        };
+
+        let svc = RegistrationService::new(Arc::new(cfg));
+        let res = svc.connect_to_sms().await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_connect_and_register_to_sms() {
+        use std::sync::Arc;
+        use std::net::SocketAddr;
+        use tokio::sync::RwLock;
+        use crate::spearlet::config::SpearletConfig;
+        use crate::config::base::ServerConfig;
+        use crate::sms::services::node_service::NodeService;
+        use crate::sms::services::resource_service::ResourceService;
+        use crate::sms::config::SmsConfig;
+        use crate::sms::service::SmsServiceImpl;
+        use crate::sms::grpc_server::GrpcServer as SmsGrpcServer;
+        use super::RegistrationService;
+
+        // Pick a free port for SMS gRPC / 为SMS gRPC选择一个空闲端口
+        let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = sock.local_addr().unwrap().port();
+        drop(sock);
+        let sms_addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+
+        // Initialize SMS service / 初始化SMS服务
+        let node_service = Arc::new(RwLock::new(NodeService::new()));
+        let resource_service = Arc::new(ResourceService::new_with_memory());
+        let sms_cfg = Arc::new(SmsConfig::default());
+        let sms_service = SmsServiceImpl::new(node_service, resource_service, sms_cfg).await;
+
+        // Start SMS gRPC with shutdown channel / 启动SMS gRPC并带关闭通道
+        let sms_server = SmsGrpcServer::new(sms_addr, sms_service);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let server_handle = tokio::spawn(async move {
+            let _ = sms_server.start_with_shutdown(async move { let _ = shutdown_rx.await; }).await;
+        });
+
+        // Prepare Spearlet config / 准备Spearlet配置
+        let mut spear_cfg = SpearletConfig::default();
+        spear_cfg.grpc = ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() };
+        spear_cfg.http.server = ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() };
+        spear_cfg.sms_addr = format!("127.0.0.1:{}", port);
+        spear_cfg.auto_register = false;
+
+        let reg = RegistrationService::new(Arc::new(spear_cfg));
+        // Wait server to start / 等待服务器启动
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        // Connect to SMS / 连接到SMS
+        let res = reg.connect_to_sms().await;
+        assert!(res.is_ok());
+
+        // Force register / 强制注册
+        let reg_res = reg.force_register().await;
+        assert!(reg_res.is_ok());
+
+        // Cleanup / 清理
+        let _ = shutdown_tx.send(());
+        let _ = server_handle.await;
+    }

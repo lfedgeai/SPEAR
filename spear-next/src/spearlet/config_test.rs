@@ -19,6 +19,8 @@ mod tests {
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         assert_eq!(args.config, None);
@@ -105,6 +107,8 @@ mod tests {
             storage_path: Some("./test-data".to_string()),
             auto_register: Some(true),
             log_level: Some("debug".to_string()),
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -172,6 +176,8 @@ file = "/tmp/spearlet.log"
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -247,6 +253,8 @@ format = "json"
             storage_path: Some("./cli-data".to_string()),
             auto_register: Some(true),
             log_level: Some("debug".to_string()),
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -318,6 +326,8 @@ file = "/tmp/home-spearlet.log"
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -351,6 +361,8 @@ file = "/tmp/home-spearlet.log"
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -396,7 +408,7 @@ addr = "127.0.0.1:9000"
 "#;
         fs::write(&home_cfg_path, content).unwrap();
 
-        let args = CliArgs { config: None, node_id: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None };
+        let args = CliArgs { config: None, node_id: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None };
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
@@ -450,7 +462,7 @@ addr = "127.0.0.1:9100"
 "#;
         fs::write(&cli_cfg_path, cli_content).unwrap();
 
-        let args = CliArgs { config: Some(cli_cfg_path.to_string_lossy().to_string()), node_id: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None };
+        let args = CliArgs { config: Some(cli_cfg_path.to_string_lossy().to_string()), node_id: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None };
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
@@ -477,6 +489,8 @@ addr = "127.0.0.1:9100"
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -496,6 +510,8 @@ addr = "127.0.0.1:9100"
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -520,6 +536,8 @@ addr = "127.0.0.1:9100"
             storage_path: None,
             auto_register: None,
             log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);

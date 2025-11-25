@@ -20,7 +20,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help
+.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e
 
 # Default target / 默认目标
 all: check test build
@@ -42,6 +42,7 @@ help:
 	@echo "  doc             - Generate documentation / 生成文档"
 	@echo "  install-deps    - Install development dependencies / 安装开发依赖"
 	@echo "  help            - Show this help message / 显示此帮助信息"
+	@echo "  e2e             - Run Docker-based E2E tests / 运行基于Docker的端到端测试"
 	@echo ""
 	@echo -e "$(YELLOW)Examples / 示例:$(NC)"
 	@echo "  make build                    # Build with default features / 使用默认特性构建"
@@ -230,3 +231,30 @@ info:
 	@echo "Target Directory / 目标目录: $(TARGET_DIR)"
 	@echo "Coverage Directory / 覆盖率目录: $(COVERAGE_DIR)"
 	@echo ""
+
+# Run Docker-based E2E tests / 运行基于Docker的端到端测试
+e2e:
+	@echo -e "$(BLUE)🧪 Running E2E tests with Docker... / 使用Docker运行端到端测试...$(NC)"
+	@if [ "$(shell uname -s)" = "Linux" ]; then \
+		$(CARGO) build; \
+		E2E_BIN_DIR=$(TARGET_DIR)/debug DOCKER=1 $(CARGO) test --test testcontainers_e2e -- --ignored --nocapture || (echo -e "$(RED)❌ E2E tests failed / 端到端测试失败$(NC)"; exit 1); \
+	else \
+		echo -e "$(YELLOW)⚠️  Non-Linux host detected, skipping E2E execution. Use 'make e2e-linux' to cross-compile and run / 非Linux主机检测到，跳过E2E执行。使用'make e2e-linux'进行交叉编译并运行$(NC)"; \
+		$(CARGO) test --test testcontainers_e2e -- --ignored --nocapture >/dev/null 2>&1 || true; \
+	fi
+	@echo -e "$(GREEN)✅ E2E tests completed / 端到端测试完成$(NC)"
+
+.PHONY: e2e-linux
+e2e-linux:
+	@echo -e "$(BLUE)🧪 Running E2E tests with Linux binaries... / 使用Linux二进制运行端到端测试...$(NC)"
+	@if command -v cross >/dev/null 2>&1; then \
+		echo -e "$(BLUE)📦 cross detected, building Linux GNU target... / 检测到cross，正在构建Linux GNU目标...$(NC)"; \
+		SKIP_PROTOC=1 CROSS_CONTAINER_ENV_SKIP_PROTOC=1 DOCKER_DEFAULT_PLATFORM=linux/amd64 cross build --release --target x86_64-unknown-linux-gnu --bins || (echo -e "$(RED)❌ cross build failed / cross构建失败$(NC)"; exit 1); \
+		DOCKER_DEFAULT_PLATFORM=linux/amd64 E2E_BIN_DIR=$(TARGET_DIR)/x86_64-unknown-linux-gnu/release DOCKER=1 $(CARGO) test --test testcontainers_e2e -- --ignored --nocapture || (echo -e "$(RED)❌ E2E tests failed / 端到端测试失败$(NC)"; exit 1); \
+	else \
+		echo -e "$(YELLOW)⚠️  'cross' not installed, attempting musl cross-compile... / 未安装cross，尝试musl交叉编译...$(NC)"; \
+		rustup target add x86_64-unknown-linux-musl >/dev/null 2>&1 || true; \
+		$(CARGO) build --release --target x86_64-unknown-linux-musl || (echo -e "$(YELLOW)⚠️  Cross compile failed, ensure musl toolchain is installed / 交叉编译失败，请确保安装musl工具链$(NC)"; echo -e "$(YELLOW)👉 Tip: install 'cross' with 'cargo install cross' / 建议使用'cargo install cross'安装cross$(NC)"; exit 1); \
+		DOCKER_DEFAULT_PLATFORM=linux/amd64 E2E_BIN_DIR=$(TARGET_DIR)/x86_64-unknown-linux-musl/release DOCKER=1 $(CARGO) test --test testcontainers_e2e -- --ignored --nocapture || (echo -e "$(RED)❌ E2E tests failed / 端到端测试失败$(NC)"; exit 1); \
+	fi
+	@echo -e "$(GREEN)✅ E2E tests (Linux) completed / 端到端测试（Linux）完成$(NC)"

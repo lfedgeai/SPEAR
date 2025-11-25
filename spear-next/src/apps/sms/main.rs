@@ -52,9 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Initialize gRPC server / 初始化gRPC服务器
     let grpc_server = GrpcServer::new(config.grpc.addr, sms_service);
+    let (shutdown_tx_grpc, shutdown_rx_grpc) = tokio::sync::oneshot::channel::<()>();
     let grpc_handle = tokio::spawn({
         async move {
-            if let Err(e) = grpc_server.start().await {
+            if let Err(e) = grpc_server.start_with_shutdown(async move { let _ = shutdown_rx_grpc.await; }).await {
                 tracing::error!("gRPC server error: {}", e);
             }
         }
@@ -62,8 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Initialize HTTP gateway / 初始化HTTP网关
     let http_gateway = HttpGateway::new(config.http.addr, config.grpc.addr, config.enable_swagger);
+    let (shutdown_tx_http, shutdown_rx_http) = tokio::sync::oneshot::channel::<()>();
     let http_handle = tokio::spawn(async move {
-        if let Err(e) = http_gateway.start().await {
+        if let Err(e) = http_gateway.start_with_shutdown(async move { let _ = shutdown_rx_http.await; }).await {
             tracing::error!("HTTP gateway error: {}", e);
         }
     });
@@ -79,9 +81,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::signal::ctrl_c().await?;
     tracing::info!("SMS server shutting down");
     
-    // Graceful shutdown / 优雅关闭
-    grpc_handle.abort();
-    http_handle.abort();
+    // Graceful shutdown / 优雅关闭：通知两个服务停止
+    let _ = shutdown_tx_grpc.send(());
+    let _ = shutdown_tx_http.send(());
+    
+    // Wait tasks to finish / 等待任务结束
+    let _ = grpc_handle.await;
+    let _ = http_handle.await;
     
     Ok(())
 }

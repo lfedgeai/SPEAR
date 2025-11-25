@@ -54,43 +54,44 @@ impl HttpGateway {
 
     /// Start HTTP gateway server / 启动HTTP网关服务器
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let addr: SocketAddr = format!("{}:{}", self.config.http.address, self.config.http.port)
-            .parse()
-            .map_err(|e| format!("Invalid HTTP address: {}", e))?;
-        
+        let (listener, app) = self.prepare().await?;
+        axum::serve(listener, app).await?;
+        Ok(())
+    }
+
+    /// Start HTTP gateway with shutdown signal / 使用关闭信号启动HTTP网关
+    pub async fn start_with_shutdown<F>(self, shutdown: F) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let (listener, app) = self.prepare().await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await?;
+        Ok(())
+    }
+
+    async fn prepare(self) -> Result<(tokio::net::TcpListener, Router), Box<dyn std::error::Error + Send + Sync>> {
+        let addr: SocketAddr = self.config.http.server.addr;
         info!("Starting HTTP gateway on {}", addr);
 
-        // Connect to local gRPC server with retry / 连接到本地gRPC服务器（带重试）
-        let grpc_endpoint = format!("http://{}:{}", self.config.grpc.address, self.config.grpc.port);
+        let grpc_endpoint = format!("http://{}", self.config.grpc.addr);
         info!("Connecting to gRPC server at {}", grpc_endpoint);
-        
+
         let mut grpc_client = None;
         let max_retries = 5;
         let mut retry_count = 0;
-        
         while retry_count < max_retries {
             match ObjectServiceClient::connect(grpc_endpoint.clone()).await {
-                Ok(client) => {
-                    info!("Successfully connected to gRPC server");
-                    grpc_client = Some(client);
-                    break;
-                }
+                Ok(client) => { grpc_client = Some(client); break; }
                 Err(e) => {
                     retry_count += 1;
-                    if retry_count >= max_retries {
-                        error!("Failed to connect to gRPC server after {} retries: {}", max_retries, e);
-                        return Err(e.into());
-                    }
-                    info!("Failed to connect to gRPC server (attempt {}/{}): {}, retrying in 1s...", 
-                          retry_count, max_retries, e);
+                    if retry_count >= max_retries { return Err(e.into()); }
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             }
         }
-        
         let object_client = grpc_client.unwrap();
-        
-        // Connect to FunctionService / 连接到FunctionService
         let function_client = FunctionServiceClient::connect(grpc_endpoint.clone())
             .await
             .map_err(|e| format!("Failed to connect to FunctionService: {}", e))?;
@@ -102,7 +103,6 @@ impl HttpGateway {
             config: self.config.clone(),
         };
 
-        // Build router / 构建路由器
         let mut app = Router::new()
             .route("/health", get(health_check))
             .route("/status", get(status_check))
@@ -114,23 +114,16 @@ impl HttpGateway {
             .route("/objects/:key/pin", post(pin_object))
             .route("/objects/:key/pin", delete(unpin_object))
             .route("/objects/:key", delete(delete_object))
-            
-            // Function execution endpoints / 函数执行端点
             .route("/functions/execute", post(execute_function))
             .route("/functions/executions/:execution_id", get(get_execution_status))
             .route("/functions/executions/:execution_id/cancel", post(cancel_execution))
-            
-            // Task management endpoints / 任务管理端点
             .route("/tasks", get(list_tasks))
             .route("/tasks/:task_id", get(get_task))
             .route("/tasks/:task_id/executions", get(get_task_executions))
-            
-            // Monitoring endpoints / 监控端点
             .route("/monitoring/stats", get(get_stats))
             .route("/monitoring/health", get(get_health_status))
             .with_state(state);
 
-        // Add Swagger UI if enabled / 如果启用则添加Swagger UI
         if self.config.http.swagger_enabled {
             app = app
                 .route("/api-docs", get(api_docs))
@@ -139,21 +132,16 @@ impl HttpGateway {
                 .route("/docs", get(swagger_ui));
         }
 
-        // Start server / 启动服务器
         let listener = tokio::net::TcpListener::bind(addr).await?;
         info!("HTTP gateway listening on {}", addr);
-        
-        // Log Swagger UI URLs if enabled / 如果启用则记录Swagger UI URL
         if self.config.http.swagger_enabled {
             info!("Swagger UI available at:");
             info!("  - http://{}/swagger-ui", addr);
             info!("  - http://{}/docs", addr);
             info!("  - OpenAPI JSON: http://{}/api/openapi.json", addr);
         }
-        
-        axum::serve(listener, app).await?;
-        
-        Ok(())
+
+        Ok((listener, app))
     }
 }
 

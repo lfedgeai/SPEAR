@@ -11,7 +11,8 @@ use axum::{
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use crate::spearlet::config::{SpearletConfig, HttpConfig, GrpcConfig, StorageConfig};
+use crate::spearlet::config::{SpearletConfig, HttpConfig, StorageConfig};
+use crate::config::base::ServerConfig;
 use crate::spearlet::http_gateway::HttpGateway;
 use crate::spearlet::grpc_server::HealthService;
 use crate::spearlet::object_service::ObjectServiceImpl;
@@ -21,18 +22,11 @@ use crate::spearlet::function_service::FunctionServiceImpl;
 fn create_test_config() -> SpearletConfig {
     SpearletConfig {
         http: HttpConfig {
-            address: "127.0.0.1".to_string(),
-            port: 0, // Use port 0 for testing
+            server: ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() },
             cors_enabled: true,
             swagger_enabled: true,
         },
-        grpc: GrpcConfig {
-            address: "127.0.0.1".to_string(),
-            port: 0,
-            tls_enabled: false,
-            tls_cert_path: None,
-            tls_key_path: None,
-        },
+        grpc: ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() },
         storage: StorageConfig {
             backend: "memory".to_string(),
             data_dir: "/tmp/test".to_string(),
@@ -67,8 +61,7 @@ async fn test_http_gateway_creation() {
 async fn test_gateway_config() {
     // Test HTTP gateway configuration / 测试HTTP网关配置
     let mut config = create_test_config();
-    config.http.address = "0.0.0.0".to_string();
-    config.http.port = 8080;
+    config.http.server.addr = "0.0.0.0:8080".parse().unwrap();
     config.http.swagger_enabled = false;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
@@ -129,8 +122,7 @@ async fn test_gateway_swagger_disabled() {
 async fn test_invalid_http_address() {
     // Test HTTP gateway with invalid address / 测试无效地址的HTTP网关
     let mut config = create_test_config();
-    config.http.address = "invalid-address".to_string();
-    config.http.port = 8080;
+    config.http.server.addr = "0.0.0.0:8080".parse().unwrap();
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
@@ -696,18 +688,11 @@ mod integration_tests {
         let configs = vec![
             SpearletConfig {
                 http: HttpConfig {
-                    address: "127.0.0.1".to_string(),
-                    port: 8080,
+                    server: ServerConfig { addr: "127.0.0.1:8080".parse().unwrap(), ..Default::default() },
                     cors_enabled: true,
                     swagger_enabled: true,
                 },
-                grpc: GrpcConfig {
-                    address: "127.0.0.1".to_string(),
-                    port: 9090,
-                    tls_enabled: false,
-                    tls_cert_path: None,
-                    tls_key_path: None,
-                },
+                grpc: ServerConfig { addr: "127.0.0.1:9090".parse().unwrap(), ..Default::default() },
                 storage: StorageConfig {
                     backend: "memory".to_string(),
                     data_dir: "/tmp/test".to_string(),
@@ -719,18 +704,11 @@ mod integration_tests {
             },
             SpearletConfig {
                 http: HttpConfig {
-                    address: "0.0.0.0".to_string(),
-                    port: 3000,
+                    server: ServerConfig { addr: "0.0.0.0:3000".parse().unwrap(), ..Default::default() },
                     cors_enabled: false,
                     swagger_enabled: false,
                 },
-                grpc: GrpcConfig {
-                    address: "0.0.0.0".to_string(),
-                    port: 3001,
-                    tls_enabled: false,
-                    tls_cert_path: None,
-                    tls_key_path: None,
-                },
+                grpc: ServerConfig { addr: "0.0.0.0:3001".parse().unwrap(), ..Default::default() },
                 storage: StorageConfig {
                     backend: "memory".to_string(),
                     data_dir: "/tmp/test".to_string(),

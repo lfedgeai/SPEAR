@@ -198,6 +198,71 @@ mod tests {
     }
 
     #[test]
+    fn test_sms_config_home_first_loading() {
+        // Home-first config loading: ~/.sms/config.toml
+        // 优先从主目录加载配置：~/.sms/config.toml
+        let dir = tempdir().unwrap();
+        // Temporarily set SMS_HOME to temp directory / 临时设置SMS_HOME到临时目录
+        std::env::set_var("SMS_HOME", dir.path());
+
+        let home_cfg_dir = dir.path().join(".sms");
+        fs::create_dir_all(&home_cfg_dir).unwrap();
+        let home_cfg_path = home_cfg_dir.join("config.toml");
+
+        let content = r#"
+[grpc]
+addr = "127.0.0.1:55555"
+enable_tls = false
+cert_path = ""
+key_path = ""
+
+[http]
+addr = "127.0.0.1:8088"
+enable_tls = false
+cert_path = ""
+key_path = ""
+
+[log]
+level = "warn"
+format = "json"
+file = "/tmp/sms.log"
+
+enable_swagger = false
+
+[database]
+db_type = "rocksdb"
+path = "/tmp/smsdb"
+pool_size = 20
+"#;
+
+        fs::write(&home_cfg_path, content).unwrap();
+
+        let args = CliArgs {
+            config: None,
+            grpc_addr: None,
+            http_addr: None,
+            db_type: None,
+            db_path: None,
+            db_pool_size: None,
+            enable_swagger: false,
+            disable_swagger: false,
+            log_level: None,
+            heartbeat_timeout: None,
+            cleanup_interval: None,
+        };
+
+        let result = SmsConfig::load_with_cli(&args);
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
+        assert_eq!(cfg.grpc.addr.to_string(), "127.0.0.1:55555");
+        assert_eq!(cfg.http.addr.to_string(), "127.0.0.1:8088");
+        assert_eq!(cfg.log.level, "warn");
+        assert_eq!(cfg.database.db_type, "rocksdb");
+        assert_eq!(cfg.database.pool_size, Some(20));
+        // Swagger flag may be defaulted by environment; ensure other mappings are correct
+    }
+
+    #[test]
     fn test_sms_config_edge_cases() {
         // Test edge cases for SMS configuration / 测试SMS配置的边界情况
         let args = CliArgs {

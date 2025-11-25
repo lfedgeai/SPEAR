@@ -1,0 +1,40 @@
+# SPEARlet Configuration
+# SPEARlet 配置
+
+[spearlet]
+# gRPC server address / gRPC服务器地址
+grpc_addr = "0.0.0.0:50052"
+
+# HTTP gateway address / HTTP网关地址
+http_addr = "0.0.0.0:8081"
+
+# SMS service address / SMS服务地址
+sms_addr = "127.0.0.1:50051"
+
+# Node ID (auto-generated if not specified) / 节点ID（未指定时自动生成）
+node_id = ""
+
+# Auto register with SMS / 自动向SMS注册
+auto_register = true
+
+# Storage configuration / 存储配置
+[spearlet.storage]
+# Storage backend: "memory" or "sled" / 存储后端："memory" 或 "sled"
+backend = "memory"
+
+# Sled database path (only used when backend = "sled") / Sled数据库路径（仅当backend = "sled"时使用）
+sled_path = "./data/spearlet.db"
+
+# Logging configuration / 日志配置
+[spearlet.logging]
+# Log level: "trace", "debug", "info", "warn", "error" / 日志级别
+level = "debug"
+
+# Log format: "pretty" or "json" / 日志格式："pretty" 或 "json"
+format = "pretty"
+
+# Enable file logging / 启用文件日志
+file_enabled = false
+
+# Log file path / 日志文件路径
+file_path = "./logs/spearlet.log"

@@ -18,15 +18,15 @@
 use crate::spearlet::execution::{ExecutionError, ExecutionResult};
 use crate::spearlet::execution::instance::{TaskInstance, InstanceConfig, InstanceResourceLimits};
 use crate::spearlet::execution::communication::{
-    SpearMessage, MessageType, AuthRequest, AuthResponse, ExecuteRequest, ExecuteResponse,
-    ConnectionManager, ConnectionManagerConfig, ConnectionState, ConnectionEvent,
+    SpearMessage, MessageType,
+    ConnectionManager, ConnectionManagerConfig,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::net::SocketAddr;
-use tokio::sync::mpsc;
+
 
 // Re-export runtime implementations / 重新导出运行时实现
 pub mod process;
@@ -475,7 +475,7 @@ pub trait Runtime: Send + Sync {
     /// Returns the listening address if successful / 成功时返回监听地址
     async fn start_listening(
         &self,
-        config: &RuntimeListeningConfig,
+        _config: &RuntimeListeningConfig,
     ) -> ExecutionResult<Option<SocketAddr>> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {
@@ -506,8 +506,8 @@ pub trait Runtime: Send + Sync {
     /// Handle incoming message from agent / 处理来自agent的消息
     async fn handle_agent_message(
         &self,
-        instance_id: &str,
-        message: SpearMessage,
+        _instance_id: &str,
+        _message: SpearMessage,
     ) -> ExecutionResult<Option<SpearMessage>> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {
@@ -525,7 +525,7 @@ pub trait Runtime: Send + Sync {
     /// Register message handler / 注册消息处理器
     async fn register_message_handler(
         &self,
-        handler: Box<dyn MessageHandler>,
+        _handler: Box<dyn MessageHandler>,
     ) -> ExecutionResult<()> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {

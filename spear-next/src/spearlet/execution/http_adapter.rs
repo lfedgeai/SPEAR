@@ -10,7 +10,7 @@
 //! - **Protocol Agnostic**: Runtime responses can be adapted to different protocols (HTTP, gRPC, etc.)
 //! - **协议无关**: 运行时响应可以适配到不同协议（HTTP、gRPC 等）
 
-use crate::spearlet::execution::runtime::{RuntimeExecutionResponse, RuntimeExecutionError, ExecutionMode, ExecutionStatus};
+use crate::spearlet::execution::runtime::{RuntimeExecutionResponse, RuntimeExecutionError, ExecutionMode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

@@ -33,7 +33,7 @@ async fn test_sms_grpc_server_creation() {
     let sms_service = create_test_sms_service().await;
     let addr = create_test_addr(50070);
     
-    let server = GrpcServer::new(addr, sms_service);
+    let _server = GrpcServer::new(addr, sms_service);
     
     // Server should be created successfully / 服务器应该成功创建
     // Note: We can't easily test internal state without exposing it
@@ -49,8 +49,8 @@ async fn test_sms_grpc_server_different_addresses() {
     let addr1 = create_test_addr(50071);
     let addr2 = create_test_addr(50072);
     
-    let server1 = GrpcServer::new(addr1, sms_service1);
-    let server2 = GrpcServer::new(addr2, sms_service2);
+    let _server1 = GrpcServer::new(addr1, sms_service1);
+    let _server2 = GrpcServer::new(addr2, sms_service2);
     
     // Both servers should be created successfully / 两个服务器都应该成功创建
     // Different addresses should not conflict / 不同地址不应该冲突
@@ -76,7 +76,7 @@ async fn test_sms_grpc_server_ipv6_address() {
     let sms_service = create_test_sms_service().await;
     let ipv6_addr: SocketAddr = "[::1]:50073".parse().unwrap();
     
-    let server = GrpcServer::new(ipv6_addr, sms_service);
+    let _server = GrpcServer::new(ipv6_addr, sms_service);
     
     // Server should be created successfully / 服务器应该成功创建
 }
@@ -87,7 +87,7 @@ async fn test_sms_grpc_server_port_zero() {
     let sms_service = create_test_sms_service().await;
     let addr = create_test_addr(0);
     
-    let server = GrpcServer::new(addr, sms_service);
+    let _server = GrpcServer::new(addr, sms_service);
     
     // Server should be created successfully / 服务器应该成功创建
 }
@@ -104,7 +104,7 @@ async fn test_sms_grpc_server_concurrent_creation() {
         join_set.spawn(async move {
             let sms_service = create_test_sms_service().await;
             let addr = create_test_addr(50080 + i);
-            let server = GrpcServer::new(addr, sms_service);
+            let _server = GrpcServer::new(addr, sms_service);
             true // Server creation succeeded / 服务器创建成功
         });
     }
@@ -162,7 +162,7 @@ mod integration_tests {
         let sms_service = create_test_sms_service().await;
         let addr = create_test_addr(50095);
         
-        let server = GrpcServer::new(addr, sms_service);
+        let _server = GrpcServer::new(addr, sms_service);
         
         // Note: We don't actually start the server in tests to avoid port conflicts
         // 注意：我们在测试中不实际启动服务器以避免端口冲突
@@ -178,7 +178,7 @@ mod integration_tests {
         for i in 0..50 {
             let sms_service = create_test_sms_service().await;
             let addr = create_test_addr(51000 + i);
-            let server = GrpcServer::new(addr, sms_service);
+            let _server = GrpcServer::new(addr, sms_service);
             
             // Server goes out of scope and is dropped / 服务器超出作用域并被丢弃
         }

@@ -5,11 +5,12 @@
 //! 该模块提供基于 Kubernetes Jobs 和 Pods 的执行运行时。
 
 use super::{
-    ExecutionContext, RuntimeExecutionResponse, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeType, ResourcePoolConfig,
+    ExecutionContext, RuntimeExecutionResponse, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeType,
 };
+use super::ResourcePoolConfig;
 use crate::spearlet::execution::{
     ExecutionError, ExecutionResult,
-    instance::{InstanceConfig, InstanceResourceLimits, TaskInstance, InstanceStatus},
+    instance::{InstanceConfig, InstanceResourceLimits, TaskInstance},
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -283,7 +284,7 @@ impl KubernetesRuntime {
 
     /// Execute kubectl command / 执行 kubectl 命令
     async fn execute_kubectl_command(&self, args: Vec<String>) -> ExecutionResult<String> {
-        let start_time = Instant::now();
+        let _start_time = Instant::now();
         let timeout_duration = Duration::from_millis(30000); // 30 seconds timeout
 
         let output = timeout(timeout_duration, async {

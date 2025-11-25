@@ -331,7 +331,7 @@ impl TaskExecutionManager {
     }
 
     /// Get execution status by execution ID / 根据执行ID获取执行状态
-    pub async fn get_execution_status(&self, execution_id: &str) -> ExecutionResult<Option<super::ExecutionResponse>> {
+    pub async fn get_execution_status(&self, _execution_id: &str) -> ExecutionResult<Option<super::ExecutionResponse>> {
         // TODO: Implement proper execution status tracking
         // For now, return None to indicate execution not found
         // 待办：实现适当的执行状态跟踪

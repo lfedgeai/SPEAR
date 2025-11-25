@@ -726,7 +726,7 @@ impl ConnectionManager {
                         }
                         
                         // 创建连接处理器 / Create connection handler
-                        let (handler, message_sender) = ConnectionHandler::new(
+                        let (handler, _message_sender) = ConnectionHandler::new(
                             connection_id.clone(),
                             stream,
                             remote_addr,

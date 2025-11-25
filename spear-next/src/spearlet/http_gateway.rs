@@ -491,8 +491,8 @@ async fn delete_object(
 /// Execute function endpoint / 执行函数端点
 /// POST /functions/execute
 async fn execute_function(
-    State(state): State<AppState>,
-    Json(body): Json<serde_json::Value>,
+    State(_state): State<AppState>,
+    Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("POST /functions/execute");
     
@@ -509,7 +509,7 @@ async fn execute_function(
 /// Get execution status endpoint / 获取执行状态端点
 /// GET /functions/executions/:execution_id
 async fn get_execution_status(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(execution_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /functions/executions/{}", execution_id);
@@ -527,7 +527,7 @@ async fn get_execution_status(
 /// Cancel execution endpoint / 取消执行端点
 /// POST /functions/executions/:execution_id/cancel
 async fn cancel_execution(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(execution_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("POST /functions/executions/{}/cancel", execution_id);
@@ -547,8 +547,8 @@ async fn cancel_execution(
 /// List tasks endpoint / 列出任务端点
 /// GET /tasks
 async fn list_tasks(
-    State(state): State<AppState>,
-    Query(params): Query<HashMap<String, String>>,
+    State(_state): State<AppState>,
+    Query(_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /tasks");
     
@@ -565,7 +565,7 @@ async fn list_tasks(
 /// Get task details endpoint / 获取任务详情端点
 /// GET /tasks/:task_id
 async fn get_task(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /tasks/{}", task_id);
@@ -584,9 +584,9 @@ async fn get_task(
 /// Get task executions endpoint / 获取任务执行记录端点
 /// GET /tasks/:task_id/executions
 async fn get_task_executions(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(task_id): Path<String>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /tasks/{}/executions", task_id);
     
@@ -605,7 +605,7 @@ async fn get_task_executions(
 /// Get statistics endpoint / 获取统计信息端点
 /// GET /monitoring/stats
 async fn get_stats(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /monitoring/stats");
     
@@ -624,7 +624,7 @@ async fn get_stats(
 /// Get health status endpoint / 获取健康状态端点
 /// GET /monitoring/health
 async fn get_health_status(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /monitoring/health");
     

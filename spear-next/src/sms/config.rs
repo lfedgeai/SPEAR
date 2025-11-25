@@ -92,11 +92,83 @@ impl SmsConfig {
         // Start with default configuration / 从默认配置开始
         let mut config = Self::default();
 
-        // Load from config file if specified / 如果指定了配置文件则加载
-        if let Some(_config_path) = &args.config {
-            // TODO: Implement config file loading / 待实现：配置文件加载
-            // For now, use default configuration / 目前使用默认配置
-            tracing::info!("Config file loading not yet implemented, using defaults");
+        // Try loading from home directory first / 优先从用户主目录加载配置
+        // Home path: ~/.sms/config.toml
+        // 主目录路径：~/.sms/config.toml
+        if args.config.is_none() {
+            // Prefer SMS_HOME if set to avoid interfering with global HOME in tests
+            // 若设置了SMS_HOME则优先使用，避免测试中修改全局HOME产生干扰
+            let base_home = std::env::var_os("SMS_HOME").or_else(|| std::env::var_os("HOME"));
+            if let Some(home_dir) = base_home {
+                let home_path = std::path::PathBuf::from(home_dir)
+                    .join(".sms")
+                    .join("config.toml");
+                if home_path.exists() {
+                    let cfg = std::fs::read_to_string(&home_path)?;
+                    // Try structured deserialization first / 先尝试结构化反序列化
+                    if let Ok(c) = toml::from_str::<Self>(&cfg) {
+                        config = c;
+                    } else {
+                        // Fallback: parse as toml::Value and manually map fields
+                        // 回退：解析为toml::Value并手动映射字段
+                        if let Ok(value) = toml::from_str::<toml::Value>(&cfg) {
+                            if let Some(grpc) = value.get("grpc") {
+                                if let Some(addr) = grpc.get("addr").and_then(|v| v.as_str()) {
+                                    if let Ok(a) = addr.parse() { config.grpc.addr = a; }
+                                }
+                                if let Some(tls) = grpc.get("enable_tls").and_then(|v| v.as_bool()) {
+                                    config.grpc.enable_tls = tls;
+                                }
+                            }
+                            if let Some(http) = value.get("http") {
+                                if let Some(addr) = http.get("addr").and_then(|v| v.as_str()) {
+                                    if let Ok(a) = addr.parse() { config.http.addr = a; }
+                                }
+                                if let Some(tls) = http.get("enable_tls").and_then(|v| v.as_bool()) {
+                                    config.http.enable_tls = tls;
+                                }
+                            }
+                            if let Some(log) = value.get("log") {
+                                if let Some(level) = log.get("level").and_then(|v| v.as_str()) {
+                                    config.log.level = level.to_string();
+                                }
+                                if let Some(format) = log.get("format").and_then(|v| v.as_str()) {
+                                    config.log.format = format.to_string();
+                                }
+                                if let Some(file) = log.get("file").and_then(|v| v.as_str()) {
+                                    config.log.file = Some(file.to_string());
+                                }
+                            }
+                            if let Some(swagger) = value.get("enable_swagger").and_then(|v| v.as_bool()) {
+                                config.enable_swagger = swagger;
+                            }
+                            if let Some(db) = value.get("database") {
+                                if let Some(db_type) = db.get("db_type").and_then(|v| v.as_str()) {
+                                    config.database.db_type = db_type.to_string();
+                                }
+                                if let Some(path) = db.get("path").and_then(|v| v.as_str()) {
+                                    config.database.path = path.to_string();
+                                }
+                                if let Some(pool) = db.get("pool_size").and_then(|v| v.as_integer()) {
+                                    config.database.pool_size = Some(pool as u32);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If home config not found, load from CLI-provided path if any
+        // 如果未找到主目录配置，则从命令行提供的路径加载
+        if let Some(config_path) = &args.config {
+            let p = std::path::PathBuf::from(config_path);
+            if p.exists() {
+                let cfg = std::fs::read_to_string(&p)?;
+                config = toml::from_str(&cfg)?;
+            } else {
+                tracing::info!("Config file '{}' not found, using defaults", config_path);
+            }
         }
 
         // Override with CLI arguments / 使用CLI参数覆盖

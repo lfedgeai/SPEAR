@@ -271,6 +271,77 @@ format = "json"
     }
 
     #[test]
+    fn test_app_config_home_first_loading() {
+        // Home-first config loading: ~/.spear/config.toml
+        // 优先从主目录加载配置：~/.spear/config.toml
+        let dir = tempdir().unwrap();
+        // Temporarily set SPEAR_HOME to temp directory / 临时设置SPEAR_HOME到临时目录
+        std::env::set_var("SPEAR_HOME", dir.path());
+
+        let home_cfg_dir = dir.path().join(".spear");
+        fs::create_dir_all(&home_cfg_dir).unwrap();
+        let home_cfg_path = home_cfg_dir.join("config.toml");
+
+        let content = r#"
+[spearlet]
+node_id = "home-node"
+sms_addr = "10.0.0.1:50051"
+auto_register = true
+heartbeat_interval = 45
+cleanup_interval = 450
+
+[spearlet.grpc]
+address = "127.0.0.1"
+port = 50100
+tls_enabled = false
+tls_cert_path = ""
+tls_key_path = ""
+
+[spearlet.http]
+address = "127.0.0.1"
+port = 8090
+cors_enabled = true
+swagger_enabled = false
+
+[spearlet.storage]
+backend = "sled"
+data_dir = "/tmp/home-spearlet"
+max_cache_size_mb = 256
+compression_enabled = true
+max_object_size = 10485760
+
+[spearlet.logging]
+level = "warn"
+format = "json"
+output_file = "/tmp/home-spearlet.log"
+"#;
+
+        fs::write(&home_cfg_path, content).unwrap();
+
+        let args = CliArgs {
+            config: None,
+            node_id: None,
+            grpc_addr: None,
+            http_addr: None,
+            sms_addr: None,
+            storage_backend: None,
+            storage_path: None,
+            auto_register: None,
+            log_level: None,
+        };
+
+        let result = AppConfig::load_with_cli(&args);
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
+        assert_eq!(cfg.spearlet.node_id, "home-node");
+        assert_eq!(cfg.spearlet.sms_addr, "10.0.0.1:50051");
+        assert_eq!(cfg.spearlet.grpc.port, 50100);
+        assert_eq!(cfg.spearlet.http.port, 8090);
+        assert_eq!(cfg.spearlet.storage.backend, "sled");
+        assert_eq!(cfg.spearlet.logging.level, "warn");
+    }
+
+    #[test]
     fn test_app_config_load_invalid_file() {
         // Test loading invalid config file / 测试加载无效配置文件
         let args = CliArgs {

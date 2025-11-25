@@ -6,10 +6,9 @@
 //! 
 //! 此模块为不同的传输机制提供 CommunicationChannel trait 的具体实现。
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
-use tokio::sync::{Mutex, RwLock};
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use async_trait::async_trait;
 
 use super::{
@@ -23,7 +22,7 @@ pub struct UnixSocketChannel {
     /// Instance identifier for this channel
     /// 此通道的实例标识符
     instance_id: RuntimeInstanceId,
-    config: ChannelConfig,
+    _config: ChannelConfig,
     stats: Arc<RwLock<ChannelStats>>,
     connected: Arc<RwLock<bool>>,
     start_time: Instant,
@@ -35,7 +34,7 @@ impl UnixSocketChannel {
     pub fn new(instance_id: RuntimeInstanceId, config: ChannelConfig) -> CommunicationResult<Self> {
         Ok(Self {
             instance_id,
-            config,
+            _config: config,
             stats: Arc::new(RwLock::new(ChannelStats::default())),
             connected: Arc::new(RwLock::new(false)),
             start_time: Instant::now(),
@@ -61,7 +60,7 @@ impl UnixSocketChannel {
 
 #[async_trait]
 impl CommunicationChannel for UnixSocketChannel {
-    async fn send(&self, message: RuntimeMessage) -> CommunicationResult<()> {
+    async fn send(&self, _message: RuntimeMessage) -> CommunicationResult<()> {
         if !self.is_connected().await {
             return Err(CommunicationError::ChannelClosed);
         }
@@ -143,7 +142,7 @@ pub struct TcpChannel {
     /// Instance identifier for this channel
     /// 此通道的实例标识符
     instance_id: RuntimeInstanceId,
-    config: ChannelConfig,
+    _config: ChannelConfig,
     stats: Arc<RwLock<ChannelStats>>,
     connected: Arc<RwLock<bool>>,
     start_time: Instant,
@@ -155,7 +154,7 @@ impl TcpChannel {
     pub fn new(instance_id: RuntimeInstanceId, config: ChannelConfig) -> CommunicationResult<Self> {
         Ok(Self {
             instance_id,
-            config,
+            _config: config,
             stats: Arc::new(RwLock::new(ChannelStats::default())),
             connected: Arc::new(RwLock::new(false)),
             start_time: Instant::now(),
@@ -181,7 +180,7 @@ impl TcpChannel {
 
 #[async_trait]
 impl CommunicationChannel for TcpChannel {
-    async fn send(&self, message: RuntimeMessage) -> CommunicationResult<()> {
+    async fn send(&self, _message: RuntimeMessage) -> CommunicationResult<()> {
         if !self.is_connected().await {
             return Err(CommunicationError::ChannelClosed);
         }
@@ -257,7 +256,7 @@ pub struct GrpcChannel {
     /// Instance identifier for this channel
     /// 此通道的实例标识符
     instance_id: RuntimeInstanceId,
-    config: ChannelConfig,
+    _config: ChannelConfig,
     stats: Arc<RwLock<ChannelStats>>,
     connected: Arc<RwLock<bool>>,
     start_time: Instant,
@@ -269,7 +268,7 @@ impl GrpcChannel {
     pub fn new(instance_id: RuntimeInstanceId, config: ChannelConfig) -> CommunicationResult<Self> {
         Ok(Self {
             instance_id,
-            config,
+            _config: config,
             stats: Arc::new(RwLock::new(ChannelStats::default())),
             connected: Arc::new(RwLock::new(false)),
             start_time: Instant::now(),
@@ -295,7 +294,7 @@ impl GrpcChannel {
 
 #[async_trait]
 impl CommunicationChannel for GrpcChannel {
-    async fn send(&self, message: RuntimeMessage) -> CommunicationResult<()> {
+    async fn send(&self, _message: RuntimeMessage) -> CommunicationResult<()> {
         if !self.is_connected().await {
             return Err(CommunicationError::ChannelClosed);
         }

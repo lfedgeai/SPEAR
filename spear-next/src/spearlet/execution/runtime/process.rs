@@ -18,7 +18,7 @@ use crate::spearlet::execution::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn, error};
+use tracing::info;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::process::Stdio;
@@ -240,7 +240,8 @@ impl ProcessRuntime {
     }
 
     /// Build process command with listening configuration / 构建带有监听配置的进程命令
-    fn build_process_command_with_listening(&self, instance_config: &InstanceConfig, service_addr: &str, secret: &str) -> Command {
+    #[allow(dead_code)]
+    fn _build_process_command_with_listening(&self, instance_config: &InstanceConfig, service_addr: &str, secret: &str) -> Command {
         let executable = instance_config
             .runtime_config
             .get("executable")

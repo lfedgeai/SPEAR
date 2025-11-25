@@ -152,7 +152,7 @@ impl Transport for UnixTransport {
         Ok(())
     }
     
-    async fn send_bytes(&self, data: &[u8]) -> CommunicationResult<()> {
+    async fn send_bytes(&self, _data: &[u8]) -> CommunicationResult<()> {
         // TODO: Implement Unix socket send
         // TODO: 实现 Unix socket 发送
         Ok(())
@@ -211,7 +211,7 @@ impl Transport for TcpTransport {
         Ok(())
     }
     
-    async fn send_bytes(&self, data: &[u8]) -> CommunicationResult<()> {
+    async fn send_bytes(&self, _data: &[u8]) -> CommunicationResult<()> {
         // TODO: Implement TCP send
         // TODO: 实现 TCP 发送
         Ok(())
@@ -270,7 +270,7 @@ impl Transport for GrpcTransport {
         Ok(())
     }
     
-    async fn send_bytes(&self, data: &[u8]) -> CommunicationResult<()> {
+    async fn send_bytes(&self, _data: &[u8]) -> CommunicationResult<()> {
         // TODO: Implement gRPC send
         // TODO: 实现 gRPC 发送
         Ok(())

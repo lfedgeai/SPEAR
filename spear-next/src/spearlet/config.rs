@@ -3,6 +3,8 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
+use crate::config;
+
 /// SPEARlet command line arguments / SPEARlet命令行参数
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -60,11 +62,38 @@ impl AppConfig {
     /// Load configuration with CLI arguments / 使用CLI参数加载配置
     pub fn load_with_cli(args: &CliArgs) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let mut config = AppConfig::default();
-        
-        // Load from config file if provided / 如果提供了配置文件则从文件加载
-        if let Some(config_path) = &args.config {
-            let config_content = std::fs::read_to_string(config_path)?;
-            config = toml::from_str(&config_content)?;
+
+        // Try loading from home directory first / 优先从用户主目录加载配置
+        // Home path: ~/.spear/config.toml
+        // 主目录路径：~/.spear/config.toml
+        if args.config.is_none() {
+            // Prefer SPEAR_HOME if set to avoid interfering with global HOME in tests
+            // 若设置了SPEAR_HOME则优先使用，避免测试中修改全局HOME产生干扰
+            let base_home = std::env::var_os("SPEAR_HOME").or_else(|| std::env::var_os("HOME"));
+            if let Some(home_dir) = base_home {
+                let home_path = std::path::PathBuf::from(home_dir)
+                    .join(".spear")
+                    .join("config.toml");
+                if home_path.exists() {
+                    let cfg = std::fs::read_to_string(&home_path)?;
+                    match toml::from_str::<AppConfig>(&cfg) {
+                        Ok(c) => { config = c; }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse home config: {}", e);
+                            // fall back to defaults / 回退到默认值
+                        }
+                    }
+                }
+            }
+        }
+
+        // If home config not found, load from CLI-provided path if any
+        // 如果未找到主目录配置，则从命令行提供的路径加载
+        if args.config.is_some() {
+            if let Some(config_path) = &args.config {
+                let config_content = std::fs::read_to_string(config_path)?;
+                config = toml::from_str(&config_content)?;
+            }
         }
         
         // Override with CLI arguments / 使用CLI参数覆盖
@@ -254,6 +283,19 @@ impl Default for LoggingConfig {
             level: "info".to_string(),
             format: "json".to_string(),
             output_file: None,
+        }
+    }
+}
+
+impl LoggingConfig {
+    /// Convert to the common LoggingConfig used by init_tracing
+    /// 转换为init_tracing使用的通用LoggingConfig
+    pub fn to_common_config(&self) -> crate::config::LoggingConfig {
+        crate::config::LoggingConfig {
+            level: self.level.clone(),
+            format: self.format.clone(),
+            file_enabled: self.output_file.is_some(),
+            file_path: self.output_file.as_ref().map(|p| std::path::PathBuf::from(p)),
         }
     }
 }

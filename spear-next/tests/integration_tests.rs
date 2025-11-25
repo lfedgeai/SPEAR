@@ -418,7 +418,7 @@ async fn test_node_registry_integration() {
     }
     
     // Test resource management / 测试资源管理
-    for (i, uuid) in node_uuids.iter().enumerate() {
+    for (_i, uuid) in node_uuids.iter().enumerate() {
         let resource = test_utils::generate_test_resource(uuid.clone());
         let update_resource_req = UpdateNodeResourceRequest {
             resource: Some(resource),

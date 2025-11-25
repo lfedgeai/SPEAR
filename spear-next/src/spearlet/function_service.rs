@@ -118,15 +118,15 @@ impl FunctionServiceImpl {
     async fn handle_sync_execution(
         &self,
         request: &InvokeFunctionRequest,
-        execution_id: &str,
-        task_id: &str,
+        _execution_id: &str,
+        _task_id: &str,
     ) -> Result<ExecutionResult, Status> {
         // 使用 TaskExecutionManager 执行同步任务 / Use TaskExecutionManager for sync execution
         match self.execution_manager.submit_execution(request.clone()).await {
             Ok(execution_response) => {
                 // 使用 HTTP 适配器转换响应 / Use HTTP adapter to convert response
                 let http_adapter = crate::spearlet::execution::http_adapter::HttpAdapter::new();
-                let http_response = http_adapter.to_sync_response(&execution_response);
+                let _http_response = http_adapter.to_sync_response(&execution_response);
                 
                 // 转换为 protobuf ExecutionResult / Convert to protobuf ExecutionResult
                 Ok(ExecutionResult {
@@ -168,7 +168,7 @@ impl FunctionServiceImpl {
         &self,
         request: &InvokeFunctionRequest,
         execution_id: &str,
-        task_id: &str,
+        _task_id: &str,
     ) -> (String, i64) {
         // 启动异步任务 / Start async task
         let execution_manager = self.execution_manager.clone();
@@ -178,7 +178,7 @@ impl FunctionServiceImpl {
         // 在后台启动异步执行 / Start async execution in background
         tokio::spawn(async move {
             match execution_manager.submit_execution(request_clone).await {
-                Ok(execution_response) => {
+                Ok(_execution_response) => {
                     // 异步执行完成，结果会存储在 execution_manager 中 / Async execution completed, result stored in execution_manager
                     tracing::info!("异步执行完成 / Async execution completed: {}", execution_id_clone);
                 },

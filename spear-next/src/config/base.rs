@@ -49,6 +49,19 @@ impl Default for LogConfig {
     }
 }
 
+impl LogConfig {
+    /// Convert to the common LoggingConfig used by init_tracing
+    /// 转换为init_tracing使用的通用LoggingConfig
+    pub fn to_logging_config(&self) -> crate::config::LoggingConfig {
+        crate::config::LoggingConfig {
+            level: self.level.clone(),
+            format: self.format.clone(),
+            file_enabled: self.file.is_some(),
+            file_path: self.file.as_ref().map(|p| std::path::PathBuf::from(p)),
+        }
+    }
+}
+
 /// Storage configuration / 存储配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {

@@ -292,7 +292,7 @@ mod new_endpoints_tests {
         // Note: This is a simplified approach for testing the endpoint handlers
         // 注意：这是测试端点处理程序的简化方法
         Router::new()
-            .route("/functions/execute", post(|body: axum::extract::Json<serde_json::Value>| async {
+            .route("/functions/execute", post(|_body: axum::extract::Json<serde_json::Value>| async {
                 Ok::<_, StatusCode>(axum::Json(serde_json::json!({
                     "success": true,
                     "message": "Function execution endpoint - Test response",

@@ -85,6 +85,15 @@ SPEAR is an advanced AI Agent platform designed to support multiple runtime envi
   sh get-docker.sh
   ```
 
+### ARM64 Support
+
+SPEAR binaries and workloads build natively on 64-bit ARM Linux. Install the dependencies listed above using your distribution's ARM64 packages (for Debian/Ubuntu see [`docs/platforms/arm64.md`](docs/platforms/arm64.md)) and use the helper make targets:
+
+- `make spearlet-linux-arm64` to produce a Linux ARM64 spearlet binary (even from non-ARM hosts)
+- `make workload-linux-arm64` to build Docker workloads for `linux/arm64`
+
+Additional cross-compilation notes and troubleshooting tips are collected in [`docs/platforms/arm64.md`](docs/platforms/arm64.md).
+
 ### Build Instructions
 
 To build SPEAR and its related components, run the following command:

@@ -4,10 +4,14 @@ PROJ_NAME := $(shell basename $(CURRENT_DIR))
 SDK_OUTPUT_DIR := $(shell pwd)/../../../../sdk/python/dist/
 WHL_FILENAME := $(shell ls $(SDK_OUTPUT_DIR)/../dist/*.whl | xargs basename | tail -n 1)
 
+ifdef PLATFORM
+DOCKER_PLATFORM_PREFIX := DOCKER_DEFAULT_PLATFORM=$(PLATFORM) 
+endif
+
 all: build
 
 build: demo
-	docker compose build --no-cache --build-arg WHL_FILENAME=${WHL_FILENAME}
+	$(DOCKER_PLATFORM_PREFIX)docker compose build --no-cache --build-arg WHL_FILENAME=${WHL_FILENAME}
 
 demo:
 	go build -o $(OUTPUT_DIR)/demo \

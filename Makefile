@@ -3,6 +3,13 @@ VERSION := $(shell git describe --tags --match "*" --always --dirty)
 REPO_ROOT := $(shell pwd)
 OUTPUT_DIR := $(REPO_ROOT)/bin
 
+HOST_UNAME_M := $(shell uname -m)
+GO_DEFAULT_OS := $(shell go env GOOS)
+GO_DEFAULT_ARCH := $(shell go env GOARCH)
+
+# Allow overriding the workload build platform (e.g. linux/arm64)
+WORKLOAD_PLATFORM ?= $(GO_DEFAULT_OS)/$(GO_DEFAULT_ARCH)
+
 FLATC := $(shell command -v flatc 2> /dev/null)
 
 ifndef FLATC
@@ -37,7 +44,14 @@ install_sdk: build
 	python -m pip install "$$file" --force-reinstall
 
 spearlet: pkg/spear
+	mkdir -p $(OUTPUT_DIR)
 	go build -o $(OUTPUT_DIR)/spearlet \
+	-ldflags "-X 'github.com/lfedgeai/spear/pkg/common.Version=$(VERSION)'" \
+	$(REPO_ROOT)/cmd/spearlet/main.go
+
+spearlet-linux-arm64: pkg/spear
+	mkdir -p $(OUTPUT_DIR)/linux-arm64
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o $(OUTPUT_DIR)/linux-arm64/spearlet \
 	-ldflags "-X 'github.com/lfedgeai/spear/pkg/common.Version=$(VERSION)'" \
 	$(REPO_ROOT)/cmd/spearlet/main.go
 
@@ -51,8 +65,14 @@ test: workload build install_sdk
 workload: build
 	@set -e; \
 	for dir in $(WORKLOAD_SUBDIRS); do \
-		make -C $$dir; \
+		$(MAKE) -C $$dir PLATFORM=$(WORKLOAD_PLATFORM); \
 	done
+
+workload-linux-arm64:
+	@$(MAKE) WORKLOAD_PLATFORM=linux/arm64 workload
+
+workload-linux-amd64:
+	@$(MAKE) WORKLOAD_PLATFORM=linux/amd64 workload
 
 format_python:
 	black $(REPO_ROOT)/; \
@@ -65,6 +85,10 @@ format: format_python format_golang
 
 pkg/spear:
 	allfiles=`find ${REPO_ROOT}/proto -name "*.fbs"`; \
-	$(FLATC) -o $(REPO_ROOT)/pkg/ -I ${REPO_ROOT}/proto --go-module-name "github.com/lfedgeai/spear/pkg" --go --gen-all $${allfiles}
+	go_module_flag=""; \
+	if $(FLATC) --help 2>/dev/null | grep -q -- "--go-module-name"; then \
+		go_module_flag="--go-module-name github.com/lfedgeai/spear/pkg"; \
+	fi; \
+	$(FLATC) -o $(REPO_ROOT)/pkg/ -I ${REPO_ROOT}/proto $$go_module_flag --go --gen-all $${allfiles}
 
-.PHONY: all spearlet test workload clean format_python format
+.PHONY: all spearlet spearlet-linux-arm64 test workload workload-linux-arm64 workload-linux-amd64 clean format_python format

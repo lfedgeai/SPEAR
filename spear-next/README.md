@@ -18,6 +18,7 @@ SMS是一个元数据服务器，提供用于节点注册、更新、删除和�
 - **Heartbeat System / 心跳系统**: Monitor node health with configurable timeouts
 - **gRPC API / gRPC API**: High-performance gRPC service
 - **HTTP Gateway / HTTP网关**: RESTful API with Swagger UI documentation
+- **Web Admin / 管理页面**: 独立端口的管理界面（节点列表、统计、SSE流、主题与时区）
 - **Automatic Cleanup / 自动清理**: Remove unhealthy nodes automatically
 - **Configuration / 配置**: TOML-based configuration with environment variable support
 
@@ -52,8 +53,9 @@ SMS是一个元数据服务器，提供用于节点注册、更新、删除和�
 4. **Access the API / 访问API**:
    - gRPC: `localhost:50051`
    - HTTP Gateway: `http://localhost:8080`
-   - Swagger UI: `http://localhost:8080/swagger-ui/`
-   - OpenAPI Spec: `http://localhost:8080/api/openapi.json`
+- Swagger UI: `http://localhost:8080/swagger-ui/`
+- OpenAPI Spec: `http://localhost:8080/api/openapi.json`
+- Web Admin: `http://localhost:8081/`（启用后）
 
 #### Command Line Options / 命令行选项
 
@@ -66,6 +68,8 @@ SMS支持通过命令行参数进行灵活配置：
 | `-c, --config <FILE>` | Configuration file path / 配置文件路径 | `--config config.toml` |
 | `--grpc-addr <ADDR>` | gRPC server address / gRPC服务器地址 | `--grpc-addr 0.0.0.0:50051` |
 | `--http-addr <ADDR>` | HTTP gateway address / HTTP网关地址 | `--http-addr 0.0.0.0:8080` |
+| `--enable-web-admin` | Enable Web Admin / 启用管理页面 | `--enable-web-admin` |
+| `--web-admin-addr <ADDR>` | Web Admin address / 管理页面地址 | `--web-admin-addr 0.0.0.0:8081` |
 | `--heartbeat-timeout <SECONDS>` | Heartbeat timeout in seconds / 心跳超时时间（秒） | `--heartbeat-timeout 120` |
 | `--cleanup-interval <SECONDS>` | Cleanup interval in seconds / 清理间隔时间（秒） | `--cleanup-interval 300` |
 | `--enable-swagger` | Enable Swagger UI / 启用Swagger UI | `--enable-swagger` |
@@ -131,11 +135,15 @@ SPEARlet config file location / SPEARlet配置文件位置：
 Example SPEARlet config / SPEARlet配置示例：
 ```toml
 [spearlet]
-node_id = ""
+node_name = ""
 sms_addr = "127.0.0.1:50051"
 auto_register = true
 heartbeat_interval = 30
 cleanup_interval = 300
+# Reconnect behavior / 重连行为
+sms_connect_timeout_ms = 15000
+sms_connect_retry_ms = 500
+reconnect_total_timeout_ms = 300000
 
 [spearlet.grpc]
 addr = "0.0.0.0:50052"
@@ -170,15 +178,17 @@ Configuration priority / 配置优先级：
 Environment variables / 环境变量支持：
 
 SPEARlet (`SPEARLET_*`):
-- `SPEARLET_NODE_ID`, `SPEARLET_SMS_ADDR`, `SPEARLET_AUTO_REGISTER`, `SPEARLET_HEARTBEAT_INTERVAL`, `SPEARLET_CLEANUP_INTERVAL`
+- `SPEARLET_NODE_NAME`, `SPEARLET_SMS_ADDR`, `SPEARLET_AUTO_REGISTER`, `SPEARLET_HEARTBEAT_INTERVAL`, `SPEARLET_CLEANUP_INTERVAL`
 - `SPEARLET_GRPC_ADDR`, `SPEARLET_HTTP_ADDR`
 - `SPEARLET_STORAGE_BACKEND`, `SPEARLET_STORAGE_DATA_DIR`, `SPEARLET_STORAGE_MAX_CACHE_MB`, `SPEARLET_STORAGE_COMPRESSION_ENABLED`, `SPEARLET_STORAGE_MAX_OBJECT_SIZE`
 - `SPEARLET_LOG_LEVEL`, `SPEARLET_LOG_FORMAT`, `SPEARLET_LOG_FILE`
+- `SPEARLET_SMS_CONNECT_TIMEOUT_MS`, `SPEARLET_SMS_CONNECT_RETRY_MS`, `SPEARLET_RECONNECT_TOTAL_TIMEOUT_MS`
 
 SMS (`SMS_*`):
 - `SMS_GRPC_ADDR`, `SMS_HTTP_ADDR`, `SMS_ENABLE_SWAGGER`
 - `SMS_DB_TYPE`, `SMS_DB_PATH`, `SMS_DB_POOL_SIZE`
 - `SMS_LOG_LEVEL`, `SMS_LOG_FORMAT`, `SMS_LOG_FILE`
+- `SMS_ENABLE_WEB_ADMIN`, `SMS_WEB_ADMIN_ADDR`, `SMS_HEARTBEAT_TIMEOUT`, `SMS_CLEANUP_INTERVAL`
 
 #### API Examples / API示例
 
@@ -278,9 +288,12 @@ gRPC服务提供以下方法：
 
 3. **Test / 测试**:
    ```bash
-   make test
-   # 或
-   cargo test
+make test
+# 或
+cargo test
+
+# 运行特定测试模块（例如重连测试） / Run specific test module (e.g., reconnect)
+cargo test spearlet_reconnect_tests -- --nocapture
    ```
 
 4. **Run in development mode / 开发模式运行**:

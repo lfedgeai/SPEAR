@@ -5,6 +5,7 @@ mod tests {
     use super::super::config::*;
     use std::fs;
     use tempfile::tempdir;
+    use serial_test::serial;
 
     #[test]
     fn test_cli_args_default() {
@@ -198,6 +199,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_sms_config_home_first_loading() {
         // Home-first config loading: ~/.sms/config.toml
         // 优先从主目录加载配置：~/.sms/config.toml
@@ -257,12 +259,14 @@ pool_size = 20
         // gRPC addr may vary depending on environment setup / gRPC地址可能因环境设置而变化
         // HTTP addr may vary depending on environment and defaults / HTTP地址可能因环境与默认值变化
         // Log level may vary depending on environment and defaults / 日志级别可能因环境与默认值变化
-        assert_eq!(cfg.database.db_type, "sled");
-        assert_eq!(cfg.database.pool_size, Some(10));
+        assert_eq!(cfg.database.db_type, "rocksdb");
+        assert_eq!(cfg.database.pool_size, Some(20));
+        std::env::remove_var("SMS_HOME");
         // Swagger flag may be defaulted by environment; ensure other mappings are correct
     }
 
     #[test]
+    #[serial]
     fn test_sms_env_overrides_defaults() {
         // Environment overrides defaults / 环境变量覆盖默认值
         std::env::remove_var("SMS_HOME");
@@ -303,6 +307,7 @@ pool_size = 20
     }
 
     #[test]
+    #[serial]
     fn test_sms_cli_overrides_home_and_env() {
         // CLI overrides home and env / CLI覆盖家目录与环境变量
         let dir = tempdir().unwrap();

@@ -100,6 +100,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 serde_urlencoded = "0.7"
 # Docker-based integration testing / 基于Docker的集成测试
 testcontainers = "0.15"
+serial_test = "2.0"
 
 # Benchmarking / 基准测试
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }

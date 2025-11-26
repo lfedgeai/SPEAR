@@ -10,6 +10,7 @@ use serde_json::json;
 use uuid::Uuid;
 use spear_next::sms::routes::create_routes;
 use spear_next::sms::gateway::GatewayState;
+use tokio_util::sync::CancellationToken;
 
 // Test utilities for Task HTTP integration / Task HTTP集成测试工具
 mod task_test_utils {
@@ -78,6 +79,7 @@ mod task_test_utils {
         let state = GatewayState {
             node_client: sms_client,
             task_client,
+            cancel_token: CancellationToken::new(),
         };
         
         // Create HTTP router / 创建HTTP路由器

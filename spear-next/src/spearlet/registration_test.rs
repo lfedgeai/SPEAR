@@ -11,7 +11,7 @@ use crate::spearlet::registration::{RegistrationService, RegistrationState};
 /// Create test configuration / 创建测试配置
 fn create_test_config() -> SpearletConfig {
     SpearletConfig {
-        node_id: "test-node-001".to_string(),
+        node_name: "test-node-001".to_string(),
         auto_register: true,
         sms_addr: "127.0.0.1:9000".to_string(),
         ..Default::default()
@@ -103,7 +103,7 @@ async fn test_registration_service_with_different_node_ids() {
     
     for node_id in node_ids {
         let mut config = create_test_config();
-        config.node_id = node_id.clone();
+        config.node_name = node_id.clone();
         
         let service = RegistrationService::new(Arc::new(config));
         let state = service.get_state().await;
@@ -157,7 +157,7 @@ async fn test_multiple_registration_services() {
     let services = (0..3)
         .map(|i| {
             let mut config = create_test_config();
-            config.node_id = format!("test-node-{:03}", i);
+            config.node_name = format!("test-node-{:03}", i);
             RegistrationService::new(Arc::new(config))
         })
         .collect::<Vec<_>>();
@@ -281,13 +281,13 @@ mod integration_tests {
         // Test registration service with various configurations / 测试各种配置的注册服务
         let configs = vec![
             SpearletConfig {
-                node_id: "prod-node-001".to_string(),
+                node_name: "prod-node-001".to_string(),
                 auto_register: true,
                 sms_addr: "sms.example.com:443".to_string(),
                 ..Default::default()
             },
             SpearletConfig {
-                node_id: "dev-node-test".to_string(),
+                node_name: "dev-node-test".to_string(),
                 auto_register: false,
                 sms_addr: "localhost:8080".to_string(),
                 ..Default::default()
@@ -314,7 +314,7 @@ mod integration_tests {
         use super::RegistrationService;
 
         let cfg = SpearletConfig {
-            node_id: "test-node".to_string(),
+            node_name: "test-node".to_string(),
             grpc: ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() },
             http: crate::spearlet::config::HttpConfig::default(),
             storage: crate::spearlet::config::StorageConfig::default(),
@@ -325,6 +325,7 @@ mod integration_tests {
             cleanup_interval: 60,
             sms_connect_timeout_ms: 15000,
             sms_connect_retry_ms: 500,
+            reconnect_total_timeout_ms: 300000,
         };
 
         let svc = RegistrationService::new(Arc::new(cfg));

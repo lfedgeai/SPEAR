@@ -133,8 +133,15 @@ impl Default for LoggingConfig {
 pub fn init_tracing(config: &LoggingConfig) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+    // In debug builds, always use debug level unless RUST_LOG overrides / 在debug构建中始终使用debug级别（若未设置RUST_LOG）
+    let default_level = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        &config.level
+    };
+
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.level));
+        .unwrap_or_else(|_| EnvFilter::new(default_level));
 
     let subscriber = tracing_subscriber::registry().with(env_filter);
 

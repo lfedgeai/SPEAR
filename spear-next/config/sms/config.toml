@@ -15,6 +15,14 @@ enable_tls = false
 # Enable Swagger UI / 启用Swagger UI
 enable_swagger = true
 
+# Enable Web Admin / 启用Web管理页面
+enable_web_admin = false
+
+[web_admin]
+# Web Admin bind address / Web管理页面绑定地址
+addr = "127.0.0.1:8081"
+enable_tls = false
+
 [database]
 # Database type: "rocksdb" or "sled" / 数据库类型："rocksdb" 或 "sled"
 db_type = "sled"

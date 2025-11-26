@@ -11,6 +11,7 @@ use crate::proto::sms::{
     task_service_client::TaskServiceClient,
 };
 use super::{gateway::{create_gateway_router, GatewayState}};
+use tokio_util::sync::CancellationToken;
 
 
 
@@ -77,20 +78,13 @@ impl HttpGateway {
         info!("Connecting to gRPC server at {}", self.grpc_addr);
 
         let grpc_url = format!("http://{}", self.grpc_addr);
+        let channel = tonic::transport::Channel::from_shared(grpc_url)
+            .expect("Invalid gRPC URL")
+            .connect_lazy();
+        let node_client = NodeServiceClient::new(channel.clone());
+        let task_client = TaskServiceClient::new(channel);
 
-        let node_client = NodeServiceClient::connect(grpc_url.clone()).await
-            .map_err(|e| {
-                error!("Failed to connect to gRPC server for node service: {}", e);
-                e
-            })?;
-
-        let task_client = TaskServiceClient::connect(grpc_url).await
-            .map_err(|e| {
-                error!("Failed to connect to gRPC server for task service: {}", e);
-                e
-            })?;
-
-        let state = GatewayState { node_client, task_client };
+        let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new() };
         let app = create_gateway_router(state);
 
         info!("SMS HTTP gateway listening on {}", self.addr);

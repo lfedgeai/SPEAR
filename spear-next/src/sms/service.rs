@@ -206,7 +206,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<RegisterNodeRequest>,
     ) -> Result<Response<RegisterNodeResponse>, Status> {
         let req = request.into_inner();
-        let node = req.node.ok_or_else(|| Status::invalid_argument("Node is required"))?;
+        let mut node = req.node.ok_or_else(|| Status::invalid_argument("Node is required"))?;
         
         // Register node directly / 直接注册节点
         let mut node_service = self.node_service.write().await;
@@ -238,7 +238,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<UpdateNodeRequest>,
     ) -> Result<Response<UpdateNodeResponse>, Status> {
         let req = request.into_inner();
-        let node = req.node.ok_or_else(|| Status::invalid_argument("Node is required"))?;
+        let mut node = req.node.ok_or_else(|| Status::invalid_argument("Node is required"))?;
         
         // Use update_node to update the existing node / 使用update_node来更新现有节点
         let mut node_service = self.node_service.write().await;
@@ -285,14 +285,11 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<HeartbeatRequest>,
     ) -> Result<Response<HeartbeatResponse>, Status> {
         let req = request.into_inner();
-        let node_uuid = Uuid::parse_str(&req.uuid)
-            .map_err(|_| Status::invalid_argument("Invalid UUID format"))?;
-        
         let mut node_service = self.node_service.write().await;
         
-        match node_service.update_heartbeat(&node_uuid.to_string(), chrono::Utc::now().timestamp()).await {
+        match node_service.update_heartbeat(&req.uuid, chrono::Utc::now().timestamp()).await {
             Ok(_) => {
-                tracing::debug!(uuid = %node_uuid, "Heartbeat received");
+                tracing::debug!(uuid = %req.uuid, "Heartbeat received");
                 let response = HeartbeatResponse {
                     success: true,
                     message: "Heartbeat received".to_string(),
@@ -331,12 +328,9 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<GetNodeRequest>,
     ) -> Result<Response<GetNodeResponse>, Status> {
         let req = request.into_inner();
-        let node_uuid = uuid::Uuid::parse_str(&req.uuid)
-            .map_err(|_| Status::invalid_argument("Invalid UUID format"))?;
-        
         let node_service = self.node_service.read().await;
         
-        match node_service.get_node(&node_uuid.to_string()).await {
+        match node_service.get_node(&req.uuid).await {
             Ok(Some(node)) => {
                 let response = GetNodeResponse {
                     found: true,
@@ -387,10 +381,11 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<GetNodeResourceRequest>,
     ) -> Result<Response<GetNodeResourceResponse>, Status> {
         let req = request.into_inner();
-        let node_uuid = uuid::Uuid::parse_str(&req.node_uuid)
-            .map_err(|_| Status::invalid_argument("Invalid UUID format"))?;
-        
-        match self.resource_service.get_resource(&node_uuid).await {
+        // Allow non-UUID identifiers: if parsing fails, treat as no resource found
+        let res = if let Ok(u) = uuid::Uuid::parse_str(&req.node_uuid) {
+            self.resource_service.get_resource(&u).await
+        } else { Ok(None) };
+        match res {
             Ok(Some(resource_info)) => {
                 let response = GetNodeResourceResponse {
                     found: true,
@@ -423,9 +418,8 @@ impl NodeServiceTrait for SmsServiceImpl {
             // Filter by specific node UUIDs / 按特定节点UUID过滤
             let mut node_uuids = Vec::new();
             for uuid_str in &req.node_uuids {
-                match uuid::Uuid::parse_str(uuid_str) {
-                    Ok(uuid) => node_uuids.push(uuid),
-                    Err(_) => return Err(Status::invalid_argument(format!("Invalid UUID format: {}", uuid_str))),
+                if let Ok(uuid) = uuid::Uuid::parse_str(uuid_str) {
+                    node_uuids.push(uuid);
                 }
             }
             self.resource_service.list_resources_by_nodes(&node_uuids).await
@@ -452,16 +446,17 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<GetNodeWithResourceRequest>,
     ) -> Result<Response<GetNodeWithResourceResponse>, Status> {
         let req = request.into_inner();
-        let node_uuid = uuid::Uuid::parse_str(&req.uuid)
-            .map_err(|_| Status::invalid_argument("Invalid UUID format"))?;
+        let node_id = req.uuid;
         
         // Get node info / 获取节点信息
         let node_service = self.node_service.read().await;
-        let node_result = node_service.get_node(&node_uuid.to_string()).await;
+        let node_result = node_service.get_node(&node_id).await;
         drop(node_service);
         
-        // Get resource info / 获取资源信息
-        let resource_result = self.resource_service.get_resource(&node_uuid).await;
+        // Get resource info / 获取资源信息（如果node_id不是UUID则返回None）
+        let resource_result = if let Ok(uuid) = uuid::Uuid::parse_str(&node_id) {
+            self.resource_service.get_resource(&uuid).await
+        } else { Ok(None) };
         
         match (node_result, resource_result) {
             (Ok(Some(node)), Ok(resource_info)) => {

@@ -10,6 +10,7 @@ use serde_json::json;
 use uuid::Uuid;
 use spear_next::sms::routes::create_routes;
 use spear_next::sms::gateway::GatewayState;
+use tokio_util::sync::CancellationToken;
 
 // Test utilities for HTTP integration / HTTP集成测试工具
 mod http_test_utils {
@@ -57,7 +58,7 @@ mod http_test_utils {
             .expect("Failed to connect to test gRPC server");
         let sms_client = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel.clone());
         let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
-        let state = GatewayState { node_client: sms_client, task_client };
+        let state = GatewayState { node_client: sms_client, task_client, cancel_token: CancellationToken::new() };
         let app = create_routes(state);
         (TestServer::new(app).unwrap(), grpc_handle)
     }
@@ -126,7 +127,7 @@ async fn test_http_node_lifecycle() {
     assert_eq!(get_body["node"]["uuid"], created_uuid);
     assert_eq!(get_body["node"]["ip_address"], "192.168.1.100");
     assert_eq!(get_body["node"]["port"], 8080);
-    assert_eq!(get_body["node"]["status"], "active");
+    assert_eq!(get_body["node"]["status"], "online");
     
     // 3. Update node / 更新节点
     let update_json = json!({
@@ -204,7 +205,7 @@ async fn test_http_node_lifecycle() {
         .expect("Failed to connect to test gRPC server");
     let sms_client_filter = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
-    let filter_state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter };
+    let filter_state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new() };
     
     let filter_app = create_routes(filter_state);
     let filter_request = Request::builder()
@@ -304,7 +305,7 @@ async fn test_http_resource_management() {
         .expect("Failed to connect to test gRPC server");
     let sms_client_filter = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
-    let state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter };
+    let state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new() };
     let app = create_routes(state);
     
     let request = axum::http::Request::builder()

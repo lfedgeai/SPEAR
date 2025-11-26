@@ -4,6 +4,7 @@
 use axum::Router;
 use rust_embed::RustEmbed;
 use tower_http::cors::CorsLayer;
+use tokio_util::sync::CancellationToken;
 
 use crate::proto::sms::{
     node_service_client::NodeServiceClient,
@@ -21,6 +22,7 @@ struct StaticFiles;
 pub struct GatewayState {
     pub node_client: NodeServiceClient<tonic::transport::Channel>,
     pub task_client: TaskServiceClient<tonic::transport::Channel>,
+    pub cancel_token: CancellationToken,
 }
 
 /// Create HTTP gateway router / 创建HTTP网关路由器

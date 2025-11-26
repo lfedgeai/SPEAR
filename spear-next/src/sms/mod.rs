@@ -44,6 +44,7 @@ pub mod services;
 pub mod handlers;
 pub mod grpc_server;
 pub mod http_gateway;
+pub mod web_admin;
 pub mod service;
 pub mod gateway;
 pub mod routes;

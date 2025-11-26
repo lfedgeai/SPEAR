@@ -167,7 +167,7 @@ async fn status_check(State(state): State<AppState>) -> Result<Json<serde_json::
         "object_count": health_status.object_count,
         "total_object_size": health_status.total_object_size,
         "pinned_object_count": health_status.pinned_object_count,
-        "node_id": state.config.node_id
+        "node_name": state.config.node_name
     })))
 }
 
@@ -712,7 +712,7 @@ async fn api_docs() -> Json<serde_json::Value> {
                                     "schema": {
                                         "type": "object",
                                         "properties": {
-                                            "node_id": {"type": "string"},
+                                            "node_name": {"type": "string"},
                                             "status": {"type": "string"},
                                             "object_count": {"type": "integer"},
                                             "total_object_size": {"type": "integer"},

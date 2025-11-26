@@ -21,6 +21,7 @@ path = "src/apps/spearlet/main.rs"
 # Async runtime / 异步运行时
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = "0.1"
+tokio-util = "0.7"
 
 # gRPC framework / gRPC框架
 tonic = "0.12"
@@ -47,7 +48,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # UUID generation / UUID生成
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { version = "1.0", features = ["v4", "v5", "serde"] }
 
 # Time handling / 时间处理
 chrono = { version = "0.4", features = ["serde"] }
@@ -89,6 +90,7 @@ md5 = "0.7"
 
 # Random number generation / 随机数生成
 rand = "0.8"
+futures = "0.3"
 
 [dev-dependencies]
 # Testing utilities / 测试工具

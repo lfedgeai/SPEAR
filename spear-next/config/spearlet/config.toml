@@ -1,8 +1,8 @@
 # SPEARlet Configuration / SPEARlet 配置
 
 [spearlet]
-# Node ID (auto-generated if empty) / 节点ID（为空时自动生成）
-node_id = ""
+# Node name (optional) / 节点名称（可选）
+node_name = ""
 # SMS service address / SMS服务地址
 sms_addr = "127.0.0.1:50051"
 # Auto register with SMS / 自动向SMS注册

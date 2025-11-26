@@ -153,6 +153,10 @@ impl TestDataGenerator {
                 path: "./test_data".to_string(),
                 pool_size: Some(5),
             },
+            enable_web_admin: false,
+            web_admin: ServerConfig { addr: "127.0.0.1:8081".parse().unwrap(), ..Default::default() },
+            heartbeat_timeout: 90,
+            cleanup_interval: 30,
         }
     }
 
@@ -181,6 +185,10 @@ impl TestDataGenerator {
                 path: "./test_data".to_string(),
                 pool_size: Some(5),
             },
+            enable_web_admin: false,
+            web_admin: ServerConfig { addr: "127.0.0.1:8081".parse().unwrap(), ..Default::default() },
+            heartbeat_timeout: _heartbeat_timeout,
+            cleanup_interval: 30,
         }
     }
 }

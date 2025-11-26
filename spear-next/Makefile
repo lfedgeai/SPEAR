@@ -21,9 +21,10 @@ BLUE := \033[0;34m
 NC := \033[0m # No Color
 
 .PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e
+.DEFAULT_GOAL := build
 
 # Default target / 默认目标
-all: check test build
+all: check build
 
 # Display help information / 显示帮助信息
 help:

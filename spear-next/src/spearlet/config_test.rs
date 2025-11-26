@@ -11,7 +11,7 @@ mod tests {
         // Test default CLI args / 测试默认CLI参数
         let args = CliArgs {
             config: None,
-            node_id: None,
+            node_name: None,
             grpc_addr: None,
             http_addr: None,
             sms_addr: None,
@@ -21,10 +21,11 @@ mod tests {
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         assert_eq!(args.config, None);
-        assert_eq!(args.node_id, None);
+        assert_eq!(args.node_name, None);
         assert!(args.auto_register.is_none());
     }
 
@@ -33,7 +34,7 @@ mod tests {
         // Test default SpearletConfig / 测试默认SpearletConfig
         let config = SpearletConfig::default();
         
-        assert_eq!(config.node_id, "spearlet-node");
+        assert_eq!(config.node_name, "spearlet-node");
         assert_eq!(config.grpc.addr.to_string(), "0.0.0.0:50052");
         assert_eq!(config.http.server.addr.to_string(), "0.0.0.0:8081");
         assert_eq!(config.storage.backend, "memory"); // Updated to match new default / 更新以匹配新的默认值
@@ -89,7 +90,7 @@ mod tests {
         // Test default AppConfig / 测试默认AppConfig
         let config = AppConfig::default();
         
-        assert_eq!(config.spearlet.node_id, "spearlet-node");
+        assert_eq!(config.spearlet.node_name, "spearlet-node");
         assert_eq!(config.spearlet.grpc.addr.to_string(), "0.0.0.0:50052");
         assert_eq!(config.spearlet.http.server.addr.to_string(), "0.0.0.0:8081");
     }
@@ -99,7 +100,7 @@ mod tests {
         // Test loading config without config file / 测试无配置文件时的配置加载
         let args = CliArgs {
             config: None,
-            node_id: Some("test-node".to_string()),
+            node_name: Some("cli-node".to_string()),
             grpc_addr: Some("127.0.0.1:50053".to_string()),
             http_addr: Some("127.0.0.1:8082".to_string()),
             sms_addr: Some("127.0.0.1:50050".to_string()),
@@ -109,6 +110,7 @@ mod tests {
             log_level: Some("debug".to_string()),
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -118,7 +120,7 @@ mod tests {
         assert!(result.is_ok());
         
         let config = result.unwrap();
-        assert_eq!(config.spearlet.node_id, "test-node");
+        assert_eq!(config.spearlet.node_name, "cli-node");
         assert_eq!(config.spearlet.sms_addr, "127.0.0.1:50050");
         assert_eq!(config.spearlet.storage.backend, "sled");
         assert_eq!(config.spearlet.storage.data_dir, "./test-data");
@@ -134,7 +136,7 @@ mod tests {
         
         let config_content = r#"
 [spearlet]
-node_id = "file-node"
+node_name = "file-node"
 sms_addr = "192.168.1.100:50051"
 auto_register = true
 heartbeat_interval = 60
@@ -168,7 +170,7 @@ file = "/tmp/spearlet.log"
         
         let args = CliArgs {
             config: Some(config_path.to_string_lossy().to_string()),
-            node_id: None,
+            node_name: None,
             grpc_addr: None,
             http_addr: None,
             sms_addr: None,
@@ -178,13 +180,14 @@ file = "/tmp/spearlet.log"
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         
         let config = result.unwrap();
-        assert_eq!(config.spearlet.node_id, "file-node");
+        assert_eq!(config.spearlet.node_name, "file-node");
         assert_eq!(config.spearlet.sms_addr, "192.168.1.100:50051");
         assert!(config.spearlet.auto_register);
         assert_eq!(config.spearlet.heartbeat_interval, 60);
@@ -212,7 +215,7 @@ file = "/tmp/spearlet.log"
         
         let config_content = r#"
 [spearlet]
-node_id = "file-node"
+node_name = "file-node"
 sms_addr = "192.168.1.100:50051"
 auto_register = false
 heartbeat_interval = 30
@@ -245,7 +248,7 @@ format = "json"
         
         let args = CliArgs {
             config: Some(config_path.to_string_lossy().to_string()),
-            node_id: Some("cli-node".to_string()),
+            node_name: Some("cli-node".to_string()),
             grpc_addr: None,
             http_addr: None,
             sms_addr: Some("127.0.0.1:50055".to_string()),
@@ -255,6 +258,7 @@ format = "json"
             log_level: Some("debug".to_string()),
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -262,7 +266,7 @@ format = "json"
         
         let config = result.unwrap();
         // CLI args should override file values / CLI参数应该覆盖文件值
-        assert_eq!(config.spearlet.node_id, "cli-node");
+        assert_eq!(config.spearlet.node_name, "cli-node");
         assert_eq!(config.spearlet.sms_addr, "127.0.0.1:50055");
         assert_eq!(config.spearlet.storage.backend, "rocksdb");
         assert_eq!(config.spearlet.storage.data_dir, "./cli-data");
@@ -282,9 +286,9 @@ format = "json"
         fs::create_dir_all(&home_cfg_dir).unwrap();
         let home_cfg_path = home_cfg_dir.join("config.toml");
 
-        let content = r#"
+        let config_content = r#"
 [spearlet]
-node_id = "home-node"
+node_name = "home-node"
 sms_addr = "10.0.0.1:50051"
 auto_register = true
 heartbeat_interval = 45
@@ -314,11 +318,11 @@ format = "json"
 file = "/tmp/home-spearlet.log"
 "#;
 
-        fs::write(&home_cfg_path, content).unwrap();
+        fs::write(&home_cfg_path, config_content).unwrap();
 
         let args = CliArgs {
             config: None,
-            node_id: None,
+            node_name: None,
             grpc_addr: None,
             http_addr: None,
             sms_addr: None,
@@ -328,6 +332,7 @@ file = "/tmp/home-spearlet.log"
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -353,7 +358,7 @@ file = "/tmp/home-spearlet.log"
 
         let args = CliArgs {
             config: None,
-            node_id: None,
+            node_name: None,
             grpc_addr: None,
             http_addr: None,
             sms_addr: None,
@@ -363,6 +368,7 @@ file = "/tmp/home-spearlet.log"
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -394,7 +400,7 @@ file = "/tmp/home-spearlet.log"
         let home_cfg_path = home_cfg_dir.join("config.toml");
         let content = r#"
 [spearlet]
-node_id = "home-node"
+node_name = "home-node"
 
 [spearlet.grpc]
 addr = "127.0.0.1:60000"
@@ -408,7 +414,7 @@ addr = "127.0.0.1:9000"
 "#;
         fs::write(&home_cfg_path, content).unwrap();
 
-        let args = CliArgs { config: None, node_id: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None };
+        let args = CliArgs { config: None, node_name: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None, reconnect_total_timeout_ms: None };
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
@@ -462,7 +468,7 @@ addr = "127.0.0.1:9100"
 "#;
         fs::write(&cli_cfg_path, cli_content).unwrap();
 
-        let args = CliArgs { config: Some(cli_cfg_path.to_string_lossy().to_string()), node_id: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None };
+        let args = CliArgs { config: Some(cli_cfg_path.to_string_lossy().to_string()), node_name: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None, reconnect_total_timeout_ms: None };
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
@@ -481,7 +487,7 @@ addr = "127.0.0.1:9100"
         // Test loading invalid config file / 测试加载无效配置文件
         let args = CliArgs {
             config: Some("non_existent_file.toml".to_string()),
-            node_id: None,
+            node_name: None,
             grpc_addr: None,
             http_addr: None,
             sms_addr: None,
@@ -491,6 +497,7 @@ addr = "127.0.0.1:9100"
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -502,7 +509,7 @@ addr = "127.0.0.1:9100"
         // Test gRPC address parsing / 测试gRPC地址解析
         let args = CliArgs {
             config: None,
-            node_id: None,
+            node_name: None,
             grpc_addr: Some("192.168.1.10:9999".to_string()),
             http_addr: None,
             sms_addr: None,
@@ -512,6 +519,7 @@ addr = "127.0.0.1:9100"
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);
@@ -528,7 +536,7 @@ addr = "127.0.0.1:9100"
         // Test HTTP address parsing / 测试HTTP地址解析
         let args = CliArgs {
             config: None,
-            node_id: None,
+            node_name: None,
             grpc_addr: None,
             http_addr: Some("0.0.0.0:8888".to_string()),
             sms_addr: None,
@@ -538,6 +546,7 @@ addr = "127.0.0.1:9100"
             log_level: None,
             sms_connect_timeout_ms: None,
             sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
         };
 
         let result = AppConfig::load_with_cli(&args);

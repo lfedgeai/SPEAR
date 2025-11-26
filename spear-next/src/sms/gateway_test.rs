@@ -9,6 +9,7 @@ use crate::proto::sms::{
     task_service_client::TaskServiceClient,
 };
 use crate::sms::gateway::{GatewayState, create_gateway_router};
+use tokio_util::sync::CancellationToken;
 
 /// Create a mock gateway state for testing / 创建用于测试的模拟网关状态
 async fn create_mock_gateway_state() -> GatewayState {
@@ -18,6 +19,7 @@ async fn create_mock_gateway_state() -> GatewayState {
     GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel),
+        cancel_token: CancellationToken::new(),
     }
 }
 
@@ -116,6 +118,7 @@ async fn test_gateway_state_with_different_endpoints() {
         let state = GatewayState {
             node_client,
             task_client,
+            cancel_token: CancellationToken::new(),
         };
         
         // State should be created successfully with any endpoint / 任何端点都应该成功创建状态

@@ -58,6 +58,18 @@ pub struct CliArgs {
     /// Cleanup interval in seconds / 清理间隔时间（秒）
     #[arg(long, value_name = "SECONDS", help = "Cleanup interval in seconds / 清理间隔时间（秒）")]
     pub cleanup_interval: Option<u64>,
+
+    /// Enable Web Admin / 启用Web管理页面
+    #[arg(long, help = "Enable Web Admin / 启用Web管理页面")]
+    pub enable_web_admin: bool,
+
+    /// Disable Web Admin / 禁用Web管理页面
+    #[arg(long, help = "Disable Web Admin / 禁用Web管理页面", conflicts_with = "enable_web_admin")]
+    pub disable_web_admin: bool,
+
+    /// Web Admin address / Web管理页面监听地址
+    #[arg(long, value_name = "ADDR", help = "Web Admin address (e.g., 0.0.0.0:8081) / Web管理页面监听地址")]
+    pub web_admin_addr: Option<String>,
 }
 
 /// SMS service configuration / SMS服务配置
@@ -74,6 +86,14 @@ pub struct SmsConfig {
     pub enable_swagger: bool,
     /// Database configuration / 数据库配置
     pub database: DatabaseConfig,
+    /// Enable Web Admin / 启用Web管理页面
+    pub enable_web_admin: bool,
+    /// Web Admin server configuration / Web管理页面服务器配置
+    pub web_admin: ServerConfig,
+    /// Heartbeat timeout in seconds / 心跳超时时间（秒）
+    pub heartbeat_timeout: u64,
+    /// Cleanup interval in seconds / 清理间隔时间（秒）
+    pub cleanup_interval: u64,
 }
 
 /// Database configuration / 数据库配置
@@ -107,6 +127,10 @@ impl SmsConfig {
         if let Ok(v) = std::env::var("SMS_LOG_LEVEL") { if !v.is_empty() { config.log.level = v; } }
         if let Ok(v) = std::env::var("SMS_LOG_FORMAT") { if !v.is_empty() { config.log.format = v; } }
         if let Ok(v) = std::env::var("SMS_LOG_FILE") { if !v.is_empty() { config.log.file = Some(v); } }
+
+        // Web Admin env / Web管理页面环境变量
+        if let Ok(v) = std::env::var("SMS_ENABLE_WEB_ADMIN") { if let Ok(b) = v.parse::<bool>() { config.enable_web_admin = b; } }
+        if let Ok(v) = std::env::var("SMS_WEB_ADMIN_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.web_admin.addr = a; } }
 
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.sms/config.toml
@@ -172,9 +196,21 @@ impl SmsConfig {
             config.enable_swagger = false;
         }
 
+        // Web Admin flags / Web管理页面标志
+        if args.enable_web_admin { config.enable_web_admin = true; }
+        else if args.disable_web_admin { config.enable_web_admin = false; }
+
+        if let Some(addr) = &args.web_admin_addr { config.web_admin.addr = addr.parse()?; }
+
         if let Some(log_level) = &args.log_level {
             config.log.level = log_level.clone();
         }
+
+        // Heartbeat & cleanup overrides / 心跳与清理覆盖
+        if let Ok(v) = std::env::var("SMS_HEARTBEAT_TIMEOUT") { if let Ok(n) = v.parse::<u64>() { config.heartbeat_timeout = n; } }
+        if let Ok(v) = std::env::var("SMS_CLEANUP_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.cleanup_interval = n; } }
+        if let Some(n) = args.heartbeat_timeout { config.heartbeat_timeout = n; }
+        if let Some(n) = args.cleanup_interval { config.cleanup_interval = n; }
 
         Ok(config)
     }
@@ -198,6 +234,13 @@ impl Default for SmsConfig {
                 path: "./data/sms".to_string(),
                 pool_size: Some(10),
             },
+            enable_web_admin: false,
+            web_admin: ServerConfig {
+                addr: "127.0.0.1:8081".parse().unwrap(),
+                ..Default::default()
+            },
+            heartbeat_timeout: 90,
+            cleanup_interval: 30,
         }
     }
 }

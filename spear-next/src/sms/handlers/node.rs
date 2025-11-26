@@ -61,7 +61,7 @@ pub async fn register_node(
         uuid: Uuid::new_v4().to_string(),
         ip_address: req.ip_address,
         port: req.port,
-        status: "active".to_string(),
+        status: "online".to_string(),
         last_heartbeat: chrono::Utc::now().timestamp(),
         registered_at: chrono::Utc::now().timestamp(),
         metadata: req.metadata.unwrap_or_default(),
@@ -144,6 +144,9 @@ pub async fn get_node(
     Path(uuid): Path<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     let mut client = state.node_client.clone();
+    if Uuid::parse_str(&uuid).is_err() {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
     
     let grpc_req = GetNodeRequest { uuid };
     

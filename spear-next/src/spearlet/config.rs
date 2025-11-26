@@ -19,9 +19,9 @@ pub struct CliArgs {
     #[arg(short, long, value_name = "FILE", help = "Configuration file path / 配置文件路径")]
     pub config: Option<String>,
 
-    /// Node ID / 节点ID
-    #[arg(long, value_name = "ID", help = "Node identifier / 节点标识符")]
-    pub node_id: Option<String>,
+    /// Node name / 节点名称
+    #[arg(long, value_name = "NAME", help = "Node name (not unique) / 节点名称（可重复）")]
+    pub node_name: Option<String>,
 
     /// gRPC server address / gRPC服务器地址
     #[arg(long, value_name = "ADDR", help = "gRPC server address (e.g., 0.0.0.0:50052) / gRPC服务器地址")]
@@ -56,6 +56,10 @@ pub struct CliArgs {
 
     #[arg(long, value_name = "MS")]
     pub sms_connect_retry_ms: Option<u64>,
+
+    /// Total reconnect timeout after disconnection / 断线后的总重连超时（毫秒）
+    #[arg(long, value_name = "MS", help = "Total reconnect timeout after disconnect / 断线后的总重连超时（毫秒）")]
+    pub reconnect_total_timeout_ms: Option<u64>,
 }
 
 /// Spearlet application configuration / Spearlet应用配置
@@ -72,7 +76,7 @@ impl AppConfig {
 
         // Apply environment variables (low priority) / 应用环境变量（较低优先级）
         // Prefix: SPEARLET_  例如：SPEARLET_GRPC_ADDR, SPEARLET_HTTP_ADDR
-        if let Ok(v) = std::env::var("SPEARLET_NODE_ID") { if !v.is_empty() { config.spearlet.node_id = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_NODE_NAME") { if !v.is_empty() { config.spearlet.node_name = v; } }
         if let Ok(v) = std::env::var("SPEARLET_SMS_ADDR") { if !v.is_empty() { config.spearlet.sms_addr = v; } }
         if let Ok(v) = std::env::var("SPEARLET_AUTO_REGISTER") { if let Ok(b) = v.parse::<bool>() { config.spearlet.auto_register = b; } }
         if let Ok(v) = std::env::var("SPEARLET_HEARTBEAT_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.heartbeat_interval = n; } }
@@ -93,6 +97,7 @@ impl AppConfig {
 
         if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_TIMEOUT_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.sms_connect_timeout_ms = n; } }
         if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_RETRY_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.sms_connect_retry_ms = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_RECONNECT_TOTAL_TIMEOUT_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.reconnect_total_timeout_ms = n; } }
 
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.spear/config.toml
@@ -125,8 +130,8 @@ impl AppConfig {
         }
         
         // Override with CLI arguments / 使用CLI参数覆盖
-        if let Some(node_id) = &args.node_id {
-            config.spearlet.node_id = node_id.clone();
+        if let Some(node_name) = &args.node_name {
+            config.spearlet.node_name = node_name.clone();
         }
         
         if let Some(grpc_addr) = &args.grpc_addr {
@@ -159,7 +164,16 @@ impl AppConfig {
 
         if let Some(t) = args.sms_connect_timeout_ms { config.spearlet.sms_connect_timeout_ms = t; }
         if let Some(r) = args.sms_connect_retry_ms { config.spearlet.sms_connect_retry_ms = r; }
-        
+        if let Some(rt) = args.reconnect_total_timeout_ms { config.spearlet.reconnect_total_timeout_ms = rt; }
+
+        // Implicit auto-register rule: when SMS address is provided via CLI or env, enable auto_register by default
+        // 隐式自动注册规则：当通过CLI或环境变量提供了SMS地址时，默认启用auto_register
+        let env_sms = std::env::var("SPEARLET_SMS_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
+        let cli_sms = args.sms_addr.as_ref().map(|v| !v.is_empty()).unwrap_or(false);
+        if args.auto_register.is_none() && (env_sms || cli_sms) {
+            config.spearlet.auto_register = true;
+        }
+
         Ok(config)
     }
 }
@@ -176,8 +190,8 @@ impl Default for AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpearletConfig {
-    /// Node identifier / 节点标识符
-    pub node_id: String,
+    /// Node name / 节点名称
+    pub node_name: String,
     /// gRPC server configuration / gRPC服务器配置
     pub grpc: ServerConfig,
     /// HTTP gateway configuration / HTTP网关配置
@@ -196,6 +210,8 @@ pub struct SpearletConfig {
     pub cleanup_interval: u64,
     pub sms_connect_timeout_ms: u64,
     pub sms_connect_retry_ms: u64,
+    /// Total reconnect timeout after disconnection / 断线后的总重连超时（毫秒）
+    pub reconnect_total_timeout_ms: u64,
 }
 
 /// gRPC server configuration / gRPC服务器配置
@@ -242,7 +258,7 @@ pub struct LoggingConfig {
 impl Default for SpearletConfig {
     fn default() -> Self {
         Self {
-            node_id: "spearlet-node".to_string(),
+            node_name: "spearlet-node".to_string(),
             grpc: ServerConfig { addr: "0.0.0.0:50052".parse().unwrap(), ..Default::default() },
             http: HttpConfig::default(),
             storage: StorageConfig::default(),
@@ -253,6 +269,7 @@ impl Default for SpearletConfig {
             cleanup_interval: 300,
             sms_connect_timeout_ms: 15000,
             sms_connect_retry_ms: 500,
+            reconnect_total_timeout_ms: 300_000,
         }
     }
 }

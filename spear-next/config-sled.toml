@@ -17,6 +17,12 @@ heartbeat_timeout = 120
 # Enable Swagger UI / 启用Swagger UI
 enable_swagger = true
 
+# Enable Web Admin / 启用Web管理页面
+enable_web_admin = false
+
+# Web Admin address / Web管理页面监听地址
+web_admin_addr = "0.0.0.0:8081"
+
 # KV Store Configuration with Sled Backend / 使用Sled后端的KV存储配置
 [sms.kv_store]
 # Backend type: "sled" for persistent storage / 后端类型："sled" 用于持久化存储

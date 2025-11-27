@@ -35,5 +35,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 告诉cargo在proto文件更改时重新运行此构建脚本
     println!("cargo:rerun-if-changed=proto/");
 
+    // Precompress admin assets
+    println!("cargo:rerun-if-changed=assets/admin/");
+    let out_dir = std::env::var("OUT_DIR")?;
+    let assets = [
+        ("assets/admin/index.html", "index.html"),
+        ("assets/admin/react-app.js", "react-app.js"),
+        ("assets/admin/style.css", "style.css"),
+    ];
+    for (src, name) in assets.iter() {
+        let data = std::fs::read(src)?;
+        let br_path = std::path::Path::new(&out_dir).join(format!("{}.br", name));
+        let gz_path = std::path::Path::new(&out_dir).join(format!("{}.gz", name));
+        {
+            let mut w = brotli::CompressorWriter::new(std::fs::File::create(&br_path)?, 4096, 5, 22);
+            use std::io::Write;
+            w.write_all(&data)?;
+        }
+        {
+            use flate2::{Compression, write::GzEncoder};
+            use std::io::Write;
+            let mut w = GzEncoder::new(std::fs::File::create(&gz_path)?, Compression::default());
+            w.write_all(&data)?;
+            w.finish()?;
+        }
+    }
+
     Ok(())
 }

@@ -111,6 +111,8 @@ futures = "0.3"
 [build-dependencies]
 tonic-build = "0.12"
 protoc-bin-vendored = "3"
+brotli = "3"
+flate2 = "1"
 
 [[bench]]
 name = "kv_storage_benchmarks"

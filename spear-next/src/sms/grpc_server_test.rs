@@ -8,6 +8,10 @@ use tokio::time::timeout;
 use crate::sms::grpc_server::GrpcServer;
 use crate::sms::service::SmsServiceImpl;
 use crate::config::base::StorageConfig;
+use crate::proto::sms::RegisterTaskRequest;
+use tonic::Request;
+use uuid::Uuid;
+use crate::proto::sms::task_service_server::TaskService;
 
 /// Create test SMS service / 创建测试SMS服务
 async fn create_test_sms_service() -> SmsServiceImpl {
@@ -38,6 +42,29 @@ async fn test_sms_grpc_server_creation() {
     // Server should be created successfully / 服务器应该成功创建
     // Note: We can't easily test internal state without exposing it
     // 注意：我们无法在不暴露内部状态的情况下轻松测试内部状态
+}
+
+#[tokio::test]
+async fn test_register_task_returns_uuid_on_success() {
+    let sms_service = create_test_sms_service().await;
+    let req = RegisterTaskRequest {
+        name: "echo".to_string(),
+        description: "simple echo".to_string(),
+        priority: crate::proto::sms::TaskPriority::Normal as i32,
+        node_uuid: Uuid::new_v4().to_string(),
+        endpoint: "http://localhost:8080/echo".to_string(),
+        version: "1.0.0".to_string(),
+        capabilities: vec!["echo".to_string()],
+        metadata: std::collections::HashMap::new(),
+        config: std::collections::HashMap::new(),
+        executable: None,
+    };
+
+    let resp = sms_service.register_task(Request::new(req)).await.unwrap();
+    let inner = resp.get_ref();
+    assert!(inner.success);
+    assert!(!inner.task_id.is_empty());
+    assert!(Uuid::parse_str(&inner.task_id).is_ok());
 }
 
 #[tokio::test]

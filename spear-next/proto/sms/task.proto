@@ -20,9 +20,29 @@ enum TaskPriority {
   TASK_PRIORITY_URGENT = 4;   // Urgent priority / 紧急优先级
 }
 
+// Executable type / 可执行类型
+enum ExecutableType {
+  EXECUTABLE_TYPE_UNKNOWN = 0;
+  EXECUTABLE_TYPE_BINARY = 1;
+  EXECUTABLE_TYPE_SCRIPT = 2;
+  EXECUTABLE_TYPE_CONTAINER = 3;
+  EXECUTABLE_TYPE_WASM = 4;
+  EXECUTABLE_TYPE_PROCESS = 5;
+}
+
+// Executable descriptor / 可执行描述
+message TaskExecutable {
+  ExecutableType type = 1;          // Type of executable / 可执行类型
+  string uri = 2;                    // Canonical URI (e.g., docker://image:tag, http://...) / 规范URI
+  string name = 3;                   // Local name or alias / 本地名称或别名
+  string checksum_sha256 = 4;        // Optional integrity checksum / 可选完整性校验
+  repeated string args = 5;          // Default arguments / 默认参数
+  map<string, string> env = 6;       // Default environment variables / 默认环境变量
+}
+
 // Task definition / 任务定义
 message Task {
-  string task_id = 1;                    // Unique task identifier / 唯一任务标识符
+  string task_id = 1;                    // Unique task identifier (UUID v4, server-assigned) / 唯一任务标识符（UUID v4，由服务器分配）
   string name = 2;                       // Task name / 任务名称
   string description = 3;                // Task description / 任务描述
   TaskStatus status = 4;                 // Current task status / 当前任务状态
@@ -35,6 +55,7 @@ message Task {
   int64 last_heartbeat = 11;             // Last heartbeat timestamp / 最后心跳时间戳
   map<string, string> metadata = 12;     // Additional task metadata / 额外任务元数据
   map<string, string> config = 13;       // Task configuration / 任务配置
+  TaskExecutable executable = 14;        // Executable descriptor / 可执行描述
 }
 
 // Task registration request / 任务注册请求
@@ -48,13 +69,14 @@ message RegisterTaskRequest {
   repeated string capabilities = 7;      // Task capabilities / 任务能力
   map<string, string> metadata = 8;      // Additional task metadata / 额外任务元数据
   map<string, string> config = 9;        // Task configuration / 任务配置
+  TaskExecutable executable = 10;        // Executable descriptor / 可执行描述
 }
 
 // Task registration response / 任务注册响应
 message RegisterTaskResponse {
   bool success = 1;                      // Whether registration was successful / 注册是否成功
   string message = 2;                    // Response message / 响应消息
-  string task_id = 3;                    // Assigned task ID / 分配的任务ID
+  string task_id = 3;                    // Assigned task ID (UUID v4, present only if success) / 分配的任务ID（UUID v4，仅在成功时返回）
   Task task = 4;                         // Registered task details / 注册的任务详情
 }
 

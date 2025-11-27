@@ -506,6 +506,7 @@ impl TaskServiceTrait for SmsServiceImpl {
             last_heartbeat: chrono::Utc::now().timestamp(),
             metadata: req.metadata,
             config: req.config,
+            executable: req.executable,
         };
         
         let mut task_service = self.task_service.write().await;

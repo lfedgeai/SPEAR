@@ -170,6 +170,7 @@ pub async fn register_task(
         capabilities: params.capabilities.unwrap_or_default(),
         metadata: params.metadata.unwrap_or_default(),
         config: params.config.unwrap_or_default(),
+        executable: None,
     });
 
     match gateway_state.task_client.clone().register_task(request).await {

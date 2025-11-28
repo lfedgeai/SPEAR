@@ -44,6 +44,8 @@
 | HTTP Refactor | [http-refactor-en.md](./http-refactor-en.md) | [http-refactor-zh.md](./http-refactor-zh.md) | HTTP层重构文档 |
 | Handlers Architecture | [handlers-architecture-en.md](./handlers-architecture-en.md) | [handlers-architecture-zh.md](./handlers-architecture-zh.md) | 处理器架构设计 |
 | Handlers to Services Refactor | [handlers-to-services-refactor-en.md](./handlers-to-services-refactor-en.md) | [handlers-to-services-refactor-zh.md](./handlers-to-services-refactor-zh.md) | 处理器到服务重构 |
+| Web Admin Overview | [web-admin-overview-en.md](./web-admin-overview-en.md) | [web-admin-overview-zh.md](./web-admin-overview-zh.md) | 管理页面概览 |
+| Web Admin UI Guide | [web-admin-ui-guide-en.md](./web-admin-ui-guide-en.md) | [web-admin-ui-guide-zh.md](./web-admin-ui-guide-zh.md) | 管理页面交互与使用指南 |
 
 ### 🔌 gRPC Layer / gRPC层
 
@@ -85,6 +87,7 @@
 | Code Cleanup | [code-cleanup-en.md](./code-cleanup-en.md) | [code-cleanup-zh.md](./code-cleanup-zh.md) | 代码清理文档 |
 | Code Cleanup Summary | [code-cleanup-summary-en.md](./code-cleanup-summary-en.md) | [code-cleanup-summary-zh.md](./code-cleanup-summary-zh.md) | 代码清理摘要 |
 | File Cleanup Summary | [file-cleanup-summary-en.md](./file-cleanup-summary-en.md) | [file-cleanup-summary-zh.md](./file-cleanup-summary-zh.md) | 文件清理摘要 |
+| UI Tests Guide | [ui-tests-guide-en.md](./ui-tests-guide-en.md) | [ui-tests-guide-zh.md](./ui-tests-guide-zh.md) | 前端UI测试使用指南 |
 
 ### 📝 Code Examples / 代码示例
 

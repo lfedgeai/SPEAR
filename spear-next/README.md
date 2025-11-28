@@ -304,6 +304,37 @@ cargo test spearlet_reconnect_tests -- --nocapture
    make run-spearlet
    ```
 
+### Web Admin / 管理页面
+
+- 地址：`http://127.0.0.1:8081/`（启用 `--enable-web-admin` 且指定 `--web-admin-addr`）
+- 功能：节点列表、统计卡片、文件管理、任务管理、设置（主题/时区/Token）
+- 管理 Token：在 Nodes 页工具栏或 Settings 页输入后点击 `Apply` 应用到前端与本地存储
+- 文件页：
+  - `Choose File` 选择文件（美化按钮，旁边显示文件名）
+  - `Upload` 上传到内置对象服务；列表支持下载、复制 URI、删除
+  - URI 形如：`sms+file://<id>`
+- 任务创建：
+  - 可执行类型：`No Executable | Binary | Script | Container | WASM | Process`
+  - Scheme：`sms+file | s3 | minio | https`；选择 `sms+file` 时预填 `sms+file://`
+  - 选择本地 SMS 文件：点击 `Choose Local` 弹窗，`Use` 将 URI 与名称带回表单
+  - 时区：所有时间采用 Settings 页所选时区显示
+
+文档：`ai-docs/web-admin-overview-zh.md`、`ai-docs/web-admin-ui-guide-zh.md`
+
+### UI Tests / 前端测试
+
+- 位置：`spear-next/ui-tests`
+- 框架：Playwright
+- 启动方式：`npm test`（测试会自动启动内置 SMS WebAdmin 服务）
+- 全局初始化：`global-setup.ts` 会清理 `data/files` 目录保证幂等
+- 关键用例：
+  - 任务模态 Scheme 预填与本地文件选择
+  - 可执行类型选择稳定性（使用隐藏原生 `select` 作为测试钩子）
+  - 文件上传、删除及列表刷新
+- 配置：`playwright.config.ts`
+
+文档：`ai-docs/ui-tests-guide-zh.md`
+
 ### E2E Testing / 端到端测试
 
 Container-based E2E tests verify SPEARlet ↔ SMS connectivity using Docker:

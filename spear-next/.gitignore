@@ -1,0 +1,5 @@
+ui-tests/node_modules
+ui-tests/test-results
+ui-tests/data
+
+target

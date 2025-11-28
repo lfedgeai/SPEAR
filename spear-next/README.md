@@ -376,6 +376,25 @@ make run-spearlet
 cargo run --bin spearlet -- --sms-addr 127.0.0.1:50051 --auto-register
 ```
 
+### Task Events Subscription / 任务事件订阅
+
+- SPEARlet 通过 gRPC 订阅 SMS 的任务事件流，仅处理当前节点的事件。
+- 订阅器在 `storage.data_dir` 下持久化事件游标，文件名：`task_events_cursor_{node_uuid}.json`。
+- 支持自动重连与退避：`sms_connect_retry_ms` 控制重试间隔，`sms_connect_timeout_ms` 控制连接超时，`reconnect_total_timeout_ms` 控制断线后的总超时。
+- 对 `Create` 事件会拉取任务详情并准备执行分发（当前为占位逻辑）。
+
+Usage / 使用示例：
+```rust
+use std::sync::Arc;
+use spear_next::spearlet::{config::SpearletConfig, task_events::TaskEventSubscriber};
+
+let config = Arc::new(SpearletConfig::default());
+let subscriber = TaskEventSubscriber::new(config.clone());
+subscriber.start().await; // 后台运行
+```
+
+Docs / 文档：`ai-docs/task-events-subscriber-en.md`、`ai-docs/task-events-subscriber-zh.md`
+
 #### Docker Support / Docker支持
 
 A Dockerfile will be provided for containerized deployment.

@@ -20,15 +20,17 @@ pub struct HttpGateway {
     addr: SocketAddr,
     grpc_addr: SocketAddr,
     enable_swagger: bool,
+    max_upload_bytes: usize,
 }
 
 impl HttpGateway {
     /// Create a new HTTP gateway / 创建新的HTTP网关
-    pub fn new(addr: SocketAddr, grpc_addr: SocketAddr, enable_swagger: bool) -> Self {
+    pub fn new(addr: SocketAddr, grpc_addr: SocketAddr, enable_swagger: bool, max_upload_bytes: usize) -> Self {
         Self {
             addr,
             grpc_addr,
             enable_swagger,
+            max_upload_bytes,
         }
     }
 
@@ -84,7 +86,7 @@ impl HttpGateway {
         let node_client = NodeServiceClient::new(channel.clone());
         let task_client = TaskServiceClient::new(channel);
 
-        let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new() };
+        let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: self.max_upload_bytes };
         let app = create_gateway_router(state);
 
         info!("SMS HTTP gateway listening on {}", self.addr);

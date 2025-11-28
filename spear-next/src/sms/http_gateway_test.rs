@@ -24,7 +24,7 @@ async fn test_http_gateway_creation() {
     let http_addr = create_test_addr(8080);
     let grpc_addr = create_test_grpc_addr();
     
-    let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
     
     // Verify the gateway was created successfully / 验证网关创建成功
     assert_eq!(gateway.addr(), http_addr);
@@ -38,7 +38,7 @@ async fn test_http_gateway_with_swagger() {
     let http_addr = create_test_addr(8081);
     let grpc_addr = create_test_grpc_addr();
     
-    let gateway = HttpGateway::new(http_addr, grpc_addr, true);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, true, 64 * 1024 * 1024);
     
     // Verify Swagger is enabled / 验证Swagger已启用
     assert!(gateway.enable_swagger());
@@ -54,7 +54,7 @@ async fn test_http_gateway_different_addresses() {
     ];
     
     for (http_addr, grpc_addr) in test_cases {
-        let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+        let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
         assert_eq!(gateway.addr(), http_addr);
         assert_eq!(gateway.grpc_addr(), grpc_addr);
     }
@@ -66,7 +66,7 @@ async fn test_http_gateway_ipv6_addresses() {
     let http_addr: SocketAddr = "[::1]:8085".parse().unwrap();
     let grpc_addr: SocketAddr = "[::1]:50055".parse().unwrap();
     
-    let gateway = HttpGateway::new(http_addr, grpc_addr, true);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, true, 64 * 1024 * 1024);
     
     assert_eq!(gateway.addr(), http_addr);
     assert_eq!(gateway.grpc_addr(), grpc_addr);
@@ -79,7 +79,7 @@ async fn test_http_gateway_port_zero() {
     let http_addr = create_test_addr(0);
     let grpc_addr = create_test_addr(0);
     
-    let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
     
     assert_eq!(gateway.addr().port(), 0);
     assert_eq!(gateway.grpc_addr().port(), 0);
@@ -94,7 +94,7 @@ async fn test_http_gateway_concurrent_creation() {
         let handle = tokio::spawn(async move {
             let http_addr = create_test_addr(8090 + i);
             let grpc_addr = create_test_addr(50060 + i);
-            let gateway = HttpGateway::new(http_addr, grpc_addr, i % 2 == 0);
+            let gateway = HttpGateway::new(http_addr, grpc_addr, i % 2 == 0, 64 * 1024 * 1024);
             
             (gateway.addr(), gateway.grpc_addr(), gateway.enable_swagger())
         });
@@ -115,7 +115,7 @@ async fn test_http_gateway_start_without_grpc_server() {
     let http_addr = create_test_addr(8086);
     let grpc_addr = create_test_addr(50056); // Non-existent gRPC server / 不存在的gRPC服务器
     
-    let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
     
     // The start should fail due to gRPC connection error / 由于gRPC连接错误，启动应该失败
     let result = timeout(Duration::from_secs(5), gateway.start()).await;
@@ -137,7 +137,7 @@ async fn test_http_gateway_invalid_grpc_url() {
     let http_addr = create_test_addr(8087);
     let grpc_addr = create_test_addr(50057);
     
-    let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
     
     // Even with invalid gRPC server, gateway creation should succeed / 即使gRPC服务器无效，网关创建也应该成功
     // The error will occur during start() / 错误将在start()期间发生
@@ -151,14 +151,14 @@ async fn test_http_gateway_edge_cases() {
     // Test with maximum port number / 测试最大端口号
     let http_addr = create_test_addr(65535);
     let grpc_addr = create_test_addr(65534);
-    let gateway = HttpGateway::new(http_addr, grpc_addr, true);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, true, 64 * 1024 * 1024);
     assert_eq!(gateway.addr().port(), 65535);
     assert_eq!(gateway.grpc_addr().port(), 65534);
     
     // Test with minimum port number / 测试最小端口号
     let http_addr = create_test_addr(1);
     let grpc_addr = create_test_addr(2);
-    let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+    let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
     assert_eq!(gateway.addr().port(), 1);
     assert_eq!(gateway.grpc_addr().port(), 2);
 }
@@ -175,7 +175,7 @@ async fn test_http_gateway_configuration_variations() {
         let http_addr = create_test_addr(8088);
         let grpc_addr = create_test_addr(50058);
         
-        let gateway = HttpGateway::new(http_addr, grpc_addr, swagger_enabled);
+        let gateway = HttpGateway::new(http_addr, grpc_addr, swagger_enabled, 64 * 1024 * 1024);
         
         assert_eq!(gateway.enable_swagger(), swagger_enabled, "Failed for: {}", description);
     }
@@ -207,7 +207,7 @@ mod integration_tests {
                 let http_addr = create_test_addr(http_port);
                 let grpc_addr = create_test_addr(grpc_port);
                 
-                let gateway = HttpGateway::new(http_addr, grpc_addr, false);
+                let gateway = HttpGateway::new(http_addr, grpc_addr, false, 64 * 1024 * 1024);
                 
                 // Verify gateway properties / 验证网关属性
                 assert_eq!(gateway.addr().port(), http_port);
@@ -233,11 +233,7 @@ mod integration_tests {
         // Test memory usage of gateway creation / 测试网关创建的内存使用
         let initial_memory = std::mem::size_of::<HttpGateway>();
         
-        let gateway = HttpGateway::new(
-            create_test_addr(get_next_port()),
-            create_test_addr(get_next_port()),
-            true
-        );
+        let gateway = HttpGateway::new(create_test_addr(get_next_port()), create_test_addr(get_next_port()), true, 64 * 1024 * 1024);
         
         let gateway_memory = std::mem::size_of_val(&gateway);
         

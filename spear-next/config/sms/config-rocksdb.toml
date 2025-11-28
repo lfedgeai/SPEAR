@@ -1,6 +1,3 @@
-# SMS (SPEAR Metadata Server) Configuration
-# SMS（SPEAR元数据服务器）配置
-
 [grpc]
 addr = "0.0.0.0:50051"
 enable_tls = false
@@ -20,6 +17,6 @@ addr = "0.0.0.0:8081"
 enable_tls = false
 
 [database]
-db_type = "sled"
-path = "./data/sms"
+db_type = "rocksdb"
+path = "./data/rocksdb-node-service"
 pool_size = 10

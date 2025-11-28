@@ -98,7 +98,21 @@ test:
 	else \
 		$(CARGO) test; \
 	fi
+	@$(MAKE) test-ui || echo -e "$(YELLOW)⚠️ UI tests skipped (Node/Playwright not available) / UI测试已跳过（未安装Node/Playwright）$(NC)"
 	@echo -e "$(GREEN)✅ Tests completed / 测试完成$(NC)"
+
+.PHONY: test-ui
+test-ui:
+	@echo -e "$(BLUE)🧪 Running UI tests... / 运行UI测试...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)⚠️ npm not found, skipping UI tests / 未找到npm，跳过UI测试$(NC)"; \
+		exit 0; \
+	fi
+	@cd ui-tests && \
+		npm install --silent && \
+		npm run install:pw --silent || true && \
+		npm test
+	@echo -e "$(GREEN)✅ UI tests completed / UI测试完成$(NC)"
 
 # Run tests with specific feature / 运行特定特性的测试
 test-sled:

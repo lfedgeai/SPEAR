@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use anyhow::Result;
-use axum::{Router, routing::{get, post}, extract::{Query, Path, State}, response::{Json, Html}};
+use axum::{Router, routing::{get, post, delete}, extract::{Query, Path, State}, response::{Json, Html}};
 use axum::middleware;
 use axum::http::{Request, StatusCode, HeaderMap};
 use axum::middleware::Next;
@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use crate::proto::sms::{node_service_client::NodeServiceClient, ListNodesRequest};
 use crate::sms::gateway::GatewayState;
+use crate::sms::handlers::{upload_file, download_file, delete_file, get_file_meta, presign_upload, list_files};
 
 pub struct WebAdminServer {
     addr: SocketAddr,
@@ -54,7 +55,7 @@ impl WebAdminServer {
             .connect_lazy();
         let node_client = NodeServiceClient::new(channel.clone());
         let task_client = crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
-        let state = GatewayState { node_client, task_client, cancel_token: cancel_token.clone() };
+        let state = GatewayState { node_client, task_client, cancel_token: cancel_token.clone(), max_upload_bytes: 64 * 1024 * 1024 };
         let mut app = create_admin_router(state);
         if let Ok(token) = std::env::var("SMS_WEB_ADMIN_TOKEN") {
             let bearer = format!("Bearer {}", token);
@@ -120,6 +121,16 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             let state = state.clone();
             move |p: Path<String>| get_task_detail(state.clone(), p)
         }))
+        // Embedded file storage API / 内嵌文件存储API
+        .route("/admin/api/files", get(list_files))
+        .route("/admin/api/files/presign-upload", post(presign_upload))
+        .route("/admin/api/files", post({
+            let state = state.clone();
+            move |req: axum::http::Request<axum::body::Body>| upload_file(axum::extract::State(state.clone()), req)
+        }))
+        .route("/admin/api/files/:id", get(download_file))
+        .route("/admin/api/files/:id", delete(delete_file))
+        .route("/admin/api/files/:id/meta", get(get_file_meta))
 }
 
 async fn list_nodes(state: GatewayState, Query(q): Query<ListQuery>) -> Json<serde_json::Value> {

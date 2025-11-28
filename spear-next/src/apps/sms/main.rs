@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     // Initialize HTTP gateway / 初始化HTTP网关
-    let http_gateway = HttpGateway::new(config.http.addr, config.grpc.addr, config.enable_swagger);
+    let http_gateway = HttpGateway::new(config.http.addr, config.grpc.addr, config.enable_swagger, config.max_upload_bytes as usize);
     let (shutdown_tx_http, shutdown_rx_http) = tokio::sync::oneshot::channel::<()>();
     let http_handle = tokio::spawn(async move {
         if let Err(e) = http_gateway.start_with_shutdown(async move { let _ = shutdown_rx_http.await; }).await {

@@ -61,6 +61,8 @@ pub mod handlers_test;
 pub mod routes_test;
 #[cfg(test)]
 pub mod gateway_test;
+#[cfg(test)]
+pub mod file_service_test;
 
 // Re-export commonly used types / 重新导出常用类型
 pub use types::*;

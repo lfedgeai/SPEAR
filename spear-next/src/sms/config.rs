@@ -58,6 +58,9 @@ pub struct CliArgs {
     /// Cleanup interval in seconds / 清理间隔时间（秒）
     #[arg(long, value_name = "SECONDS", help = "Cleanup interval in seconds / 清理间隔时间（秒）")]
     pub cleanup_interval: Option<u64>,
+    /// Max upload size in bytes / 最大上传字节数
+    #[arg(long, value_name = "BYTES", help = "Max upload bytes for embedded file server / 内嵌文件服务器的最大上传字节数")]
+    pub max_upload_bytes: Option<u64>,
 
     /// Enable Web Admin / 启用Web管理页面
     #[arg(long, help = "Enable Web Admin / 启用Web管理页面")]
@@ -94,6 +97,8 @@ pub struct SmsConfig {
     pub heartbeat_timeout: u64,
     /// Cleanup interval in seconds / 清理间隔时间（秒）
     pub cleanup_interval: u64,
+    /// Max upload size in bytes for embedded file server / 内嵌文件服务器的最大上传字节数
+    pub max_upload_bytes: u64,
 }
 
 /// Database configuration / 数据库配置
@@ -209,8 +214,10 @@ impl SmsConfig {
         // Heartbeat & cleanup overrides / 心跳与清理覆盖
         if let Ok(v) = std::env::var("SMS_HEARTBEAT_TIMEOUT") { if let Ok(n) = v.parse::<u64>() { config.heartbeat_timeout = n; } }
         if let Ok(v) = std::env::var("SMS_CLEANUP_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.cleanup_interval = n; } }
+        if let Ok(v) = std::env::var("SMS_MAX_UPLOAD_BYTES") { if let Ok(n) = v.parse::<u64>() { config.max_upload_bytes = n; } }
         if let Some(n) = args.heartbeat_timeout { config.heartbeat_timeout = n; }
         if let Some(n) = args.cleanup_interval { config.cleanup_interval = n; }
+        if let Some(n) = args.max_upload_bytes { config.max_upload_bytes = n; }
 
         Ok(config)
     }
@@ -241,6 +248,7 @@ impl Default for SmsConfig {
             },
             heartbeat_timeout: 90,
             cleanup_interval: 30,
+            max_upload_bytes: 64 * 1024 * 1024,
         }
     }
 }

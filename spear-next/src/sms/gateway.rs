@@ -23,6 +23,7 @@ pub struct GatewayState {
     pub node_client: NodeServiceClient<tonic::transport::Channel>,
     pub task_client: TaskServiceClient<tonic::transport::Channel>,
     pub cancel_token: CancellationToken,
+    pub max_upload_bytes: usize,
 }
 
 /// Create HTTP gateway router / 创建HTTP网关路由器

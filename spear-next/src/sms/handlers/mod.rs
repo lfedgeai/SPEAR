@@ -10,6 +10,7 @@ pub mod resource;
 pub mod docs;
 pub mod health;
 pub mod task;
+pub mod files;
 
 // Re-export all public items from each module / 重新导出每个模块的所有公共项
 pub use common::*;
@@ -18,3 +19,4 @@ pub use resource::*;
 pub use docs::*;
 pub use health::*;
 pub use task::*;
+pub use files::*;

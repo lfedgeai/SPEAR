@@ -1,18 +1,15 @@
-# SMS (SPEAR Metadata Server) Configuration
-# SMS（SPEAR元数据服务器）配置
-
 [grpc]
-addr = "0.0.0.0:50051"
+addr = "0.0.0.0:50053"
 enable_tls = false
 
 [http]
-addr = "0.0.0.0:8080"
+addr = "0.0.0.0:8082"
 enable_tls = false
 
 enable_swagger = true
 enable_web_admin = false
-heartbeat_timeout = 120
-cleanup_interval = 300
+heartbeat_timeout = 180
+cleanup_interval = 600
 max_upload_bytes = 67108864
 
 [web_admin]

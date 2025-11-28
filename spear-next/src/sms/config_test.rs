@@ -25,6 +25,7 @@ mod tests {
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         assert_eq!(args.config, None);
@@ -82,6 +83,7 @@ mod tests {
             log_level: Some("debug".to_string()),
             heartbeat_timeout: Some(30),
             cleanup_interval: Some(60),
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -115,6 +117,7 @@ mod tests {
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -142,6 +145,7 @@ mod tests {
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -166,6 +170,7 @@ mod tests {
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -208,6 +213,7 @@ mod tests {
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         // This should not fail even if file doesn't exist since we use defaults
@@ -272,6 +278,7 @@ pool_size = 20
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -313,6 +320,7 @@ pool_size = 20
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -380,6 +388,7 @@ addr = "127.0.0.1:9100"
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -412,6 +421,7 @@ addr = "127.0.0.1:9100"
             log_level: Some("trace".to_string()),
             heartbeat_timeout: Some(1),
             cleanup_interval: Some(1),
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);
@@ -442,6 +452,7 @@ addr = "127.0.0.1:9100"
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
+            max_upload_bytes: None,
         };
 
         let result = SmsConfig::load_with_cli(&args);

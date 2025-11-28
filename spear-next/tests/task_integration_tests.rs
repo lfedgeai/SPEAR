@@ -80,6 +80,7 @@ mod task_test_utils {
             node_client: sms_client,
             task_client,
             cancel_token: CancellationToken::new(),
+            max_upload_bytes: 64 * 1024 * 1024,
         };
         
         // Create HTTP router / 创建HTTP路由器

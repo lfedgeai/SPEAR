@@ -25,6 +25,7 @@ fn create_mock_gateway_state() -> GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
+        max_upload_bytes: 64 * 1024 * 1024,
     }
 }
 

@@ -58,7 +58,7 @@ mod http_test_utils {
             .expect("Failed to connect to test gRPC server");
         let sms_client = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel.clone());
         let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
-        let state = GatewayState { node_client: sms_client, task_client, cancel_token: CancellationToken::new() };
+        let state = GatewayState { node_client: sms_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
         let app = create_routes(state);
         (TestServer::new(app).unwrap(), grpc_handle)
     }
@@ -205,7 +205,7 @@ async fn test_http_node_lifecycle() {
         .expect("Failed to connect to test gRPC server");
     let sms_client_filter = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
-    let filter_state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new() };
+    let filter_state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     
     let filter_app = create_routes(filter_state);
     let filter_request = Request::builder()
@@ -305,7 +305,7 @@ async fn test_http_resource_management() {
         .expect("Failed to connect to test gRPC server");
     let sms_client_filter = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
-    let state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new() };
+    let state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_routes(state);
     
     let request = axum::http::Request::builder()

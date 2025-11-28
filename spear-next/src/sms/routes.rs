@@ -11,16 +11,12 @@ use axum::{
 
 use super::gateway::GatewayState;
 use super::handlers::{
-    // Node handlers / 节点处理器
     register_node, list_nodes, get_node, update_node, delete_node, heartbeat,
-    // Resource handlers / 资源处理器
     update_node_resource, get_node_resource, list_node_resources, get_node_with_resource,
-    // Task handlers / 任务处理器
     register_task, list_tasks, get_task, unregister_task,
-    // Documentation handlers / 文档处理器
     openapi_spec, swagger_ui, swagger_ui_assets,
-    // Health handler / 健康检查处理器
     health_check,
+    upload_file, download_file, delete_file, get_file_meta, presign_upload, list_files,
 };
 
 /// Create HTTP routes / 创建HTTP路由
@@ -53,6 +49,12 @@ pub fn create_routes(state: GatewayState) -> Router {
         
         // Health check endpoint / 健康检查端点
         .route("/health", get(health_check))
+        .route("/api/v1/files/presign-upload", post(presign_upload))
+        .route("/api/v1/files", get(list_files))
+        .route("/api/v1/files", post(upload_file))
+        .route("/api/v1/files/:id", get(download_file))
+        .route("/api/v1/files/:id", delete(delete_file))
+        .route("/api/v1/files/:id/meta", get(get_file_meta))
         
         .with_state(state)
 }

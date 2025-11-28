@@ -30,7 +30,7 @@ async fn test_admin_list_nodes_empty() {
     let (_h, grpc_url) = start_test_grpc().await;
     let node_client = spear_next::proto::sms::node_service_client::NodeServiceClient::connect(grpc_url.clone()).await.unwrap();
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url).await.unwrap();
-    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new() };
+    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
     let server = TestServer::new(app).unwrap();
 
@@ -52,7 +52,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
     node_client.register_node(RegisterNodeRequest { node: Some(n2) }).await.unwrap();
 
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url.clone()).await.unwrap();
-    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new() };
+    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
     let server = TestServer::new(app).unwrap();
 
@@ -87,7 +87,7 @@ async fn test_admin_stats() {
     node_client.register_node(RegisterNodeRequest { node: Some(n2) }).await.unwrap();
 
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url.clone()).await.unwrap();
-    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new() };
+    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
     let server = TestServer::new(app).unwrap();
 
@@ -105,7 +105,7 @@ async fn test_admin_nodes_stream() {
     let (_h, grpc_url) = start_test_grpc().await;
     let node_client = spear_next::proto::sms::node_service_client::NodeServiceClient::connect(grpc_url.clone()).await.unwrap();
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url).await.unwrap();
-    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new() };
+    let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
     let server = TestServer::new(app).unwrap();
 

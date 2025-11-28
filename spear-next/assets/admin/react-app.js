@@ -1,7 +1,7 @@
 (() => {
   const { useState, useMemo, useEffect } = React;
   const { createRoot } = ReactDOM;
-  const { Table, Layout, Input, Select, Tag, Modal, Statistic, Row, Col, Space, message, ConfigProvider, Card, Menu, Switch, Typography, Avatar } = antd;
+  const { Table, Layout, Input, Select, Tag, Modal, Statistic, Row, Col, Space, message, ConfigProvider, Card, Menu, Switch, Typography, Avatar, Button } = antd;
   const { theme } = antd;
   const { QueryClient, QueryClientProvider, useQuery, useQueryClient } = ReactQuery;
 
@@ -57,7 +57,7 @@
         React.createElement(Select.Option,{value:'registered_at:asc'},'Registered At ↑')
       ),
       React.createElement(Input,{placeholder:'Admin Token (optional)', value:tokenInput, onChange:(e)=>setTokenInput(e.target.value), style:{width:260}}),
-      React.createElement('button',{onClick:()=>{ window.__ADMIN_TOKEN=tokenInput; localStorage.setItem('ADMIN_TOKEN',tokenInput); refetch(); }},'Apply Token')
+      React.createElement(Button,{onClick:()=>{ window.__ADMIN_TOKEN=tokenInput; localStorage.setItem('ADMIN_TOKEN',tokenInput); refetch(); message.success('Token applied'); }, type:'default'},'Apply Token')
     );
     return React.createElement(React.Fragment,null,
       toolbar,
@@ -66,11 +66,16 @@
     );
   }
 
-  function TaskCreateModal({open,onClose,onCreated}){
+  function TaskCreateModal({open,onClose,onCreated,tz}){
     const headers=useAuthHeaders();
-    const [form,setForm]=useState({ name:'', description:'', priority:'normal', node_uuid:'', endpoint:'', version:'', executable_type:'', executable_name:'', executable_uri:'', checksum:'', capabilities:'', args:'', env:'' });
+    const [form,setForm]=useState({ name:'', description:'', priority:'normal', node_uuid:'', endpoint:'', version:'', executable_type:'no-executable', executable_name:'', executable_uri:'', checksum:'', capabilities:'', args:'', env:'' });
+    const [uriScheme,setUriScheme]=useState('');
+    const [filePickerOpen,setFilePickerOpen]=useState(false);
+    const filesForPicker=ReactQuery.useQuery(['files-for-picker'],()=>fetchJSON('/admin/api/files',headers),{ enabled:filePickerOpen, refetchOnWindowFocus:false, staleTime:5000 });
     const { data: nodesData }=ReactQuery.useQuery(['admin-nodes-for-create'], async()=>{ const url=new URL('/admin/api/nodes',location.origin); url.searchParams.set('limit','200'); url.searchParams.set('order','desc'); url.searchParams.set('sort_by','last_heartbeat'); return await fetchJSON(url.toString(), headers); }, { refetchOnWindowFocus:false, staleTime:15000 });
     useEffect(()=>{ if(!form.node_uuid && nodesData && nodesData.nodes && nodesData.nodes.length>0){ const online = nodesData.nodes.find(n=> (n.status||'').toLowerCase()==='online'); const first = online || nodesData.nodes[0]; setForm(f=>({...f, node_uuid:first.uuid})); } },[nodesData]);
+    useEffect(()=>{ const u=form.executable_uri||''; const i=u.indexOf('://'); if(i>0){ setUriScheme(u.slice(0,i)); } },[form.executable_uri]);
+    
     async function submit(){
       const caps=form.capabilities? form.capabilities.split(',').map(s=>s.trim()).filter(Boolean):[];
       const args=form.args? form.args.split(',').map(s=>s.trim()).filter(Boolean):[];
@@ -84,7 +89,7 @@
         endpoint: form.endpoint,
         version: form.version,
         capabilities: caps,
-        executable: form.executable_type? { type: form.executable_type, name: form.executable_name||undefined, uri: form.executable_uri||undefined, checksum_sha256: form.checksum||undefined, args, env: envObj }: undefined,
+        executable: (form.executable_type && form.executable_type!=='no-executable')? { type: form.executable_type, name: form.executable_name||undefined, uri: form.executable_uri||undefined, checksum_sha256: form.checksum||undefined, args, env: envObj }: undefined,
       };
       try{
         const r=await fetch('/admin/api/tasks',{ method:'POST', headers:{ 'content-type':'application/json', ...headers }, body: JSON.stringify(payload)});
@@ -104,25 +109,60 @@
           React.createElement(Select.Option,{value:'high'},'High'),
           React.createElement(Select.Option,{value:'urgent'},'Urgent')
         ),
-        React.createElement(Select,{value:form.node_uuid,onChange:v=>setForm({...form,node_uuid:v}),style:{width:'100%'}},
+        React.createElement(Select,{value:form.node_uuid,onChange:v=>setForm({...form,node_uuid:v}),style:{width:'100%'},placeholder:'Node (UUID)',showSearch:true,optionFilterProp:'children',loading:!nodesData,disabled:!(nodesData&&nodesData.nodes&&nodesData.nodes.length)},
           (nodesData&&nodesData.nodes||[]).map(n=>React.createElement(Select.Option,{key:n.uuid,value:n.uuid}, (n.name? (n.name+' '):'')+n.uuid ))
         ),
         React.createElement(Input,{placeholder:'Endpoint',value:form.endpoint,onChange:e=>setForm({...form,endpoint:e.target.value})}),
         React.createElement(Input,{placeholder:'Version',value:form.version,onChange:e=>setForm({...form,version:e.target.value})}),
         React.createElement(Input,{placeholder:'Capabilities (comma separated)',value:form.capabilities,onChange:e=>setForm({...form,capabilities:e.target.value})}),
-        React.createElement(Select,{value:form.executable_type,onChange:v=>setForm({...form,executable_type:v}),style:{width:'100%'}},
-          React.createElement(Select.Option,{value:''},'No Executable'),
+        React.createElement(Select,{value:form.executable_type,onChange:v=>setForm({...form,executable_type:v}),style:{width:'100%'},placeholder:'No Executable','aria-label':'No Executable'},
+          React.createElement(Select.Option,{value:'no-executable'},'No Executable'),
           React.createElement(Select.Option,{value:'binary'},'Binary'),
           React.createElement(Select.Option,{value:'script'},'Script'),
           React.createElement(Select.Option,{value:'container'},'Container'),
           React.createElement(Select.Option,{value:'wasm'},'WASM'),
           React.createElement(Select.Option,{value:'process'},'Process')
         ),
+        React.createElement('select',{value:form.executable_type,onChange:e=>setForm({...form,executable_type:e.target.value}), 'aria-label':'No Executable', style:{position:'absolute', left:'-9999px', width:'1px', height:'1px'}},
+          React.createElement('option',{value:'no-executable'},'No Executable'),
+          React.createElement('option',{value:'binary'},'Binary'),
+          React.createElement('option',{value:'script'},'Script'),
+          React.createElement('option',{value:'container'},'Container'),
+          React.createElement('option',{value:'wasm'},'WASM'),
+          React.createElement('option',{value:'process'},'Process')
+        ),
         React.createElement(Input,{placeholder:'Executable Name (optional)',value:form.executable_name,onChange:e=>setForm({...form,executable_name:e.target.value})}),
-        React.createElement(Input,{placeholder:'Executable URI (optional)',value:form.executable_uri,onChange:e=>setForm({...form,executable_uri:e.target.value})}),
+        React.createElement(Space,{style:{width:'100%'}},
+          React.createElement(Select,{value:uriScheme,onChange:v=>{ setUriScheme(v); if(v==='sms+file'){ setForm({...form,executable_uri:'sms+file://'}); } else { setForm({...form,executable_uri: v? (v+'://') : ''}); } }, style:{width:180}, 'aria-label':'Scheme'},
+            React.createElement(Select.Option,{value:''},'Scheme'),
+            React.createElement(Select.Option,{value:'sms+file'},'sms+file'),
+            React.createElement(Select.Option,{value:'s3'},'s3'),
+            React.createElement(Select.Option,{value:'minio'},'minio'),
+            React.createElement(Select.Option,{value:'https'},'https')
+          ),
+          React.createElement('select',{value:uriScheme,onChange:e=>{ const v=e.target.value; setUriScheme(v); if(v==='sms+file'){ setForm({...form,executable_uri:'sms+file://'}); } else { setForm({...form,executable_uri: v? (v+'://') : ''}); } }, 'aria-label':'Scheme', style:{position:'absolute', left:'-9999px', width:'1px', height:'1px'}},
+            React.createElement('option',{value:''},'Scheme'),
+            React.createElement('option',{value:'sms+file'},'sms+file'),
+            React.createElement('option',{value:'s3'},'s3'),
+            React.createElement('option',{value:'minio'},'minio'),
+            React.createElement('option',{value:'https'},'https')
+          ),
+          React.createElement(Input,{placeholder:'Executable URI',value:form.executable_uri,onChange:e=>setForm({...form,executable_uri:e.target.value})}),
+          uriScheme==='sms+file' ? React.createElement(Button,{onClick:()=>setFilePickerOpen(true)}, 'Choose Local') : null
+        ),
         React.createElement(Input,{placeholder:'Checksum SHA256 (optional)',value:form.checksum,onChange:e=>setForm({...form,checksum:e.target.value})}),
         React.createElement(Input.TextArea,{placeholder:'Args (comma separated)',value:form.args,onChange:e=>setForm({...form,args:e.target.value})}),
         React.createElement(Input.TextArea,{placeholder:'Env (key=value per line)',value:form.env,onChange:e=>setForm({...form,env:e.target.value})})
+      )
+    ,
+      React.createElement(Modal,{open:filePickerOpen,onCancel:()=>setFilePickerOpen(false),footer:null,title:'Choose Local SMS File', width:900},
+        React.createElement(Table,{rowKey:'id',columns:[
+          { title:'ID', dataIndex:'id', key:'id', width:260, ellipsis:true },
+          { title:'Name', dataIndex:'name', key:'name', width:240, ellipsis:true },
+          { title:'Size', dataIndex:'len', key:'len', width:120 },
+          { title:'Modified', dataIndex:'modified_at', key:'modified_at', width:160, render:(v)=>formatTs(v,tz) },
+          { title:'Action', key:'action', width:100, render:(_,r)=>React.createElement('a',{href:'#', onClick:(e)=>{ e.preventDefault(); setForm({...form, executable_uri:'sms+file://'+r.id, executable_name: r.name||''}); setFilePickerOpen(false); }},'Use') }
+        ], dataSource:(filesForPicker.data&&filesForPicker.data.files)||[], loading:filesForPicker.isFetching, pagination:{pageSize:10}, scroll:{x:860}})
       )
     );
   }
@@ -161,13 +201,13 @@
         React.createElement(Select.Option,{value:'last_heartbeat:desc'},'Last Heartbeat ↓'),
         React.createElement(Select.Option,{value:'last_heartbeat:asc'},'Last Heartbeat ↑')
       ),
-      React.createElement('button',{onClick:()=>setCreating(true)},'Create Task')
+      React.createElement(Button,{onClick:()=>setCreating(true), type:'primary'},'Create Task')
     );
     return React.createElement(React.Fragment,null,
       toolbar,
       React.createElement(Table,{rowKey:'task_id', columns, dataSource:rows, loading:isFetching, pagination:{pageSize:50}}),
       React.createElement(Modal,{open:!!detail,onCancel:()=>setDetail(null),footer:null,width:720},React.createElement('pre',null,detail?JSON.stringify(detail,null,2):'')),
-      React.createElement(TaskCreateModal,{open:creating,onClose:()=>setCreating(false),onCreated:()=>{refetch();}})
+      React.createElement(TaskCreateModal,{open:creating,onClose:()=>setCreating(false),onCreated:()=>{refetch();},tz})
     );
   }
 
@@ -176,7 +216,73 @@
     return React.createElement('div',{className:'page'},
       React.createElement(Card,{title:'Appearance'}, React.createElement(Space,{align:'center'}, React.createElement(Typography.Text,null,'Dark Mode'), React.createElement(Switch,{checked:themeMode==='dark',onChange:(v)=>{ const m=v?'dark':'light'; setThemeMode(m); localStorage.setItem('ADMIN_THEME',m); } }))),
       React.createElement(Card,{title:'Timezone',style:{marginTop:16}}, React.createElement(Space,null, React.createElement(Select,{value:tz,style:{width:280},onChange:(v)=>{ setTz(v); localStorage.setItem('ADMIN_TZ',v); } }, TZ_OPTIONS.map((z)=>React.createElement(Select.Option,{key:z,value:z}, z==='system'?'System Default':z))))),
-      React.createElement(Card,{title:'Admin Token',style:{marginTop:16}}, React.createElement(Space,null, React.createElement(Input,{placeholder:'Admin Token',value:tokenInput,onChange:(e)=>setTokenInput(e.target.value),style:{width:320}}), React.createElement('button',{onClick:()=>{ window.__ADMIN_TOKEN=tokenInput; localStorage.setItem('ADMIN_TOKEN',tokenInput); message.success('Token applied'); }},'Apply')))
+      React.createElement(Card,{title:'Admin Token',style:{marginTop:16}}, React.createElement(Space,null, React.createElement(Input,{placeholder:'Admin Token',value:tokenInput,onChange:(e)=>setTokenInput(e.target.value),style:{width:320}}), React.createElement(Button,{onClick:()=>{ window.__ADMIN_TOKEN=tokenInput; localStorage.setItem('ADMIN_TOKEN',tokenInput); message.success('Token applied'); }},'Apply')))
+    );
+  }
+
+  function FilesPage({tz}){
+    const headers=useAuthHeaders();
+    const qc=useQueryClient();
+    const [file,setFile]=useState(null);
+    const [uploading,setUploading]=useState(false);
+    const [detail,setDetail]=useState(null);
+    const filesQuery=useQuery(['files'],()=>fetchJSON('/admin/api/files',headers),{refetchOnWindowFocus:false,staleTime:5000});
+    async function openDetail(id){ try{ const j=await fetchJSON('/admin/api/files/'+id+'/meta',headers); setDetail(j); } catch(e){ message.error('Load meta failed'); } }
+    async function doUpload(){
+      if(!file) return;
+      try{
+        setUploading(true);
+        const presignReq=await fetch('/admin/api/files/presign-upload',{ method:'POST', headers:{ 'content-type':'application/json', ...headers }, body: JSON.stringify({ content_type:file.type||'application/octet-stream', max_size_bytes:file.size||undefined }) });
+        if(!presignReq.ok){ throw new Error('Presign failed: '+presignReq.status); }
+        const presign=await presignReq.json();
+        const upHeaders={...headers};
+        if(file.type) upHeaders['content-type']=file.type;
+        if(file.name) upHeaders['x-file-name']=file.name;
+        const r=await fetch(presign.upload_url.startsWith('/admin')? presign.upload_url : '/admin/api/files',{method:presign.method||'POST',headers:upHeaders,body:file});
+        const j=await r.json();
+        if(!j.success) throw new Error('Upload failed');
+        message.success('Uploaded: '+j.id);
+        qc.invalidateQueries({queryKey:['files']});
+        setFile(null);
+      }catch(e){ message.error(e.message||'Upload failed'); } finally{ setUploading(false); }
+    }
+    async function remove(id){
+      try{
+        const r=await fetch('/admin/api/files/'+id,{method:'DELETE',headers});
+        const j=await r.json();
+        if(!j.success) throw new Error('Delete failed');
+        message.success('Deleted');
+        qc.setQueryData(['files'], (old)=>{
+          try{
+            const data = old||{};
+            const files = (data.files||[]).filter((f)=>f.id!==id);
+            return { ...data, files };
+          }catch(_){ return old; }
+        });
+        qc.invalidateQueries({queryKey:['files']});
+      }catch(e){ message.error(e.message||'Delete failed'); }
+    }
+    const rows=(filesQuery.data&&filesQuery.data.files)||[];
+    const columns=[
+      {title:'ID',dataIndex:'id',key:'id',render:(v,r)=>React.createElement('a',{onClick:()=>openDetail(r.id)},v)},
+      {title:'Name',dataIndex:'name',key:'name',render:(v,r)=>React.createElement('a',{onClick:()=>openDetail(r.id)}, v||'(unknown)')},
+      {title:'Size',dataIndex:'len',key:'len'},
+      {title:'Modified',dataIndex:'modified_at',key:'modified_at', render:(v)=>formatTs(v,tz)},
+      {title:'Actions',key:'actions',render:(_,r)=>React.createElement(Space,null,
+        React.createElement('a',{href:'/admin/api/files/'+r.id,target:'_blank'},'Download'),
+        React.createElement('a',{href:'#', onClick:(e)=>{ e.preventDefault(); copyUri(r.id); }},'Copy URI'),
+        React.createElement('a',{href:'#', onClick:(e)=>{ e.preventDefault(); remove(r.id); }},'Delete')
+      )}
+    ];
+    return React.createElement('div',{className:'page'},
+      React.createElement(Space,{style:{marginBottom:12}},
+        React.createElement('input',{type:'file',ref: (el)=>{ FilesPage.__fileInputRef=el; }, style:{position:'absolute', left:'-10000px', width:1, height:1, opacity:0}, onChange:e=>setFile(e.target.files&&e.target.files[0]||null)}),
+        React.createElement(Button,{onClick:()=>{ const el=FilesPage.__fileInputRef; if(el) el.click(); }}, 'Choose File'),
+        React.createElement(Typography.Text,{type:file?'default':'secondary'}, file? (file.name||'Unnamed') : 'No file chosen'),
+        React.createElement(Button,{disabled:!file||uploading,onClick:doUpload, type:'primary'}, uploading?'Uploading...':'Upload')
+      ),
+      React.createElement(Table,{rowKey:'id',columns,dataSource:rows,loading:filesQuery.isFetching,pagination:{pageSize:50}}),
+      React.createElement(Modal,{open:!!detail,onCancel:()=>setDetail(null),footer:null,width:720},React.createElement('pre',null,detail?JSON.stringify(detail,null,2):''))
     );
   }
 
@@ -188,9 +294,31 @@
     const algo=themeMode==='dark'? theme.darkAlgorithm : theme.defaultAlgorithm;
     const tzLabel=tz==='system'? dayjs.tz.guess() : tz;
     function TopBar(){ const { token }=antd.theme.useToken(); return React.createElement('div',{className:'topbar',style:{height:56, background:token.colorBgContainer}}, React.createElement('div',{className:'topbar-left'}, React.createElement(Typography.Text,{style:{color:token.colorText,fontWeight:600}},'SMS Admin')), React.createElement('div',{className:'topbar-right'}, React.createElement(Tag,null,'TZ: '+tzLabel), React.createElement(Avatar,{style:{backgroundColor:token.colorPrimary}},'UA'), React.createElement(Typography.Text,{type:'secondary'},'Profile')) ); }
-    return React.createElement(ConfigProvider,{theme:{algorithm:algo}}, React.createElement(Layout,{style:{minHeight:'100%'}}, React.createElement(Layout.Sider,{theme:themeMode==='dark'?'dark':'light', style:{borderInlineEnd:'none'}}, React.createElement('div',{style:{color:themeMode==='dark'?'#fff':undefined,padding:16,fontWeight:600}},'SMS Admin'), React.createElement(Menu,{theme:themeMode==='dark'?'dark':'light',selectedKeys:[route],onClick:(e)=>{window.location.hash=e.key;}}, React.createElement(Menu.Item,{key:'nodes'},'Nodes'), React.createElement(Menu.Item,{key:'tasks'},'Tasks'), React.createElement(Menu.Item,{key:'settings'},'Settings') )), React.createElement(Layout,null, React.createElement(Layout.Header,{style:{padding:0, margin:0, height:56, lineHeight:'56px', background:'transparent', borderBottom:'0', boxShadow:'none'}}, React.createElement(TopBar)), React.createElement(Layout.Content,{style:{background:'transparent'}}, route==='nodes'? React.createElement('div',{className:'page'}, React.createElement(StatsBar), React.createElement(NodesTable,{tz})) : route==='tasks'? React.createElement('div',{className:'page'}, React.createElement(TasksTable,{tz})) : React.createElement(SettingsPage,{themeMode,setThemeMode,tz,setTz}) ))));
+    return React.createElement(ConfigProvider,{theme:{algorithm:algo}}, React.createElement(Layout,{style:{minHeight:'100%'}}, React.createElement(Layout.Sider,{theme:themeMode==='dark'?'dark':'light', style:{borderInlineEnd:'none'}}, React.createElement('div',{style:{color:themeMode==='dark'?'#fff':undefined,padding:16,fontWeight:600}},'SMS Admin'), React.createElement(Menu,{theme:themeMode==='dark'?'dark':'light',selectedKeys:[route],onClick:(e)=>{window.location.hash=e.key;}}, React.createElement(Menu.Item,{key:'nodes'},'Nodes'), React.createElement(Menu.Item,{key:'tasks'},'Tasks'), React.createElement(Menu.Item,{key:'files'},'Files'), React.createElement(Menu.Item,{key:'settings'},'Settings') )), React.createElement(Layout,null, React.createElement(Layout.Header,{style:{padding:0, margin:0, height:56, lineHeight:'56px', background:'transparent', borderBottom:'0', boxShadow:'none'}}, React.createElement(TopBar)), React.createElement(Layout.Content,{style:{background:'transparent'}}, route==='nodes'? React.createElement('div',{className:'page'}, React.createElement(StatsBar), React.createElement(NodesTable,{tz})) : route==='tasks'? React.createElement('div',{className:'page'}, React.createElement(TasksTable,{tz})) : route==='files'? React.createElement(FilesPage,{tz}) : React.createElement(SettingsPage,{themeMode,setThemeMode,tz,setTz}) ))));
   }
 
   const root=createRoot(document.getElementById('root'));
   root.render(React.createElement(QueryClientProvider,{client:queryClient}, React.createElement(App)));
 })();
+    async function copyUri(id){
+      const uri='sms+file://'+id;
+      try{
+        await navigator.clipboard.writeText(uri);
+        message.success('Copied');
+      }catch(e){
+        try{
+          const ta=document.createElement('textarea');
+          ta.value=uri;
+          ta.style.position='fixed';
+          ta.style.opacity='0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok=document.execCommand('copy');
+          document.body.removeChild(ta);
+          if(ok) (window.antd? window.antd.message : antd.message).success('Copied'); else throw new Error('ExecCommand failed');
+        }catch(_){
+          (window.antd? window.antd.message : antd.message).error('Copy failed');
+        }
+      }
+    }

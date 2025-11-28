@@ -1,0 +1,12 @@
+{
+  "name": "spear-next-ui-tests",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "test": "playwright test",
+    "install:pw": "npx playwright install --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  }
+}

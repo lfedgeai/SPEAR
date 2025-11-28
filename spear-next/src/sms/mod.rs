@@ -46,6 +46,7 @@ pub mod grpc_server;
 pub mod http_gateway;
 pub mod web_admin;
 pub mod service;
+pub mod events;
 pub mod gateway;
 pub mod routes;
 
@@ -63,6 +64,8 @@ pub mod routes_test;
 pub mod gateway_test;
 #[cfg(test)]
 pub mod file_service_test;
+#[cfg(test)]
+pub mod events_test;
 
 // Re-export commonly used types / 重新导出常用类型
 pub use types::*;

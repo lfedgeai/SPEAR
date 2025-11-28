@@ -34,6 +34,7 @@ pub mod grpc_server;
 pub mod http_gateway;
 pub mod object_service;
 pub mod registration;
+pub mod task_events;
 
 #[cfg(test)]
 mod config_test;
@@ -55,3 +56,4 @@ pub use grpc_server::{GrpcServer, HealthService};
 pub use http_gateway::HttpGateway;
 pub use object_service::ObjectServiceImpl;
 pub use registration::{RegistrationService, RegistrationState};
+pub use task_events::TaskEventSubscriber;

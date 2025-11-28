@@ -20,3 +20,7 @@ enable_tls = false
 db_type = "sled"
 path = "./data/node-service.db"
 pool_size = 10
+
+[event_kv]
+backend = "sled"
+params = { path = "./data/events-sled.db" }

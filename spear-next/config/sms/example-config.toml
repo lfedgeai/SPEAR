@@ -20,3 +20,7 @@ enable_tls = false
 db_type = "sled"
 path = "./data/sms"
 pool_size = 10
+
+[event_kv]
+backend = "sled"
+params = { path = "./data/events" }

@@ -158,6 +158,7 @@ impl TestDataGenerator {
             heartbeat_timeout: 90,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
+            event_kv: None,
         }
     }
 
@@ -191,6 +192,7 @@ impl TestDataGenerator {
             heartbeat_timeout: _heartbeat_timeout,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
+            event_kv: None,
         }
     }
 }

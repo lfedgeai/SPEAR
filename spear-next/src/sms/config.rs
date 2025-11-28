@@ -5,6 +5,7 @@ use anyhow;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use crate::config::base::{ServerConfig, LogConfig};
+use crate::storage::kv::KvStoreConfig;
 
 /// SMS command line arguments / SMS命令行参数
 #[derive(Parser, Debug, Clone)]
@@ -99,6 +100,8 @@ pub struct SmsConfig {
     pub cleanup_interval: u64,
     /// Max upload size in bytes for embedded file server / 内嵌文件服务器的最大上传字节数
     pub max_upload_bytes: u64,
+    /// Optional KV config for task events outbox / 任务事件Outbox的可选KV配置
+    pub event_kv: Option<KvStoreConfig>,
 }
 
 /// Database configuration / 数据库配置
@@ -219,6 +222,16 @@ impl SmsConfig {
         if let Some(n) = args.cleanup_interval { config.cleanup_interval = n; }
         if let Some(n) = args.max_upload_bytes { config.max_upload_bytes = n; }
 
+        // Optional: load event KV from environment / 可选：从环境变量加载事件KV
+        let ev_backend = std::env::var("SMS_EVENTS_KV_BACKEND").ok();
+        let ev_path = std::env::var("SMS_EVENTS_KV_PATH").ok();
+        if ev_backend.is_some() || ev_path.is_some() {
+            let backend = ev_backend.unwrap_or_else(|| "memory".to_string());
+            let mut params = std::collections::HashMap::new();
+            if let Some(p) = ev_path { params.insert("path".to_string(), p); }
+            config.event_kv = Some(KvStoreConfig { backend, params });
+        }
+
         Ok(config)
     }
 }
@@ -249,6 +262,7 @@ impl Default for SmsConfig {
             heartbeat_timeout: 90,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
+            event_kv: None,
         }
     }
 }

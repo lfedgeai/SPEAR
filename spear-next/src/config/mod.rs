@@ -25,6 +25,7 @@ use std::path::PathBuf;
 /// Base configuration shared by all applications / 所有应用程序共享的基础配置
 pub mod base;
 pub use base::*;
+pub use crate::storage::kv::KvStoreConfig;
 
 /// Base configuration trait / 基础配置特征
 /// All application configurations should implement this trait

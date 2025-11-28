@@ -20,3 +20,7 @@ enable_tls = false
 db_type = "rocksdb"
 path = "./data/rocksdb-node-service"
 pool_size = 10
+
+[event_kv]
+backend = "rocksdb"
+params = { path = "./data/events-rocksdb" }

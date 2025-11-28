@@ -11,6 +11,11 @@ use crate::sms::services::{
     resource_service::ResourceService,
 };
 use crate::sms::config::SmsConfig;
+use crate::storage::kv::{KvStoreConfig, create_kv_store_from_config, get_kv_store_factory};
+use crate::sms::events::TaskEventBus;
+use tokio_stream::StreamExt;
+use futures::stream::unfold;
+use tracing::{debug, warn};
 
 
 // Import proto types / 导入proto类型
@@ -50,6 +55,7 @@ pub struct SmsServiceImpl {
     #[allow(dead_code)]
     config: Arc<SmsConfig>,
     task_service: Arc<RwLock<TaskServiceImpl>>,
+    events: Arc<TaskEventBus>,
 }
 
 impl SmsServiceImpl {
@@ -61,12 +67,24 @@ impl SmsServiceImpl {
     ) -> Self {
         // Create task service / 创建任务服务
         let task_service = Arc::new(RwLock::new(TaskServiceImpl::new()));
+        // Create KV store for events via factory, allow separate config / 事件KV支持独立配置
+        let supported = get_kv_store_factory().supported_backends();
+        let kv_cfg = if let Some(ev) = &config.event_kv {
+            let backend = if supported.contains(&ev.backend) { ev.backend.clone() } else { "memory".to_string() };
+            KvStoreConfig { backend, params: ev.params.clone() }
+        } else {
+            KvStoreConfig { backend: "memory".to_string(), params: std::collections::HashMap::new() }
+        };
+        let kv_box = create_kv_store_from_config(&kv_cfg).await.expect("Failed to create KV store from config");
+        let kv: Arc<dyn crate::storage::kv::KvStore> = Arc::from(kv_box);
+        let events = Arc::new(TaskEventBus::new(kv));
 
         Self {
             node_service,
             resource_service,
             config,
             task_service,
+            events,
         }
     }
 
@@ -484,6 +502,7 @@ impl NodeServiceTrait for SmsServiceImpl {
 // Implement TaskService trait / 实现TaskService trait
 #[tonic::async_trait]
 impl TaskServiceTrait for SmsServiceImpl {
+    type SubscribeTaskEventsStream = std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<crate::proto::sms::TaskEvent, Status>> + Send + 'static>>;
     /// Register a new task / 注册新任务
     async fn register_task(
         &self,
@@ -512,6 +531,9 @@ impl TaskServiceTrait for SmsServiceImpl {
         let mut task_service = self.task_service.write().await;
         match task_service.register_task(task.clone()).await {
             Ok(_) => {
+                debug!(task_id = %task.task_id, node_uuid = %task.node_uuid, "RegisterTask: publishing create event");
+                 // Publish create event / 发布创建事件
+                 if let Err(e) = self.events.publish_create(&task).await { warn!(error = %e, "Publish create event failed"); }
                  let response = RegisterTaskResponse {
                      success: true,
                      message: "Task registered successfully".to_string(),
@@ -604,22 +626,52 @@ impl TaskServiceTrait for SmsServiceImpl {
         
         let mut task_service = self.task_service.write().await;
         match task_service.remove_task(&req.task_id).await {
-             Ok(_) => {
-                 let response = UnregisterTaskResponse {
-                     success: true,
-                     message: "Task unregistered successfully".to_string(),
-                     task_id: req.task_id.clone(),
-                 };
-                 Ok(Response::new(response))
-             }
-             Err(e) => {
-                 let response = UnregisterTaskResponse {
-                     success: false,
-                     message: format!("Failed to unregister task: {}", e),
-                     task_id: req.task_id.clone(),
-                 };
-                 Ok(Response::new(response))
-             }
-         }
+            Ok(_) => {
+                let response = UnregisterTaskResponse {
+                    success: true,
+                    message: "Task unregistered successfully".to_string(),
+                    task_id: req.task_id.clone(),
+                };
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                let response = UnregisterTaskResponse {
+                    success: false,
+                    message: format!("Failed to unregister task: {}", e),
+                    task_id: req.task_id.clone(),
+                };
+                Ok(Response::new(response))
+            }
+        }
+    }
+
+    /// Subscribe task events for a node / 订阅节点任务事件
+    async fn subscribe_task_events(
+        &self,
+        request: Request<crate::proto::sms::SubscribeTaskEventsRequest>,
+    ) -> Result<tonic::Response<Self::SubscribeTaskEventsStream>, Status> {
+        let req = request.into_inner();
+        if req.node_uuid.is_empty() { return Err(Status::invalid_argument("node_uuid is required")); }
+        let node_uuid = req.node_uuid;
+        let last = req.last_event_id;
+        // Durable replay first
+        let replay = self.events
+            .replay_since(&node_uuid, last, 1000)
+            .await
+            .map_err(|e| Status::internal(format!("Replay failed: {}", e)))?;
+        debug!(node_uuid = %node_uuid, last_event_id = last, replay_count = replay.len(), "Subscribe: prepared replay events");
+        let replay_stream = tokio_stream::iter(replay.into_iter().map(|ev| Ok(ev)));
+        // Live broadcast
+        let rx = self.events.subscribe(&node_uuid).await;
+        debug!(node_uuid = %node_uuid, "Subscribe: live broadcast receiver created");
+        let live_stream = unfold(rx, |mut r| async move {
+            match r.recv().await {
+                Ok(ev) => Some((Ok(ev), r)),
+                Err(e) => { warn!(error = %e, "Broadcast receive error, ending live stream"); None },
+            }
+        });
+        let stream = replay_stream.chain(live_stream);
+        debug!(node_uuid = %node_uuid, "Subscribe: returning combined stream");
+        Ok(tonic::Response::new(Box::pin(stream)))
     }
 }

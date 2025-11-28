@@ -73,6 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return Err(Box::<dyn std::error::Error + Send + Sync>::from(e));
         }
         tracing::info!("Registration service started (heartbeat every {}s)", config.heartbeat_interval);
+        let subscriber = spear_next::spearlet::task_events::TaskEventSubscriber::new(config.clone());
+        subscriber.start().await;
     }
     
     // Wait for shutdown signal / 等待关闭信号

@@ -30,6 +30,7 @@
 | Task Service Optimization | [task-service-optimization-en.md](./task-service-optimization-en.md) | [task-service-optimization-zh.md](./task-service-optimization-zh.md) | Task服务优化文档 |
 | Resource Service Refactoring | [resource-service-refactoring-en.md](./resource-service-refactoring-en.md) | [resource-service-refactoring-zh.md](./resource-service-refactoring-zh.md) | 资源服务代码重构指南 |
 | Config Service Refactoring | [config-service-refactoring-en.md](./config-service-refactoring-en.md) | [config-service-refactoring-zh.md](./config-service-refactoring-zh.md) | 配置服务代码重构指南 |
+| Task Events Subscriber | [task-events-subscriber-en.md](./task-events-subscriber-en.md) | [task-events-subscriber-zh.md](./task-events-subscriber-zh.md) | 任务事件订阅器设计与实现 |
 
 ### 🚀 Runtime Layer / 运行时层
 

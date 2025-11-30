@@ -4,18 +4,21 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 
 use crate::proto::sms::{task_service_client::TaskServiceClient, SubscribeTaskEventsRequest, TaskEvent, TaskEventKind, GetTaskRequest, Task};
+use crate::proto::spearlet::{ArtifactSpec as SpearletArtifactSpec, InvokeFunctionRequest};
+use crate::spearlet::execution::manager::TaskExecutionManager;
 use crate::spearlet::config::SpearletConfig;
 use tracing::{debug, info, warn};
 
 pub struct TaskEventSubscriber {
     config: Arc<SpearletConfig>,
     last_event_id: Arc<RwLock<i64>>, 
+    execution_manager: Arc<TaskExecutionManager>,
 }
 
 impl TaskEventSubscriber {
-    pub fn new(config: Arc<SpearletConfig>) -> Self {
+    pub fn new(config: Arc<SpearletConfig>, execution_manager: Arc<TaskExecutionManager>) -> Self {
         let last = Self::load_cursor(&config);
-        Self { config, last_event_id: Arc::new(RwLock::new(last)) }
+        Self { config, last_event_id: Arc::new(RwLock::new(last)), execution_manager }
     }
 
     fn compute_node_uuid(cfg: &SpearletConfig) -> String {
@@ -43,6 +46,7 @@ impl TaskEventSubscriber {
 
     pub async fn start(self) {
         let cfg = self.config.clone();
+        let exec_mgr = self.execution_manager.clone();
         let last_event_id = self.last_event_id.clone();
         tokio::spawn(async move {
             let node_uuid = Self::compute_node_uuid(&cfg);
@@ -61,7 +65,7 @@ impl TaskEventSubscriber {
                             debug!(event_id = ev.event_id, kind = ev.kind, task_id = %ev.task_id, node_uuid = %ev.node_uuid, "Received task event");
                             *last_event_id.write().await = ev.event_id; 
                             Self::store_cursor(&cfg, ev.event_id);
-                            Self::handle_event(&cfg, &mut client, ev).await; 
+                            Self::handle_event(&cfg, &mut client, &exec_mgr, ev).await; 
                         },
                         Some(Err(e)) => { warn!(error = %e, "Event stream error, reconnecting"); break; },
                         None => { break; },
@@ -73,37 +77,64 @@ impl TaskEventSubscriber {
         });
     }
 
-    async fn handle_event(cfg: &SpearletConfig, client: &mut TaskServiceClient<Channel>, ev: TaskEvent) {
+    async fn handle_event(cfg: &SpearletConfig, client: &mut TaskServiceClient<Channel>, mgr: &Arc<TaskExecutionManager>, ev: TaskEvent) {
         if ev.node_uuid != Self::compute_node_uuid(cfg) { debug!(event_id = ev.event_id, "Ignoring event for other node"); return; }
         if ev.kind == TaskEventKind::Create as i32 {
-            debug!(task_id = %ev.task_id, "Fetching task details for execution placeholder");
+            debug!(task_id = %ev.task_id, "Fetching task details");
             let task = match client.get_task(GetTaskRequest{ task_id: ev.task_id.clone() }).await {
                 Ok(resp) => resp.into_inner().task,
                 Err(_) => None,
             };
-            Self::execute_task(ev.task_id, task);
+            Self::execute_task(mgr, ev.task_id, task);
         }
     }
 
-    fn execute_task(_task_id: String, task: Option<Task>) {
+    fn execute_task(mgr: &Arc<TaskExecutionManager>, _task_id: String, task: Option<Task>) {
         if let Some(t) = task {
-            debug!(
-                task_id = %t.task_id,
-                name = %t.name,
-                endpoint = %t.endpoint,
-                status = t.status,
-                priority = t.priority,
-                node_uuid = %t.node_uuid,
-                registered_at = t.registered_at,
-                last_heartbeat = t.last_heartbeat,
-                capabilities_count = t.capabilities.len(),
-                metadata_count = t.metadata.len(),
-                "Task details"
-            );
+            let artifact_type = if let Some(exec) = &t.executable {
+                match exec.r#type {
+                    3 => "kubernetes".to_string(),
+                    4 => "wasm".to_string(),
+                    _ => "process".to_string(),
+                }
+            } else {
+                "process".to_string()
+            };
+
+            let version = t.metadata.get("version").cloned().unwrap_or_default();
+            let location = if let Some(exec) = &t.executable { exec.uri.clone() } else { String::new() };
+            let checksum = if let Some(exec) = &t.executable { exec.checksum_sha256.clone() } else { String::new() };
+
+            let spec = SpearletArtifactSpec {
+                artifact_id: t.task_id.clone(),
+                artifact_type,
+                location,
+                version,
+                checksum,
+                metadata: t.metadata.clone(),
+            };
+
+            let req = InvokeFunctionRequest {
+                artifact_spec: Some(spec),
+                execution_mode: crate::proto::spearlet::ExecutionMode::Async as i32,
+                ..Default::default()
+            };
+            let mgr_cloned = mgr.clone();
+            tokio::spawn(async move {
+                let _ = mgr_cloned.submit_execution(req).await;
+            });
         } else {
             debug!(task_id = %_task_id, "Task details unavailable");
         }
-        info!(task_id = %_task_id, "Executing task placeholder (TODO)");
-        todo!("Implement task execution dispatch");
+    }
+
+    #[cfg(test)]
+    pub async fn handle_event_for_test(&self, ev: TaskEvent, task: Option<Task>) {
+        if ev.node_uuid != Self::compute_node_uuid(&self.config) { return; }
+        if ev.kind == TaskEventKind::Create as i32 {
+            Self::execute_task(&self.execution_manager, ev.task_id, task);
+        } else {
+            // ignore update/cancel in current implementation
+        }
     }
 }

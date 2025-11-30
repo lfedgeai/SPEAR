@@ -104,6 +104,10 @@ impl FunctionServiceImpl {
         })
     }
 
+    pub fn get_execution_manager(&self) -> Arc<TaskExecutionManager> {
+        self.execution_manager.clone()
+    }
+
     /// Generate execution ID / 生成执行ID
     fn generate_execution_id(&self) -> String {
         Uuid::new_v4().to_string()

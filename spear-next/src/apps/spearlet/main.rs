@@ -42,10 +42,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Shutdown channels / 关闭通道
     let (shutdown_tx_grpc, shutdown_rx_grpc) = tokio::sync::oneshot::channel::<()>();
     
-    // Create health service for HTTP gateway / 为HTTP网关创建健康服务
+    let object_service = grpc_server.get_object_service();
+    let function_service = grpc_server.get_function_service();
     let health_service = spear_next::spearlet::grpc_server::HealthService::new(
-        grpc_server.get_object_service(),
-        grpc_server.get_function_service(),
+        object_service,
+        function_service.clone(),
     );
     
     let grpc_handle = tokio::spawn(async move {
@@ -73,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return Err(Box::<dyn std::error::Error + Send + Sync>::from(e));
         }
         tracing::info!("Registration service started (heartbeat every {}s)", config.heartbeat_interval);
-        let subscriber = spear_next::spearlet::task_events::TaskEventSubscriber::new(config.clone());
+        let execution_manager = function_service.get_execution_manager();
+        let subscriber = spear_next::spearlet::task_events::TaskEventSubscriber::new(config.clone(), execution_manager);
         subscriber.start().await;
     }
     

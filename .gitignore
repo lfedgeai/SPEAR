@@ -6,8 +6,14 @@ bin/spearlet
 *.whl
 *.egg-info
 sdk/python/dist
+sdk/python/build/
+sdk/python/spear/proto/
 __pycache__
 sdk/python/pyproject.toml
+pkg/spear/
+
+# Workload build artifacts / 工作负载构建产物
+workload/docker/python/**/bin/
 
 # Coverage files / 覆盖率文件
 *.profraw

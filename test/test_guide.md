@@ -8,12 +8,15 @@ This test document will perform a simple test to verify if the overall architect
   SPEAR relies on some other third-party software dependency packages. To install this packages on Linux, use the following command:
   
   ```bash
-  python -m pip install --upgrade pip
-  pip install build
-  apt install portaudio19-dev libx11-dev libxtst-dev
-  curl -fsSL https://get.docker.com -o get-docker.sh
-  sh get-docker.sh
+  sudo apt-get update
+  sudo apt-get install -y build-essential pkg-config cmake \
+    libx11-dev libxext-dev libxtst-dev \
+    libasound2-dev libportaudio2 portaudio19-dev \
+    flatbuffers-compiler docker.io
+  python3 -m pip install --upgrade pip build websocket-client isort
   ```
+
+For additional notes on ARM64 environments, see [`docs/platforms/arm64.md`](../docs/platforms/arm64.md).
 
 ### Build Instructions
 

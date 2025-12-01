@@ -18,7 +18,7 @@ use crate::spearlet::execution::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, debug};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::process::Stdio;
@@ -422,10 +422,8 @@ impl Runtime for ProcessRuntime {
         &self,
         config: &InstanceConfig,
     ) -> ExecutionResult<Arc<TaskInstance>> {
-        let instance = Arc::new(TaskInstance::new(
-            format!("process-task-{}", uuid::Uuid::new_v4()),
-            config.clone(),
-        ));
+        debug!("ProcessRuntime::create_instance task_id={}", config.task_id);
+        let instance = Arc::new(TaskInstance::new(config.task_id.clone(), config.clone()));
 
         // Generate and store secret for this instance / 为此实例生成并存储密钥
         let secret = self.generate_instance_secret(&instance.id());
@@ -467,6 +465,7 @@ impl Runtime for ProcessRuntime {
     }
 
     async fn start_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("ProcessRuntime::start_instance instance_id={}", instance.id());
         // Process is already started when created / 进程在创建时已经启动
         instance.set_status(InstanceStatus::Running);
         
@@ -501,6 +500,7 @@ impl Runtime for ProcessRuntime {
     }
 
     async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("ProcessRuntime::stop_instance instance_id={}", instance.id());
         let handle = instance
             .get_runtime_handle::<ProcessHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -526,6 +526,7 @@ impl Runtime for ProcessRuntime {
         instance: &Arc<TaskInstance>,
         _context: ExecutionContext,
     ) -> ExecutionResult<RuntimeExecutionResponse> {
+        debug!("ProcessRuntime::execute instance_id={} execution_id={}", instance.id(), _context.execution_id);
         let start_time = Instant::now();
         instance.record_request_start();
 
@@ -565,6 +566,7 @@ impl Runtime for ProcessRuntime {
     }
 
     async fn health_check(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<bool> {
+        debug!("ProcessRuntime::health_check instance_id={}", instance.id());
         let handle = instance
             .get_runtime_handle::<ProcessHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -605,6 +607,7 @@ impl Runtime for ProcessRuntime {
         &self,
         instance: &Arc<TaskInstance>,
     ) -> ExecutionResult<HashMap<String, serde_json::Value>> {
+        debug!("ProcessRuntime::get_metrics instance_id={}", instance.id());
         let handle = instance
             .get_runtime_handle::<ProcessHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -619,12 +622,14 @@ impl Runtime for ProcessRuntime {
         _instance: &Arc<TaskInstance>,
         _new_limits: &InstanceResourceLimits,
     ) -> ExecutionResult<()> {
+        debug!("ProcessRuntime::scale_instance instance_id={}", _instance.id());
         // Process runtime supports limited scaling through ulimit / 进程运行时通过 ulimit 支持有限的扩缩容
         // This is a simplified implementation / 这是一个简化的实现
         Ok(())
     }
 
     async fn cleanup_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("ProcessRuntime::cleanup_instance instance_id={}", instance.id());
         if let Some(handle) = instance.get_runtime_handle::<ProcessHandle>() {
             self.kill_process_tree(handle.pid).await?;
         }
@@ -632,6 +637,7 @@ impl Runtime for ProcessRuntime {
     }
 
     fn validate_config(&self, config: &InstanceConfig) -> ExecutionResult<()> {
+        debug!("ProcessRuntime::validate_config task_id={}", config.task_id);
         if config.runtime_type != RuntimeType::Process {
             return Err(ExecutionError::InvalidConfiguration {
                 message: "Runtime type must be Process".to_string(),
@@ -864,6 +870,7 @@ mod tests {
         let runtime = ProcessRuntime::new(&runtime_config).unwrap();
         
         let valid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Process,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -876,6 +883,7 @@ mod tests {
         assert!(runtime.validate_config(&valid_config).is_ok());
 
         let invalid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes, // Different runtime type for testing / 用于测试的不同运行时类型
             runtime_config: HashMap::new(),
             environment: HashMap::new(),

@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
+use super::runtime::RuntimeType;
 
 /// Task execution manager configuration / 任务执行管理器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,6 +232,10 @@ impl TaskExecutionManager {
         Ok(manager)
     }
 
+    pub fn list_runtime_types(&self) -> Vec<RuntimeType> {
+        self.runtime_manager.list_runtime_types()
+    }
+
     /// Submit execution request / 提交执行请求
     pub async fn submit_execution(
         &self,
@@ -385,9 +390,11 @@ impl TaskExecutionManager {
     async fn handle_execution_request(&self, request: ExecutionRequest) {
         let start_time = Instant::now();
         let request_id = request.request_id.clone();
+        debug!(request_id = %request_id, "Execution request received");
 
         // Remove from queue / 从队列中移除
         self.request_queue.remove(&request_id);
+        debug!(request_id = %request_id, "Execution request dequeued");
 
         // Update statistics / 更新统计信息
         {
@@ -403,14 +410,24 @@ impl TaskExecutionManager {
                 let _ = request.response_sender.send(Err(ExecutionError::RuntimeError {
                     message: "Failed to acquire execution permit".to_string(),
                 }));
+                warn!(request_id = %request_id, "Failed to acquire execution permit");
                 return;
             }
         };
-
+        let artifact_id = request.artifact_spec.artifact_id.clone();
+        debug!(request_id = %request_id, artifact_id = %artifact_id, "Starting execution");
         let result = self.execute_request(request.artifact_spec, request.execution_context).await;
 
         let execution_time = start_time.elapsed();
         let execution_time_ms = execution_time.as_millis() as u64;
+        match &result {
+            Ok(resp) => {
+                debug!(request_id = %request_id, status = %resp.status, duration_ms = execution_time_ms, "Execution finished");
+            }
+            Err(e) => {
+                warn!(request_id = %request_id, error = %e.to_string(), duration_ms = execution_time_ms, "Execution failed");
+            }
+        }
 
         // Update statistics / 更新统计信息
         {

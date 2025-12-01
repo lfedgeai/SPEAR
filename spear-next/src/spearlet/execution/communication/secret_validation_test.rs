@@ -175,6 +175,7 @@ async fn test_secret_validation_without_validator() {
 #[tokio::test]
 async fn test_instance_secret_management() {
     let instance_config = InstanceConfig {
+        task_id: "test-task".to_string(),
         runtime_type: RuntimeType::Process,
         runtime_config: HashMap::new(),
         environment: HashMap::new(),
@@ -230,6 +231,7 @@ async fn test_instance_secret_management() {
 #[tokio::test]
 async fn test_concurrent_secret_access() {
     let instance_config = InstanceConfig {
+        task_id: "test-task".to_string(),
         runtime_type: RuntimeType::Process,
         runtime_config: HashMap::new(),
         environment: HashMap::new(),

@@ -530,6 +530,7 @@ mod tests {
 
     fn create_test_instance(_id: &str, task_id: TaskId) -> Arc<TaskInstance> {
         let config = InstanceConfig {
+            task_id: task_id.clone(),
             runtime_type: crate::spearlet::execution::runtime::RuntimeType::Process,
             runtime_config: std::collections::HashMap::new(),
             environment: std::collections::HashMap::new(),

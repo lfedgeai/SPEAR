@@ -338,10 +338,14 @@ impl Task {
         use super::instance::{InstanceConfig, InstanceResourceLimits, NetworkConfig};
         use std::collections::HashMap;
         
+        let mut env = self.spec.environment.clone();
+        env.insert("TASK_ID".to_string(), self.id.clone());
+
         InstanceConfig {
+            task_id: self.id.clone(),
             runtime_type: self.spec.runtime_type.clone(),
             runtime_config: HashMap::new(),
-            environment: self.spec.environment.clone(),
+            environment: env,
             resource_limits: InstanceResourceLimits {
                 max_cpu_cores: 1.0,
                 max_memory_bytes: 512 * 1024 * 1024, // 512MB
@@ -549,5 +553,28 @@ mod tests {
         });
         
         assert_eq!(task.needs_scaling(), None);
+    }
+
+    #[test]
+    fn test_instance_config_injects_task_id_env() {
+        let spec = TaskSpec {
+            name: "test-task".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: RuntimeType::Kubernetes,
+            entry_point: "main".to_string(),
+            handler_config: HashMap::new(),
+            environment: HashMap::new(),
+            invocation_type: InvocationType::NewTask,
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 100,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+        };
+
+        let task = Task::new("artifact-123".to_string(), spec);
+        let cfg = task.create_instance_config();
+        assert_eq!(cfg.environment.get("TASK_ID").cloned(), Some(task.id().to_string()));
     }
 }

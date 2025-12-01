@@ -30,7 +30,7 @@ prost = "0.13"
 prost-types = "0.13"
 
 # HTTP server / HTTP服务器
-axum = "0.7"
+axum = "0.8"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "timeout"] }
 
@@ -91,12 +91,13 @@ md5 = "0.7"
 # Random number generation / 随机数生成
 rand = "0.8"
 futures = "0.3"
+wasmedge-sdk = { version = "0.13", optional = true, features = ["standalone"] }
 
 [dev-dependencies]
 # Testing utilities / 测试工具
 tempfile = "3.0"
 tokio-test = "0.4"
-axum-test = "14.0"
+axum-test = "17.0"
 tower = "0.4"
 tokio-stream = { version = "0.1", features = ["net"] }
 serde_urlencoded = "0.7"
@@ -119,7 +120,8 @@ name = "kv_storage_benchmarks"
 harness = false
 
 [features]
-default = []
+default = ["wasmedge"]
 sled = ["dep:sled"]
 rocksdb = ["dep:rocksdb"]
 evmap = ["dep:evmap"]
+wasmedge = ["dep:wasmedge-sdk"]

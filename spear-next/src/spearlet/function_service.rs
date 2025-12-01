@@ -40,7 +40,7 @@ use crate::spearlet::execution::{
     InstanceScheduler, SchedulingPolicy,
     ExecutionResponse, ExecutionError,
     RuntimeType,
-    runtime::RuntimeManager,
+    runtime::{RuntimeManager, RuntimeFactory, RuntimeConfig, ResourcePoolConfig},
     artifact::InvocationType as ExecutionInvocationType,
 };
 
@@ -72,8 +72,18 @@ pub struct FunctionServiceImpl {
 impl FunctionServiceImpl {
     /// Create new function service / 创建新的函数服务
     pub async fn new() -> Result<Self, ExecutionError> {
-        // Create runtime manager / 创建运行时管理器
-        let runtime_manager = Arc::new(RuntimeManager::new());
+        let mut rm = RuntimeManager::new();
+        let default_configs: Vec<RuntimeConfig> = RuntimeFactory::available_runtimes()
+            .into_iter()
+            .map(|rt| RuntimeConfig {
+                runtime_type: rt,
+                settings: HashMap::new(),
+                global_environment: HashMap::new(),
+                resource_pool: ResourcePoolConfig::default(),
+            })
+            .collect();
+        rm.initialize_runtimes(default_configs)?;
+        let runtime_manager = Arc::new(rm);
 
         // Create execution manager / 创建执行管理器
         let manager_config = TaskExecutionManagerConfig::default();
@@ -102,6 +112,10 @@ impl FunctionServiceImpl {
             instance_pool,
             stats,
         })
+    }
+
+    pub fn get_execution_manager(&self) -> Arc<TaskExecutionManager> {
+        self.execution_manager.clone()
     }
 
     /// Generate execution ID / 生成执行ID
@@ -763,5 +777,76 @@ impl FunctionService for Arc<FunctionServiceImpl> {
         request: Request<GetStatsRequest>,
     ) -> Result<Response<GetStatsResponse>, Status> {
         <FunctionServiceImpl as FunctionService>::get_stats(self, request).await
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spearlet::execution::runtime::{WasmRuntime, RuntimeConfig, ResourcePoolConfig, RuntimeType};
+    use crate::spearlet::execution::runtime::Runtime;
+    use crate::spearlet::execution::task::{Task, TaskSpec, TaskType};
+    use crate::spearlet::execution::artifact::{Artifact, ArtifactSpec};
+
+    #[tokio::test]
+    async fn test_function_service_initializes_runtimes() {
+        let svc = FunctionServiceImpl::new().await.unwrap();
+        let mgr = svc.get_execution_manager();
+        let types = mgr.list_runtime_types();
+        assert!(types.contains(&RuntimeType::Process));
+        assert!(types.contains(&RuntimeType::Wasm));
+        assert!(types.contains(&RuntimeType::Kubernetes));
+    }
+
+    #[tokio::test]
+    async fn test_instance_has_correct_task_id() {
+        // Create artifact and task spec following existing patterns
+        let artifact_spec = ArtifactSpec {
+            name: "test-artifact".to_string(),
+            version: "1.0.0".to_string(),
+            description: Some("Test artifact".to_string()),
+            runtime_type: RuntimeType::Wasm,
+            runtime_config: std::collections::HashMap::new(),
+            environment: std::collections::HashMap::new(),
+            resource_limits: Default::default(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::NewTask,
+            max_execution_timeout_ms: 30000,
+            labels: std::collections::HashMap::new(),
+        };
+        let artifact = Arc::new(Artifact::new(artifact_spec));
+
+        let task_spec = TaskSpec {
+            name: "test-task".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: RuntimeType::Wasm,
+            entry_point: "main".to_string(),
+            handler_config: std::collections::HashMap::new(),
+            environment: std::collections::HashMap::new(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::NewTask,
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 1,
+            scaling_config: Default::default(),
+            health_check: Default::default(),
+            timeout_config: Default::default(),
+        };
+        let task = Arc::new(Task::new(artifact.id().to_string(), task_spec));
+
+        // Build instance config from task (injects TASK_ID)
+        let instance_config = task.create_instance_config();
+
+        // Create WASM runtime
+        let rt_cfg = RuntimeConfig {
+            runtime_type: RuntimeType::Wasm,
+            settings: std::collections::HashMap::new(),
+            global_environment: std::collections::HashMap::new(),
+            resource_pool: ResourcePoolConfig::default(),
+        };
+        let wasm = WasmRuntime::new(&rt_cfg).unwrap();
+
+        // Create instance via runtime and verify task_id
+        let instance = wasm.create_instance(&instance_config).await.unwrap();
+        assert_eq!(instance.task_id(), task.id());
+        // Ensure Task::add_instance accepts it
+        assert!(task.add_instance(instance).is_ok());
     }
 }

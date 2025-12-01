@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::time::timeout;
+use tracing::debug;
 
 /// Kubernetes runtime configuration / Kubernetes 运行时配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -467,22 +468,20 @@ impl Runtime for KubernetesRuntime {
         &self,
         config: &InstanceConfig,
     ) -> ExecutionResult<Arc<TaskInstance>> {
-        // For Kubernetes, we don't pre-create instances, they are created on-demand
-        // 对于 Kubernetes，我们不预先创建实例，而是按需创建
-        let instance = TaskInstance::new(
-            "default-task".to_string(),
-            config.clone(),
-        );
+        debug!("KubernetesRuntime::create_instance task_id={}", config.task_id);
+        let instance = TaskInstance::new(config.task_id.clone(), config.clone());
         Ok(Arc::new(instance))
     }
 
     async fn start_instance(&self, _instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("KubernetesRuntime::start_instance instance_id={}", _instance.id());
         // Kubernetes jobs are started when executed, not pre-started
         // Kubernetes 作业在执行时启动，而不是预先启动
         Ok(())
     }
 
     async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("KubernetesRuntime::stop_instance instance_id={}", instance.id());
         // Stop any running jobs for this instance
         // 停止此实例的任何正在运行的作业
         if let Some(handle) = instance.get_runtime_handle::<KubernetesJobHandle>() {
@@ -496,6 +495,7 @@ impl Runtime for KubernetesRuntime {
         instance: &Arc<TaskInstance>,
         context: ExecutionContext,
     ) -> ExecutionResult<RuntimeExecutionResponse> {
+        debug!("KubernetesRuntime::execute instance_id={} execution_id={}", instance.id(), context.execution_id);
         let start_time = Instant::now();
         let job_name = format!("spear-job-{}", context.execution_id);
 
@@ -571,6 +571,7 @@ impl Runtime for KubernetesRuntime {
     }
 
     async fn health_check(&self, _instance: &Arc<TaskInstance>) -> ExecutionResult<bool> {
+        debug!("KubernetesRuntime::health_check instance_id={}", _instance.id());
         // Check if kubectl is available and cluster is accessible
         // 检查 kubectl 是否可用且集群是否可访问
         let args = vec!["cluster-info".to_string()];
@@ -584,6 +585,7 @@ impl Runtime for KubernetesRuntime {
         &self,
         _instance: &Arc<TaskInstance>,
     ) -> ExecutionResult<HashMap<String, serde_json::Value>> {
+        debug!("KubernetesRuntime::get_metrics instance_id={}", _instance.id());
         // Get cluster metrics
         // 获取集群指标
         let mut metrics = HashMap::new();
@@ -597,6 +599,7 @@ impl Runtime for KubernetesRuntime {
         _instance: &Arc<TaskInstance>,
         _new_limits: &InstanceResourceLimits,
     ) -> ExecutionResult<()> {
+        debug!("KubernetesRuntime::scale_instance instance_id={}", _instance.id());
         // Kubernetes jobs don't support scaling after creation
         // Kubernetes 作业在创建后不支持扩缩容
         Err(ExecutionError::RuntimeError {
@@ -605,6 +608,7 @@ impl Runtime for KubernetesRuntime {
     }
 
     async fn cleanup_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("KubernetesRuntime::cleanup_instance instance_id={}", instance.id());
         // Clean up any remaining jobs
         // 清理任何剩余的作业
         if let Some(handle) = instance.get_runtime_handle::<KubernetesJobHandle>() {
@@ -614,6 +618,7 @@ impl Runtime for KubernetesRuntime {
     }
 
     fn validate_config(&self, config: &InstanceConfig) -> ExecutionResult<()> {
+        debug!("KubernetesRuntime::validate_config task_id={}", config.task_id);
         // Validate Kubernetes-specific configuration
         // 验证 Kubernetes 特定配置
         let has_image = config.runtime_config.get("image")
@@ -694,6 +699,7 @@ mod tests {
         runtime_config_map.insert("image".to_string(), serde_json::Value::String("nginx:latest".to_string()));
         
         let valid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: runtime_config_map,
             environment: HashMap::new(),
@@ -706,6 +712,7 @@ mod tests {
 
         // Invalid config - no image
         let invalid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -734,6 +741,7 @@ mod tests {
         runtime_config_map.insert("image".to_string(), serde_json::Value::String("nginx:latest".to_string()));
         
         let instance_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: runtime_config_map,
             environment: HashMap::new(),

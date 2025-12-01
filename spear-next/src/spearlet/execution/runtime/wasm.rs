@@ -17,9 +17,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+use tracing::debug;
 
-// Note: In a real implementation, you would use wasmtime crate
-// 注意：在真实实现中，您会使用 wasmtime crate
+// Note: In a real implementation, you would use wasmedge crate
+// 注意：在真实实现中，您会使用 wasmedge crate
 // For now, we'll create a mock implementation to avoid adding dependencies
 // 现在，我们将创建一个模拟实现以避免添加依赖项
 
@@ -139,6 +140,7 @@ pub struct WasmModuleHandle {
     pub exported_functions: Vec<String>,
     /// Memory usage / 内存使用
     pub memory_usage: u64,
+    pub module_bytes: Vec<u8>,
 }
 
 /// Mock WASM instance handle / 模拟 WASM 实例句柄
@@ -152,6 +154,8 @@ pub struct WasmInstanceHandle {
     pub state: Arc<Mutex<WasmInstanceState>>,
     /// Execution statistics / 执行统计
     pub execution_stats: Arc<Mutex<WasmExecutionStats>>,
+    #[cfg(feature = "wasmedge")]
+    pub vm: wasmedge_sdk::Vm,
 }
 
 /// WASM instance state / WASM 实例状态
@@ -263,6 +267,7 @@ impl WasmRuntime {
             compilation_time: std::time::SystemTime::now(),
             exported_functions: vec!["main".to_string(), "_start".to_string()], // Mock exports / 模拟导出
             memory_usage: self.config.execution_config.max_heap_size as u64,
+            module_bytes: module_bytes.to_vec(),
         };
 
         // Cache the module / 缓存模块
@@ -289,11 +294,40 @@ impl WasmRuntime {
             last_execution_time: None,
         };
 
+        #[cfg(feature = "wasmedge")]
+        let vm_built = {
+            use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder, HostRegistrationConfigOptions};
+            use wasmedge_sdk::VmBuilder;
+            use wasmedge_sdk::wat2wasm;
+            let c = ConfigBuilder::new(CommonConfigOptions::default())
+                .with_host_registration_config(HostRegistrationConfigOptions::default().wasi(true))
+                .build()
+                .map_err(|e| ExecutionError::RuntimeError { message: format!("wasmedge config error: {}", e) })?;
+            let mut vm = VmBuilder::new()
+                .with_config(c)
+                .build()
+                .map_err(|e| ExecutionError::RuntimeError { message: format!("wasmedge vm build error: {}", e) })?;
+            let bytes = if module_handle.module_bytes.starts_with(&[0x00, 0x61, 0x73, 0x6d]) {
+                module_handle.module_bytes.clone()
+            } else {
+                // return error
+                return Err(ExecutionError::InvalidConfiguration {
+                    message: "Invalid WASM module format".to_string(),
+                });
+            };
+            vm = vm
+                .register_module_from_bytes(&module_handle.module_name, &bytes)
+                .map_err(|e| ExecutionError::RuntimeError { message: format!("wasmedge register error: {}", e) })?;
+            vm
+        };
+
         let instance_handle = WasmInstanceHandle {
             instance_id,
             module_handle,
             state: Arc::new(Mutex::new(state)),
             execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
+            #[cfg(feature = "wasmedge")]
+            vm: vm_built,
         };
 
         Ok(instance_handle)
@@ -314,8 +348,18 @@ impl WasmRuntime {
             state.last_execution_time = Some(std::time::SystemTime::now());
         }
 
-        // Mock WASM execution / 模拟 WASM 执行
-        tokio::time::sleep(Duration::from_millis(10)).await; // Simulate execution time / 模拟执行时间
+        #[cfg(feature = "wasmedge")]
+        {
+            use wasmedge_sdk::params;
+            let _ = instance_handle
+                .vm
+                .run_func(Some(&instance_handle.module_handle.module_name), function_name, params!())
+                .map_err(|e| ExecutionError::RuntimeError { message: format!("wasmedge exec error: {}", e) })?;
+        }
+        #[cfg(not(feature = "wasmedge"))]
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         let execution_time = start_time.elapsed();
         let execution_time_ms = execution_time.as_millis() as u64;
@@ -426,10 +470,8 @@ impl Runtime for WasmRuntime {
         &self,
         config: &InstanceConfig,
     ) -> ExecutionResult<Arc<TaskInstance>> {
-        let instance = Arc::new(TaskInstance::new(
-            format!("wasm-task-{}", uuid::Uuid::new_v4()),
-            config.clone(),
-        ));
+        debug!("WasmRuntime::create_instance task_id={}", config.task_id);
+        let instance = Arc::new(TaskInstance::new(config.task_id.clone(), config.clone()));
 
         // Get WASM module bytes from config / 从配置获取 WASM 模块字节
         let module_bytes = config
@@ -452,12 +494,14 @@ impl Runtime for WasmRuntime {
     }
 
     async fn start_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("WasmRuntime::start_instance instance_id={}", instance.id());
         // WASM instance is ready to execute when created / WASM 实例在创建时就准备好执行
         instance.set_status(InstanceStatus::Running);
         Ok(())
     }
 
     async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("WasmRuntime::stop_instance instance_id={}", instance.id());
         instance.set_status(InstanceStatus::Stopping);
         
         // WASM instances don't need explicit stopping / WASM 实例不需要显式停止
@@ -471,6 +515,7 @@ impl Runtime for WasmRuntime {
         instance: &Arc<TaskInstance>,
         context: ExecutionContext,
     ) -> ExecutionResult<RuntimeExecutionResponse> {
+        debug!("WasmRuntime::execute instance_id={} execution_id={}", instance.id(), context.execution_id);
         let start_time = Instant::now();
         instance.record_request_start();
 
@@ -481,11 +526,14 @@ impl Runtime for WasmRuntime {
             })?;
 
         // Execute WASM function / 执行 WASM 函数
-        let function_name = context
-            .context_data
-            .get("function_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("main");
+        let function_name = {
+            let has_start = wasm_handle
+                .module_handle
+                .exported_functions
+                .iter()
+                .any(|f| f == "_start");
+            if has_start { "_start" } else { "main" }
+        };
 
         let result = tokio::time::timeout(
             Duration::from_millis(context.timeout_ms),
@@ -519,6 +567,7 @@ impl Runtime for WasmRuntime {
     }
 
     async fn health_check(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<bool> {
+        debug!("WasmRuntime::health_check instance_id={}", instance.id());
         let wasm_handle = instance
             .get_runtime_handle::<WasmInstanceHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -537,6 +586,7 @@ impl Runtime for WasmRuntime {
         &self,
         instance: &Arc<TaskInstance>,
     ) -> ExecutionResult<HashMap<String, serde_json::Value>> {
+        debug!("WasmRuntime::get_metrics instance_id={}", instance.id());
         let wasm_handle = instance
             .get_runtime_handle::<WasmInstanceHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -551,6 +601,7 @@ impl Runtime for WasmRuntime {
         instance: &Arc<TaskInstance>,
         new_limits: &InstanceResourceLimits,
     ) -> ExecutionResult<()> {
+        debug!("WasmRuntime::scale_instance instance_id={}", instance.id());
         let wasm_handle = instance
             .get_runtime_handle::<WasmInstanceHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -569,12 +620,14 @@ impl Runtime for WasmRuntime {
     }
 
     async fn cleanup_instance(&self, _instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
+        debug!("WasmRuntime::cleanup_instance instance_id={}", _instance.id());
         // WASM instances are automatically cleaned up when dropped / WASM 实例在丢弃时自动清理
         // No explicit cleanup needed / 不需要显式清理
         Ok(())
     }
 
     fn validate_config(&self, config: &InstanceConfig) -> ExecutionResult<()> {
+        debug!("WasmRuntime::validate_config task_id={}", config.task_id);
         if config.runtime_type != RuntimeType::Wasm {
             return Err(ExecutionError::InvalidConfiguration {
                 message: "Runtime type must be WASM".to_string(),
@@ -686,6 +739,7 @@ mod tests {
         let runtime = WasmRuntime::new(&runtime_config).unwrap();
         
         let valid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Wasm,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -703,6 +757,7 @@ mod tests {
         assert!(runtime.validate_config(&valid_config).is_ok());
 
         let invalid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
             runtime_type: RuntimeType::Process, // Different runtime type for testing / 用于测试的不同运行时类型
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -728,5 +783,48 @@ mod tests {
             stats.total_execution_time_ms as f64 / stats.total_executions as f64;
         
         assert_eq!(stats.average_execution_time_ms, 200.0);
+    }
+
+    #[tokio::test]
+    async fn test_default_entry_prefers_start() {
+        let runtime_config = RuntimeConfig {
+            runtime_type: RuntimeType::Wasm,
+            settings: HashMap::new(),
+            global_environment: HashMap::new(),
+            resource_pool: super::super::ResourcePoolConfig::default(),
+        };
+
+        let runtime = WasmRuntime::new(&runtime_config).unwrap();
+
+        let valid_config = InstanceConfig {
+            task_id: "task-xyz".to_string(),
+            runtime_type: RuntimeType::Wasm,
+            runtime_config: HashMap::new(),
+            environment: HashMap::new(),
+            resource_limits: InstanceResourceLimits {
+                max_cpu_cores: 0.5,
+                max_memory_bytes: 64 * 1024 * 1024,
+                max_disk_bytes: 512 * 1024 * 1024,
+                max_network_bps: 50 * 1024 * 1024,
+            },
+            network_config: NetworkConfig::default(),
+            max_concurrent_requests: 100,
+            request_timeout_ms: 30000,
+        };
+
+        let instance = runtime.create_instance(&valid_config).await.unwrap();
+        runtime.start_instance(&instance).await.unwrap();
+
+        let ctx = ExecutionContext {
+            execution_id: "exec-1".to_string(),
+            payload: b"input".to_vec(),
+            headers: HashMap::new(),
+            timeout_ms: 1000,
+            context_data: HashMap::new(),
+        };
+
+        let resp = runtime.execute(&instance, ctx).await.unwrap();
+        let s = String::from_utf8(resp.data.clone()).unwrap();
+        assert!(s.contains("_start"));
     }
 }

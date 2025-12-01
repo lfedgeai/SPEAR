@@ -8,7 +8,7 @@ use axum_test::TestServer;
 use serde_json;
 use serde_json::json;
 use uuid::Uuid;
-use spear_next::sms::routes::create_routes;
+use spear_next::sms::gateway::create_gateway_router;
 use spear_next::sms::gateway::GatewayState;
 use tokio_util::sync::CancellationToken;
 
@@ -84,8 +84,8 @@ mod task_test_utils {
         };
         
         // Create HTTP router / 创建HTTP路由器
-        let app = create_routes(state);
-        let server = TestServer::new(app).unwrap();
+        let app = create_gateway_router(state);
+        let server = TestServer::new(app.into_make_service()).unwrap();
         
         (server, grpc_handle)
     }

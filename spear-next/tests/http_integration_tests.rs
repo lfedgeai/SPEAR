@@ -8,7 +8,7 @@ use axum_test::TestServer;
 use serde_json;
 use serde_json::json;
 use uuid::Uuid;
-use spear_next::sms::routes::create_routes;
+use spear_next::sms::gateway::create_gateway_router;
 use spear_next::sms::gateway::GatewayState;
 use tokio_util::sync::CancellationToken;
 
@@ -59,8 +59,8 @@ mod http_test_utils {
         let sms_client = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel.clone());
         let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
         let state = GatewayState { node_client: sms_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
-        let app = create_routes(state);
-        (TestServer::new(app).unwrap(), grpc_handle)
+        let app = create_gateway_router(state);
+        (TestServer::new(app.into_make_service()).unwrap(), grpc_handle)
     }
     
     /// Generate test node JSON / 生成测试节点JSON
@@ -207,7 +207,7 @@ async fn test_http_node_lifecycle() {
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
     let filter_state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     
-    let filter_app = create_routes(filter_state);
+    let filter_app = create_gateway_router(filter_state);
     let filter_request = Request::builder()
         .method(Method::GET)
         .uri("/api/v1/nodes?status=active")
@@ -306,7 +306,7 @@ async fn test_http_resource_management() {
     let sms_client_filter = spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter = spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
     let state = GatewayState { node_client: sms_client_filter, task_client: task_client_filter, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
-    let app = create_routes(state);
+    let app = create_gateway_router(state);
     
     let request = axum::http::Request::builder()
         .method("GET")

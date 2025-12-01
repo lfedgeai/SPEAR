@@ -291,14 +291,14 @@ mod new_endpoints_tests {
                     "execution_id": "test-execution-123"
                 })))
             }))
-            .route("/functions/executions/:execution_id", get(|Path(execution_id): Path<String>| async move {
+            .route("/functions/executions/{execution_id}", get(|Path(execution_id): Path<String>| async move {
                 Ok::<_, StatusCode>(axum::Json(serde_json::json!({
                     "execution_id": execution_id,
                     "status": "pending",
                     "message": "Execution status endpoint - Test response"
                 })))
             }))
-            .route("/functions/executions/:execution_id/cancel", post(|Path(execution_id): Path<String>| async move {
+            .route("/functions/executions/{execution_id}/cancel", post(|Path(execution_id): Path<String>| async move {
                 Ok::<_, StatusCode>(axum::Json(serde_json::json!({
                     "success": true,
                     "execution_id": execution_id,
@@ -312,7 +312,7 @@ mod new_endpoints_tests {
                     "message": "Task listing endpoint - Test response"
                 })))
             }))
-            .route("/tasks/:task_id", get(|Path(task_id): Path<String>| async move {
+            .route("/tasks/{task_id}", get(|Path(task_id): Path<String>| async move {
                 Ok::<_, StatusCode>(axum::Json(serde_json::json!({
                     "task_id": task_id,
                     "name": "example-task",
@@ -320,7 +320,7 @@ mod new_endpoints_tests {
                     "message": "Task details endpoint - Test response"
                 })))
             }))
-            .route("/tasks/:task_id/executions", get(|Path(task_id): Path<String>| async move {
+            .route("/tasks/{task_id}/executions", get(|Path(task_id): Path<String>| async move {
                 Ok::<_, StatusCode>(axum::Json(serde_json::json!({
                     "task_id": task_id,
                     "executions": [],

@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
+use super::runtime::RuntimeType;
 
 /// Task execution manager configuration / 任务执行管理器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +230,10 @@ impl TaskExecutionManager {
 
         info!("TaskExecutionManager started with config: {:?}", config);
         Ok(manager)
+    }
+
+    pub fn list_runtime_types(&self) -> Vec<RuntimeType> {
+        self.runtime_manager.list_runtime_types()
     }
 
     /// Submit execution request / 提交执行请求

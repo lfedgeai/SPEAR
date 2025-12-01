@@ -32,7 +32,7 @@ async fn test_admin_list_nodes_empty() {
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url).await.unwrap();
     let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app.into_make_service()).unwrap();
 
     let resp = server.get("/admin/api/nodes").await;
     resp.assert_status_ok();
@@ -54,7 +54,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url.clone()).await.unwrap();
     let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app.into_make_service()).unwrap();
 
     // Sort by last_heartbeat desc (use sort_by & order to avoid colon issues)
     let resp = server
@@ -89,7 +89,7 @@ async fn test_admin_stats() {
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url.clone()).await.unwrap();
     let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app.into_make_service()).unwrap();
 
     let resp = server.get("/admin/api/stats").await;
     resp.assert_status_ok();
@@ -107,7 +107,7 @@ async fn test_admin_nodes_stream() {
     let task_client = spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url).await.unwrap();
     let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: 64 * 1024 * 1024 };
     let app = create_admin_router(state);
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app.into_make_service()).unwrap();
 
     let resp = server.get("/admin/api/nodes/stream?once=true").await;
     resp.assert_status_ok();

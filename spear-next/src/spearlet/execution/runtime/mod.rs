@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::net::SocketAddr;
+use tracing::info;
 
 
 // Re-export runtime implementations / 重新导出运行时实现
@@ -700,10 +701,12 @@ impl RuntimeManager {
         &mut self,
         configs: Vec<RuntimeConfig>,
     ) -> ExecutionResult<()> {
+        info!("Initializing runtimes: count={} types={:?}", configs.len(), configs.iter().map(|c| c.runtime_type).collect::<Vec<_>>());
         for config in configs {
             let runtime = RuntimeFactory::create_runtime(&config)?;
             self.register_runtime(config.runtime_type, runtime)?;
         }
+        info!("Initialized runtimes: {:?}", self.list_runtime_types());
         Ok(())
     }
 }

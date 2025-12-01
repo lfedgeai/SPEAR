@@ -108,6 +108,8 @@ impl Default for InstanceMetrics {
 /// Instance configuration / Instance 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceConfig {
+    /// Parent task ID / 父任务ID
+    pub task_id: TaskId,
     /// Runtime type / 运行时类型
     pub runtime_type: RuntimeType,
     /// Runtime-specific configuration / 运行时特定配置
@@ -436,6 +438,7 @@ mod tests {
     #[test]
     fn test_instance_creation() {
         let config = InstanceConfig {
+            task_id: "task-123".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -455,6 +458,7 @@ mod tests {
     #[test]
     fn test_request_tracking() {
         let config = InstanceConfig {
+            task_id: "task-123".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -484,6 +488,7 @@ mod tests {
     #[test]
     fn test_load_calculation() {
         let config = InstanceConfig {
+            task_id: "task-123".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),
@@ -515,6 +520,7 @@ mod tests {
     #[test]
     fn test_health_check_tracking() {
         let config = InstanceConfig {
+            task_id: "task-123".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
             environment: HashMap::new(),

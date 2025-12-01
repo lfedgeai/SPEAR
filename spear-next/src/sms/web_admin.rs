@@ -92,12 +92,12 @@ pub fn create_admin_router(state: GatewayState) -> Router {
         .route("/", get(admin_index))
         .route("/admin", get(admin_index))
         .route("/admin/", get(admin_index))
-        .route("/admin/static/*path", get(admin_static))
+        .route("/admin/static/{*path}", get(admin_static))
         .route("/admin/api/nodes", get({
             let state = state.clone();
             move |q: Query<ListQuery>| list_nodes(state.clone(), q)
         }))
-        .route("/admin/api/nodes/:uuid", get({
+        .route("/admin/api/nodes/{uuid}", get({
             let state = state.clone();
             move |p: Path<String>| get_node_detail(state.clone(), p)
         }))
@@ -117,7 +117,7 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             let state = state.clone();
             move |payload: axum::extract::Json<CreateTaskBody>| create_task(state.clone(), payload)
         }))
-        .route("/admin/api/tasks/:task_id", get({
+        .route("/admin/api/tasks/{task_id}", get({
             let state = state.clone();
             move |p: Path<String>| get_task_detail(state.clone(), p)
         }))
@@ -128,9 +128,9 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             let state = state.clone();
             move |req: axum::http::Request<axum::body::Body>| upload_file(axum::extract::State(state.clone()), req)
         }))
-        .route("/admin/api/files/:id", get(download_file))
-        .route("/admin/api/files/:id", delete(delete_file))
-        .route("/admin/api/files/:id/meta", get(get_file_meta))
+        .route("/admin/api/files/{id}", get(download_file))
+        .route("/admin/api/files/{id}", delete(delete_file))
+        .route("/admin/api/files/{id}/meta", get(get_file_meta))
 }
 
 async fn list_nodes(state: GatewayState, Query(q): Query<ListQuery>) -> Json<serde_json::Value> {

@@ -71,6 +71,8 @@
 |---|---|---|---|
 | gRPC Transport Error | [grpc-transport-error-troubleshooting-en.md](./grpc-transport-error-troubleshooting-en.md) | [grpc-transport-error-troubleshooting-zh.md](./grpc-transport-error-troubleshooting-zh.md) | gRPC传输错误故障排除指南 |
 | API Usage Guide | [api-usage-guide-en.md](./api-usage-guide-en.md) | [api-usage-guide-zh.md](./api-usage-guide-zh.md) | RESTful API使用指南 |
+| WASM Runtime Usage | [wasm-runtime-usage-en.md](./wasm-runtime-usage-en.md) | [wasm-runtime-usage-zh.md](./wasm-runtime-usage-zh.md) | WASM运行时使用与错误行为说明 |
+| Samples Build Guide | [samples-build-guide-en.md](./samples-build-guide-en.md) | [samples-build-guide-zh.md](./samples-build-guide-zh.md) | WASM示例构建指南（Makefile） |
 | Swagger UI Fix | [swagger-ui-fix-en.md](./swagger-ui-fix-en.md) | [swagger-ui-fix-zh.md](./swagger-ui-fix-zh.md) | Swagger UI API路径修复指南 |
 | Sled Build Fix | [sled-build-fix-en.md](./sled-build-fix-en.md) | [sled-build-fix-zh.md](./sled-build-fix-zh.md) | Sled构建错误修复指南 |
 | RocksDB Compilation Fix | [rocksdb-compilation-fix-en.md](./rocksdb-compilation-fix-en.md) | [rocksdb-compilation-fix-zh.md](./rocksdb-compilation-fix-zh.md) | RocksDB编译问题修复指南 |

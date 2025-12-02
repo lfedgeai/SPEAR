@@ -247,6 +247,35 @@ curl -X PUT http://localhost:8080/api/v1/nodes/{uuid} \
 curl -X DELETE http://localhost:8080/api/v1/nodes/{uuid}
 ```
 
+##### Register Task / 注册任务
+
+```bash
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "image-processing-task",
+    "description": "Process images using AI models",
+    "node_uuid": "93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8",
+    "endpoint": "http://127.0.0.1:8081/process",
+    "version": "1.0.0",
+    "capabilities": ["image-processing", "ai-inference"],
+    "priority": "high",
+    "executable": {
+      "type": "wasm",
+      "uri": "sms+file://<file_id>",
+      "name": "hello.wasm",
+      "args": [],
+      "env": {}
+    }
+  }'
+```
+
+##### List Tasks / 列出任务
+
+```bash
+curl "http://localhost:8080/api/v1/tasks?status=registered&priority=normal"
+```
+
 #### gRPC API / gRPC API
 
 The gRPC service provides the following methods:
@@ -258,6 +287,25 @@ gRPC服务提供以下方法：
 - `DeleteNode`: Delete a node / 删除节点
 - `Heartbeat`: Send heartbeat / 发送心跳
 - `ListNodes`: List all nodes / 列出所有节点
+
+### WASM Runtime Notes / WASM运行时说明
+
+- For `type=wasm` executables, SPEARlet strictly validates the module bytes during instance creation. Invalid or non-WASM content results in `InvalidConfiguration`.
+- Recommended to build WASM with `zig cc -target wasm32-wasi`, or use `clang --target=wasm32-wasi --sysroot=$WASI_SYSROOT`.
+
+### Samples / 示例
+
+- Build the sample: `make samples`
+- Source: `samples/wasm-c/hello.c`
+- Output: `samples/build/hello.wasm`
+- Makefile only includes the `samples` target; upload/register is handled via API flows (see docs).
+
+### Documentation / 文档
+
+- API Usage Guide: `ai-docs/api-usage-guide-en.md`, `ai-docs/api-usage-guide-zh.md`
+- Task API Refactor (CN): `ai-docs/task-api-refactor-zh.md`
+- WASM Runtime Usage: `ai-docs/wasm-runtime-usage-en.md`, `ai-docs/wasm-runtime-usage-zh.md`
+- Samples Build Guide: `ai-docs/samples-build-guide-en.md`, `ai-docs/samples-build-guide-zh.md`
 - `GetNode`: Get specific node / 获取特定节点
 
 #### Architecture / 架构

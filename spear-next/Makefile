@@ -44,6 +44,7 @@ help:
 	@echo "  install-deps    - Install development dependencies / 安装开发依赖"
 	@echo "  help            - Show this help message / 显示此帮助信息"
 	@echo "  e2e             - Run Docker-based E2E tests / 运行基于Docker的端到端测试"
+	@echo "  samples         - Build WASM samples / 构建WASM示例"
 	@echo ""
 	@echo -e "$(YELLOW)Examples / 示例:$(NC)"
 	@echo "  make build                    # Build with default features / 使用默认特性构建"
@@ -207,6 +208,24 @@ bench:
 	$(CARGO) bench
 	@echo -e "$(GREEN)✅ Benchmarks completed / 基准测试完成$(NC)"
 
+# Build WASM samples
+.PHONY: samples
+samples:
+	@echo -e "$(BLUE)🔨 Building WASM samples... / 构建WASM示例...$(NC)"
+	@mkdir -p $(SAMPLES_BUILD)
+	@if command -v zig >/dev/null 2>&1; then \
+		zig cc -target wasm32-wasi -O2 -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c; \
+		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/hello.wasm$(NC)"; \
+	else \
+		if command -v clang >/dev/null 2>&1; then \
+			clang --target=wasm32-wasi -O2 -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			[ -f $(SAMPLES_BUILD)/hello.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/hello.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
+		else \
+			echo -e "$(RED)❌ No suitable compiler found (zig/clang). Install zig or wasi-sdk$(NC)"; exit 1; \
+		fi; \
+	fi
+
+
 # Security audit / 安全审计
 audit: install-deps
 	@echo -e "$(BLUE)🔒 Running security audit... / 运行安全审计...$(NC)"
@@ -273,3 +292,5 @@ e2e-linux:
 		DOCKER_DEFAULT_PLATFORM=linux/amd64 E2E_BIN_DIR=$(TARGET_DIR)/x86_64-unknown-linux-musl/release DOCKER=1 $(CARGO) test --test testcontainers_e2e -- --ignored --nocapture || (echo -e "$(RED)❌ E2E tests failed / 端到端测试失败$(NC)"; exit 1); \
 	fi
 	@echo -e "$(GREEN)✅ E2E tests (Linux) completed / 端到端测试（Linux）完成$(NC)"
+SAMPLES_DIR := samples/wasm-c
+SAMPLES_BUILD := samples/build

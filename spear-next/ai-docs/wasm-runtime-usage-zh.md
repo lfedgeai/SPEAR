@@ -30,6 +30,18 @@ Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制�
 ```
 - 运行时将根据 `executable.uri` 下载内容，并在 `create_wasm_instance` 中严格校验模块格式。
 
+### SMS 文件协议与配置来源
+
+- WASM 运行时仅支持 `sms+file://<file_id>` 下载协议。
+- 运行时构造路径 `"/api/v1/files/<file_id>"`，并从 `RuntimeConfig.spearlet_config.sms_addr` 读取 SMS 地址。
+- 下载函数签名：
+
+```rust
+pub async fn fetch_sms_file(sms_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+```
+
+- 配置在运行时初始化阶段由 FunctionService 注入：通过 `RuntimeConfig.spearlet_config` 传递完整 `SpearletConfig`，避免在运行时中读取环境变量。
+
 ## 错误行为
 - 非合法 WASM 字节：实例创建立即返回错误，避免在执行阶段才发现问题
 - 下载失败或校验失败：记录具体错误信息并返回 `RuntimeError` 或 `InvalidConfiguration`

@@ -80,6 +80,10 @@ pub struct ArtifactSpec {
     pub runtime_type: RuntimeType,
     /// Runtime-specific configuration / 运行时特定配置
     pub runtime_config: HashMap<String, serde_json::Value>,
+    /// Artifact location (URI) / Artifact 位置（URI）
+    pub location: Option<String>,
+    /// SHA-256 checksum / SHA-256 校验和
+    pub checksum_sha256: Option<String>,
     /// Environment variables / 环境变量
     pub environment: HashMap<String, String>,
     /// Resource limits / 资源限制
@@ -319,6 +323,8 @@ impl From<ProtoArtifactSpec> for ArtifactSpec {
             description: None, // Proto doesn't have description field / Proto 没有 description 字段
             runtime_type,
             runtime_config: std::collections::HashMap::new(), // Proto doesn't have runtime_config / Proto 没有 runtime_config
+            location: None,
+            checksum_sha256: None,
             environment: std::collections::HashMap::new(), // Proto doesn't have environment / Proto 没有 environment
             resource_limits: ResourceLimits::default(), // TODO: Add to proto
             invocation_type: InvocationType::NewTask, // Default value / 默认值
@@ -340,6 +346,8 @@ mod tests {
             description: Some("Test artifact".to_string()),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: HashMap::new(),
             resource_limits: ResourceLimits::default(),
             invocation_type: InvocationType::NewTask,
@@ -361,6 +369,8 @@ mod tests {
             description: None,
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: HashMap::new(),
             resource_limits: ResourceLimits::default(),
             invocation_type: InvocationType::NewTask,

@@ -33,6 +33,8 @@ prost-types = "0.13"
 axum = "0.8"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "timeout"] }
+hyper = { version = "1", features = ["client", "http1"] }
+reqwest = { version = "0.11", features = ["json"] }
 
 # Configuration management / 配置管理
 figment = { version = "0.10", features = ["toml", "env"] }

@@ -26,6 +26,15 @@ pub struct FunctionServiceImpl {
 }
 ```
 
+### Initialization Contract / 初始化约定
+
+- `FunctionServiceImpl::new` requires `Arc<SpearletConfig>` to propagate full node configuration into all runtimes via `RuntimeConfig.spearlet_config`.
+- Example:
+
+```rust
+let service = FunctionServiceImpl::new(Arc::new(SpearletConfig::default())).await?;
+```
+
 ## Core Component Integration / 核心组件集成
 
 ### 1. TaskExecutionManager Integration
@@ -206,7 +215,16 @@ async fn get_health(&self) -> Result<Response<GetHealthResponse>, Status> {
 ### 2. Configuration Updates
 - Add TaskExecutionManagerConfig
 - Add InstancePoolConfig
-- Update RuntimeConfig
+- Update RuntimeConfig to include `spearlet_config: Option<SpearletConfig>` for full config propagation
+
+### 4. WASM Artifact Download Path / WASM 制品下载路径
+
+- WASM runtime supports `sms+file://<file_id>` scheme only.
+- It resolves `SpearletConfig.sms_addr` from `RuntimeConfig.spearlet_config` and uses:
+
+```rust
+pub async fn fetch_sms_file(sms_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+```
 
 ### 3. Testing Strategy
 - Unit tests cover new components

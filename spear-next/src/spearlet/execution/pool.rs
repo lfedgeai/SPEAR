@@ -798,6 +798,8 @@ mod tests {
             description: Some("Test artifact".to_string()),
             runtime_type: RuntimeType::Process,
             runtime_config: HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: HashMap::new(),
             resource_limits: Default::default(),
             invocation_type: crate::spearlet::execution::artifact::InvocationType::NewTask,

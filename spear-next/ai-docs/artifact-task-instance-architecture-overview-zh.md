@@ -82,9 +82,8 @@ src/spearlet/execution/manager.rs
 src/spearlet/execution/runtime/
 ├── mod.rs                # 运行时模块定义
 ├── manager.rs            # 运行时管理器
-├── config.rs             # 运行时配置
 ├── process.rs            # 进程运行时
-├── container.rs          # 容器运行时
+├── kubernetes.rs         # Kubernetes 运行时
 └── wasm.rs               # WebAssembly 运行时
 ```
 
@@ -164,14 +163,17 @@ pub struct InstancePoolConfig {
 
 ### 3. RuntimeConfig
 
-```rust
+```
 pub struct RuntimeConfig {
     pub runtime_type: RuntimeType,
-    pub resource_limits: ResourceLimits,
-    pub environment: HashMap<String, String>,
-    pub security_policy: SecurityPolicy,
+    pub settings: HashMap<String, serde_json::Value>,
+    pub global_environment: HashMap<String, String>,
+    pub spearlet_config: Option<SpearletConfig>,
+    pub resource_pool: ResourcePoolConfig,
 }
 ```
+
+运行时通过 `spearlet_config` 读取完整节点配置（例如 `sms_addr`），避免在运行时层读取环境变量。
 
 ## 错误处理 / Error Handling
 

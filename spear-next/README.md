@@ -175,6 +175,45 @@ Configuration priority / 配置优先级：
 - 3) Environment variables / 环境变量（如 `SPEARLET_*`、`SMS_*`）
 - 4) Built-in defaults / 代码内置默认值
 
+### Runtime Config Propagation / 运行时配置传递
+
+- SPEARlet now passes the full `SpearletConfig` into each `Runtime` via `RuntimeConfig.spearlet_config`.
+- 不再依赖环境变量或 `global_environment` 传递地址等信息，运行时在 `create_instance` 内直接读取 `spearlet_config`。
+- Example / 示例：
+
+```rust
+// Build RuntimeConfig with full spearlet config / 构建RuntimeConfig并携带完整Spearlet配置
+let rt_cfg = RuntimeConfig {
+    runtime_type: RuntimeType::Wasm,
+    settings: std::collections::HashMap::new(),
+    global_environment: std::collections::HashMap::new(),
+    spearlet_config: Some(config.clone()),
+    resource_pool: ResourcePoolConfig::default(),
+};
+```
+
+### WASM Artifact Download / WASM制品下载
+
+- Only `sms+file://<id>` scheme is handled by the WASM runtime.
+- WASM runtime constructs path `"/api/v1/files/<id>"` and downloads via `artifact_fetch::fetch_sms_file`.
+- 仅支持 `sms+file://`，运行时使用 `SpearletConfig.sms_addr` 作为 SMS 地址。
+- API:
+
+```rust
+// spear-next/src/spearlet/execution/artifact_fetch.rs
+pub async fn fetch_sms_file(sms_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+```
+
+### Function Service Initialization / 函数服务初始化
+
+- `FunctionServiceImpl::new` now requires `Arc<SpearletConfig>`
+- 现在需要传入 `Arc<SpearletConfig>`，以便下游 Runtime 读取完整配置。
+- Example / 示例：
+
+```rust
+let function_service = FunctionServiceImpl::new(Arc::new(SpearletConfig::default())).await?;
+```
+
 Environment variables / 环境变量支持：
 
 SPEARlet (`SPEARLET_*`):

@@ -673,6 +673,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 
@@ -689,6 +690,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 
@@ -700,8 +702,10 @@ mod tests {
         
         let valid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: runtime_config_map,
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -713,8 +717,10 @@ mod tests {
         // Invalid config - no image
         let invalid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -732,6 +738,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 
@@ -742,8 +749,10 @@ mod tests {
         
         let instance_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: runtime_config_map,
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -791,6 +800,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 
@@ -813,6 +823,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 
@@ -840,6 +851,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings,
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 
@@ -854,6 +866,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
 

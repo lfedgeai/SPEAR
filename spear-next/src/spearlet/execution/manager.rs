@@ -604,7 +604,15 @@ impl TaskExecutionManager {
                 message: format!("Runtime not found for type: {:?}", task.spec.runtime_type),
             })?;
 
-        let instance_config = task.create_instance_config();
+        let mut instance_config = task.create_instance_config();
+        // Inject ArtifactSnapshot into InstanceConfig / 在实例配置中注入 ArtifactSnapshot
+        if let Some(artifact_entry) = self.artifacts.get(task.artifact_id()) {
+            let artifact = artifact_entry.value();
+            instance_config.artifact = Some(super::instance::ArtifactSnapshot {
+                location: artifact.spec.location.clone(),
+                checksum_sha256: artifact.spec.checksum_sha256.clone(),
+            });
+        }
         let instance = timeout(
             Duration::from_millis(self.config.instance_creation_timeout_ms),
             runtime.create_instance(&instance_config),

@@ -4,7 +4,7 @@
 //! A TaskInstance represents a physical execution instance of a task.
 //! TaskInstance 表示任务的物理执行实例。
 
-use super::{TaskId, RuntimeType};
+use super::{TaskId, RuntimeType, ArtifactId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -110,10 +110,14 @@ impl Default for InstanceMetrics {
 pub struct InstanceConfig {
     /// Parent task ID / 父任务ID
     pub task_id: TaskId,
+    /// Parent artifact ID / 父 Artifact ID
+    pub artifact_id: ArtifactId,
     /// Runtime type / 运行时类型
     pub runtime_type: RuntimeType,
     /// Runtime-specific configuration / 运行时特定配置
     pub runtime_config: HashMap<String, serde_json::Value>,
+    /// Artifact snapshot for runtime consumption / 供运行时使用的 Artifact 快照
+    pub artifact: Option<ArtifactSnapshot>,
     /// Environment variables / 环境变量
     pub environment: HashMap<String, String>,
     /// Resource limits / 资源限制
@@ -124,6 +128,15 @@ pub struct InstanceConfig {
     pub max_concurrent_requests: u32,
     /// Request timeout in milliseconds / 请求超时时间（毫秒）
     pub request_timeout_ms: u64,
+}
+
+/// Artifact snapshot carried by instance / 由实例携带的 Artifact 快照
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArtifactSnapshot {
+    /// Artifact location (URI) / Artifact 位置（URI）
+    pub location: Option<String>,
+    /// SHA-256 checksum / SHA-256 校验和
+    pub checksum_sha256: Option<String>,
 }
 
 /// Instance resource limits / Instance 资源限制
@@ -439,8 +452,10 @@ mod tests {
     fn test_instance_creation() {
         let config = InstanceConfig {
             task_id: "task-123".to_string(),
+            artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -459,8 +474,10 @@ mod tests {
     fn test_request_tracking() {
         let config = InstanceConfig {
             task_id: "task-123".to_string(),
+            artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -489,8 +506,10 @@ mod tests {
     fn test_load_calculation() {
         let config = InstanceConfig {
             task_id: "task-123".to_string(),
+            artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -521,8 +540,10 @@ mod tests {
     fn test_health_check_tracking() {
         let config = InstanceConfig {
             task_id: "task-123".to_string(),
+            artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),

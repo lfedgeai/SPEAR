@@ -75,9 +75,13 @@ pub struct RuntimeConfig {
     pub settings: HashMap<String, serde_json::Value>,
     /// Global environment variables / 全局环境变量
     pub global_environment: HashMap<String, String>,
+    /// Full spearlet configuration snapshot / 完整的Spearlet配置快照
+    pub spearlet_config: Option<crate::spearlet::config::SpearletConfig>,
     /// Resource pool configuration / 资源池配置
     pub resource_pool: ResourcePoolConfig,
 }
+
+// Removed RuntimeEndpoints in favor of passing full SpearletConfig
 
 /// Resource pool configuration / 资源池配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

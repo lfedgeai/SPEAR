@@ -10,8 +10,10 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 use tempfile::TempDir;
 use uuid::Uuid;
+use std::sync::Arc;
 
 use spear_next::storage::{KvStore, KvStoreConfig, DefaultKvStoreFactory, KvStoreFactory};
+use spear_next::storage::kv::RangeOptions;
 
 /// Benchmark configuration
 /// 基准测试配置
@@ -82,7 +84,7 @@ fn bench_single_operations(c: &mut Criterion) {
     
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        let store = rt.block_on(factory.create_kv_store(&config.config)).unwrap();
+        let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
         
         // Benchmark SET operations
         // 基准测试SET操作
@@ -90,12 +92,19 @@ fn bench_single_operations(c: &mut Criterion) {
             BenchmarkId::new("set", config.name),
             &config.name,
             |b, _| {
-                let mut counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    let key = format!("bench_key_{}", counter);
-                    let value = format!("bench_value_{}", counter);
-                    counter += 1;
-                    black_box(store.set(&key, &value).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        let id = counter.fetch_add(1, Ordering::Relaxed);
+                        let key = format!("bench_key_{}", id);
+                        let value = format!("bench_value_{}", id);
+                        let vb = value.into_bytes();
+                        black_box(store.put(&key, &vb).await.unwrap());
+                    }
                 });
             },
         );
@@ -105,8 +114,9 @@ fn bench_single_operations(c: &mut Criterion) {
         rt.block_on(async {
             for i in 0..1000 {
                 let key = format!("get_bench_key_{}", i);
-                let value = format!("get_bench_value_{}", i);
-                store.set(&key, &value).await.unwrap();
+                    let value = format!("get_bench_value_{}", i);
+                    let vb = value.as_bytes().to_vec();
+                    store.put(&key, &vb).await.unwrap();
             }
         });
         
@@ -116,11 +126,17 @@ fn bench_single_operations(c: &mut Criterion) {
             BenchmarkId::new("get", config.name),
             &config.name,
             |b, _| {
-                let mut counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    let key = format!("get_bench_key_{}", counter % 1000);
-                    counter += 1;
-                    black_box(store.get(&key).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        let id = counter.fetch_add(1, Ordering::Relaxed);
+                        let key = format!("get_bench_key_{}", id % 1000);
+                        black_box(store.get(&key).await.unwrap());
+                    }
                 });
             },
         );
@@ -131,16 +147,20 @@ fn bench_single_operations(c: &mut Criterion) {
             BenchmarkId::new("delete", config.name),
             &config.name,
             |b, _| {
-                let mut counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    // Setup key for deletion
-                    // 为删除设置键
-                    let key = format!("delete_bench_key_{}", counter);
-                    let value = format!("delete_bench_value_{}", counter);
-                    store.set(&key, &value).await.unwrap();
-                    
-                    counter += 1;
-                    black_box(store.delete(&key).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        let id = counter.fetch_add(1, Ordering::Relaxed);
+                        let key = format!("delete_bench_key_{}", id);
+                        let value = format!("delete_bench_value_{}", id);
+                        let vb = value.into_bytes();
+                        store.put(&key, &vb).await.unwrap();
+                        black_box(store.delete(&key).await.unwrap());
+                    }
                 });
             },
         );
@@ -151,11 +171,17 @@ fn bench_single_operations(c: &mut Criterion) {
             BenchmarkId::new("exists", config.name),
             &config.name,
             |b, _| {
-                let mut counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    let key = format!("get_bench_key_{}", counter % 1000);
-                    counter += 1;
-                    black_box(store.exists(&key).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        let id = counter.fetch_add(1, Ordering::Relaxed);
+                        let key = format!("get_bench_key_{}", id % 1000);
+                        black_box(store.exists(&key).await.unwrap());
+                    }
                 });
             },
         );
@@ -179,7 +205,7 @@ fn bench_batch_operations(c: &mut Criterion) {
         let factory = DefaultKvStoreFactory::new();
         
         for &batch_size in &batch_sizes {
-            let store = rt.block_on(factory.create_kv_store(&config.config)).unwrap();
+            let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
             let test_data = generate_test_data(batch_size, 32, 128);
             
             // Benchmark batch SET operations
@@ -188,13 +214,22 @@ fn bench_batch_operations(c: &mut Criterion) {
                 BenchmarkId::new(format!("batch_set_{}", config.name), batch_size),
                 &batch_size,
                 |b, _| {
-                    let mut batch_counter = 0;
-                    b.to_async(&rt).iter(|| async {
-                        for (key, value) in &test_data {
-                            let unique_key = format!("{}_{}", key, batch_counter);
-                            black_box(store.set(&unique_key, value).await.unwrap());
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    let batch_counter = Arc::new(AtomicUsize::new(0));
+                    let store = Arc::clone(&store);
+                    let test_data = test_data.clone();
+                    b.to_async(&rt).iter(|| {
+                        let store = Arc::clone(&store);
+                        let test_data = test_data.clone();
+                        let batch_counter = Arc::clone(&batch_counter);
+                        async move {
+                            let id = batch_counter.fetch_add(1, Ordering::Relaxed);
+                            for (key, value) in &test_data {
+                                let unique_key = format!("{}_{}", key, id);
+                                let vb = value.as_bytes().to_vec();
+                                black_box(store.put(&unique_key, &vb).await.unwrap());
+                            }
                         }
-                        batch_counter += 1;
                     });
                 },
             );
@@ -203,7 +238,8 @@ fn bench_batch_operations(c: &mut Criterion) {
             // 为批量GET操作设置数据
             rt.block_on(async {
                 for (key, value) in &test_data {
-                    store.set(key, value).await.unwrap();
+                    let vb = value.as_bytes().to_vec();
+                    store.put(key, &vb).await.unwrap();
                 }
             });
             
@@ -213,9 +249,15 @@ fn bench_batch_operations(c: &mut Criterion) {
                 BenchmarkId::new(format!("batch_get_{}", config.name), batch_size),
                 &batch_size,
                 |b, _| {
-                    b.to_async(&rt).iter(|| async {
-                        for (key, _) in &test_data {
-                            black_box(store.get(key).await.unwrap());
+                    let store = Arc::clone(&store);
+                    let test_data = test_data.clone();
+                    b.to_async(&rt).iter(|| {
+                        let store = Arc::clone(&store);
+                        let test_data = test_data.clone();
+                        async move {
+                            for (key, _) in &test_data {
+                                black_box(store.get(key).await.unwrap());
+                            }
                         }
                     });
                 },
@@ -237,7 +279,7 @@ fn bench_scan_operations(c: &mut Criterion) {
     
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        let store = rt.block_on(factory.create_kv_store(&config.config)).unwrap();
+        let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
         
         // Setup test data with different prefixes
         // 使用不同前缀设置测试数据
@@ -246,7 +288,8 @@ fn bench_scan_operations(c: &mut Criterion) {
                 for i in 0..250 {
                     let key = format!("{}_{:04}", prefix, i);
                     let value = format!("value_{}_{}", prefix, i);
-                    store.set(&key, &value).await.unwrap();
+                    let vb = value.as_bytes().to_vec();
+                    store.put(&key, &vb).await.unwrap();
                 }
             }
         });
@@ -257,12 +300,18 @@ fn bench_scan_operations(c: &mut Criterion) {
             BenchmarkId::new("keys_with_prefix", config.name),
             &config.name,
             |b, _| {
-                let prefixes = ["user", "session", "cache", "config"];
-                let mut prefix_counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    let prefix = prefixes[prefix_counter % prefixes.len()];
-                    prefix_counter += 1;
-                    black_box(store.keys_with_prefix(prefix).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let prefix_counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let prefix_counter = Arc::clone(&prefix_counter);
+                    async move {
+                        let prefixes = ["user", "session", "cache", "config"];
+                        let id = prefix_counter.fetch_add(1, Ordering::Relaxed);
+                        let prefix = prefixes[id % prefixes.len()];
+                        black_box(store.keys_with_prefix(prefix).await.unwrap());
+                    }
                 });
             },
         );
@@ -273,12 +322,18 @@ fn bench_scan_operations(c: &mut Criterion) {
             BenchmarkId::new("scan_prefix", config.name),
             &config.name,
             |b, _| {
-                let prefixes = ["user", "session", "cache", "config"];
-                let mut prefix_counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    let prefix = prefixes[prefix_counter % prefixes.len()];
-                    prefix_counter += 1;
-                    black_box(store.scan_prefix(prefix).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let prefix_counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let prefix_counter = Arc::clone(&prefix_counter);
+                    async move {
+                        let prefixes = ["user", "session", "cache", "config"];
+                        let id = prefix_counter.fetch_add(1, Ordering::Relaxed);
+                        let prefix = prefixes[id % prefixes.len()];
+                        black_box(store.scan_prefix(prefix).await.unwrap());
+                    }
                 });
             },
         );
@@ -289,17 +344,24 @@ fn bench_scan_operations(c: &mut Criterion) {
             BenchmarkId::new("range", config.name),
             &config.name,
             |b, _| {
-                let ranges = [
-                    ("user_0000", "user_0100"),
-                    ("session_0000", "session_0100"),
-                    ("cache_0000", "cache_0100"),
-                    ("config_0000", "config_0100"),
-                ];
-                let mut range_counter = 0;
-                b.to_async(&rt).iter(|| async {
-                    let (start, end) = ranges[range_counter % ranges.len()];
-                    range_counter += 1;
-                    black_box(store.range(start, end).await.unwrap());
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                let range_counter = Arc::new(AtomicUsize::new(0));
+                let store = Arc::clone(&store);
+                b.to_async(&rt).iter(|| {
+                    let store = Arc::clone(&store);
+                    let range_counter = Arc::clone(&range_counter);
+                    async move {
+                        let ranges = [
+                            ("user_0000", "user_0100"),
+                            ("session_0000", "session_0100"),
+                            ("cache_0000", "cache_0100"),
+                            ("config_0000", "config_0100"),
+                        ];
+                        let id = range_counter.fetch_add(1, Ordering::Relaxed);
+                        let (start, end) = ranges[id % ranges.len()];
+                        let options = RangeOptions::new().start_key(start).end_key(end);
+                        black_box(store.range(&options).await.unwrap());
+                    }
                 });
             },
         );
@@ -324,8 +386,9 @@ fn bench_large_value_operations(c: &mut Criterion) {
         let factory = DefaultKvStoreFactory::new();
         
         for &value_size in &value_sizes {
-            let store = rt.block_on(factory.create_kv_store(&config.config)).unwrap();
+            let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
             let large_value = "x".repeat(value_size);
+            let large_value_bytes = large_value.clone().into_bytes();
             
             // Benchmark large value SET
             // 基准测试大值SET
@@ -333,11 +396,19 @@ fn bench_large_value_operations(c: &mut Criterion) {
                 BenchmarkId::new(format!("large_set_{}_{}", config.name, value_size), value_size),
                 &value_size,
                 |b, _| {
-                    let mut counter = 0;
-                    b.to_async(&rt).iter(|| async {
-                        let key = format!("large_key_{}", counter);
-                        counter += 1;
-                        black_box(store.set(&key, &large_value).await.unwrap());
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    let counter = Arc::new(AtomicUsize::new(0));
+                    let store = Arc::clone(&store);
+                    let lv = large_value_bytes.clone();
+                    b.to_async(&rt).iter(|| {
+                        let store = Arc::clone(&store);
+                        let lv = lv.clone();
+                        let counter = Arc::clone(&counter);
+                        async move {
+                            let id = counter.fetch_add(1, Ordering::Relaxed);
+                            let key = format!("large_key_{}", id);
+                            black_box(store.put(&key, &lv).await.unwrap());
+                        }
                     });
                 },
             );
@@ -347,7 +418,7 @@ fn bench_large_value_operations(c: &mut Criterion) {
             rt.block_on(async {
                 for i in 0..10 {
                     let key = format!("large_get_key_{}", i);
-                    store.set(&key, &large_value).await.unwrap();
+                    store.put(&key, &large_value_bytes).await.unwrap();
                 }
             });
             
@@ -357,11 +428,17 @@ fn bench_large_value_operations(c: &mut Criterion) {
                 BenchmarkId::new(format!("large_get_{}_{}", config.name, value_size), value_size),
                 &value_size,
                 |b, _| {
-                    let mut counter = 0;
-                    b.to_async(&rt).iter(|| async {
-                        let key = format!("large_get_key_{}", counter % 10);
-                        counter += 1;
-                        black_box(store.get(&key).await.unwrap());
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    let counter = Arc::new(AtomicUsize::new(0));
+                    let store = Arc::clone(&store);
+                    b.to_async(&rt).iter(|| {
+                        let store = Arc::clone(&store);
+                        let counter = Arc::clone(&counter);
+                        async move {
+                            let id = counter.fetch_add(1, Ordering::Relaxed);
+                            let key = format!("large_get_key_{}", id % 10);
+                            black_box(store.get(&key).await.unwrap());
+                        }
                     });
                 },
             );
@@ -383,7 +460,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
     
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        let store = rt.block_on(factory.create_kv_store(&config.config)).unwrap();
+        let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
         
         // Benchmark concurrent SET operations
         // 基准测试并发SET操作
@@ -394,13 +471,14 @@ fn bench_concurrent_operations(c: &mut Criterion) {
                 let mut counter = std::sync::atomic::AtomicUsize::new(0);
                 b.to_async(&rt).iter(|| async {
                     let tasks: Vec<_> = (0..10).map(|task_id| {
-                        let store = store.clone();
+                        let store = Arc::clone(&store);
                         let counter = &counter;
                         async move {
                             let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let key = format!("concurrent_key_{}_{}", task_id, id);
                             let value = format!("concurrent_value_{}_{}", task_id, id);
-                            store.set(&key, &value).await.unwrap();
+                            let vb = value.into_bytes();
+                            store.put(&key, &vb).await.unwrap();
                         }
                     }).collect();
                     
@@ -412,11 +490,12 @@ fn bench_concurrent_operations(c: &mut Criterion) {
         // Setup data for concurrent GET operations
         // 为并发GET操作设置数据
         rt.block_on(async {
-            for i in 0..100 {
-                let key = format!("concurrent_get_key_{}", i);
-                let value = format!("concurrent_get_value_{}", i);
-                store.set(&key, &value).await.unwrap();
-            }
+                for i in 0..100 {
+                    let key = format!("concurrent_get_key_{}", i);
+                    let value = format!("concurrent_get_value_{}", i);
+                    let vb = value.as_bytes().to_vec();
+                    store.put(&key, &vb).await.unwrap();
+                }
         });
         
         // Benchmark concurrent GET operations
@@ -428,7 +507,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
                 let mut counter = std::sync::atomic::AtomicUsize::new(0);
                 b.to_async(&rt).iter(|| async {
                     let tasks: Vec<_> = (0..10).map(|_| {
-                        let store = store.clone();
+                        let store = Arc::clone(&store);
                         let counter = &counter;
                         async move {
                             let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

@@ -16,8 +16,8 @@ use tracing::{debug, error, info};
 
 use crate::sms::FilterState;
 use crate::proto::sms::{
-    RegisterTaskRequest, ListTasksRequest, GetTaskRequest, 
-    UnregisterTaskRequest, TaskStatus, TaskPriority
+    RegisterTaskRequest, ListTasksRequest, GetTaskRequest,
+    UnregisterTaskRequest, TaskStatus, TaskPriority, TaskExecutable, ExecutableType
 };
 use crate::sms::gateway::GatewayState;
 use super::common::ErrorResponse;
@@ -35,6 +35,17 @@ pub struct RegisterTaskParams {
     pub capabilities: Option<Vec<String>>,
     pub metadata: Option<HashMap<String, String>>,
     pub config: Option<HashMap<String, String>>,
+    pub executable: Option<TaskExecutableParams>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TaskExecutableParams {
+    pub r#type: String,
+    pub uri: String,
+    pub name: Option<String>,
+    pub checksum_sha256: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub env: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,7 +181,21 @@ pub async fn register_task(
         capabilities: params.capabilities.unwrap_or_default(),
         metadata: params.metadata.unwrap_or_default(),
         config: params.config.unwrap_or_default(),
-        executable: None,
+        executable: params.executable.as_ref().map(|e| TaskExecutable {
+            r#type: match e.r#type.to_lowercase().as_str() {
+                "binary" => ExecutableType::Binary as i32,
+                "script" => ExecutableType::Script as i32,
+                "container" => ExecutableType::Container as i32,
+                "wasm" => ExecutableType::Wasm as i32,
+                "process" => ExecutableType::Process as i32,
+                _ => ExecutableType::Unknown as i32,
+            },
+            uri: e.uri.clone(),
+            name: e.name.clone().unwrap_or_default(),
+            checksum_sha256: e.checksum_sha256.clone().unwrap_or_default(),
+            args: e.args.clone().unwrap_or_default(),
+            env: e.env.clone().unwrap_or_default(),
+        }),
     });
 
     match gateway_state.task_client.clone().register_task(request).await {

@@ -191,6 +191,7 @@ fn test_register_task_params_serialization() {
         capabilities: Some(vec!["cpu".to_string(), "memory".to_string()]),
         metadata: Some(metadata.clone()),
         config: Some(config.clone()),
+        executable: None,
     };
     
     // Test serialization / 测试序列化
@@ -353,6 +354,7 @@ fn test_task_params_edge_cases() {
         capabilities: Some(vec![]),
         metadata: Some(HashMap::new()),
         config: Some(HashMap::new()),
+        executable: None,
     };
     
     let json_str = serde_json::to_string(&empty_task_params).unwrap();
@@ -373,6 +375,7 @@ fn test_task_params_edge_cases() {
         capabilities: Some(vec![long_string.clone()]),
         metadata: Some(HashMap::from([(long_string.clone(), long_string.clone())])),
         config: Some(HashMap::from([(long_string.clone(), long_string.clone())])),
+        executable: None,
     };
     
     let json_str = serde_json::to_string(&long_task_params).unwrap();

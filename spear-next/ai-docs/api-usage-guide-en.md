@@ -194,9 +194,25 @@ curl -X DELETE http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f
   "endpoint": "http://127.0.0.1:8081/process",
   "version": "1.0.0",
   "capabilities": ["image-processing", "ai-inference"],
-  "priority": "high"
+  "priority": "high",
+  "executable": {
+    "type": "wasm",
+    "uri": "sms+file://<file_id>",
+    "name": "hello.wasm",
+    "args": [],
+    "env": {}
+  }
 }
 ```
+
+**Executable Descriptor**:
+- `type`: One of `binary|script|container|wasm|process`
+- `uri`: Canonical URI (e.g. `sms+file://<id>`, `http://...`, `docker://image:tag`)
+- `name`: Optional local alias
+- `checksum_sha256`: Optional integrity checksum
+- `args` and `env`: Default arguments and environment variables
+
+Note: For `type=wasm`, Spearlet runtime strictly requires a valid WASM binary at instance creation time. If the downloaded/passed bytes are not a valid WASM module, instance creation fails with `InvalidConfiguration`.
 
 ### 2. Get All Tasks
 

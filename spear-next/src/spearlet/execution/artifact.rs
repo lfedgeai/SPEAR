@@ -80,6 +80,10 @@ pub struct ArtifactSpec {
     pub runtime_type: RuntimeType,
     /// Runtime-specific configuration / 运行时特定配置
     pub runtime_config: HashMap<String, serde_json::Value>,
+    /// Artifact location (URI) / Artifact 位置（URI）
+    pub location: Option<String>,
+    /// SHA-256 checksum / SHA-256 校验和
+    pub checksum_sha256: Option<String>,
     /// Environment variables / 环境变量
     pub environment: HashMap<String, String>,
     /// Resource limits / 资源限制
@@ -176,6 +180,21 @@ impl Artifact {
         let id = format!("artifact-{}", Uuid::new_v4());
         let now = SystemTime::now();
         
+        Self {
+            id,
+            spec,
+            status: Arc::new(parking_lot::RwLock::new(ArtifactStatus::Creating)),
+            tasks: Arc::new(DashMap::new()),
+            metrics: Arc::new(parking_lot::RwLock::new(ArtifactMetrics::default())),
+            created_at: now,
+            updated_at: Arc::new(parking_lot::RwLock::new(now)),
+            execution_counter: AtomicU64::new(0),
+        }
+    }
+
+    /// Create a new artifact with fixed ID / 使用固定ID创建新的 Artifact
+    pub fn new_with_id(id: ArtifactId, spec: ArtifactSpec) -> Self {
+        let now = SystemTime::now();
         Self {
             id,
             spec,
@@ -319,6 +338,8 @@ impl From<ProtoArtifactSpec> for ArtifactSpec {
             description: None, // Proto doesn't have description field / Proto 没有 description 字段
             runtime_type,
             runtime_config: std::collections::HashMap::new(), // Proto doesn't have runtime_config / Proto 没有 runtime_config
+            location: if proto.location.is_empty() { None } else { Some(proto.location) },
+            checksum_sha256: if proto.checksum.is_empty() { None } else { Some(proto.checksum) },
             environment: std::collections::HashMap::new(), // Proto doesn't have environment / Proto 没有 environment
             resource_limits: ResourceLimits::default(), // TODO: Add to proto
             invocation_type: InvocationType::NewTask, // Default value / 默认值
@@ -331,6 +352,7 @@ impl From<ProtoArtifactSpec> for ArtifactSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::spearlet::ArtifactSpec as ProtoArtifactSpec;
 
     #[test]
     fn test_artifact_creation() {
@@ -340,6 +362,8 @@ mod tests {
             description: Some("Test artifact".to_string()),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: HashMap::new(),
             resource_limits: ResourceLimits::default(),
             invocation_type: InvocationType::NewTask,
@@ -361,6 +385,8 @@ mod tests {
             description: None,
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: HashMap::new(),
             resource_limits: ResourceLimits::default(),
             invocation_type: InvocationType::NewTask,
@@ -375,5 +401,24 @@ mod tests {
         assert_ne!(id1, id2);
         assert!(id1.contains(&artifact.id));
         assert!(id2.contains(&artifact.id));
+    }
+
+    #[test]
+    fn test_proto_artifact_spec_mapping_location_checksum() {
+        let proto = ProtoArtifactSpec {
+            artifact_id: "wasm-artifact".to_string(),
+            artifact_type: "wasm".to_string(),
+            location: "sms+file://abc123".to_string(),
+            version: "0.1.0".to_string(),
+            checksum: "deadbeef".to_string(),
+            metadata: std::collections::HashMap::new(),
+        };
+
+        let local = ArtifactSpec::from(proto);
+        assert_eq!(local.runtime_type, RuntimeType::Wasm);
+        assert_eq!(local.name, "wasm-artifact");
+        assert_eq!(local.version, "0.1.0");
+        assert_eq!(local.location.as_deref(), Some("sms+file://abc123"));
+        assert_eq!(local.checksum_sha256.as_deref(), Some("deadbeef"));
     }
 }

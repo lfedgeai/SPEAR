@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing::info!("SPEARlet starting with:");
     tracing::info!("  - gRPC server on: {}", config.grpc.addr);
     tracing::info!("  - HTTP gateway on: {}", config.http.server.addr);
-    tracing::info!("  - SMS service at: {}", config.sms_addr);
+    tracing::info!("  - SMS gRPC target at: {}", config.sms_grpc_addr);
     tracing::info!("  - Node Name: {}", config.node_name);
     tracing::info!("  - Storage backend: {:?}", config.storage.backend);
     tracing::info!("  - Auto register: {}", config.auto_register);
@@ -65,8 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
     
     // CLI/env-gated SMS registration & heartbeat / 通过CLI或环境变量控制注册与心跳
-    let connect_requested = args.sms_addr.is_some()
-        || std::env::var("SPEARLET_SMS_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
+    let connect_requested = args.sms_grpc_addr.is_some()
+        || std::env::var("SPEARLET_SMS_GRPC_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
     if connect_requested {
         let registration_service = RegistrationService::new(config.clone());
         if let Err(e) = registration_service.start().await {

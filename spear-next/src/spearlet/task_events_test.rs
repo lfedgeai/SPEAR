@@ -17,7 +17,7 @@ mod tests {
             http: HttpConfig { server: crate::config::base::ServerConfig { addr: "127.0.0.1:8081".parse().unwrap(), ..Default::default() } },
             storage: StorageConfig { backend: "memory".to_string(), data_dir: p, max_cache_size_mb: 16, compression_enabled: false, max_object_size: 1024*1024 },
             logging: crate::config::base::LogConfig::default(),
-            sms_addr: "127.0.0.1:50051".to_string(),
+            sms_grpc_addr: "127.0.0.1:50051".to_string(),
             auto_register: false,
             heartbeat_interval: 5,
             cleanup_interval: 60,
@@ -44,7 +44,7 @@ mod tests {
     #[tokio::test]
     async fn test_start_unreachable_sms_does_not_panic() {
         let mut cfg = (*tmp_cfg()).clone();
-        cfg.sms_addr = "127.0.0.1:65535".to_string();
+        cfg.sms_grpc_addr = "127.0.0.1:65535".to_string();
         let cfg = Arc::new(cfg);
         let runtime_manager = Arc::new(RuntimeManager::new());
         let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager)

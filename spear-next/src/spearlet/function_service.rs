@@ -43,6 +43,7 @@ use crate::spearlet::execution::{
     runtime::{RuntimeManager, RuntimeFactory, RuntimeConfig, ResourcePoolConfig},
     artifact::InvocationType as ExecutionInvocationType,
 };
+use crate::spearlet::SpearletConfig;
 
 /// Function service statistics / 函数服务统计信息
 #[derive(Debug, Clone)]
@@ -71,7 +72,7 @@ pub struct FunctionServiceImpl {
 
 impl FunctionServiceImpl {
     /// Create new function service / 创建新的函数服务
-    pub async fn new() -> Result<Self, ExecutionError> {
+    pub async fn new(config: Arc<SpearletConfig>) -> Result<Self, ExecutionError> {
         let mut rm = RuntimeManager::new();
         let default_configs: Vec<RuntimeConfig> = RuntimeFactory::available_runtimes()
             .into_iter()
@@ -79,6 +80,7 @@ impl FunctionServiceImpl {
                 runtime_type: rt,
                 settings: HashMap::new(),
                 global_environment: HashMap::new(),
+                spearlet_config: Some((*config).clone()),
                 resource_pool: ResourcePoolConfig::default(),
             })
             .collect();
@@ -271,6 +273,8 @@ impl FunctionServiceImpl {
                 _ => RuntimeType::Process, // Default fallback
             },
             runtime_config: std::collections::HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: std::collections::HashMap::new(),
             resource_limits: Default::default(),
             invocation_type: ExecutionInvocationType::NewTask,
@@ -789,7 +793,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_function_service_initializes_runtimes() {
-        let svc = FunctionServiceImpl::new().await.unwrap();
+        let svc = FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default())).await.unwrap();
         let mgr = svc.get_execution_manager();
         let types = mgr.list_runtime_types();
         assert!(types.contains(&RuntimeType::Process));
@@ -806,6 +810,8 @@ mod tests {
             description: Some("Test artifact".to_string()),
             runtime_type: RuntimeType::Wasm,
             runtime_config: std::collections::HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: std::collections::HashMap::new(),
             resource_limits: Default::default(),
             invocation_type: crate::spearlet::execution::artifact::InvocationType::NewTask,
@@ -839,6 +845,7 @@ mod tests {
             runtime_type: RuntimeType::Wasm,
             settings: std::collections::HashMap::new(),
             global_environment: std::collections::HashMap::new(),
+            spearlet_config: None,
             resource_pool: ResourcePoolConfig::default(),
         };
         let wasm = WasmRuntime::new(&rt_cfg).unwrap();

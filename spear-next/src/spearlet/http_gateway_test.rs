@@ -42,7 +42,7 @@ fn create_test_config() -> SpearletConfig {
 async fn create_test_gateway() -> HttpGateway {
     let config = Arc::new(create_test_config());
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
     let health_service = Arc::new(HealthService::new(object_service, function_service));
     HttpGateway::new(config, health_service)
 }
@@ -65,7 +65,7 @@ async fn test_gateway_config() {
     config.http.swagger_enabled = false;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
     let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
@@ -82,7 +82,7 @@ async fn test_gateway_with_different_storage_sizes() {
         config.storage.max_object_size = size;
         
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(size));
-        let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+        let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
         let health_service = Arc::new(HealthService::new(object_service, function_service));
         let gateway = HttpGateway::new(Arc::new(config), health_service);
         
@@ -97,7 +97,7 @@ async fn test_gateway_swagger_enabled() {
     config.http.swagger_enabled = true;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
     let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
@@ -111,7 +111,7 @@ async fn test_gateway_swagger_disabled() {
     config.http.swagger_enabled = false;
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
     let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
@@ -125,7 +125,7 @@ async fn test_invalid_http_address() {
     config.http.server.addr = "0.0.0.0:8080".parse().unwrap();
     
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-    let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
     let health_service = Arc::new(HealthService::new(object_service, function_service));
     let gateway = HttpGateway::new(Arc::new(config), health_service);
     
@@ -144,8 +144,8 @@ async fn test_multiple_gateways() {
     let object_service1 = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let object_service2 = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     
-    let function_service1 = Arc::new(FunctionServiceImpl::new().await.unwrap());
-    let function_service2 = Arc::new(FunctionServiceImpl::new().await.unwrap());
+    let function_service1 = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
+    let function_service2 = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
     
     let health_service1 = Arc::new(HealthService::new(object_service1, function_service1));
     let health_service2 = Arc::new(HealthService::new(object_service2, function_service2));
@@ -661,7 +661,7 @@ mod integration_tests {
         // Test complete HTTP gateway lifecycle / 测试完整的HTTP网关生命周期
         let config = Arc::new(create_test_config());
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
-        let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+        let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
         let health_service = Arc::new(HealthService::new(object_service.clone(), function_service));
         
         // Create gateway / 创建网关
@@ -722,7 +722,7 @@ mod integration_tests {
         
         for config in configs {
             let object_service = Arc::new(ObjectServiceImpl::new_with_memory(config.storage.max_object_size));
-            let function_service = Arc::new(FunctionServiceImpl::new().await.unwrap());
+            let function_service = Arc::new(FunctionServiceImpl::new(Arc::new(create_test_config())).await.unwrap());
             let health_service = Arc::new(HealthService::new(object_service, function_service));
             let gateway = HttpGateway::new(Arc::new(config), health_service);
             

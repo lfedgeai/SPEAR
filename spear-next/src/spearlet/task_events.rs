@@ -50,10 +50,10 @@ impl TaskEventSubscriber {
         let last_event_id = self.last_event_id.clone();
         tokio::spawn(async move {
             let node_uuid = Self::compute_node_uuid(&cfg);
-            info!(node_uuid = %node_uuid, sms_addr = %cfg.sms_addr, "TaskEventSubscriber starting");
+            info!(node_uuid = %node_uuid, sms_grpc_addr = %cfg.sms_grpc_addr, "TaskEventSubscriber starting");
             loop {
-                let sms_url = format!("http://{}", cfg.sms_addr);
-                let channel = match Channel::from_shared(sms_url.clone()).unwrap().connect().await { Ok(c)=>c, Err(e)=>{ warn!(error = %e, "SMS channel connect failed, retrying"); tokio::time::sleep(Duration::from_millis(cfg.sms_connect_retry_ms)).await; continue; } };
+                let sms_grpc_url = format!("http://{}", cfg.sms_grpc_addr);
+                let channel = match Channel::from_shared(sms_grpc_url.clone()).unwrap().connect().await { Ok(c)=>c, Err(e)=>{ warn!(error = %e, "SMS channel connect failed, retrying"); tokio::time::sleep(Duration::from_millis(cfg.sms_connect_retry_ms)).await; continue; } };
                 let mut client = TaskServiceClient::new(channel);
                 let last = *last_event_id.read().await;
                 let req = SubscribeTaskEventsRequest { node_uuid: node_uuid.clone(), last_event_id: last };

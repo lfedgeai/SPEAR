@@ -12,7 +12,7 @@ SPEARlet 内置任务事件订阅器，通过连接 SMS 的 `TaskService` 订阅
 
 ## 核心行为
 
-- 通过 `sms_addr` 使用 gRPC 连接 SMS，携带 `node_uuid` 与 `last_event_id` 调用 `SubscribeTaskEvents`。
+- 通过 `sms_grpc_addr` 使用 gRPC 连接 SMS，携带 `node_uuid` 与 `last_event_id` 调用 `SubscribeTaskEvents`。
 - 事件流处理：每收到事件时——
   - 更新内存中的 `last_event_id` 并写入持久化文件。
   - 对 `Create` 事件，调用 `GetTask` 获取任务详情，并为后续执行分发做准备（当前为 `todo!` 占位）。
@@ -26,7 +26,7 @@ SPEARlet 内置任务事件订阅器，通过连接 SMS 的 `TaskService` 订阅
 ```toml
 [spearlet]
 node_name = "spearlet-node"
-sms_addr = "127.0.0.1:50051"
+sms_grpc_addr = "127.0.0.1:50051"
 auto_register = true
 heartbeat_interval = 30
 cleanup_interval = 300

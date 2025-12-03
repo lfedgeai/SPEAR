@@ -15,7 +15,7 @@ This document explains the end-to-end (E2E) integration tests that run SMS and S
 - The test uses `testcontainers` to run `debian:bookworm-slim` containers
 - Mounts host-built binaries (`target/debug/sms`, `target/debug/spearlet`) into containers
 - Starts SMS, waits for “SMS gRPC server listening”
-- Starts SPEARlet with `--sms-addr host.testcontainers.internal:<mapped_port> --auto-register`
+- Starts SPEARlet with `--sms-grpc-addr host.testcontainers.internal:<mapped_port> --auto-register`
 - Waits for “Connected to SMS successfully” and “Successfully registered with SMS”
 
 ## Run the Test
@@ -39,4 +39,3 @@ DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
 ## Troubleshooting
 - If Docker is not available, test skips automatically
 - If logs do not contain expected messages, increase wait duration or verify container environment
-

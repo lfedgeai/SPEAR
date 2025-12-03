@@ -136,7 +136,8 @@ Example SPEARlet config / SPEARlet配置示例：
 ```toml
 [spearlet]
 node_name = ""
-sms_addr = "127.0.0.1:50051"
+sms_grpc_addr = "127.0.0.1:50051"
+sms_http_addr = "127.0.0.1:8080"
 auto_register = true
 heartbeat_interval = 30
 cleanup_interval = 300
@@ -175,10 +176,51 @@ Configuration priority / 配置优先级：
 - 3) Environment variables / 环境变量（如 `SPEARLET_*`、`SMS_*`）
 - 4) Built-in defaults / 代码内置默认值
 
+### Runtime Config Propagation / 运行时配置传递
+
+- SPEARlet now passes the full `SpearletConfig` into each `Runtime` via `RuntimeConfig.spearlet_config`.
+- 不再依赖环境变量或 `global_environment` 传递地址等信息，运行时在 `create_instance` 内直接读取 `spearlet_config`。
+- Example / 示例：
+
+```rust
+// Build RuntimeConfig with full spearlet config / 构建RuntimeConfig并携带完整Spearlet配置
+let rt_cfg = RuntimeConfig {
+    runtime_type: RuntimeType::Wasm,
+    settings: std::collections::HashMap::new(),
+    global_environment: std::collections::HashMap::new(),
+    spearlet_config: Some(config.clone()),
+    resource_pool: ResourcePoolConfig::default(),
+};
+```
+
+### WASM Artifact Download / WASM制品下载
+
+- Supported `sms+file` forms:
+  - Explicit override: `sms+file://<host:port>/<id>`
+  - Short form: `sms+file://<id>` (runtime uses `SpearletConfig.sms_http_addr` for the HTTP gateway)
+- WASM runtime constructs path `"/api/v1/files/<id>"` and downloads via `artifact_fetch::fetch_sms_file`.
+- API:
+
+```rust
+// spear-next/src/spearlet/execution/artifact_fetch.rs
+pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+```
+
+### Function Service Initialization / 函数服务初始化
+
+- `FunctionServiceImpl::new` now requires `Arc<SpearletConfig>`
+- 现在需要传入 `Arc<SpearletConfig>`，以便下游 Runtime 读取完整配置。
+- Example / 示例：
+
+```rust
+let function_service = FunctionServiceImpl::new(Arc::new(SpearletConfig::default())).await?;
+```
+
 Environment variables / 环境变量支持：
 
 SPEARlet (`SPEARLET_*`):
-- `SPEARLET_NODE_NAME`, `SPEARLET_SMS_ADDR`, `SPEARLET_AUTO_REGISTER`, `SPEARLET_HEARTBEAT_INTERVAL`, `SPEARLET_CLEANUP_INTERVAL`
+- `SPEARLET_NODE_NAME`, `SPEARLET_SMS_GRPC_ADDR`, `SPEARLET_AUTO_REGISTER`, `SPEARLET_HEARTBEAT_INTERVAL`, `SPEARLET_CLEANUP_INTERVAL`
+- `SPEARLET_SMS_HTTP_ADDR`
 - `SPEARLET_GRPC_ADDR`, `SPEARLET_HTTP_ADDR`
 - `SPEARLET_STORAGE_BACKEND`, `SPEARLET_STORAGE_DATA_DIR`, `SPEARLET_STORAGE_MAX_CACHE_MB`, `SPEARLET_STORAGE_COMPRESSION_ENABLED`, `SPEARLET_STORAGE_MAX_OBJECT_SIZE`
 - `SPEARLET_LOG_LEVEL`, `SPEARLET_LOG_FORMAT`, `SPEARLET_LOG_FILE`

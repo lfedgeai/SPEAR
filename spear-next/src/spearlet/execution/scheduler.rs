@@ -531,8 +531,10 @@ mod tests {
     fn create_test_instance(_id: &str, task_id: TaskId) -> Arc<TaskInstance> {
         let config = InstanceConfig {
             task_id: task_id.clone(),
+            artifact_id: "artifact-test".to_string(),
             runtime_type: crate::spearlet::execution::runtime::RuntimeType::Process,
             runtime_config: std::collections::HashMap::new(),
+            artifact: None,
             environment: std::collections::HashMap::new(),
             resource_limits: InstanceResourceLimits {
                 max_cpu_cores: 1.0,
@@ -562,6 +564,8 @@ mod tests {
             description: Some("Test artifact".to_string()),
             runtime_type: crate::spearlet::execution::runtime::RuntimeType::Process,
             runtime_config: HashMap::new(),
+            location: None,
+            checksum_sha256: None,
             environment: HashMap::new(),
             resource_limits: Default::default(),
             invocation_type: crate::spearlet::execution::artifact::InvocationType::NewTask,

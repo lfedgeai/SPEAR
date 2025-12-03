@@ -82,9 +82,8 @@ src/spearlet/execution/manager.rs
 src/spearlet/execution/runtime/
 ├── mod.rs                # Runtime module definition
 ├── manager.rs            # Runtime manager
-├── config.rs             # Runtime configuration
 ├── process.rs            # Process runtime
-├── container.rs          # Container runtime
+├── kubernetes.rs         # Kubernetes runtime
 └── wasm.rs               # WebAssembly runtime
 ```
 
@@ -110,6 +109,7 @@ sequenceDiagram
     FunctionService->>FunctionService: create_artifact_from_proto()
     FunctionService->>ExecutionManager: execute_task()
     ExecutionManager->>ExecutionManager: create_task_from_artifact()
+    Note over ExecutionManager: Artifacts are created/loaded using client-provided artifact_id as fixed ID
     ExecutionManager->>InstancePool: acquire_instance()
     InstancePool->>Runtime: create_instance()
     Runtime-->>InstancePool: instance_ready
@@ -128,6 +128,7 @@ stateDiagram-v2
     [*] --> Creating: create_instance()
     Creating --> Ready: initialization_complete
     Ready --> Running: execute_task()
+    Note over Instance: InstanceConfig carries ArtifactSnapshot injected from Artifact (location/checksum)
     Running --> Ready: task_complete
     Ready --> Terminating: shutdown()
     Running --> Terminating: force_shutdown()
@@ -164,14 +165,17 @@ pub struct InstancePoolConfig {
 
 ### 3. RuntimeConfig
 
-```rust
+```
 pub struct RuntimeConfig {
     pub runtime_type: RuntimeType,
-    pub resource_limits: ResourceLimits,
-    pub environment: HashMap<String, String>,
-    pub security_policy: SecurityPolicy,
+    pub settings: HashMap<String, serde_json::Value>,
+    pub global_environment: HashMap<String, String>,
+    pub spearlet_config: Option<SpearletConfig>,
+    pub resource_pool: ResourcePoolConfig,
 }
 ```
+
+Runtimes read full node configuration via `spearlet_config` (e.g., `sms_grpc_addr`), avoiding environment variable reads in runtime code.
 
 ## Error Handling / 错误处理
 

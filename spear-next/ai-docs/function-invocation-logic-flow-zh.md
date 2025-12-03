@@ -36,6 +36,7 @@ InvokeFunctionRequest 接收
 └── 不存在 → 继续创建流程
     ↓
 制品处理
+├── 使用请求中的 `artifact_id` 作为系统内固定ID创建/查找制品
 ├── 下载制品 (如果是远程位置)
 ├── 验证制品完整性 (checksum)
 ├── 解析制品元数据
@@ -169,6 +170,8 @@ async fn handle_new_task_creation(request: &InvokeFunctionRequest) -> Result<Tas
     
     let task_name = &request.task_name;
     let artifact_spec = request.artifact_spec.as_ref().unwrap();
+    // 要求：artifact_id 为稳定外部ID，系统内部直接复用该ID
+    // WASM 制品：必须提供有效的 location，例如 sms+file://<file_id>；建议提供 checksum 以校验完整性
     
     // 检查任务是否已存在
     if let Some(existing_task) = task_manager.find_task_by_name(task_name) {
@@ -226,7 +229,7 @@ async fn handle_existing_task_invocation(request: &InvokeFunctionRequest) -> Res
             // 任务不存在，检查是否可以创建
             if request.create_if_not_exists {
                 if let Some(artifact_spec) = &request.artifact_spec {
-                    // 有足够信息创建新任务
+                    // 有足够信息创建新任务（artifact_id 作为固定ID复用）
                     return handle_new_task_creation_from_existing_request(request).await;
                 } else {
                     return Err("Cannot create task without artifact specification");

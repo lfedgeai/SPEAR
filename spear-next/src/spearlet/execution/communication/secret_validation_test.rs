@@ -176,8 +176,10 @@ async fn test_secret_validation_without_validator() {
 async fn test_instance_secret_management() {
     let instance_config = InstanceConfig {
         task_id: "test-task".to_string(),
+        artifact_id: "artifact-test".to_string(),
         runtime_type: RuntimeType::Process,
         runtime_config: HashMap::new(),
+        artifact: None,
         environment: HashMap::new(),
         resource_limits: Default::default(),
         network_config: Default::default(),
@@ -232,8 +234,10 @@ async fn test_instance_secret_management() {
 async fn test_concurrent_secret_access() {
     let instance_config = InstanceConfig {
         task_id: "test-task".to_string(),
+        artifact_id: "artifact-test".to_string(),
         runtime_type: RuntimeType::Process,
         runtime_config: HashMap::new(),
+        artifact: None,
         environment: HashMap::new(),
         resource_limits: Default::default(),
         network_config: Default::default(),

@@ -18,6 +18,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::debug;
+use reqwest::StatusCode;
+use crate::spearlet::execution::artifact_fetch;
 
 // Note: In a real implementation, you would use wasmedge crate
 // 注意：在真实实现中，您会使用 wasmedge crate
@@ -298,7 +300,6 @@ impl WasmRuntime {
         let vm_built = {
             use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder, HostRegistrationConfigOptions};
             use wasmedge_sdk::VmBuilder;
-            use wasmedge_sdk::wat2wasm;
             let c = ConfigBuilder::new(CommonConfigOptions::default())
                 .with_host_registration_config(HostRegistrationConfigOptions::default().wasi(true))
                 .build()
@@ -349,17 +350,25 @@ impl WasmRuntime {
         }
 
         #[cfg(feature = "wasmedge")]
-        {
+        let output = {
             use wasmedge_sdk::params;
-            let _ = instance_handle
+            match instance_handle
                 .vm
                 .run_func(Some(&instance_handle.module_handle.module_name), function_name, params!())
-                .map_err(|e| ExecutionError::RuntimeError { message: format!("wasmedge exec error: {}", e) })?;
-        }
+            {
+                Ok(values) => format!("{:?}", values),
+                Err(e) => return Err(ExecutionError::RuntimeError { message: format!("wasmedge exec error: {}", e) }),
+            }
+        };
         #[cfg(not(feature = "wasmedge"))]
-        {
+        let output = {
             tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+            format!(
+                "WASM function '{}' executed with {} bytes input",
+                function_name,
+                input_data.len()
+            )
+        };
 
         let execution_time = start_time.elapsed();
         let execution_time_ms = execution_time.as_millis() as u64;
@@ -373,13 +382,6 @@ impl WasmRuntime {
                 stats.total_execution_time_ms as f64 / stats.total_executions as f64;
             stats.fuel_consumed += 1000; // Mock fuel consumption / 模拟燃料消耗
         }
-
-        // Mock output / 模拟输出
-        let output = format!(
-            "WASM function '{}' executed with {} bytes input",
-            function_name,
-            input_data.len()
-        );
 
         Ok(output.into_bytes())
     }
@@ -473,16 +475,60 @@ impl Runtime for WasmRuntime {
         debug!("WasmRuntime::create_instance task_id={}", config.task_id);
         let instance = Arc::new(TaskInstance::new(config.task_id.clone(), config.clone()));
 
-        // Get WASM module bytes from config / 从配置获取 WASM 模块字节
-        let module_bytes = config
-            .runtime_config
-            .get("module_bytes")
-            .and_then(|v| v.as_str())
-            .map(|s| s.as_bytes())
-            .unwrap_or(b"mock_wasm_module"); // Mock module bytes / 模拟模块字节
+        let module_bytes_vec: Vec<u8> = if let Some(snapshot) = &config.artifact {
+            if let Some(uri) = &snapshot.location {
+                if uri.starts_with("sms+file://") {
+                    let rest = &uri[11..];
+                    let (override_host_port, id_part) = match rest.find('/') {
+                        Some(pos) => (Some(rest[..pos].to_string()), rest[pos+1..].to_string()),
+                        None => (None, rest.to_string()),
+                    };
+                    let id = id_part.trim_start_matches('/');
+                    let path = format!("/api/v1/files/{}", id);
+
+                    let cfg = self
+                        .runtime_config
+                        .spearlet_config
+                        .as_ref()
+                        .ok_or_else(|| ExecutionError::InvalidConfiguration { message: "Missing SpearletConfig".to_string() })?;
+
+                    let sms_http_addr = if let Some(hp) = override_host_port { hp } else { cfg.sms_http_addr.clone() };
+
+                    debug!(
+                        task_id = %config.task_id,
+                        artifact_id = %config.artifact_id,
+                        sms_http_addr = %cfg.sms_http_addr,
+                        file_id = %id,
+                        "Fetching WASM module from SMS"
+                    );
+
+                    match artifact_fetch::fetch_sms_file(&sms_http_addr, &path).await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            debug!(error = %e.to_string(), url = format!("http://{}{}", sms_http_addr, path), "Failed to fetch SMS file");
+                            return Err(e);
+                        }
+                    }
+                } else {
+                    return Err(ExecutionError::InvalidConfiguration { message: format!("Unsupported artifact URI scheme: {}", uri) });
+                }
+            } else {
+                return Err(ExecutionError::InvalidConfiguration { message: "Missing artifact location for WASM module".to_string() });
+            }
+        } else {
+            debug!("WasmRuntime::create_instance missing artifact snapshot task_id={} artifact_id={}", config.task_id, config.artifact_id);
+            return Err(ExecutionError::InvalidConfiguration { message: "Missing artifact snapshot for WASM module".to_string() });
+        };
+
+        // Validate WASM magic header / 校验 WASM 魔数
+        if !module_bytes_vec.starts_with(&[0x00, 0x61, 0x73, 0x6d]) {
+            return Err(ExecutionError::InvalidConfiguration {
+                message: "Invalid WASM module: missing magic header".to_string(),
+            });
+        }
 
         // Load WASM module / 加载 WASM 模块
-        let module_handle = self.load_wasm_module(module_bytes).await?;
+        let module_handle = self.load_wasm_module(&module_bytes_vec).await?;
 
         // Create WASM instance / 创建 WASM 实例
         let wasm_instance = self.create_wasm_instance(module_handle, config).await?;
@@ -547,6 +593,13 @@ impl Runtime for WasmRuntime {
         match result {
             Ok(Ok(output)) => {
                 instance.record_request_completion(true, duration_ms as f64);
+                debug!(
+                    instance_id = %instance.id(),
+                    execution_id = %context.execution_id,
+                    duration_ms = duration_ms,
+                    output_len = output.len(),
+                    "WASM execution completed"
+                );
                 Ok(RuntimeExecutionResponse::new_sync(
                     context.execution_id,
                     output,
@@ -555,10 +608,24 @@ impl Runtime for WasmRuntime {
             }
             Ok(Err(e)) => {
                 instance.record_request_completion(false, duration_ms as f64);
+                debug!(
+                    instance_id = %instance.id(),
+                    execution_id = %context.execution_id,
+                    duration_ms = duration_ms,
+                    error = %e.to_string(),
+                    "WASM execution failed"
+                );
                 Err(e)
             }
             Err(_) => {
                 instance.record_request_completion(false, duration_ms as f64);
+                debug!(
+                    instance_id = %instance.id(),
+                    execution_id = %context.execution_id,
+                    duration_ms = duration_ms,
+                    timeout_ms = context.timeout_ms,
+                    "WASM execution timed out"
+                );
                 Err(ExecutionError::ExecutionTimeout {
                     timeout_ms: context.timeout_ms,
                 })
@@ -697,6 +764,7 @@ mod tests {
             runtime_type: RuntimeType::Wasm,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 
@@ -713,6 +781,7 @@ mod tests {
             runtime_type: RuntimeType::Wasm,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 
@@ -733,6 +802,7 @@ mod tests {
             runtime_type: RuntimeType::Wasm,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 
@@ -740,8 +810,10 @@ mod tests {
         
         let valid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Wasm,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits {
                 max_cpu_cores: 0.5,
@@ -758,8 +830,10 @@ mod tests {
 
         let invalid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Process, // Different runtime type for testing / 用于测试的不同运行时类型
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -791,6 +865,7 @@ mod tests {
             runtime_type: RuntimeType::Wasm,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 
@@ -798,8 +873,10 @@ mod tests {
 
         let valid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Wasm,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits {
                 max_cpu_cores: 0.5,

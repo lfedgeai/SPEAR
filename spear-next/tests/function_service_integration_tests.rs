@@ -23,13 +23,15 @@ mod test_utils {
     use tonic::transport::Server;
     use tokio::net::TcpListener;
     use spear_next::spearlet::FunctionServiceImpl;
+    use std::sync::Arc;
+    use spear_next::spearlet::SpearletConfig;
     
     /// Create test function service / 创建测试函数服务
     pub async fn create_test_function_service() -> (SocketAddr, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         
-        let function_service = FunctionServiceImpl::new().await.unwrap();
+        let function_service = FunctionServiceImpl::new(Arc::new(SpearletConfig::default())).await.unwrap();
         let service = FunctionServiceServer::new(function_service);
         
         let handle = tokio::spawn(async move {

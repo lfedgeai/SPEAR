@@ -26,6 +26,15 @@ pub struct FunctionServiceImpl {
 }
 ```
 
+### 初始化约定 / Initialization Contract
+
+- `FunctionServiceImpl::new` 需要 `Arc<SpearletConfig>`，通过 `RuntimeConfig.spearlet_config` 将完整节点配置传递给所有 Runtime。
+- 示例：
+
+```rust
+let service = FunctionServiceImpl::new(Arc::new(SpearletConfig::default())).await?;
+```
+
 ## 核心组件集成 / Core Component Integration
 
 ### 1. TaskExecutionManager 集成
@@ -206,7 +215,16 @@ async fn get_health(&self) -> Result<Response<GetHealthResponse>, Status> {
 ### 2. 配置更新
 - 新增 TaskExecutionManagerConfig
 - 新增 InstancePoolConfig
-- 更新 RuntimeConfig
+- 更新 RuntimeConfig，包含 `spearlet_config: Option<SpearletConfig>`，用于传递完整配置
+
+### 4. WASM 制品下载路径
+
+- WASM 运行时仅支持 `sms+file://<file_id>` 协议。
+- 从 `RuntimeConfig.spearlet_config` 中读取 `SpearletConfig.sms_grpc_addr`，并使用：
+
+```rust
+pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+```
 
 ### 3. 测试策略
 - 单元测试覆盖新组件

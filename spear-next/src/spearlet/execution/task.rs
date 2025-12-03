@@ -343,8 +343,10 @@ impl Task {
 
         InstanceConfig {
             task_id: self.id.clone(),
+            artifact_id: self.artifact_id.clone(),
             runtime_type: self.spec.runtime_type.clone(),
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: env,
             resource_limits: InstanceResourceLimits {
                 max_cpu_cores: 1.0,

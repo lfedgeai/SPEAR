@@ -1,11 +1,12 @@
 //! Function service tests / 函数服务测试
 
 use crate::spearlet::function_service::{FunctionServiceImpl, FunctionServiceStats};
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_function_service_creation() {
     // Test creating function service with memory store / 测试使用内存存储创建函数服务
-    let service = FunctionServiceImpl::new().await.unwrap();
+    let service = FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default())).await.unwrap();
     
     // Verify initial state / 验证初始状态
     let stats = service.get_stats().await;
@@ -17,7 +18,7 @@ async fn test_function_service_creation() {
 #[tokio::test]
 async fn test_function_service_stats() {
     // Test function service statistics / 测试函数服务统计信息
-    let service = FunctionServiceImpl::new().await.unwrap();
+    let service = FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default())).await.unwrap();
     
     let stats = service.get_stats().await;
     

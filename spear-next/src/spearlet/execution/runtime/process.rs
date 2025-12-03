@@ -848,6 +848,7 @@ mod tests {
             runtime_type: RuntimeType::Process,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 
@@ -864,6 +865,7 @@ mod tests {
             runtime_type: RuntimeType::Process,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 
@@ -871,8 +873,10 @@ mod tests {
         
         let valid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Process,
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -884,8 +888,10 @@ mod tests {
 
         let invalid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
+            artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes, // Different runtime type for testing / 用于测试的不同运行时类型
             runtime_config: HashMap::new(),
+            artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
             network_config: NetworkConfig::default(),
@@ -902,6 +908,7 @@ mod tests {
             runtime_type: RuntimeType::Process,
             settings: HashMap::new(),
             global_environment: HashMap::new(),
+            spearlet_config: None,
             resource_pool: super::super::ResourcePoolConfig::default(),
         };
 

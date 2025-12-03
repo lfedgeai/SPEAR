@@ -515,8 +515,12 @@ impl TaskExecutionManager {
         }
 
         let artifact_spec_local = super::artifact::ArtifactSpec::from(artifact_spec);
-        let artifact = Arc::new(Artifact::new(artifact_spec_local));
+        let artifact = Arc::new(Artifact::new_with_id(artifact_id.clone(), artifact_spec_local));
         self.artifacts.insert(artifact_id.clone(), artifact.clone());
+        debug!(
+            proto_artifact_id = %artifact_id,
+            "Registered artifact into manager with fixed id"
+        );
 
         // Update statistics / 更新统计信息
         {
@@ -604,7 +608,28 @@ impl TaskExecutionManager {
                 message: format!("Runtime not found for type: {:?}", task.spec.runtime_type),
             })?;
 
-        let instance_config = task.create_instance_config();
+        let mut instance_config = task.create_instance_config();
+        // Inject ArtifactSnapshot into InstanceConfig / 在实例配置中注入 ArtifactSnapshot
+        if let Some(artifact_entry) = self.artifacts.get(task.artifact_id()) {
+            let artifact = artifact_entry.value();
+            instance_config.artifact = Some(super::instance::ArtifactSnapshot {
+                location: artifact.spec.location.clone(),
+                checksum_sha256: artifact.spec.checksum_sha256.clone(),
+            });
+            debug!(
+                task_id = %task.id(),
+                artifact_id = %task.artifact_id(),
+                location = %artifact.spec.location.clone().unwrap_or_default(),
+                checksum = %artifact.spec.checksum_sha256.clone().unwrap_or_default(),
+                "Injected artifact snapshot into instance config"
+            );
+        } else {
+            debug!(
+                task_id = %task.id(),
+                artifact_id = %task.artifact_id(),
+                "Artifact not found in manager when preparing instance; snapshot injection skipped"
+            );
+        }
         let instance = timeout(
             Duration::from_millis(self.config.instance_creation_timeout_ms),
             runtime.create_instance(&instance_config),

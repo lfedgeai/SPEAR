@@ -15,7 +15,7 @@
 - 测试通过 `testcontainers` 运行 `debian:bookworm-slim` 容器
 - 将宿主机构建的二进制（`target/debug/sms`、`target/debug/spearlet`）挂载到容器
 - 启动 SMS，等待日志包含 “SMS gRPC server listening”
-- 启动 SPEARlet，使用 `--sms-addr host.testcontainers.internal:<映射端口> --auto-register` 连接并注册
+- 启动 SPEARlet，使用 `--sms-grpc-addr host.testcontainers.internal:<映射端口> --auto-register` 连接并注册
 - 断言日志包含 “Connected to SMS successfully” 与 “Successfully registered with SMS”
 
 ## 运行测试
@@ -39,4 +39,3 @@ DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
 ## 故障排查
 - 若本机没有 Docker，测试会自动跳过
 - 若日志不含预期信息，可以增加等待时间或检查容器环境配置
-

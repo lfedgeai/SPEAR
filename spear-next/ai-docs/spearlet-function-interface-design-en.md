@@ -73,6 +73,11 @@ message ArtifactSpec {
 }
 ```
 
+Notes / 说明:
+- The `artifact_id` provided by the client is treated as the fixed, canonical ID inside the system. Artifacts are created and stored using this ID without generating a separate internal UUID.
+- For `artifact_type = "wasm"`, `location` must specify a supported scheme. Current support includes `sms+file://<file_id>`, which is fetched via SMS. Supplying `checksum` (SHA-256) is recommended for integrity verification.
+- This fixed-ID strategy enables consistent lookup across artifacts, tasks, and instances, and avoids mismatches during artifact snapshot injection.
+
 #### ExecutionContext - Execution Context
 ```protobuf
 message ExecutionContext {

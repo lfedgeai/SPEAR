@@ -109,7 +109,7 @@ impl RegistrationService {
 
     /// Connect to SMS service / 连接到SMS服务
     pub async fn connect_to_sms(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let sms_url = format!("http://{}", self.config.sms_addr);
+        let sms_url = format!("http://{}", self.config.sms_grpc_addr);
         debug!("Connecting to SMS at: {}", sms_url);
 
         let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
@@ -182,7 +182,7 @@ impl RegistrationService {
                     }
                     RegistrationState::Registered { .. } => {
                         // Send heartbeat / 发送心跳
-                        debug!("Heartbeat tick: interval={}s, node_name={}, sms_addr={}", config.heartbeat_interval, config.node_name, config.sms_addr);
+        debug!("Heartbeat tick: interval={}s, node_name={}, sms_grpc_addr={}", config.heartbeat_interval, config.node_name, config.sms_grpc_addr);
                         if let Err(e) = Self::send_heartbeat(&config, &node_client, &state).await {
                             warn!("Heartbeat failed: {}", e);
                             // Try reconnect immediately / 立即尝试重连
@@ -267,7 +267,7 @@ impl RegistrationService {
 
         let node_uuid = Self::compute_node_uuid(config);
         let ts = chrono::Utc::now().timestamp();
-        debug!("Sending heartbeat: uuid={}, node_name={}, ts={}, sms_addr={}", node_uuid, config.node_name, ts, config.sms_addr);
+        debug!("Sending heartbeat: uuid={}, node_name={}, ts={}, sms_grpc_addr={}", node_uuid, config.node_name, ts, config.sms_grpc_addr);
         let request = tonic::Request::new(HeartbeatRequest { uuid: node_uuid.clone(), timestamp: ts, health_info: std::collections::HashMap::new() });
 
         let resp = client.heartbeat(request).await?;
@@ -292,7 +292,7 @@ impl RegistrationService {
         config: &SpearletConfig,
         node_client: &Arc<RwLock<Option<NodeServiceClient<Channel>>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let sms_url = format!("http://{}", config.sms_addr);
+        let sms_url = format!("http://{}", config.sms_grpc_addr);
         let deadline = Instant::now() + Duration::from_millis(config.sms_connect_timeout_ms);
         let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
         while Instant::now() < deadline {

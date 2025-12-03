@@ -38,6 +38,7 @@ pub mod instance;
 pub mod manager;
 pub mod pool;
 pub mod runtime;
+pub mod artifact_fetch;
 pub mod scheduler;
 pub mod task;
 pub mod http_adapter;

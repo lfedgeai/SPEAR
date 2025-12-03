@@ -254,6 +254,22 @@ impl Task {
         }
     }
 
+    /// Create a new task with fixed ID / 使用固定ID创建新的 Task
+    pub fn new_with_id(id: TaskId, artifact_id: ArtifactId, spec: TaskSpec) -> Self {
+        let now = SystemTime::now();
+        Self {
+            id,
+            artifact_id,
+            spec,
+            status: Arc::new(parking_lot::RwLock::new(TaskStatus::Initializing)),
+            instances: Arc::new(DashMap::new()),
+            metrics: Arc::new(parking_lot::RwLock::new(TaskMetrics::default())),
+            created_at: now,
+            updated_at: Arc::new(parking_lot::RwLock::new(now)),
+            instance_counter: AtomicU64::new(0),
+        }
+    }
+
     /// Get task ID / 获取 Task ID
     pub fn id(&self) -> &str {
         &self.id

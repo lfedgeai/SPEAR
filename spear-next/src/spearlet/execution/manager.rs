@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::timeout;
+use tonic::transport::Channel;
 use tracing::{debug, info, warn};
 
 /// Task execution manager configuration / 任务执行管理器配置
@@ -80,6 +81,8 @@ pub struct ExecutionRequestQueueEntry {
     pub artifact_spec: ProtoArtifactSpec,
     /// Execution context / 执行上下文
     pub execution_context: ExecutionContext,
+    /// Desired task ID from request (if any) / 来自请求的期望任务ID（如有）
+    pub desired_task_id: Option<String>,
     /// Request timestamp / 请求时间戳
     pub timestamp: SystemTime,
 }
@@ -93,6 +96,8 @@ pub struct ExecutionRequest {
     pub artifact_spec: ProtoArtifactSpec,
     /// Execution context / 执行上下文
     pub execution_context: ExecutionContext,
+    /// Desired task ID from request (if any) / 来自请求的期望任务ID（如有）
+    pub desired_task_id: Option<String>,
     /// Response sender / 响应发送器
     pub response_sender: oneshot::Sender<ExecutionResult<super::ExecutionResponse>>,
     /// Request timestamp / 请求时间戳
@@ -154,6 +159,8 @@ impl Default for ExecutionStatistics {
 pub struct TaskExecutionManager {
     /// Configuration / 配置
     config: TaskExecutionManagerConfig,
+    /// Spearlet application configuration / SPEARlet应用配置
+    spearlet_config: Arc<crate::spearlet::config::SpearletConfig>,
     /// Runtime manager / 运行时管理器
     runtime_manager: Arc<RuntimeManager>,
     /// Instance scheduler / 实例调度器
@@ -183,6 +190,7 @@ impl TaskExecutionManager {
     pub async fn new(
         config: TaskExecutionManagerConfig,
         runtime_manager: Arc<RuntimeManager>,
+        spearlet_config: Arc<crate::spearlet::config::SpearletConfig>,
     ) -> ExecutionResult<Arc<Self>> {
         let scheduler = Arc::new(InstanceScheduler::new(SchedulingPolicy::RoundRobin));
         let execution_semaphore = Arc::new(Semaphore::new(config.max_concurrent_executions));
@@ -192,6 +200,7 @@ impl TaskExecutionManager {
 
         let manager = Arc::new(Self {
             config: config.clone(),
+            spearlet_config,
             runtime_manager,
             scheduler,
             artifacts: Arc::new(DashMap::new()),
@@ -265,11 +274,19 @@ impl TaskExecutionManager {
 
         let timestamp = SystemTime::now();
 
+        // Desired task id from request / 从请求提取期望task id
+        let desired_task_id = if request.task_id.is_empty() {
+            None
+        } else {
+            Some(request.task_id.clone())
+        };
+
         // Create queue entry / 创建队列条目
         let queue_entry = ExecutionRequestQueueEntry {
             request_id: request_id.clone(),
             artifact_spec: artifact_spec.clone(),
             execution_context: execution_context.clone(),
+            desired_task_id: desired_task_id.clone(),
             timestamp,
         };
 
@@ -280,6 +297,7 @@ impl TaskExecutionManager {
             request_id: request_id.clone(),
             artifact_spec,
             execution_context,
+            desired_task_id,
             response_sender,
             timestamp,
         };
@@ -382,9 +400,7 @@ impl TaskExecutionManager {
             tokio::select! {
                 Some(request) = request_receiver.recv() => {
                     let manager = self.clone();
-                    tokio::spawn(async move {
-                        manager.handle_execution_request(request).await;
-                    });
+                    tokio::spawn(async move { manager.handle_execution_request(request).await });
                 }
                 _ = &mut shutdown_receiver => {
                     info!("Execution loop shutting down");
@@ -427,7 +443,11 @@ impl TaskExecutionManager {
         let artifact_id = request.artifact_spec.artifact_id.clone();
         debug!(request_id = %request_id, artifact_id = %artifact_id, "Starting execution");
         let result = self
-            .execute_request(request.artifact_spec, request.execution_context)
+            .execute_request(
+                request.artifact_spec,
+                request.execution_context,
+                request.desired_task_id.clone(),
+            )
             .await;
 
         let execution_time = start_time.elapsed();
@@ -463,12 +483,13 @@ impl TaskExecutionManager {
         &self,
         artifact_spec: ProtoArtifactSpec,
         execution_context: ExecutionContext,
+        desired_task_id: Option<String>,
     ) -> ExecutionResult<super::ExecutionResponse> {
         // Get or create artifact / 获取或创建 artifact
         let artifact = self.get_or_create_artifact(artifact_spec).await?;
 
         // Get or create task / 获取或创建任务
-        let task = self.get_or_create_task(&artifact).await?;
+        let task = self.get_or_create_task(&artifact, desired_task_id).await?;
 
         // Get or create instance / 获取或创建实例
         let instance = self.get_or_create_instance(&task).await?;
@@ -558,8 +579,14 @@ impl TaskExecutionManager {
     }
 
     /// Get or create task / 获取或创建任务
-    async fn get_or_create_task(&self, artifact: &Arc<Artifact>) -> ExecutionResult<Arc<Task>> {
-        let task_id = format!("task-{}-{:?}", artifact.id(), TaskType::HttpHandler);
+    async fn get_or_create_task(
+        &self,
+        artifact: &Arc<Artifact>,
+        desired_task_id: Option<String>,
+    ) -> ExecutionResult<Arc<Task>> {
+        // Prefer task_id from request if provided, else derive / 优先使用请求中的 task_id，否则派生
+        let task_id = desired_task_id
+            .unwrap_or_else(|| format!("task-{}-{:?}", artifact.id(), TaskType::HttpHandler));
 
         if let Some(task) = self.tasks.get(&task_id) {
             return Ok(task.clone());
@@ -595,7 +622,11 @@ impl TaskExecutionManager {
             timeout_config: TimeoutConfig::default(),
         };
 
-        let task = Arc::new(Task::new(artifact.id().to_string(), task_spec));
+        let task = Arc::new(Task::new_with_id(
+            task_id.clone(),
+            artifact.id().to_string(),
+            task_spec,
+        ));
         self.tasks.insert(task_id.clone(), task.clone());
         artifact.add_task(task.clone())?;
 
@@ -606,6 +637,12 @@ impl TaskExecutionManager {
         }
 
         info!("Created new task: {}", task_id);
+        self.publish_task_status(
+            &task_id,
+            crate::proto::sms::TaskStatus::Created,
+            Some("created".to_string()),
+        )
+        .await;
         Ok(task)
     }
 
@@ -670,9 +707,18 @@ impl TaskExecutionManager {
         runtime.start_instance(&instance).await?;
 
         // Register instance / 注册实例
-        self.instances.insert(instance_id.clone(), instance.clone());
+        self.instances
+            .insert(instance.id().to_string(), instance.clone());
         task.add_instance(instance.clone())?;
         self.scheduler.add_instance(instance.clone()).await?;
+
+        // Report ACTIVE status / 上报ACTIVE状态
+        self.publish_task_status(
+            task.id(),
+            crate::proto::sms::TaskStatus::Active,
+            Some("instance initialized".to_string()),
+        )
+        .await;
 
         // Update statistics / 更新统计信息
         {
@@ -700,6 +746,31 @@ impl TaskExecutionManager {
         self.instances.remove(instance.id());
         self.scheduler.remove_instance(&instance.id).await?;
 
+        let task_id = instance.task_id().to_string();
+        if let Some(task_entry) = self
+            .tasks
+            .iter()
+            .find(|entry| entry.value().id() == task_id)
+        {
+            let task = task_entry.value();
+            if let Err(e) = task.remove_instance(instance.id()) {
+                warn!(
+                    "Failed to remove instance {} from task {}: {}",
+                    instance.id(),
+                    task_id,
+                    e
+                );
+            }
+            if task.instance_count() == 0 {
+                self.publish_task_status(
+                    &task_id,
+                    crate::proto::sms::TaskStatus::Inactive,
+                    Some("no instances".to_string()),
+                )
+                .await;
+            }
+        }
+
         // Update statistics / 更新统计信息
         {
             let mut stats = self.statistics.write();
@@ -717,18 +788,43 @@ impl TaskExecutionManager {
 
         loop {
             interval.tick().await;
+            self.process_health_checks_once().await;
+        }
+    }
 
-            for instance_entry in self.instances.iter() {
-                let instance = instance_entry.value();
-                if let Some(runtime) = self
-                    .runtime_manager
-                    .get_runtime(&instance.config.runtime_type)
-                {
-                    if let Err(e) = runtime.health_check(instance).await {
-                        warn!("Health check failed for instance {}: {}", instance.id(), e);
-
-                        // Mark instance as unhealthy / 标记实例为不健康
+    async fn process_health_checks_once(&self) {
+        let instances: Vec<Arc<TaskInstance>> =
+            self.instances.iter().map(|e| e.value().clone()).collect();
+        for instance in instances {
+            if let Some(runtime) = self
+                .runtime_manager
+                .get_runtime(&instance.config.runtime_type)
+            {
+                match runtime.health_check(&instance).await {
+                    Ok(true) => {
+                        instance.update_metrics(|m| {
+                            m.health_check_successes = m.health_check_successes.saturating_add(1);
+                            m.health_check_failures = 0;
+                            m.last_health_check_time = Some(SystemTime::now());
+                        });
+                    }
+                    Ok(false) | Err(_) => {
                         instance.set_status(InstanceStatus::Unhealthy);
+                        instance.update_metrics(|m| {
+                            m.health_check_failures = m.health_check_failures.saturating_add(1);
+                            m.last_health_check_time = Some(SystemTime::now());
+                        });
+
+                        let threshold = self
+                            .tasks
+                            .iter()
+                            .find(|t| t.value().id() == instance.task_id())
+                            .map(|t| t.value().spec.health_check.failure_threshold)
+                            .unwrap_or(1);
+
+                        if instance.get_metrics().health_check_failures >= threshold {
+                            let _ = self.stop_instance(&instance).await;
+                        }
                     }
                 }
             }
@@ -795,15 +891,42 @@ impl TaskExecutionManager {
                 let task = task_entry.value();
                 if task.instance_count() == 0 {
                     let idle_duration = task.time_since_update();
-                    if idle_duration.as_millis() > self.config.task_idle_timeout_ms as u128 {
+                    let not_active = !matches!(
+                        task.status(),
+                        super::task::TaskStatus::Ready | super::task::TaskStatus::Running
+                    );
+                    if not_active
+                        || idle_duration.as_millis() > self.config.task_idle_timeout_ms as u128
+                    {
                         tasks_to_remove.push(task_id);
                     }
                 }
             }
 
             for task_id in tasks_to_remove {
-                self.tasks.remove(&task_id);
-                info!("Cleaned up idle task: {}", task_id);
+                if let Some((_, task)) = self.tasks.remove(&task_id) {
+                    // Publish UNREGISTERED before removal / 移除前上报UNREGISTERED状态
+                    self.publish_task_status(
+                        task.id(),
+                        crate::proto::sms::TaskStatus::Unregistered,
+                        Some("cleanup".to_string()),
+                    )
+                    .await;
+                    if let Some(artifact_entry) = self.artifacts.get(task.artifact_id()) {
+                        let artifact = artifact_entry.value();
+                        if let Err(e) = artifact.remove_task(task.id()) {
+                            warn!(
+                                "Failed to remove task {} from artifact {}: {}",
+                                task_id,
+                                task.artifact_id(),
+                                e
+                            );
+                        }
+                    }
+                    info!("Cleaned up idle task: {}", task_id);
+                } else {
+                    info!("Cleaned up idle task: {}", task_id);
+                }
             }
 
             // Cleanup idle artifacts / 清理空闲 artifact
@@ -833,6 +956,55 @@ impl TaskExecutionManager {
                 stats.active_instances = self.instances.len() as u64;
             }
         }
+    }
+
+    async fn publish_task_status(
+        &self,
+        task_id: &str,
+        status: crate::proto::sms::TaskStatus,
+        reason: Option<String>,
+    ) {
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        let url = format!("http://{}", addr);
+        let node_uuid = {
+            let cfg = &self.spearlet_config;
+            let base = format!(
+                "{}:{}:{}",
+                cfg.grpc.addr.ip(),
+                cfg.grpc.addr.port(),
+                cfg.node_name
+            );
+            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, base.as_bytes()).to_string()
+        };
+        let req = crate::proto::sms::UpdateTaskStatusRequest {
+            task_id: task_id.to_string(),
+            status: status as i32,
+            node_uuid,
+            status_version: 0,
+            updated_at: chrono::Utc::now().timestamp(),
+            reason: reason.unwrap_or_default(),
+        };
+        debug!(task_id = %req.task_id, node_uuid = %req.node_uuid, status = req.status, updated_at = req.updated_at, reason = %req.reason, url = %url, "publish_task_status: sending request");
+        tokio::spawn(async move {
+            match Channel::from_shared(url).unwrap().connect().await {
+                Ok(channel) => {
+                    let mut client =
+                        crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
+                    match client.update_task_status(req).await {
+                        Ok(resp) => {
+                            let inner = resp.into_inner();
+                            debug!(success = inner.success, message = %inner.message, "publish_task_status: response received");
+                        }
+                        Err(e) => {
+                            warn!(error = %e.to_string(), "publish_task_status: rpc call failed");
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e.to_string(), "publish_task_status: connect failed");
+                }
+            }
+        });
     }
 
     /// Extract error message from RuntimeExecutionError enum / 从RuntimeExecutionError枚举中提取错误消息
@@ -870,6 +1042,7 @@ impl Clone for TaskExecutionManager {
     fn clone(&self) -> Self {
         Self {
             config: self.config.clone(),
+            spearlet_config: self.spearlet_config.clone(),
             runtime_manager: self.runtime_manager.clone(),
             scheduler: self.scheduler.clone(),
             artifacts: self.artifacts.clone(),
@@ -888,14 +1061,98 @@ impl Clone for TaskExecutionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::runtime::{RuntimeConfig, RuntimeType};
+    use crate::spearlet::execution::instance;
+    use crate::spearlet::execution::runtime;
+    use crate::spearlet::execution::runtime::{
+        Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeType,
+    };
+    use async_trait::async_trait;
+    use std::collections::HashMap as StdHashMap;
+
+    struct DummyRuntime {
+        ty: RuntimeType,
+    }
+
+    #[async_trait]
+    impl Runtime for DummyRuntime {
+        fn runtime_type(&self) -> RuntimeType {
+            self.ty
+        }
+        async fn create_instance(
+            &self,
+            config: &instance::InstanceConfig,
+        ) -> super::ExecutionResult<Arc<instance::TaskInstance>> {
+            Ok(Arc::new(instance::TaskInstance::new(
+                config.task_id.clone(),
+                config.clone(),
+            )))
+        }
+        async fn start_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn stop_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+            _context: runtime::ExecutionContext,
+        ) -> super::ExecutionResult<runtime::RuntimeExecutionResponse> {
+            Ok(runtime::RuntimeExecutionResponse::default())
+        }
+        async fn health_check(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<bool> {
+            Ok(true)
+        }
+        async fn get_metrics(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<StdHashMap<String, serde_json::Value>> {
+            Ok(StdHashMap::new())
+        }
+        async fn scale_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+            _new_limits: &instance::InstanceResourceLimits,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn cleanup_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        fn validate_config(
+            &self,
+            _config: &instance::InstanceConfig,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        fn get_capabilities(&self) -> RuntimeCapabilities {
+            RuntimeCapabilities::default()
+        }
+    }
 
     #[tokio::test]
     async fn test_task_execution_manager_creation() {
         let config = TaskExecutionManagerConfig::default();
         let runtime_manager = Arc::new(RuntimeManager::new());
 
-        let manager = TaskExecutionManager::new(config, runtime_manager).await;
+        let manager = TaskExecutionManager::new(
+            config,
+            runtime_manager,
+            Arc::new(crate::spearlet::config::SpearletConfig::default()),
+        )
+        .await;
         assert!(manager.is_ok());
     }
 
@@ -924,5 +1181,227 @@ mod tests {
         assert_eq!(config.max_artifacts, 100);
         assert_eq!(config.max_tasks_per_artifact, 10);
         assert_eq!(config.max_instances_per_task, 50);
+    }
+
+    #[tokio::test]
+    async fn test_stop_instance_removes_from_task_and_manager() {
+        let mut rm = RuntimeManager::new();
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(DummyRuntime {
+                ty: RuntimeType::Process,
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+
+        let config = TaskExecutionManagerConfig::default();
+        let manager = TaskExecutionManager::new(
+            config,
+            rm,
+            Arc::new(crate::spearlet::config::SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let proto = crate::proto::spearlet::ArtifactSpec {
+            artifact_id: "artifact-test".to_string(),
+            artifact_type: "process".to_string(),
+            location: "".to_string(),
+            version: "1.0.0".to_string(),
+            checksum: "".to_string(),
+            metadata: StdHashMap::new(),
+        };
+
+        let artifact = manager.get_or_create_artifact(proto).await.unwrap();
+        let task = manager.get_or_create_task(&artifact, None).await.unwrap();
+        let instance = manager.get_or_create_instance(&task).await.unwrap();
+
+        assert_eq!(task.instance_count(), 1);
+        assert!(manager.get_instance(&instance.id().to_string()).is_some());
+
+        manager.stop_instance(&instance).await.unwrap();
+
+        assert_eq!(task.instance_count(), 0);
+        assert!(task.get_instance(instance.id()).is_none());
+        assert!(manager.get_instance(&instance.id().to_string()).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_loop_removes_task_from_artifact() {
+        let mut rm = RuntimeManager::new();
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(DummyRuntime {
+                ty: RuntimeType::Process,
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+
+        let mut cfg = TaskExecutionManagerConfig::default();
+        cfg.cleanup_interval_ms = 10;
+        cfg.task_idle_timeout_ms = 1;
+
+        let manager = TaskExecutionManager::new(
+            cfg,
+            rm,
+            Arc::new(crate::spearlet::config::SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let proto = crate::proto::spearlet::ArtifactSpec {
+            artifact_id: "artifact-cleanup".to_string(),
+            artifact_type: "process".to_string(),
+            location: "".to_string(),
+            version: "1.0.0".to_string(),
+            checksum: "".to_string(),
+            metadata: StdHashMap::new(),
+        };
+
+        let artifact = manager.get_or_create_artifact(proto).await.unwrap();
+        let task = manager.get_or_create_task(&artifact, None).await.unwrap();
+        let task_id = task.id().to_string();
+
+        let handle = {
+            let m = manager.clone();
+            tokio::spawn(async move { m.run_cleanup_loop().await })
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        handle.abort();
+
+        assert!(manager.get_task(&task_id).is_none());
+        assert!(artifact.get_task(&task_id).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_health_check_failure_triggers_cascade_removal() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct FailingRuntime {
+            ty: RuntimeType,
+            fail: Arc<AtomicBool>,
+        }
+
+        #[async_trait]
+        impl Runtime for FailingRuntime {
+            fn runtime_type(&self) -> RuntimeType {
+                self.ty
+            }
+            async fn create_instance(
+                &self,
+                config: &instance::InstanceConfig,
+            ) -> super::ExecutionResult<Arc<instance::TaskInstance>> {
+                Ok(Arc::new(instance::TaskInstance::new(
+                    config.task_id.clone(),
+                    config.clone(),
+                )))
+            }
+            async fn start_instance(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+            ) -> super::ExecutionResult<()> {
+                Ok(())
+            }
+            async fn stop_instance(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+            ) -> super::ExecutionResult<()> {
+                Ok(())
+            }
+            async fn execute(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+                _context: runtime::ExecutionContext,
+            ) -> super::ExecutionResult<runtime::RuntimeExecutionResponse> {
+                Ok(runtime::RuntimeExecutionResponse::default())
+            }
+            async fn health_check(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+            ) -> super::ExecutionResult<bool> {
+                if self.fail.load(Ordering::SeqCst) {
+                    Err(super::ExecutionError::HealthCheckFailed {
+                        message: "fail".to_string(),
+                    })
+                } else {
+                    Ok(true)
+                }
+            }
+            async fn get_metrics(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+            ) -> super::ExecutionResult<StdHashMap<String, serde_json::Value>> {
+                Ok(StdHashMap::new())
+            }
+            async fn scale_instance(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+                _new_limits: &instance::InstanceResourceLimits,
+            ) -> super::ExecutionResult<()> {
+                Ok(())
+            }
+            async fn cleanup_instance(
+                &self,
+                _instance: &Arc<instance::TaskInstance>,
+            ) -> super::ExecutionResult<()> {
+                Ok(())
+            }
+            fn validate_config(
+                &self,
+                _config: &instance::InstanceConfig,
+            ) -> super::ExecutionResult<()> {
+                Ok(())
+            }
+            fn get_capabilities(&self) -> RuntimeCapabilities {
+                RuntimeCapabilities::default()
+            }
+        }
+
+        let mut rm = RuntimeManager::new();
+        let fail_flag = Arc::new(AtomicBool::new(false));
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(FailingRuntime {
+                ty: RuntimeType::Process,
+                fail: fail_flag.clone(),
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+
+        let mut cfg = TaskExecutionManagerConfig::default();
+        cfg.health_check_interval_ms = 10;
+
+        let manager = TaskExecutionManager::new(
+            cfg,
+            rm,
+            Arc::new(crate::spearlet::config::SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let proto = crate::proto::spearlet::ArtifactSpec {
+            artifact_id: "artifact-hc".to_string(),
+            artifact_type: "process".to_string(),
+            location: "".to_string(),
+            version: "1.0.0".to_string(),
+            checksum: "".to_string(),
+            metadata: StdHashMap::new(),
+        };
+
+        let artifact = manager.get_or_create_artifact(proto).await.unwrap();
+        let task = manager.get_or_create_task(&artifact, None).await.unwrap();
+        let instance = manager.get_or_create_instance(&task).await.unwrap();
+
+        fail_flag.store(true, Ordering::SeqCst);
+        manager.process_health_checks_once().await;
+        manager.process_health_checks_once().await;
+        manager.process_health_checks_once().await;
+
+        assert!(manager.get_instance(&instance.id().to_string()).is_none());
+        assert!(task.get_instance(instance.id()).is_none());
     }
 }

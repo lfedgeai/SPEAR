@@ -330,6 +330,11 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
                 "executable_type": exec_type,
                 "executable_uri": exec_uri,
                 "executable_name": exec_name,
+                "result_uris": t.result_uris,
+                "last_result_uri": t.last_result_uri,
+                "last_result_status": t.last_result_status,
+                "last_completed_at": t.last_completed_at,
+                "last_result_metadata": t.last_result_metadata,
             })
         })
         .collect::<Vec<_>>();
@@ -549,6 +554,11 @@ async fn get_task_detail(
                         "executable_checksum": exec_sum,
                         "executable_args": exec_args,
                         "executable_env": exec_env,
+                        "result_uris": t.result_uris,
+                        "last_result_uri": t.last_result_uri,
+                        "last_result_status": t.last_result_status,
+                        "last_completed_at": t.last_completed_at,
+                        "last_result_metadata": t.last_result_metadata,
                     }
                 }))
             } else {

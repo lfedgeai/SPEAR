@@ -10,6 +10,7 @@ use crate::proto::sms::{
 use crate::proto::spearlet::{ArtifactSpec as SpearletArtifactSpec, InvokeFunctionRequest};
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::execution::manager::TaskExecutionManager;
+use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 pub struct TaskEventSubscriber {
@@ -172,9 +173,17 @@ impl TaskEventSubscriber {
             } else {
                 String::new()
             };
+            let artifact_id = if !checksum.is_empty() {
+                checksum.clone()
+            } else if !location.is_empty() {
+                let d = Sha256::digest(location.as_bytes());
+                d.iter().map(|b| format!("{:02x}", b)).collect()
+            } else {
+                uuid::Uuid::new_v4().to_string()
+            };
 
             let spec = SpearletArtifactSpec {
-                artifact_id: t.task_id.clone(),
+                artifact_id,
                 artifact_type,
                 location,
                 version,
@@ -182,11 +191,11 @@ impl TaskEventSubscriber {
                 metadata: t.metadata.clone(),
             };
 
-            let req = InvokeFunctionRequest {
-                artifact_spec: Some(spec),
-                execution_mode: crate::proto::spearlet::ExecutionMode::Async as i32,
-                ..Default::default()
-            };
+            let mut req = InvokeFunctionRequest::default();
+            req.invocation_type = crate::proto::spearlet::InvocationType::ExistingTask as i32;
+            req.task_id = t.task_id.clone();
+            req.artifact_spec = Some(spec);
+            req.execution_mode = crate::proto::spearlet::ExecutionMode::Async as i32;
             let mgr_cloned = mgr.clone();
             tokio::spawn(async move {
                 let _ = mgr_cloned.submit_execution(req).await;

@@ -98,7 +98,8 @@ impl FunctionServiceImpl {
 
         // Create execution manager / 创建执行管理器
         let manager_config = TaskExecutionManagerConfig::default();
-        let execution_manager = TaskExecutionManager::new(manager_config, runtime_manager).await?;
+        let execution_manager =
+            TaskExecutionManager::new(manager_config, runtime_manager, config.clone()).await?;
 
         // Create instance pool / 创建实例池
         let pool_config = InstancePoolConfig::default();

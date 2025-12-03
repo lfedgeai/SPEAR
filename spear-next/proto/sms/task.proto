@@ -9,6 +9,7 @@ enum TaskStatus {
   TASK_STATUS_ACTIVE = 2;       // Task is active / 任务活跃
   TASK_STATUS_INACTIVE = 3;     // Task is inactive / 任务非活跃
   TASK_STATUS_UNREGISTERED = 4; // Task is unregistered / 任务已注销
+  TASK_STATUS_CREATED = 5;      // Task is created (post-registration) / 任务已创建（注册后）
 }
 
 // Task priority enumeration / 任务优先级枚举
@@ -56,6 +57,11 @@ message Task {
   map<string, string> metadata = 12;     // Additional task metadata / 额外任务元数据
   map<string, string> config = 13;       // Task configuration / 任务配置
   TaskExecutable executable = 14;        // Executable descriptor / 可执行描述
+  repeated string result_uris = 15;      // URIs of execution results / 执行结果的URI列表
+  string last_result_uri = 16;           // URI of the last execution result / 最近一次执行结果的URI
+  string last_result_status = 17;        // Status of the last execution (completed/failed) / 最近一次执行状态（completed/failed）
+  int64 last_completed_at = 18;          // Timestamp of last completion / 最近一次完成时间戳
+  map<string, string> last_result_metadata = 19; // Metadata of last result / 最近一次结果的元数据
 }
 
 // Task registration request / 任务注册请求
@@ -161,4 +167,24 @@ service TaskService {
 
   // Subscribe task events for a node / 订阅节点任务事件
   rpc SubscribeTaskEvents(SubscribeTaskEventsRequest) returns (stream TaskEvent);
+
+  // Update task status (observed state) / 更新任务状态（观测态）
+  rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+}
+
+// Update task status request / 更新任务状态请求
+message UpdateTaskStatusRequest {
+  string task_id = 1;              // Task ID / 任务ID
+  TaskStatus status = 2;           // New status / 新状态
+  string node_uuid = 3;            // Reporting node UUID / 上报节点UUID
+  uint64 status_version = 4;       // Monotonic status version / 单调递增状态版本
+  int64 updated_at = 5;            // Update timestamp / 更新时间戳
+  string reason = 6;               // Optional reason / 可选原因
+}
+
+// Update task status response / 更新任务状态响应
+message UpdateTaskStatusResponse {
+  bool success = 1;                // Whether update succeeded / 更新是否成功
+  string message = 2;              // Response message / 响应消息
+  Task task = 3;                   // Updated task / 已更新任务
 }

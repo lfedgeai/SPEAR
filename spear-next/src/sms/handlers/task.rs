@@ -77,6 +77,11 @@ pub struct TaskResponse {
     pub last_heartbeat: i64,
     pub metadata: HashMap<String, String>,
     pub config: HashMap<String, String>,
+    pub result_uris: Vec<String>,
+    pub last_result_uri: String,
+    pub last_result_status: String,
+    pub last_completed_at: i64,
+    pub last_result_metadata: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,6 +108,7 @@ fn parse_task_status(status: &str) -> Option<TaskStatus> {
     match status.to_lowercase().as_str() {
         "unknown" => Some(TaskStatus::Unknown),
         "registered" => Some(TaskStatus::Registered),
+        "created" => Some(TaskStatus::Created),
         "active" => Some(TaskStatus::Active),
         "inactive" => Some(TaskStatus::Inactive),
         "unregistered" => Some(TaskStatus::Unregistered),
@@ -131,6 +137,7 @@ fn task_to_response(task: crate::proto::sms::Task) -> TaskResponse {
         status: match TaskStatus::try_from(task.status).unwrap_or(TaskStatus::Unknown) {
             TaskStatus::Unknown => "unknown".to_string(),
             TaskStatus::Registered => "registered".to_string(),
+            TaskStatus::Created => "created".to_string(),
             TaskStatus::Active => "active".to_string(),
             TaskStatus::Inactive => "inactive".to_string(),
             TaskStatus::Unregistered => "unregistered".to_string(),
@@ -150,6 +157,11 @@ fn task_to_response(task: crate::proto::sms::Task) -> TaskResponse {
         last_heartbeat: task.last_heartbeat,
         metadata: task.metadata,
         config: task.config,
+        result_uris: task.result_uris,
+        last_result_uri: task.last_result_uri,
+        last_result_status: task.last_result_status,
+        last_completed_at: task.last_completed_at,
+        last_result_metadata: task.last_result_metadata,
     }
 }
 

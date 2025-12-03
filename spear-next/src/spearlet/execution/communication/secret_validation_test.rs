@@ -22,7 +22,7 @@ async fn test_secret_validation_with_execution_manager() {
     // Create a simple secret validator for testing / 创建用于测试的简单密钥验证器
     let test_secret = "test-secret-12345";
     let test_secret_clone = test_secret.to_string();
-    
+
     let secret_validator = Arc::new(move |instance_id: &str, secret: &str| -> bool {
         // Simulate validation logic that would check against TaskExecutionManager
         // 模拟会检查 TaskExecutionManager 的验证逻辑
@@ -31,10 +31,8 @@ async fn test_secret_validation_with_execution_manager() {
 
     // Create ConnectionManager with validator / 创建带有验证器的 ConnectionManager
     let connection_config = ConnectionManagerConfig::default();
-    let connection_manager = ConnectionManager::new_with_validator(
-        connection_config,
-        Some(secret_validator),
-    );
+    let connection_manager =
+        ConnectionManager::new_with_validator(connection_config, Some(secret_validator));
 
     let instance_id = "test-instance-123";
 
@@ -89,8 +87,13 @@ async fn test_secret_validation_with_execution_manager() {
         version: 1,
     };
 
-    println!("✓ Secret validation with simulated TaskExecutionManager integration test setup completed");
-    println!("  - Valid auth request created for instance: {}", instance_id);
+    println!(
+        "✓ Secret validation with simulated TaskExecutionManager integration test setup completed"
+    );
+    println!(
+        "  - Valid auth request created for instance: {}",
+        instance_id
+    );
     println!("  - Invalid auth request created with wrong secret");
     println!("  - Non-existent instance auth request created");
     println!("  - All test scenarios prepared successfully");
@@ -109,10 +112,8 @@ async fn test_secret_validation_with_fallback_validator() {
 
     // Create ConnectionManager with validator / 创建带有验证器的 ConnectionManager
     let connection_config = ConnectionManagerConfig::default();
-    let connection_manager = ConnectionManager::new_with_validator(
-        connection_config,
-        Some(secret_validator),
-    );
+    let connection_manager =
+        ConnectionManager::new_with_validator(connection_config, Some(secret_validator));
 
     // Test valid authentication / 测试有效认证
     let valid_auth_request = AuthRequest {
@@ -186,41 +187,45 @@ async fn test_instance_secret_management() {
         max_concurrent_requests: 1,
         request_timeout_ms: 5000,
     };
-    
+
     let instance = Arc::new(TaskInstance::new("test-task".to_string(), instance_config));
-    
+
     // Initially, secret should be None / 初始时，secret 应该为 None
     {
         let secret_guard = instance.secret.read();
         assert!(secret_guard.is_none(), "Initial secret should be None");
     }
-    
+
     // Set a secret / 设置 secret
     let test_secret = "test-secret-12345";
     {
         let mut secret_guard = instance.secret.write();
         *secret_guard = Some(test_secret.to_string());
     }
-    
+
     // Verify secret is set / 验证 secret 已设置
     {
         let secret_guard = instance.secret.read();
         assert!(secret_guard.is_some(), "Secret should be set");
-        assert_eq!(secret_guard.as_ref().unwrap(), test_secret, "Secret should match");
+        assert_eq!(
+            secret_guard.as_ref().unwrap(),
+            test_secret,
+            "Secret should match"
+        );
     }
-    
+
     // Clear secret / 清除 secret
     {
         let mut secret_guard = instance.secret.write();
         *secret_guard = None;
     }
-    
+
     // Verify secret is cleared / 验证 secret 已清除
     {
         let secret_guard = instance.secret.read();
         assert!(secret_guard.is_none(), "Secret should be cleared");
     }
-    
+
     println!("✓ Instance secret management test completed");
     println!("  - Initial state: secret is None");
     println!("  - Set secret: {}", test_secret);
@@ -244,16 +249,16 @@ async fn test_concurrent_secret_access() {
         max_concurrent_requests: 1,
         request_timeout_ms: 5000,
     };
-    
+
     let instance = Arc::new(TaskInstance::new("test-task".to_string(), instance_config));
     let test_secret = "concurrent-test-secret";
-    
+
     // Set initial secret / 设置初始 secret
     {
         let mut secret_guard = instance.secret.write();
         *secret_guard = Some(test_secret.to_string());
     }
-    
+
     // Spawn multiple concurrent readers / 启动多个并发读取器
     let mut handles = Vec::new();
     for i in 0..10 {
@@ -266,9 +271,13 @@ async fn test_concurrent_secret_access() {
                     let secret_guard = instance_clone.secret.read();
                     secret_guard.clone()
                 };
-                
+
                 if let Some(secret) = secret_value.as_ref() {
-                    assert_eq!(secret, &expected_secret, "Secret should be consistent in reader {}", i);
+                    assert_eq!(
+                        secret, &expected_secret,
+                        "Secret should be consistent in reader {}",
+                        i
+                    );
                 }
                 // Small delay to increase chance of concurrent access / 小延迟以增加并发访问的机会
                 sleep(Duration::from_millis(1)).await;
@@ -276,12 +285,14 @@ async fn test_concurrent_secret_access() {
         });
         handles.push(handle);
     }
-    
+
     // Wait for all readers to complete / 等待所有读取器完成
     for handle in handles {
-        handle.await.expect("Reader task should complete successfully");
+        handle
+            .await
+            .expect("Reader task should complete successfully");
     }
-    
+
     println!("✓ Concurrent secret access test completed");
     println!("  - 10 concurrent readers, 100 reads each");
     println!("  - All reads completed successfully");

@@ -4,13 +4,14 @@
 //! This module provides Kubernetes-based execution runtime using Jobs and Pods.
 //! 该模块提供基于 Kubernetes Jobs 和 Pods 的执行运行时。
 
-use super::{
-    ExecutionContext, RuntimeExecutionResponse, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeType,
-};
 use super::ResourcePoolConfig;
+use super::{
+    ExecutionContext, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeExecutionResponse,
+    RuntimeType,
+};
 use crate::spearlet::execution::{
-    ExecutionError, ExecutionResult,
     instance::{InstanceConfig, InstanceResourceLimits, TaskInstance},
+    ExecutionError, ExecutionResult,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -250,8 +251,10 @@ impl KubernetesRuntime {
     /// Create a new Kubernetes runtime / 创建新的 Kubernetes 运行时
     pub fn new(runtime_config: &RuntimeConfig) -> ExecutionResult<Self> {
         let config = if let Some(settings) = runtime_config.settings.get("kubernetes") {
-            serde_json::from_value(settings.clone()).map_err(|e| ExecutionError::InvalidConfiguration {
-                message: format!("Invalid Kubernetes configuration: {}", e),
+            serde_json::from_value(settings.clone()).map_err(|e| {
+                ExecutionError::InvalidConfiguration {
+                    message: format!("Invalid Kubernetes configuration: {}", e),
+                }
             })?
         } else {
             KubernetesConfig::default()
@@ -273,10 +276,8 @@ impl KubernetesRuntime {
 
         // Add API server if not default
         if self.config.api_server != "https://kubernetes.default.svc" {
-            kubectl_args.extend_from_slice(&[
-                "--server".to_string(),
-                self.config.api_server.clone(),
-            ]);
+            kubectl_args
+                .extend_from_slice(&["--server".to_string(), self.config.api_server.clone()]);
         }
 
         kubectl_args.extend(args);
@@ -289,15 +290,10 @@ impl KubernetesRuntime {
         let timeout_duration = Duration::from_millis(30000); // 30 seconds timeout
 
         let output = timeout(timeout_duration, async {
-            Command::new("kubectl")
-                .args(&args)
-                .output()
-                .await
+            Command::new("kubectl").args(&args).output().await
         })
         .await
-        .map_err(|_| ExecutionError::ExecutionTimeout {
-            timeout_ms: 30000,
-        })?
+        .map_err(|_| ExecutionError::ExecutionTimeout { timeout_ms: 30000 })?
         .map_err(|e| ExecutionError::RuntimeError {
             message: format!("Failed to execute kubectl: {}", e),
         })?;
@@ -314,17 +310,31 @@ impl KubernetesRuntime {
     }
 
     /// Generate job manifest YAML / 生成作业清单 YAML
-    fn generate_job_manifest(&self, instance_config: &InstanceConfig, job_name: &str, execution_context: &ExecutionContext) -> String {
-        let image = instance_config.runtime_config.get("image")
+    fn generate_job_manifest(
+        &self,
+        instance_config: &InstanceConfig,
+        job_name: &str,
+        execution_context: &ExecutionContext,
+    ) -> String {
+        let image = instance_config
+            .runtime_config
+            .get("image")
             .and_then(|v| v.as_str())
             .unwrap_or(&self.config.default_image);
 
         let mut env_vars = Vec::new();
         for (key, value) in &self.runtime_config.global_environment {
-            env_vars.push(format!("        - name: {}\n          value: \"{}\"", key, value));
+            env_vars.push(format!(
+                "        - name: {}\n          value: \"{}\"",
+                key, value
+            ));
         }
         for (key, value) in &execution_context.headers {
-            env_vars.push(format!("        - name: HEADER_{}\n          value: \"{}\"", key.to_uppercase(), value));
+            env_vars.push(format!(
+                "        - name: HEADER_{}\n          value: \"{}\"",
+                key.to_uppercase(),
+                value
+            ));
         }
 
         let env_section = if env_vars.is_empty() {
@@ -333,7 +343,8 @@ impl KubernetesRuntime {
             format!("      env:\n{}", env_vars.join("\n"))
         };
 
-        format!(r#"apiVersion: batch/v1
+        format!(
+            r#"apiVersion: batch/v1
 kind: Job
 metadata:
   name: {}
@@ -394,12 +405,21 @@ spec:
             self.config.job_config.completion_mode,
             self.config.job_config.parallelism.unwrap_or(1),
             self.config.job_config.completions.unwrap_or(1),
-            self.config.job_config.active_deadline_seconds.unwrap_or(3600),
+            self.config
+                .job_config
+                .active_deadline_seconds
+                .unwrap_or(3600),
             self.config.job_config.backoff_limit.unwrap_or(3),
-            self.config.job_config.ttl_seconds_after_finished.unwrap_or(300),
+            self.config
+                .job_config
+                .ttl_seconds_after_finished
+                .unwrap_or(300),
             execution_context.execution_id,
             self.config.job_config.restart_policy,
-            self.config.service_account.as_ref().unwrap_or(&"default".to_string()),
+            self.config
+                .service_account
+                .as_ref()
+                .unwrap_or(&"default".to_string()),
             self.config.security_config.run_as_non_root,
             self.config.security_config.run_as_user.unwrap_or(1000),
             self.config.security_config.run_as_group.unwrap_or(1000),
@@ -413,21 +433,32 @@ spec:
             env_section,
             self.config.resource_config.cpu_request,
             self.config.resource_config.memory_request,
-            self.config.resource_config.ephemeral_storage_request.as_ref().unwrap_or(&"1Gi".to_string()),
+            self.config
+                .resource_config
+                .ephemeral_storage_request
+                .as_ref()
+                .unwrap_or(&"1Gi".to_string()),
             self.config.resource_config.cpu_limit,
             self.config.resource_config.memory_limit,
-            self.config.resource_config.ephemeral_storage_limit.as_ref().unwrap_or(&"2Gi".to_string()),
+            self.config
+                .resource_config
+                .ephemeral_storage_limit
+                .as_ref()
+                .unwrap_or(&"2Gi".to_string()),
         )
     }
 
     /// Get job status / 获取作业状态
     async fn get_job_status(&self, job_name: &str) -> ExecutionResult<String> {
-        let args = self.build_kubectl_args("get", vec![
-            "job".to_string(),
-            job_name.to_string(),
-            "-o".to_string(),
-            "jsonpath={.status.conditions[?(@.type==\"Complete\")].status}".to_string(),
-        ]);
+        let args = self.build_kubectl_args(
+            "get",
+            vec![
+                "job".to_string(),
+                job_name.to_string(),
+                "-o".to_string(),
+                "jsonpath={.status.conditions[?(@.type==\"Complete\")].status}".to_string(),
+            ],
+        );
 
         let output = self.execute_kubectl_command(args).await?;
         Ok(output.trim().to_string())
@@ -435,11 +466,14 @@ spec:
 
     /// Get job logs / 获取作业日志
     async fn get_job_logs(&self, job_name: &str) -> ExecutionResult<String> {
-        let args = self.build_kubectl_args("logs", vec![
-            format!("job/{}", job_name),
-            "--tail".to_string(),
-            "1000".to_string(),
-        ]);
+        let args = self.build_kubectl_args(
+            "logs",
+            vec![
+                format!("job/{}", job_name),
+                "--tail".to_string(),
+                "1000".to_string(),
+            ],
+        );
 
         let output = self.execute_kubectl_command(args).await?;
         Ok(output)
@@ -447,11 +481,14 @@ spec:
 
     /// Delete job / 删除作业
     async fn delete_job(&self, job_name: &str) -> ExecutionResult<()> {
-        let args = self.build_kubectl_args("delete", vec![
-            "job".to_string(),
-            job_name.to_string(),
-            "--ignore-not-found".to_string(),
-        ]);
+        let args = self.build_kubectl_args(
+            "delete",
+            vec![
+                "job".to_string(),
+                job_name.to_string(),
+                "--ignore-not-found".to_string(),
+            ],
+        );
 
         self.execute_kubectl_command(args).await?;
         Ok(())
@@ -464,24 +501,30 @@ impl Runtime for KubernetesRuntime {
         RuntimeType::Kubernetes
     }
 
-    async fn create_instance(
-        &self,
-        config: &InstanceConfig,
-    ) -> ExecutionResult<Arc<TaskInstance>> {
-        debug!("KubernetesRuntime::create_instance task_id={}", config.task_id);
+    async fn create_instance(&self, config: &InstanceConfig) -> ExecutionResult<Arc<TaskInstance>> {
+        debug!(
+            "KubernetesRuntime::create_instance task_id={}",
+            config.task_id
+        );
         let instance = TaskInstance::new(config.task_id.clone(), config.clone());
         Ok(Arc::new(instance))
     }
 
     async fn start_instance(&self, _instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        debug!("KubernetesRuntime::start_instance instance_id={}", _instance.id());
+        debug!(
+            "KubernetesRuntime::start_instance instance_id={}",
+            _instance.id()
+        );
         // Kubernetes jobs are started when executed, not pre-started
         // Kubernetes 作业在执行时启动，而不是预先启动
         Ok(())
     }
 
     async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        debug!("KubernetesRuntime::stop_instance instance_id={}", instance.id());
+        debug!(
+            "KubernetesRuntime::stop_instance instance_id={}",
+            instance.id()
+        );
         // Stop any running jobs for this instance
         // 停止此实例的任何正在运行的作业
         if let Some(handle) = instance.get_runtime_handle::<KubernetesJobHandle>() {
@@ -495,25 +538,29 @@ impl Runtime for KubernetesRuntime {
         instance: &Arc<TaskInstance>,
         context: ExecutionContext,
     ) -> ExecutionResult<RuntimeExecutionResponse> {
-        debug!("KubernetesRuntime::execute instance_id={} execution_id={}", instance.id(), context.execution_id);
+        debug!(
+            "KubernetesRuntime::execute instance_id={} execution_id={}",
+            instance.id(),
+            context.execution_id
+        );
         let start_time = Instant::now();
         let job_name = format!("spear-job-{}", context.execution_id);
 
         // Generate and apply job manifest
         // 生成并应用作业清单
         let manifest = self.generate_job_manifest(&instance.config, &job_name, &context);
-        
+
         // Write manifest to temporary file and apply it
         // 将清单写入临时文件并应用
         let temp_file = format!("/tmp/{}.yaml", job_name);
-        tokio::fs::write(&temp_file, manifest).await.map_err(|e| ExecutionError::RuntimeError {
-            message: format!("Failed to write job manifest: {}", e),
-        })?;
+        tokio::fs::write(&temp_file, manifest)
+            .await
+            .map_err(|e| ExecutionError::RuntimeError {
+                message: format!("Failed to write job manifest: {}", e),
+            })?;
 
-        let apply_args = self.build_kubectl_args("apply", vec![
-            "-f".to_string(),
-            temp_file.clone(),
-        ]);
+        let apply_args =
+            self.build_kubectl_args("apply", vec!["-f".to_string(), temp_file.clone()]);
 
         self.execute_kubectl_command(apply_args).await?;
 
@@ -533,7 +580,8 @@ impl Runtime for KubernetesRuntime {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
             Ok::<(), ExecutionError>(())
-        }).await;
+        })
+        .await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -542,7 +590,7 @@ impl Runtime for KubernetesRuntime {
                 // Job completed successfully, get logs
                 // 作业成功完成，获取日志
                 let logs = self.get_job_logs(&job_name).await.unwrap_or_default();
-                
+
                 // Clean up job
                 // 清理作业
                 let _ = self.delete_job(&job_name).await;
@@ -557,12 +605,12 @@ impl Runtime for KubernetesRuntime {
                 // Job timed out
                 // 作业超时
                 let _ = self.delete_job(&job_name).await;
-                
+
                 Ok(RuntimeExecutionResponse::new_failed(
                     context.execution_id,
                     super::ExecutionMode::Sync,
-                    super::RuntimeExecutionError::ExecutionTimeout { 
-                        timeout_ms: context.timeout_ms
+                    super::RuntimeExecutionError::ExecutionTimeout {
+                        timeout_ms: context.timeout_ms,
                     },
                     duration_ms,
                 ))
@@ -571,7 +619,10 @@ impl Runtime for KubernetesRuntime {
     }
 
     async fn health_check(&self, _instance: &Arc<TaskInstance>) -> ExecutionResult<bool> {
-        debug!("KubernetesRuntime::health_check instance_id={}", _instance.id());
+        debug!(
+            "KubernetesRuntime::health_check instance_id={}",
+            _instance.id()
+        );
         // Check if kubectl is available and cluster is accessible
         // 检查 kubectl 是否可用且集群是否可访问
         let args = vec!["cluster-info".to_string()];
@@ -585,12 +636,21 @@ impl Runtime for KubernetesRuntime {
         &self,
         _instance: &Arc<TaskInstance>,
     ) -> ExecutionResult<HashMap<String, serde_json::Value>> {
-        debug!("KubernetesRuntime::get_metrics instance_id={}", _instance.id());
+        debug!(
+            "KubernetesRuntime::get_metrics instance_id={}",
+            _instance.id()
+        );
         // Get cluster metrics
         // 获取集群指标
         let mut metrics = HashMap::new();
-        metrics.insert("runtime_type".to_string(), serde_json::Value::String("kubernetes".to_string()));
-        metrics.insert("namespace".to_string(), serde_json::Value::String(self.config.namespace.clone()));
+        metrics.insert(
+            "runtime_type".to_string(),
+            serde_json::Value::String("kubernetes".to_string()),
+        );
+        metrics.insert(
+            "namespace".to_string(),
+            serde_json::Value::String(self.config.namespace.clone()),
+        );
         Ok(metrics)
     }
 
@@ -599,7 +659,10 @@ impl Runtime for KubernetesRuntime {
         _instance: &Arc<TaskInstance>,
         _new_limits: &InstanceResourceLimits,
     ) -> ExecutionResult<()> {
-        debug!("KubernetesRuntime::scale_instance instance_id={}", _instance.id());
+        debug!(
+            "KubernetesRuntime::scale_instance instance_id={}",
+            _instance.id()
+        );
         // Kubernetes jobs don't support scaling after creation
         // Kubernetes 作业在创建后不支持扩缩容
         Err(ExecutionError::RuntimeError {
@@ -608,7 +671,10 @@ impl Runtime for KubernetesRuntime {
     }
 
     async fn cleanup_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        debug!("KubernetesRuntime::cleanup_instance instance_id={}", instance.id());
+        debug!(
+            "KubernetesRuntime::cleanup_instance instance_id={}",
+            instance.id()
+        );
         // Clean up any remaining jobs
         // 清理任何剩余的作业
         if let Some(handle) = instance.get_runtime_handle::<KubernetesJobHandle>() {
@@ -618,13 +684,18 @@ impl Runtime for KubernetesRuntime {
     }
 
     fn validate_config(&self, config: &InstanceConfig) -> ExecutionResult<()> {
-        debug!("KubernetesRuntime::validate_config task_id={}", config.task_id);
+        debug!(
+            "KubernetesRuntime::validate_config task_id={}",
+            config.task_id
+        );
         // Validate Kubernetes-specific configuration
         // 验证 Kubernetes 特定配置
-        let has_image = config.runtime_config.get("image")
+        let has_image = config
+            .runtime_config
+            .get("image")
             .and_then(|v| v.as_str())
             .is_some();
-            
+
         if !has_image && self.config.default_image.is_empty() {
             return Err(ExecutionError::InvalidConfiguration {
                 message: "No container image specified".to_string(),
@@ -657,7 +728,9 @@ impl Runtime for KubernetesRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::instance::{InstanceConfig, InstanceResourceLimits, NetworkConfig};
+    use crate::spearlet::execution::instance::{
+        InstanceConfig, InstanceResourceLimits, NetworkConfig,
+    };
 
     #[test]
     fn test_kubernetes_config_default() {
@@ -679,7 +752,7 @@ mod tests {
 
         let runtime = KubernetesRuntime::new(&runtime_config);
         assert!(runtime.is_ok());
-        
+
         let runtime = runtime.unwrap();
         assert_eq!(runtime.runtime_type(), RuntimeType::Kubernetes);
     }
@@ -698,8 +771,11 @@ mod tests {
 
         // Valid config
         let mut runtime_config_map = HashMap::new();
-        runtime_config_map.insert("image".to_string(), serde_json::Value::String("nginx:latest".to_string()));
-        
+        runtime_config_map.insert(
+            "image".to_string(),
+            serde_json::Value::String("nginx:latest".to_string()),
+        );
+
         let valid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
             artifact_id: "artifact-xyz".to_string(),
@@ -727,7 +803,7 @@ mod tests {
             max_concurrent_requests: 10,
             request_timeout_ms: 30000,
         };
-        
+
         // This should be valid because we have a default image
         assert!(runtime.validate_config(&invalid_config).is_ok());
     }
@@ -743,10 +819,13 @@ mod tests {
         };
 
         let runtime = KubernetesRuntime::new(&runtime_config).unwrap();
-        
+
         let mut runtime_config_map = HashMap::new();
-        runtime_config_map.insert("image".to_string(), serde_json::Value::String("nginx:latest".to_string()));
-        
+        runtime_config_map.insert(
+            "image".to_string(),
+            serde_json::Value::String("nginx:latest".to_string()),
+        );
+
         let instance_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
             artifact_id: "artifact-xyz".to_string(),
@@ -768,8 +847,9 @@ mod tests {
             context_data: HashMap::new(),
         };
 
-        let manifest = runtime.generate_job_manifest(&instance_config, "test-job", &execution_context);
-        
+        let manifest =
+            runtime.generate_job_manifest(&instance_config, "test-job", &execution_context);
+
         assert!(manifest.contains("kind: Job"));
         assert!(manifest.contains("test-job"));
         assert!(manifest.contains("nginx:latest"));
@@ -813,8 +893,12 @@ mod tests {
         assert!(!capabilities.supports_hot_reload);
         assert!(capabilities.supports_persistent_storage);
         assert!(capabilities.supports_network_isolation);
-        assert!(capabilities.supported_protocols.contains(&"http".to_string()));
-        assert!(capabilities.supported_protocols.contains(&"grpc".to_string()));
+        assert!(capabilities
+            .supported_protocols
+            .contains(&"http".to_string()));
+        assert!(capabilities
+            .supported_protocols
+            .contains(&"grpc".to_string()));
     }
 
     #[test]
@@ -828,7 +912,8 @@ mod tests {
         };
 
         let runtime = KubernetesRuntime::new(&runtime_config).unwrap();
-        let args = runtime.build_kubectl_args("apply", vec!["-f".to_string(), "manifest.yaml".to_string()]);
+        let args = runtime
+            .build_kubectl_args("apply", vec!["-f".to_string(), "manifest.yaml".to_string()]);
 
         assert!(args.contains(&"apply".to_string()));
         assert!(args.contains(&"-f".to_string()));
@@ -845,7 +930,10 @@ mod tests {
             default_image: "custom:image".to_string(),
             ..KubernetesConfig::default()
         };
-        settings.insert("kubernetes".to_string(), serde_json::to_value(k8s_config).unwrap());
+        settings.insert(
+            "kubernetes".to_string(),
+            serde_json::to_value(k8s_config).unwrap(),
+        );
 
         let runtime_config = RuntimeConfig {
             runtime_type: RuntimeType::Kubernetes,

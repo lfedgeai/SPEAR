@@ -5,8 +5,8 @@
 
 // Shared modules / 共享模块
 pub mod config;
-pub mod proto;
 pub mod network;
+pub mod proto;
 pub mod storage;
 pub mod utils;
 

@@ -10,7 +10,9 @@
 //! - **Protocol Agnostic**: Runtime responses can be adapted to different protocols (HTTP, gRPC, etc.)
 //! - **协议无关**: 运行时响应可以适配到不同协议（HTTP、gRPC 等）
 
-use crate::spearlet::execution::runtime::{RuntimeExecutionResponse, RuntimeExecutionError, ExecutionMode};
+use crate::spearlet::execution::runtime::{
+    ExecutionMode, RuntimeExecutionError, RuntimeExecutionResponse,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -73,33 +75,42 @@ impl HttpAdapter {
     /// Convert RuntimeExecutionError to error code and message / 将RuntimeExecutionError转换为错误代码和消息
     fn error_to_code_and_message(error: &RuntimeExecutionError) -> (String, String) {
         match error {
-            RuntimeExecutionError::InstanceNotFound { instance_id } => {
-                ("INSTANCE_NOT_FOUND".to_string(), format!("Instance not found: {}", instance_id))
-            },
-            RuntimeExecutionError::InstanceNotReady { instance_id } => {
-                ("INSTANCE_NOT_READY".to_string(), format!("Instance not ready: {}", instance_id))
-            },
-            RuntimeExecutionError::ExecutionTimeout { timeout_ms } => {
-                ("EXECUTION_TIMEOUT".to_string(), format!("Execution timeout: {}ms", timeout_ms))
-            },
-            RuntimeExecutionError::ResourceLimitExceeded { resource, limit } => {
-                ("RESOURCE_LIMIT_EXCEEDED".to_string(), format!("Resource limit exceeded: {} (limit: {})", resource, limit))
-            },
+            RuntimeExecutionError::InstanceNotFound { instance_id } => (
+                "INSTANCE_NOT_FOUND".to_string(),
+                format!("Instance not found: {}", instance_id),
+            ),
+            RuntimeExecutionError::InstanceNotReady { instance_id } => (
+                "INSTANCE_NOT_READY".to_string(),
+                format!("Instance not ready: {}", instance_id),
+            ),
+            RuntimeExecutionError::ExecutionTimeout { timeout_ms } => (
+                "EXECUTION_TIMEOUT".to_string(),
+                format!("Execution timeout: {}ms", timeout_ms),
+            ),
+            RuntimeExecutionError::ResourceLimitExceeded { resource, limit } => (
+                "RESOURCE_LIMIT_EXCEEDED".to_string(),
+                format!("Resource limit exceeded: {} (limit: {})", resource, limit),
+            ),
             RuntimeExecutionError::ConfigurationError { message } => {
                 ("CONFIGURATION_ERROR".to_string(), message.clone())
-            },
+            }
             RuntimeExecutionError::RuntimeError { message } => {
                 ("RUNTIME_ERROR".to_string(), message.clone())
-            },
-            RuntimeExecutionError::IoError { message } => {
-                ("IO_ERROR".to_string(), message.clone())
-            },
+            }
+            RuntimeExecutionError::IoError { message } => ("IO_ERROR".to_string(), message.clone()),
             RuntimeExecutionError::SerializationError { message } => {
                 ("SERIALIZATION_ERROR".to_string(), message.clone())
-            },
-            RuntimeExecutionError::UnsupportedOperation { operation, runtime_type } => {
-                ("UNSUPPORTED_OPERATION".to_string(), format!("Operation '{}' not supported by runtime '{}'", operation, runtime_type))
-            },
+            }
+            RuntimeExecutionError::UnsupportedOperation {
+                operation,
+                runtime_type,
+            } => (
+                "UNSUPPORTED_OPERATION".to_string(),
+                format!(
+                    "Operation '{}' not supported by runtime '{}'",
+                    operation, runtime_type
+                ),
+            ),
         }
     }
 
@@ -122,20 +133,30 @@ impl HttpAdapter {
         };
 
         let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/octet-stream".to_string());
-        headers.insert("X-Execution-ID".to_string(), runtime_response.execution_id.clone());
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/octet-stream".to_string(),
+        );
+        headers.insert(
+            "X-Execution-ID".to_string(),
+            runtime_response.execution_id.clone(),
+        );
         headers.insert("X-Execution-Mode".to_string(), "sync".to_string());
-        headers.insert("X-Duration-Ms".to_string(), runtime_response.duration_ms.to_string());
+        headers.insert(
+            "X-Duration-Ms".to_string(),
+            runtime_response.duration_ms.to_string(),
+        );
 
         let body = if let Some(error) = &runtime_response.error {
             let (error_code, error_message) = Self::error_to_code_and_message(error);
-            
+
             serde_json::to_vec(&HttpErrorResponse {
                 error_code,
                 error_message,
                 execution_id: runtime_response.execution_id.clone(),
                 details: HashMap::new(),
-            }).unwrap_or_default()
+            })
+            .unwrap_or_default()
         } else {
             runtime_response.data.clone()
         };
@@ -152,7 +173,10 @@ impl HttpAdapter {
     fn async_to_http(runtime_response: &RuntimeExecutionResponse) -> HttpResponse {
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        headers.insert("X-Execution-ID".to_string(), runtime_response.execution_id.clone());
+        headers.insert(
+            "X-Execution-ID".to_string(),
+            runtime_response.execution_id.clone(),
+        );
         headers.insert("X-Execution-Mode".to_string(), "async".to_string());
 
         let status_response = AsyncStatusResponse {
@@ -200,7 +224,10 @@ impl HttpAdapter {
         headers.insert("Content-Type".to_string(), "text/event-stream".to_string());
         headers.insert("Cache-Control".to_string(), "no-cache".to_string());
         headers.insert("Connection".to_string(), "keep-alive".to_string());
-        headers.insert("X-Execution-ID".to_string(), runtime_response.execution_id.clone());
+        headers.insert(
+            "X-Execution-ID".to_string(),
+            runtime_response.execution_id.clone(),
+        );
         headers.insert("X-Execution-Mode".to_string(), "stream".to_string());
 
         let status_code = if runtime_response.has_failed() {
@@ -221,7 +248,10 @@ impl HttpAdapter {
     fn unknown_to_http(runtime_response: &RuntimeExecutionResponse) -> HttpResponse {
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        headers.insert("X-Execution-ID".to_string(), runtime_response.execution_id.clone());
+        headers.insert(
+            "X-Execution-ID".to_string(),
+            runtime_response.execution_id.clone(),
+        );
         headers.insert("X-Execution-Mode".to_string(), "unknown".to_string());
 
         let error_response = HttpErrorResponse {
@@ -248,10 +278,19 @@ impl HttpAdapter {
         };
 
         let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/octet-stream".to_string());
-        headers.insert("X-Execution-ID".to_string(), execution_response.request_id.clone());
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/octet-stream".to_string(),
+        );
+        headers.insert(
+            "X-Execution-ID".to_string(),
+            execution_response.request_id.clone(),
+        );
         headers.insert("X-Execution-Mode".to_string(), "sync".to_string());
-        headers.insert("X-Duration-Ms".to_string(), execution_response.execution_time_ms.to_string());
+        headers.insert(
+            "X-Duration-Ms".to_string(),
+            execution_response.execution_time_ms.to_string(),
+        );
 
         let body = if execution_response.is_successful() {
             execution_response.output_data.clone()
@@ -261,21 +300,27 @@ impl HttpAdapter {
                 error_message: execution_response.error_message.clone().unwrap_or_default(),
                 execution_id: execution_response.request_id.clone(),
                 details: HashMap::new(),
-            }).unwrap_or_default()
+            })
+            .unwrap_or_default()
         };
 
         HttpResponse {
             status_code,
             headers,
             body,
-            metadata: execution_response.metadata.iter()
+            metadata: execution_response
+                .metadata
+                .iter()
                 .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
                 .collect(),
         }
     }
 
     /// Convert to async status response / 转换为异步状态响应
-    pub fn to_async_status_response(&self, runtime_response: &RuntimeExecutionResponse) -> AsyncStatusResponse {
+    pub fn to_async_status_response(
+        &self,
+        runtime_response: &RuntimeExecutionResponse,
+    ) -> AsyncStatusResponse {
         AsyncStatusResponse {
             execution_id: runtime_response.execution_id.clone(),
             task_id: runtime_response.task_id.clone(),
@@ -352,10 +397,13 @@ mod tests {
         );
 
         let http_response = HttpAdapter::to_http_response(&runtime_response);
-        
+
         assert_eq!(http_response.status_code, 200);
         assert_eq!(http_response.body, b"Hello, World!");
-        assert_eq!(http_response.headers.get("X-Execution-Mode"), Some(&"sync".to_string()));
+        assert_eq!(
+            http_response.headers.get("X-Execution-Mode"),
+            Some(&"sync".to_string())
+        );
     }
 
     #[test]
@@ -368,11 +416,15 @@ mod tests {
         );
 
         let http_response = HttpAdapter::to_http_response(&runtime_response);
-        
+
         assert_eq!(http_response.status_code, 202);
-        assert_eq!(http_response.headers.get("X-Execution-Mode"), Some(&"async".to_string()));
-        
-        let status_response: AsyncStatusResponse = serde_json::from_slice(&http_response.body).unwrap();
+        assert_eq!(
+            http_response.headers.get("X-Execution-Mode"),
+            Some(&"async".to_string())
+        );
+
+        let status_response: AsyncStatusResponse =
+            serde_json::from_slice(&http_response.body).unwrap();
         assert_eq!(status_response.execution_id, "test-exec-456");
         assert_eq!(status_response.task_id, Some("task-789".to_string()));
     }
@@ -382,17 +434,18 @@ mod tests {
         let runtime_response = RuntimeExecutionResponse::new_failed(
             "test-exec-error".to_string(),
             ExecutionMode::Sync,
-            RuntimeExecutionError::RuntimeError { 
-                message: "Something went wrong".to_string() 
+            RuntimeExecutionError::RuntimeError {
+                message: "Something went wrong".to_string(),
             },
             100,
         );
 
         let http_response = HttpAdapter::to_http_response(&runtime_response);
-        
+
         assert_eq!(http_response.status_code, 500);
-        
-        let error_response: HttpErrorResponse = serde_json::from_slice(&http_response.body).unwrap();
+
+        let error_response: HttpErrorResponse =
+            serde_json::from_slice(&http_response.body).unwrap();
         assert_eq!(error_response.error_code, "RUNTIME_ERROR");
         assert_eq!(error_response.error_message, "Something went wrong");
     }

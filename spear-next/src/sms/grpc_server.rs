@@ -1,14 +1,13 @@
 //! gRPC server implementation for SMS (SPEAR Metadata Server)
 //! SMS（SPEAR元数据服务器）的gRPC服务器实现
 
-use std::net::SocketAddr;
 use anyhow::Result;
+use std::net::SocketAddr;
 use tonic::transport::Server;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::proto::sms::{
-    node_service_server::NodeServiceServer,
-    task_service_server::TaskServiceServer,
+    node_service_server::NodeServiceServer, task_service_server::TaskServiceServer,
 };
 
 use crate::sms::service::SmsServiceImpl;
@@ -21,10 +20,7 @@ pub struct GrpcServer {
 impl GrpcServer {
     /// Create a new gRPC server / 创建新的gRPC服务器
     pub fn new(addr: SocketAddr, sms_service: SmsServiceImpl) -> Self {
-        Self {
-            addr,
-            sms_service,
-        }
+        Self { addr, sms_service }
     }
 
     /// Start the gRPC server / 启动gRPC服务器

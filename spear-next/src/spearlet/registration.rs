@@ -11,8 +11,7 @@ use tonic::transport::Channel;
 use tracing::{debug, error, info, warn};
 
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, HeartbeatRequest, Node,
-    RegisterNodeRequest,
+    node_service_client::NodeServiceClient, HeartbeatRequest, Node, RegisterNodeRequest,
 };
 use crate::spearlet::config::SpearletConfig;
 
@@ -68,7 +67,7 @@ pub struct RegistrationService {
     /// Node service client / 节点服务客户端
     node_client: Arc<RwLock<Option<NodeServiceClient<Channel>>>>,
     /// Current registration state / 当前注册状态
-    state: Arc<RwLock<RegistrationState>>, 
+    state: Arc<RwLock<RegistrationState>>,
     /// Disconnection start time / 断线开始时间
     disconnect_since: Arc<RwLock<Option<Instant>>>,
 }
@@ -78,7 +77,12 @@ impl RegistrationService {
         if let Ok(u) = uuid::Uuid::parse_str(&config.node_name) {
             return u.to_string();
         }
-        let base = format!("{}:{}:{}", config.grpc.addr.ip(), config.grpc.addr.port(), config.node_name);
+        let base = format!(
+            "{}:{}:{}",
+            config.grpc.addr.ip(),
+            config.grpc.addr.port(),
+            config.node_name
+        );
         uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, base.as_bytes()).to_string()
     }
     /// Create new registration service / 创建新的注册服务
@@ -97,7 +101,6 @@ impl RegistrationService {
 
         // Connect to SMS / 连接到SMS
         self.connect_to_sms().await?;
-
 
         // Start registration and heartbeat tasks / 启动注册和心跳任务
         if self.config.auto_register {
@@ -125,11 +128,17 @@ impl RegistrationService {
                 Err(e) => {
                     last_err = Some(Box::new(e));
                     warn!("Retrying SMS connection...");
-                    tokio::time::sleep(Duration::from_millis(self.config.sms_connect_retry_ms)).await;
+                    tokio::time::sleep(Duration::from_millis(self.config.sms_connect_retry_ms))
+                        .await;
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "unknown error"))))
+        Err(last_err.unwrap_or_else(|| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "unknown error",
+            ))
+        }))
     }
 
     // kept for clarity: start() already calls connect_to_sms() / start()已调用connect_to_sms()
@@ -164,9 +173,14 @@ impl RegistrationService {
                         if node_client.read().await.is_none() {
                             if let Err(e) = Self::attempt_reconnect(&config, &node_client).await {
                                 warn!("Reconnect to SMS failed: {}", e);
-                                *state.write().await = RegistrationState::Failed { error: e.to_string(), last_attempt: Instant::now() };
+                                *state.write().await = RegistrationState::Failed {
+                                    error: e.to_string(),
+                                    last_attempt: Instant::now(),
+                                };
                                 // mark disconnect start if not set / 若未设置则标记断线开始
-                                if disconnect_since.read().await.is_none() { *disconnect_since.write().await = Some(Instant::now()); }
+                                if disconnect_since.read().await.is_none() {
+                                    *disconnect_since.write().await = Some(Instant::now());
+                                }
                                 continue;
                             }
                             // reconnected, clear disconnect_since / 重连成功，清除断线标记
@@ -182,20 +196,33 @@ impl RegistrationService {
                     }
                     RegistrationState::Registered { .. } => {
                         // Send heartbeat / 发送心跳
-        debug!("Heartbeat tick: interval={}s, node_name={}, sms_grpc_addr={}", config.heartbeat_interval, config.node_name, config.sms_grpc_addr);
+                        debug!(
+                            "Heartbeat tick: interval={}s, node_name={}, sms_grpc_addr={}",
+                            config.heartbeat_interval, config.node_name, config.sms_grpc_addr
+                        );
                         if let Err(e) = Self::send_heartbeat(&config, &node_client, &state).await {
                             warn!("Heartbeat failed: {}", e);
                             // Try reconnect immediately / 立即尝试重连
                             if let Err(re) = Self::attempt_reconnect(&config, &node_client).await {
                                 warn!("Reconnect to SMS failed after heartbeat error: {}", re);
-                                *state.write().await = RegistrationState::Failed { error: re.to_string(), last_attempt: Instant::now() };
-                                if disconnect_since.read().await.is_none() { *disconnect_since.write().await = Some(Instant::now()); }
+                                *state.write().await = RegistrationState::Failed {
+                                    error: re.to_string(),
+                                    last_attempt: Instant::now(),
+                                };
+                                if disconnect_since.read().await.is_none() {
+                                    *disconnect_since.write().await = Some(Instant::now());
+                                }
                             } else {
                                 // Re-register immediately after reconnect / 重连成功后立即重新注册
                                 *disconnect_since.write().await = None;
-                                if let Err(e) = Self::register_node(&config, &node_client, &state).await {
+                                if let Err(e) =
+                                    Self::register_node(&config, &node_client, &state).await
+                                {
                                     error!("Re-registration failed after reconnect: {}", e);
-                                    *state.write().await = RegistrationState::Failed { error: e.to_string(), last_attempt: Instant::now() };
+                                    *state.write().await = RegistrationState::Failed {
+                                        error: e.to_string(),
+                                        last_attempt: Instant::now(),
+                                    };
                                 } else {
                                     info!("Re-registered successfully after reconnect");
                                 }
@@ -220,9 +247,7 @@ impl RegistrationService {
         *state.write().await = RegistrationState::Registering;
 
         let mut client_guard = node_client.write().await;
-        let client = client_guard
-            .as_mut()
-            .ok_or("Node client not connected")?;
+        let client = client_guard.as_mut().ok_or("Node client not connected")?;
 
         let node_addr = config.grpc.addr;
         let node_uuid = Self::compute_node_uuid(config);
@@ -261,14 +286,19 @@ impl RegistrationService {
         state: &Arc<RwLock<RegistrationState>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut client_guard = node_client.write().await;
-        let client = client_guard
-            .as_mut()
-            .ok_or("Node client not connected")?;
+        let client = client_guard.as_mut().ok_or("Node client not connected")?;
 
         let node_uuid = Self::compute_node_uuid(config);
         let ts = chrono::Utc::now().timestamp();
-        debug!("Sending heartbeat: uuid={}, node_name={}, ts={}, sms_grpc_addr={}", node_uuid, config.node_name, ts, config.sms_grpc_addr);
-        let request = tonic::Request::new(HeartbeatRequest { uuid: node_uuid.clone(), timestamp: ts, health_info: std::collections::HashMap::new() });
+        debug!(
+            "Sending heartbeat: uuid={}, node_name={}, ts={}, sms_grpc_addr={}",
+            node_uuid, config.node_name, ts, config.sms_grpc_addr
+        );
+        let request = tonic::Request::new(HeartbeatRequest {
+            uuid: node_uuid.clone(),
+            timestamp: ts,
+            health_info: std::collections::HashMap::new(),
+        });
 
         let resp = client.heartbeat(request).await?;
         let server_ts = resp.get_ref().server_timestamp;
@@ -309,7 +339,12 @@ impl RegistrationService {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "reconnect failed"))))
+        Err(last_err.unwrap_or_else(|| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "reconnect failed",
+            ))
+        }))
     }
 
     /// Get current registration state / 获取当前注册状态

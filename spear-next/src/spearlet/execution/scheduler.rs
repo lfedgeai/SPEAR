@@ -234,7 +234,9 @@ impl InstanceScheduler {
         // Add to task pool / 添加到任务池
         {
             let mut pools = self.pools.write().await;
-            let pool = pools.entry(task_id.clone()).or_insert_with(|| TaskInstancePool::new(task_id));
+            let pool = pools
+                .entry(task_id.clone())
+                .or_insert_with(|| TaskInstancePool::new(task_id));
             pool.add_instance(instance);
         } // 释放 pools 锁 / Release pools lock
 
@@ -258,7 +260,7 @@ impl InstanceScheduler {
                 let mut pools = self.pools.write().await;
                 if let Some(pool) = pools.get_mut(task_id) {
                     pool.remove_instance(instance_id);
-                    
+
                     // Remove empty pools / 移除空池
                     if pool.is_empty() {
                         pools.remove(task_id);
@@ -276,7 +278,10 @@ impl InstanceScheduler {
     }
 
     /// Select best instance for task execution / 为任务执行选择最佳实例
-    pub async fn select_instance(&self, task: &Arc<Task>) -> ExecutionResult<Option<Arc<TaskInstance>>> {
+    pub async fn select_instance(
+        &self,
+        task: &Arc<Task>,
+    ) -> ExecutionResult<Option<Arc<TaskInstance>>> {
         let start_time = Instant::now();
         let decision_id = self.decision_counter.fetch_add(1, Ordering::SeqCst);
 
@@ -290,12 +295,12 @@ impl InstanceScheduler {
             let mut metrics = self.metrics.write();
             metrics.total_decisions += 1;
             metrics.total_decision_time_ms += decision_time_ms;
-            metrics.average_decision_time_ms = 
+            metrics.average_decision_time_ms =
                 metrics.total_decision_time_ms as f64 / metrics.total_decisions as f64;
 
             match &result {
                 Ok(Some(_)) => metrics.successful_decisions += 1,
-                Ok(None) => {}, // No available instances / 没有可用实例
+                Ok(None) => {} // No available instances / 没有可用实例
                 Err(_) => metrics.failed_decisions += 1,
             }
         }
@@ -305,14 +310,19 @@ impl InstanceScheduler {
             decision_id,
             task.id(),
             decision_time_ms,
-            result.as_ref().map(|opt| opt.as_ref().map(|inst| inst.id()))
+            result
+                .as_ref()
+                .map(|opt| opt.as_ref().map(|inst| inst.id()))
         );
 
         result
     }
 
     /// Internal instance selection logic / 内部实例选择逻辑
-    async fn select_instance_internal(&self, task: &Arc<Task>) -> ExecutionResult<Option<Arc<TaskInstance>>> {
+    async fn select_instance_internal(
+        &self,
+        task: &Arc<Task>,
+    ) -> ExecutionResult<Option<Arc<TaskInstance>>> {
         let pools = self.pools.read().await;
         let pool = match pools.get(task.id()) {
             Some(pool) => pool,
@@ -328,9 +338,9 @@ impl InstanceScheduler {
         let available_instances: Vec<_> = instances
             .iter()
             .filter(|instance| {
-                instance.status() == InstanceStatus::Running &&
-                instance.is_healthy() &&
-                instance.is_ready()
+                instance.status() == InstanceStatus::Running
+                    && instance.is_healthy()
+                    && instance.is_ready()
             })
             .cloned()
             .collect();
@@ -351,14 +361,13 @@ impl InstanceScheduler {
                 self.select_least_response_time(&available_instances).await
             }
             SchedulingPolicy::WeightedRoundRobin => {
-                self.select_weighted_round_robin(&available_instances, pool).await
+                self.select_weighted_round_robin(&available_instances, pool)
+                    .await
             }
             SchedulingPolicy::ResourceBased => {
                 self.select_resource_based(&available_instances).await
             }
-            SchedulingPolicy::Random => {
-                self.select_random(&available_instances).await
-            }
+            SchedulingPolicy::Random => self.select_random(&available_instances).await,
         };
 
         Ok(selected)
@@ -380,7 +389,10 @@ impl InstanceScheduler {
     }
 
     /// Least connections selection / 最少连接选择
-    async fn select_least_connections(&self, instances: &[Arc<TaskInstance>]) -> Option<Arc<TaskInstance>> {
+    async fn select_least_connections(
+        &self,
+        instances: &[Arc<TaskInstance>],
+    ) -> Option<Arc<TaskInstance>> {
         instances
             .iter()
             .min_by_key(|instance| instance.get_metrics().active_requests)
@@ -388,12 +400,16 @@ impl InstanceScheduler {
     }
 
     /// Least response time selection / 最短响应时间选择
-    async fn select_least_response_time(&self, instances: &[Arc<TaskInstance>]) -> Option<Arc<TaskInstance>> {
+    async fn select_least_response_time(
+        &self,
+        instances: &[Arc<TaskInstance>],
+    ) -> Option<Arc<TaskInstance>> {
         instances
             .iter()
             .min_by(|a, b| {
-                a.get_metrics().avg_request_time_ms
-                     .partial_cmp(&b.get_metrics().avg_request_time_ms)
+                a.get_metrics()
+                    .avg_request_time_ms
+                    .partial_cmp(&b.get_metrics().avg_request_time_ms)
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .cloned()
@@ -415,7 +431,8 @@ impl InstanceScheduler {
             return self.select_round_robin(instances, pool).await;
         }
 
-        let target_weight = (pool.round_robin_index.fetch_add(1, Ordering::SeqCst) as u32) % total_weight;
+        let target_weight =
+            (pool.round_robin_index.fetch_add(1, Ordering::SeqCst) as u32) % total_weight;
         let mut current_weight = 0;
 
         for instance in instances {
@@ -429,13 +446,18 @@ impl InstanceScheduler {
     }
 
     /// Resource-based selection / 基于资源的选择
-    async fn select_resource_based(&self, instances: &[Arc<TaskInstance>]) -> Option<Arc<TaskInstance>> {
+    async fn select_resource_based(
+        &self,
+        instances: &[Arc<TaskInstance>],
+    ) -> Option<Arc<TaskInstance>> {
         instances
             .iter()
             .min_by(|a, b| {
                 let load_a = a.get_load();
                 let load_b = b.get_load();
-                load_a.partial_cmp(&load_b).unwrap_or(std::cmp::Ordering::Equal)
+                load_a
+                    .partial_cmp(&load_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .cloned()
     }
@@ -484,10 +506,11 @@ impl InstanceScheduler {
             let pools = self.pools.read().await;
             pools.len() as u64
         }; // 释放 pools 锁 / Release pools lock
-        
+
         let total_instances = self.instances.len() as u64;
 
-        let (available_instances, busy_instances) = self.instances
+        let (available_instances, busy_instances) = self
+            .instances
             .iter()
             .map(|entry| entry.value().clone())
             .fold((0, 0), |(available, busy), instance| {
@@ -524,7 +547,7 @@ mod tests {
     use crate::spearlet::execution::{
         artifact::{Artifact, ArtifactSpec},
         instance::{InstanceConfig, InstanceResourceLimits},
-        task::{TaskSpec, TaskType, ScalingConfig, HealthCheckConfig, TimeoutConfig},
+        task::{HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig},
     };
     use std::collections::HashMap;
 
@@ -539,8 +562,8 @@ mod tests {
             resource_limits: InstanceResourceLimits {
                 max_cpu_cores: 1.0,
                 max_memory_bytes: 512 * 1024 * 1024, // 512MB in bytes
-                max_disk_bytes: 1024 * 1024 * 1024, // 1GB in bytes
-                max_network_bps: 1000000, // 1Mbps
+                max_disk_bytes: 1024 * 1024 * 1024,  // 1GB in bytes
+                max_network_bps: 1000000,            // 1Mbps
             },
             network_config: Default::default(),
             max_concurrent_requests: 10,
@@ -548,12 +571,12 @@ mod tests {
         };
         // TaskInstance::new automatically generates a unique ID / TaskInstance::new 自动生成唯一ID
         let instance = Arc::new(TaskInstance::new(task_id, config));
-        
+
         // 设置实例状态为Running且健康，以满足调度器的过滤条件
         // Set instance status to Running and healthy to meet scheduler filtering conditions
         instance.set_status(InstanceStatus::Running);
         instance.set_health_status(crate::spearlet::execution::instance::HealthStatus::Healthy);
-        
+
         instance
     }
 

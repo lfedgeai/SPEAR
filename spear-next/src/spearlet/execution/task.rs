@@ -4,8 +4,8 @@
 //! A Task represents a logical execution unit within an artifact.
 //! Task 表示 artifact 内的逻辑执行单元。
 
-use super::{ExecutionError, ExecutionResult, ArtifactId, InstanceId, RuntimeType};
 use super::artifact::InvocationType;
+use super::{ArtifactId, ExecutionError, ExecutionResult, InstanceId, RuntimeType};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -138,8 +138,8 @@ impl Default for HealthCheckConfig {
     fn default() -> Self {
         Self {
             endpoint: None,
-            interval_ms: 30000,  // 30 seconds
-            timeout_ms: 5000,    // 5 seconds
+            interval_ms: 30000, // 30 seconds
+            timeout_ms: 5000,   // 5 seconds
             failure_threshold: 3,
             success_threshold: 1,
         }
@@ -160,9 +160,9 @@ pub struct TimeoutConfig {
 impl Default for TimeoutConfig {
     fn default() -> Self {
         Self {
-            init_timeout_ms: 30000,     // 30 seconds
+            init_timeout_ms: 30000,       // 30 seconds
             execution_timeout_ms: 300000, // 5 minutes
-            shutdown_timeout_ms: 10000,  // 10 seconds
+            shutdown_timeout_ms: 10000,   // 10 seconds
         }
     }
 }
@@ -240,7 +240,7 @@ impl Task {
     pub fn new(artifact_id: ArtifactId, spec: TaskSpec) -> Self {
         let id = format!("task-{}", Uuid::new_v4());
         let now = SystemTime::now();
-        
+
         Self {
             id,
             artifact_id,
@@ -289,18 +289,19 @@ impl Task {
 
         self.instances.insert(instance.id.clone(), instance);
         *self.updated_at.write() = SystemTime::now();
-        
+
         // Update active instances count / 更新活跃实例数
         self.update_metrics(|metrics| {
             metrics.active_instances = self.instances.len() as u32;
         });
-        
+
         Ok(())
     }
 
     /// Remove an instance from this task / 从此 Task 移除实例
     pub fn remove_instance(&self, instance_id: &str) -> ExecutionResult<Arc<super::TaskInstance>> {
-        let instance = self.instances
+        let instance = self
+            .instances
             .remove(instance_id)
             .map(|(_, instance)| {
                 *self.updated_at.write() = SystemTime::now();
@@ -309,23 +310,28 @@ impl Task {
             .ok_or_else(|| ExecutionError::InstanceNotFound {
                 id: instance_id.to_string(),
             })?;
-        
+
         // Update active instances count / 更新活跃实例数
         self.update_metrics(|metrics| {
             metrics.active_instances = self.instances.len() as u32;
         });
-        
+
         Ok(instance)
     }
 
     /// Get an instance by ID / 根据 ID 获取实例
     pub fn get_instance(&self, instance_id: &str) -> Option<Arc<super::TaskInstance>> {
-        self.instances.get(instance_id).map(|entry| entry.value().clone())
+        self.instances
+            .get(instance_id)
+            .map(|entry| entry.value().clone())
     }
 
     /// List all instances / 列出所有实例
     pub fn list_instances(&self) -> Vec<Arc<super::TaskInstance>> {
-        self.instances.iter().map(|entry| entry.value().clone()).collect()
+        self.instances
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
     }
 
     /// Get the number of instances in this task / 获取此 Task 中的实例数量
@@ -337,7 +343,7 @@ impl Task {
     pub fn create_instance_config(&self) -> super::instance::InstanceConfig {
         use super::instance::{InstanceConfig, InstanceResourceLimits, NetworkConfig};
         use std::collections::HashMap;
-        
+
         let mut env = self.spec.environment.clone();
         env.insert("TASK_ID".to_string(), self.id.clone());
 
@@ -399,16 +405,18 @@ impl Task {
 
         let metrics = self.get_metrics();
         let config = &self.spec.scaling_config;
-        
+
         // Check if we need to scale up / 检查是否需要扩容
         let should_scale_up = (metrics.cpu_usage_percent > config.scale_up_cpu_threshold
-            || metrics.memory_usage_bytes as f64 / (1024.0 * 1024.0 * 1024.0) > config.scale_up_memory_threshold
+            || metrics.memory_usage_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+                > config.scale_up_memory_threshold
             || metrics.queue_length > config.scale_up_queue_threshold)
             && metrics.active_instances < self.spec.max_instances;
 
         // Check if we need to scale down / 检查是否需要缩容
         let should_scale_down = (metrics.cpu_usage_percent < config.scale_down_cpu_threshold
-            && metrics.memory_usage_bytes as f64 / (1024.0 * 1024.0 * 1024.0) < config.scale_down_memory_threshold
+            && metrics.memory_usage_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+                < config.scale_down_memory_threshold
             && metrics.queue_length < config.scale_down_queue_threshold)
             && metrics.active_instances > self.spec.min_instances;
 
@@ -440,10 +448,12 @@ impl Task {
     pub fn is_scaling_cooldown_over(&self) -> bool {
         let metrics = self.metrics.read();
         if let Some(last_scaling) = metrics.last_scaling_time {
-            let cooldown_duration = Duration::from_millis(self.spec.scaling_config.cooldown_period_ms);
+            let cooldown_duration =
+                Duration::from_millis(self.spec.scaling_config.cooldown_period_ms);
             SystemTime::now()
                 .duration_since(last_scaling)
-                .unwrap_or_default() >= cooldown_duration
+                .unwrap_or_default()
+                >= cooldown_duration
         } else {
             true // No previous scaling operation / 没有之前的扩缩容操作
         }
@@ -500,7 +510,7 @@ mod tests {
         let task = Task::new("artifact-123".to_string(), spec);
         let id1 = task.generate_instance_id();
         let id2 = task.generate_instance_id();
-        
+
         assert_ne!(id1, id2);
         assert!(id1.contains(&task.id));
         assert!(id2.contains(&task.id));
@@ -525,35 +535,35 @@ mod tests {
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
         };
-        
+
         spec.scaling_config.scale_up_cpu_threshold = 70.0;
         spec.scaling_config.scale_down_cpu_threshold = 30.0;
 
         let task = Task::new("artifact-123".to_string(), spec);
         task.set_status(TaskStatus::Running);
-        
+
         // Test scale up condition / 测试扩容条件
         task.update_metrics(|metrics| {
             metrics.cpu_usage_percent = 80.0;
             metrics.active_instances = 2;
         });
-        
+
         assert_eq!(task.needs_scaling(), Some(true));
-        
+
         // Test scale down condition / 测试缩容条件
         task.update_metrics(|metrics| {
             metrics.cpu_usage_percent = 20.0;
             metrics.active_instances = 5;
         });
-        
+
         assert_eq!(task.needs_scaling(), Some(false));
-        
+
         // Test no scaling needed / 测试不需要扩缩容
         task.update_metrics(|metrics| {
             metrics.cpu_usage_percent = 50.0;
             metrics.active_instances = 3;
         });
-        
+
         assert_eq!(task.needs_scaling(), None);
     }
 
@@ -577,6 +587,9 @@ mod tests {
 
         let task = Task::new("artifact-123".to_string(), spec);
         let cfg = task.create_instance_config();
-        assert_eq!(cfg.environment.get("TASK_ID").cloned(), Some(task.id().to_string()));
+        assert_eq!(
+            cfg.environment.get("TASK_ID").cloned(),
+            Some(task.id().to_string())
+        );
     }
 }

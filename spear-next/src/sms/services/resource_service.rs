@@ -5,13 +5,13 @@
 //!
 //! 此模块提供ResourceHandler，实现集群中节点的所有资源监控和管理操作。
 
+use crate::sms::services::error::SmsError;
+use crate::storage::{serialization, KvStore, MemoryKvStore};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::storage::{KvStore, serialization, MemoryKvStore};
-use crate::sms::services::error::SmsError;
 
 /// Resource namespace constants / 资源命名空间常量
 mod namespace {
@@ -20,15 +20,14 @@ mod namespace {
 
 /// Key generation utilities / 键生成工具
 mod keys {
-    use uuid::Uuid;
     use super::namespace;
-    
+    use uuid::Uuid;
+
     /// Generate resource key / 生成资源键
     pub fn resource_key(uuid: &Uuid) -> String {
         format!("{}{}", namespace::RESOURCE_PREFIX, uuid)
     }
 }
-
 
 /// Node resource information / 节点资源信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,9 +118,9 @@ impl NodeResourceInfo {
 
     /// Check if node is under high load / 检查节点是否处于高负载状态
     pub fn is_high_load(&self) -> bool {
-        self.cpu_usage_percent > 80.0 || 
-        self.memory_usage_percent > 85.0 || 
-        self.load_average_1m > 4.0
+        self.cpu_usage_percent > 80.0
+            || self.memory_usage_percent > 85.0
+            || self.load_average_1m > 4.0
     }
 }
 
@@ -152,7 +151,9 @@ impl ResourceService {
     /// Create a new resource service with RocksDB backend / 创建使用RocksDB后端的新资源服务
     #[cfg(feature = "rocksdb")]
     pub fn new_with_rocksdb(db_path: &str) -> Result<Self, SmsError> {
-        let kv_store = create_kv_store(KvStoreType::RocksDb { path: db_path.to_string() })?;
+        let kv_store = create_kv_store(KvStoreType::RocksDb {
+            path: db_path.to_string(),
+        })?;
         Ok(Self {
             kv_store: Arc::from(kv_store),
         })
@@ -161,7 +162,9 @@ impl ResourceService {
     /// Create a new resource service with Sled backend / 创建使用Sled后端的新资源服务
     #[cfg(feature = "sled")]
     pub fn new_with_sled(db_path: &str) -> Result<Self, SmsError> {
-        let kv_store = create_kv_store(KvStoreType::Sled { path: db_path.to_string() })?;
+        let kv_store = create_kv_store(KvStoreType::Sled {
+            path: db_path.to_string(),
+        })?;
         Ok(Self {
             kv_store: Arc::from(kv_store),
         })
@@ -177,7 +180,7 @@ impl ResourceService {
         resource.update_timestamp();
         self.store_resource_direct(resource).await
     }
-    
+
     /// Store resource directly without timestamp update / 直接存储资源而不更新时间戳
     async fn store_resource_direct(&self, resource: NodeResourceInfo) -> Result<(), SmsError> {
         let key = keys::resource_key(&resource.node_uuid);
@@ -187,9 +190,12 @@ impl ResourceService {
     }
 
     /// Get resource information for a node / 获取节点的资源信息
-    pub async fn get_resource(&self, node_uuid: &Uuid) -> Result<Option<NodeResourceInfo>, SmsError> {
+    pub async fn get_resource(
+        &self,
+        node_uuid: &Uuid,
+    ) -> Result<Option<NodeResourceInfo>, SmsError> {
         let key = keys::resource_key(node_uuid);
-        
+
         if let Some(data) = self.kv_store.get(&key).await? {
             let resource: NodeResourceInfo = serialization::deserialize(&data)?;
             Ok(Some(resource))
@@ -200,9 +206,12 @@ impl ResourceService {
 
     /// Remove resource information for a node / 移除节点的资源信息
     /// Returns the removed resource if it existed / 如果存在则返回被移除的资源
-    pub async fn remove_resource(&self, node_uuid: &Uuid) -> Result<Option<NodeResourceInfo>, SmsError> {
+    pub async fn remove_resource(
+        &self,
+        node_uuid: &Uuid,
+    ) -> Result<Option<NodeResourceInfo>, SmsError> {
         let key = keys::resource_key(node_uuid);
-        
+
         // Get the resource before removing / 移除前获取资源
         let resource = if let Some(data) = self.kv_store.get(&key).await? {
             let resource: NodeResourceInfo = serialization::deserialize(&data)?;
@@ -210,67 +219,80 @@ impl ResourceService {
         } else {
             None
         };
-        
+
         // Remove the resource / 移除资源
         self.kv_store.delete(&key).await?;
-        
+
         Ok(resource)
     }
 
     /// List all resource information / 列出所有资源信息
     pub async fn list_resources(&self) -> Result<Vec<NodeResourceInfo>, SmsError> {
-        let keys = self.kv_store.keys_with_prefix(namespace::RESOURCE_PREFIX).await?;
+        let keys = self
+            .kv_store
+            .keys_with_prefix(namespace::RESOURCE_PREFIX)
+            .await?;
         let mut resources = Vec::new();
-        
+
         for key in keys {
             if let Some(data) = self.kv_store.get(&key).await? {
                 let resource: NodeResourceInfo = serialization::deserialize(&data)?;
                 resources.push(resource);
             }
         }
-        
+
         Ok(resources)
     }
 
     /// List resources for specific nodes / 列出特定节点的资源
-    pub async fn list_resources_by_nodes(&self, node_uuids: &[Uuid]) -> Result<Vec<NodeResourceInfo>, SmsError> {
+    pub async fn list_resources_by_nodes(
+        &self,
+        node_uuids: &[Uuid],
+    ) -> Result<Vec<NodeResourceInfo>, SmsError> {
         let mut resources = Vec::new();
-        
+
         for uuid in node_uuids {
             if let Some(resource) = self.get_resource(uuid).await? {
                 resources.push(resource);
             }
         }
-        
+
         Ok(resources)
     }
 
     /// List nodes with high load / 列出高负载节点
     pub async fn list_high_load_nodes(&self) -> Result<Vec<NodeResourceInfo>, SmsError> {
         let all_resources = self.list_resources().await?;
-        Ok(all_resources.into_iter()
+        Ok(all_resources
+            .into_iter()
             .filter(|resource| resource.is_high_load())
             .collect())
     }
 
     /// Cleanup stale resource information / 清理过期的资源信息
-    pub async fn cleanup_stale_resources(&mut self, max_age_seconds: u64) -> Result<Vec<Uuid>, SmsError> {
+    pub async fn cleanup_stale_resources(
+        &mut self,
+        max_age_seconds: u64,
+    ) -> Result<Vec<Uuid>, SmsError> {
         let all_resources = self.list_resources().await?;
         let mut removed_uuids = Vec::new();
-        
+
         for resource in all_resources {
             if resource.is_stale(max_age_seconds) {
                 self.remove_resource(&resource.node_uuid).await?;
                 removed_uuids.push(resource.node_uuid);
             }
         }
-        
+
         Ok(removed_uuids)
     }
 
     /// Get resource count / 获取资源数量
     pub async fn resource_count(&self) -> Result<usize, SmsError> {
-        let keys = self.kv_store.keys_with_prefix(namespace::RESOURCE_PREFIX).await?;
+        let keys = self
+            .kv_store
+            .keys_with_prefix(namespace::RESOURCE_PREFIX)
+            .await?;
         Ok(keys.len())
     }
 
@@ -288,7 +310,7 @@ impl ResourceService {
         if resources.is_empty() {
             return Ok(0.0);
         }
-        
+
         let total: f64 = resources.iter().map(field_extractor).sum();
         Ok(total / resources.len() as f64)
     }
@@ -300,7 +322,8 @@ impl ResourceService {
 
     /// Get average memory usage across all nodes / 获取所有节点的平均内存使用率
     pub async fn get_average_memory_usage(&self) -> Result<f64, SmsError> {
-        self.calculate_average_field(|r| r.memory_usage_percent).await
+        self.calculate_average_field(|r| r.memory_usage_percent)
+            .await
     }
 
     /// Get total memory across all nodes / 获取所有节点的总内存
@@ -349,7 +372,7 @@ mod tests {
         let mut updated_resource = NodeResourceInfo::new(uuid);
         updated_resource.cpu_usage_percent = 75.0;
         updated_resource.memory_usage_percent = 60.0;
-        
+
         let result = service.update_resource(updated_resource).await;
         assert!(result.is_ok());
 
@@ -370,23 +393,23 @@ mod tests {
     #[test]
     fn test_high_load_detection() {
         let uuid = Uuid::new_v4();
-        
+
         // Normal load / 正常负载
         let mut resource = NodeResourceInfo::new(uuid);
         resource.cpu_usage_percent = 50.0;
         resource.memory_usage_percent = 60.0;
         resource.load_average_1m = 2.0;
         assert!(!resource.is_high_load());
-        
+
         // High CPU / 高CPU
         resource.cpu_usage_percent = 85.0;
         assert!(resource.is_high_load());
-        
+
         // High memory / 高内存
         resource.cpu_usage_percent = 50.0;
         resource.memory_usage_percent = 90.0;
         assert!(resource.is_high_load());
-        
+
         // High load average / 高负载平均值
         resource.memory_usage_percent = 60.0;
         resource.load_average_1m = 5.0;
@@ -396,33 +419,36 @@ mod tests {
     #[tokio::test]
     async fn test_resource_service_list_operations() {
         let service = ResourceService::new();
-        
+
         let uuid1 = Uuid::new_v4();
         let uuid2 = Uuid::new_v4();
         let uuid3 = Uuid::new_v4();
-        
+
         // Add resources / 添加资源
         let mut resource1 = NodeResourceInfo::new(uuid1);
         resource1.cpu_usage_percent = 90.0; // High load / 高负载
-        
+
         let mut resource2 = NodeResourceInfo::new(uuid2);
         resource2.cpu_usage_percent = 30.0; // Normal load / 正常负载
-        
+
         let mut resource3 = NodeResourceInfo::new(uuid3);
         resource3.memory_usage_percent = 95.0; // High memory usage / 高内存使用率
-        
+
         service.update_resource(resource1).await.unwrap();
         service.update_resource(resource2).await.unwrap();
         service.update_resource(resource3).await.unwrap();
-        
+
         // Test list all / 测试列出所有
         let all_resources = service.list_resources().await.unwrap();
         assert_eq!(all_resources.len(), 3);
-        
+
         // Test list by nodes / 测试按节点列出
-        let specific_resources = service.list_resources_by_nodes(&[uuid1, uuid2]).await.unwrap();
+        let specific_resources = service
+            .list_resources_by_nodes(&[uuid1, uuid2])
+            .await
+            .unwrap();
         assert_eq!(specific_resources.len(), 2);
-        
+
         // Test list high load nodes / 测试列出高负载节点
         let high_load_nodes = service.list_high_load_nodes().await.unwrap();
         assert_eq!(high_load_nodes.len(), 2); // uuid1 (high CPU) and uuid3 (high memory) / uuid1（高CPU）和uuid3（高内存）
@@ -431,31 +457,31 @@ mod tests {
     #[tokio::test]
     async fn test_resource_service_statistics() {
         let service = ResourceService::new();
-        
+
         let uuid1 = Uuid::new_v4();
         let uuid2 = Uuid::new_v4();
-        
+
         let mut resource1 = NodeResourceInfo::new(uuid1);
         resource1.cpu_usage_percent = 60.0;
         resource1.memory_usage_percent = 70.0;
         resource1.total_memory_bytes = 8_000_000_000; // 8GB
         resource1.used_memory_bytes = 5_600_000_000; // 5.6GB
-        
+
         let mut resource2 = NodeResourceInfo::new(uuid2);
         resource2.cpu_usage_percent = 40.0;
         resource2.memory_usage_percent = 50.0;
         resource2.total_memory_bytes = 16_000_000_000; // 16GB
         resource2.used_memory_bytes = 8_000_000_000; // 8GB
-        
+
         service.update_resource(resource1).await.unwrap();
         service.update_resource(resource2).await.unwrap();
-        
+
         // Test statistics / 测试统计
         let avg_cpu = service.get_average_cpu_usage().await.unwrap();
         let avg_memory = service.get_average_memory_usage().await.unwrap();
         let total_memory = service.get_total_memory_bytes().await.unwrap();
         let used_memory = service.get_total_used_memory_bytes().await.unwrap();
-        
+
         assert_eq!(avg_cpu, 50.0); // (60 + 40) / 2
         assert_eq!(avg_memory, 60.0); // (70 + 50) / 2
         assert_eq!(total_memory, 24_000_000_000); // 8GB + 16GB
@@ -465,28 +491,28 @@ mod tests {
     #[tokio::test]
     async fn test_resource_service_cleanup() {
         let mut service = ResourceService::new();
-        
+
         let uuid1 = Uuid::new_v4();
         let uuid2 = Uuid::new_v4();
-        
+
         let resource1 = NodeResourceInfo::new(uuid1);
         let mut resource2 = NodeResourceInfo::new(uuid2);
-        
+
         // Make resource2 stale / 让resource2过期
         resource2.updated_at = Utc::now() - chrono::Duration::seconds(120);
-        
+
         service.store_resource_direct(resource1).await.unwrap();
         service.store_resource_direct(resource2).await.unwrap();
-        
+
         assert_eq!(service.resource_count().await.unwrap(), 2);
-        
+
         // Cleanup stale resources / 清理过期资源
         let removed = service.cleanup_stale_resources(60).await.unwrap();
-        
+
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0], uuid2);
         assert_eq!(service.resource_count().await.unwrap(), 1);
-        
+
         // Verify only fresh resource remains / 验证只有新鲜资源保留
         assert!(service.get_resource(&uuid1).await.unwrap().is_some());
         assert!(service.get_resource(&uuid2).await.unwrap().is_none());

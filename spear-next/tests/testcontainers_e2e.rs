@@ -40,11 +40,19 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
         return;
     }
     // Check docker availability / 检查docker可用性
-    if std::process::Command::new("docker").arg("--version").output().is_err() {
+    if std::process::Command::new("docker")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
         eprintln!("Docker not available, skipping E2E test");
         return;
     }
-    if std::process::Command::new("docker").arg("info").output().is_err() {
+    if std::process::Command::new("docker")
+        .arg("info")
+        .output()
+        .is_err()
+    {
         eprintln!("Docker daemon not reachable, skipping E2E test");
         return;
     }
@@ -54,12 +62,21 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
     // Paths to host-built binaries / 宿主机已构建的二进制路径
     let sms_bin = binary_path("sms");
     let spearlet_bin = binary_path("spearlet");
-    println!("Using binaries: sms={:?}, spearlet={:?}", sms_bin, spearlet_bin);
+    println!(
+        "Using binaries: sms={:?}, spearlet={:?}",
+        sms_bin, spearlet_bin
+    );
     assert!(sms_bin.exists(), "sms binary not found at {:?}", sms_bin);
-    assert!(spearlet_bin.exists(), "spearlet binary not found at {:?}", spearlet_bin);
+    assert!(
+        spearlet_bin.exists(),
+        "spearlet binary not found at {:?}",
+        spearlet_bin
+    );
 
     // Cleanup existing containers / 清理已有容器
-    let _ = Command::new("docker").args(["rm","-f","spear-e2e-sms","spear-e2e-spearlet"]).output();
+    let _ = Command::new("docker")
+        .args(["rm", "-f", "spear-e2e-sms", "spear-e2e-spearlet"])
+        .output();
 
     // Start SMS container / 启动SMS容器
     let sms_name = "spear-e2e-sms";
@@ -74,11 +91,22 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
         .with_entrypoint("/usr/local/bin/sms");
 
     // Attach to user-defined network at creation / 在创建时附加到用户自定义网络
-    let _sms_container = match std::panic::catch_unwind(|| docker.run(RunnableImage::from(sms_image).with_container_name(sms_name).with_network("spear-e2e-net"))) {
+    let _sms_container = match std::panic::catch_unwind(|| {
+        docker.run(
+            RunnableImage::from(sms_image)
+                .with_container_name(sms_name)
+                .with_network("spear-e2e-net"),
+        )
+    }) {
         Ok(c) => c,
         Err(_) => {
-            let out = Command::new("docker").args(["logs", sms_name]).output().ok();
-            let logs = out.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let out = Command::new("docker")
+                .args(["logs", sms_name])
+                .output()
+                .ok();
+            let logs = out
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
             panic!("Failed to start SMS container. Logs:\n{}", logs);
         }
     };
@@ -90,26 +118,47 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
     // testcontainers injects host.testcontainers.internal -> docker host
     let spear_name = "spear-e2e-spearlet";
     let spear_image = GenericImage::new("debian", "bookworm-slim")
-        .with_volume(spearlet_bin.to_string_lossy().to_string(), "/usr/local/bin/spearlet")
+        .with_volume(
+            spearlet_bin.to_string_lossy().to_string(),
+            "/usr/local/bin/spearlet",
+        )
         .with_env_var("RUST_LOG", "info")
         .with_env_var("SPEARLET_AUTO_REGISTER", "true")
         .with_env_var("SPEARLET_SMS_ADDR", &format!("{}:{}", sms_name, 50051))
         .with_entrypoint("/usr/local/bin/spearlet");
 
-    let _spear_container = match std::panic::catch_unwind(|| docker.run(RunnableImage::from(spear_image).with_container_name(spear_name).with_network("spear-e2e-net"))) {
+    let _spear_container = match std::panic::catch_unwind(|| {
+        docker.run(
+            RunnableImage::from(spear_image)
+                .with_container_name(spear_name)
+                .with_network("spear-e2e-net"),
+        )
+    }) {
         Ok(c) => c,
         Err(_) => {
-            let out = Command::new("docker").args(["logs", spear_name]).output().ok();
-            let logs = out.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let out = Command::new("docker")
+                .args(["logs", spear_name])
+                .output()
+                .ok();
+            let logs = out
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
             panic!("Failed to start SPEARlet container. Logs:\n{}", logs);
         }
     };
 
     let start = std::time::Instant::now();
     loop {
-        let out = Command::new("docker").args(["logs", spear_name]).output().ok();
-        let logs = out.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
-        if logs.contains("Connected to SMS successfully") { break; }
+        let out = Command::new("docker")
+            .args(["logs", spear_name])
+            .output()
+            .ok();
+        let logs = out
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        if logs.contains("Connected to SMS successfully") {
+            break;
+        }
         if start.elapsed() > Duration::from_secs(30) {
             panic!("Failed to start SPEARlet container. Logs:\n{}", logs);
         }

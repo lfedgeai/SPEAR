@@ -1,30 +1,28 @@
 //! HTTP gateway implementation for spearlet
 //! spearlet的HTTP gateway实现
 
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Json, Html, IntoResponse},
-    routing::{get, post, put, delete},
+    response::{Html, IntoResponse, Json},
+    routing::{delete, get, post, put},
     Router,
 };
+use base64::{engine::general_purpose, Engine as _};
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tonic::transport::Channel;
-use tracing::{info, error, debug};
-use base64::{Engine as _, engine::general_purpose};
+use tracing::{debug, error, info};
 
+use crate::proto::spearlet::{
+    function_service_client::FunctionServiceClient, object_service_client::ObjectServiceClient,
+    AddObjectRefRequest, DeleteObjectRequest, GetObjectRequest, ListObjectsRequest,
+    PinObjectRequest, PutObjectRequest, RemoveObjectRefRequest, UnpinObjectRequest,
+};
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::grpc_server::HealthService;
-use crate::proto::spearlet::{
-    object_service_client::ObjectServiceClient,
-    function_service_client::FunctionServiceClient,
-    PutObjectRequest, GetObjectRequest, ListObjectsRequest,
-    AddObjectRefRequest, RemoveObjectRefRequest,
-    PinObjectRequest, UnpinObjectRequest, DeleteObjectRequest,
-};
 
 /// HTTP gateway server / HTTP网关服务器
 pub struct HttpGateway {
@@ -60,7 +58,10 @@ impl HttpGateway {
     }
 
     /// Start HTTP gateway with shutdown signal / 使用关闭信号启动HTTP网关
-    pub async fn start_with_shutdown<F>(self, shutdown: F) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    pub async fn start_with_shutdown<F>(
+        self,
+        shutdown: F,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
@@ -71,7 +72,9 @@ impl HttpGateway {
         Ok(())
     }
 
-    async fn prepare(self) -> Result<(tokio::net::TcpListener, Router), Box<dyn std::error::Error + Send + Sync>> {
+    async fn prepare(
+        self,
+    ) -> Result<(tokio::net::TcpListener, Router), Box<dyn std::error::Error + Send + Sync>> {
         let addr: SocketAddr = self.config.http.server.addr;
         info!("Starting HTTP gateway on {}", addr);
 
@@ -83,10 +86,15 @@ impl HttpGateway {
         let mut retry_count = 0;
         while retry_count < max_retries {
             match ObjectServiceClient::connect(grpc_endpoint.clone()).await {
-                Ok(client) => { grpc_client = Some(client); break; }
+                Ok(client) => {
+                    grpc_client = Some(client);
+                    break;
+                }
                 Err(e) => {
                     retry_count += 1;
-                    if retry_count >= max_retries { return Err(e.into()); }
+                    if retry_count >= max_retries {
+                        return Err(e.into());
+                    }
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             }
@@ -115,8 +123,14 @@ impl HttpGateway {
             .route("/objects/{key}/pin", delete(unpin_object))
             .route("/objects/{key}", delete(delete_object))
             .route("/functions/execute", post(execute_function))
-            .route("/functions/executions/{execution_id}", get(get_execution_status))
-            .route("/functions/executions/{execution_id}/cancel", post(cancel_execution))
+            .route(
+                "/functions/executions/{execution_id}",
+                get(get_execution_status),
+            )
+            .route(
+                "/functions/executions/{execution_id}/cancel",
+                post(cancel_execution),
+            )
             .route("/tasks", get(list_tasks))
             .route("/tasks/{task_id}", get(get_task))
             .route("/tasks/{task_id}/executions", get(get_task_executions))
@@ -147,9 +161,11 @@ impl HttpGateway {
 
 /// Health check endpoint / 健康检查端点
 /// GET /health
-async fn health_check(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn health_check(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let health_status = state.health_service.get_health_status().await;
-    
+
     Ok(Json(serde_json::json!({
         "status": health_status.status,
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -159,9 +175,11 @@ async fn health_check(State(state): State<AppState>) -> Result<Json<serde_json::
 
 /// Status check endpoint / 状态检查端点
 /// GET /status
-async fn status_check(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn status_check(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let health_status = state.health_service.get_health_status().await;
-    
+
     Ok(Json(serde_json::json!({
         "status": health_status.status,
         "object_count": health_status.object_count,
@@ -291,18 +309,22 @@ async fn list_objects(
             let resp = response.into_inner();
             // Manually build JSON response since proto types don't have serde support
             // 手动构建JSON响应，因为proto类型不支持serde
-            let objects: Vec<serde_json::Value> = resp.objects.into_iter().map(|obj| {
-                serde_json::json!({
-                    "key": obj.key,
-                    "size": obj.size,
-                    "created_at": obj.created_at,
-                    "updated_at": obj.updated_at,
-                    "metadata": obj.metadata,
-                    "ref_count": obj.ref_count,
-                    "is_pinned": obj.pinned
+            let objects: Vec<serde_json::Value> = resp
+                .objects
+                .into_iter()
+                .map(|obj| {
+                    serde_json::json!({
+                        "key": obj.key,
+                        "size": obj.size,
+                        "created_at": obj.created_at,
+                        "updated_at": obj.updated_at,
+                        "metadata": obj.metadata,
+                        "ref_count": obj.ref_count,
+                        "is_pinned": obj.pinned
+                    })
                 })
-            }).collect();
-            
+                .collect();
+
             Ok(Json(serde_json::json!({
                 "objects": objects,
                 "continuation_token": resp.next_start_after,
@@ -391,9 +413,7 @@ async fn pin_object(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("POST /objects/{}/pin", key);
 
-    let request = PinObjectRequest {
-        key: key.clone(),
-    };
+    let request = PinObjectRequest { key: key.clone() };
 
     let mut client = state.object_client.clone();
     match client.pin_object(request).await {
@@ -419,9 +439,7 @@ async fn unpin_object(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("DELETE /objects/{}/pin", key);
 
-    let request = UnpinObjectRequest {
-        key: key.clone(),
-    };
+    let request = UnpinObjectRequest { key: key.clone() };
 
     let mut client = state.object_client.clone();
     match client.unpin_object(request).await {
@@ -483,10 +501,10 @@ async fn execute_function(
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("POST /functions/execute");
-    
+
     // TODO: Implement function execution logic
     // 待实现：函数执行逻辑
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "message": "Function execution endpoint - Not implemented yet",
@@ -501,10 +519,10 @@ async fn get_execution_status(
     Path(execution_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /functions/executions/{}", execution_id);
-    
+
     // TODO: Implement execution status retrieval
     // 待实现：执行状态获取逻辑
-    
+
     Ok(Json(serde_json::json!({
         "execution_id": execution_id,
         "status": "pending",
@@ -519,10 +537,10 @@ async fn cancel_execution(
     Path(execution_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("POST /functions/executions/{}/cancel", execution_id);
-    
+
     // TODO: Implement execution cancellation
     // 待实现：执行取消逻辑
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "message": "Execution cancellation endpoint - Not implemented yet",
@@ -539,10 +557,10 @@ async fn list_tasks(
     Query(_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /tasks");
-    
+
     // TODO: Implement task listing logic
     // 待实现：任务列表获取逻辑
-    
+
     Ok(Json(serde_json::json!({
         "tasks": [],
         "has_more": false,
@@ -557,10 +575,10 @@ async fn get_task(
     Path(task_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /tasks/{}", task_id);
-    
+
     // TODO: Implement task details retrieval
     // 待实现：任务详情获取逻辑
-    
+
     Ok(Json(serde_json::json!({
         "task_id": task_id,
         "name": "example-task",
@@ -577,10 +595,10 @@ async fn get_task_executions(
     Query(_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /tasks/{}/executions", task_id);
-    
+
     // TODO: Implement task executions retrieval
     // 待实现：任务执行记录获取逻辑
-    
+
     Ok(Json(serde_json::json!({
         "task_id": task_id,
         "executions": [],
@@ -592,14 +610,12 @@ async fn get_task_executions(
 
 /// Get statistics endpoint / 获取统计信息端点
 /// GET /monitoring/stats
-async fn get_stats(
-    State(_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn get_stats(State(_state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /monitoring/stats");
-    
+
     // TODO: Implement statistics retrieval
     // 待实现：统计信息获取逻辑
-    
+
     Ok(Json(serde_json::json!({
         "total_executions": 0,
         "successful_executions": 0,
@@ -615,10 +631,10 @@ async fn get_health_status(
     State(_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     debug!("GET /monitoring/health");
-    
+
     // TODO: Implement health status retrieval
     // 待实现：健康状态获取逻辑
-    
+
     Ok(Json(serde_json::json!({
         "status": "healthy",
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -1208,7 +1224,7 @@ async fn api_docs() -> Json<serde_json::Value> {
                         },
                         {
                             "name": "offset",
-                            "in": "query", 
+                            "in": "query",
                             "description": "Number of tasks to skip / 跳过的任务数",
                             "schema": {"type": "integer", "default": 0}
                         },
@@ -1542,6 +1558,6 @@ async fn swagger_ui() -> impl IntoResponse {
 </body>
 </html>
     "#;
-    
+
     Html(html)
 }

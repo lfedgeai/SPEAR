@@ -4,7 +4,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::config;
-use crate::config::base::{ServerConfig, LogConfig};
+use crate::config::base::{LogConfig, ServerConfig};
 
 /// SPEARlet command line arguments / SPEARlet命令行参数
 #[derive(Parser, Debug, Clone)]
@@ -12,39 +12,72 @@ use crate::config::base::{ServerConfig, LogConfig};
     name = "spearlet",
     version = "0.1.0",
     about = "SPEARlet - SPEAR core agent component\nSPEARlet - SPEAR核心代理组件",
-long_about = "SPEARlet is the core agent component of SPEAR project, similar to kubelet in Kubernetes.\nSPEARlet是SPEAR项目的核心代理组件，类似于Kubernetes中的kubelet。"
+    long_about = "SPEARlet is the core agent component of SPEAR project, similar to kubelet in Kubernetes.\nSPEARlet是SPEAR项目的核心代理组件，类似于Kubernetes中的kubelet。"
 )]
 pub struct CliArgs {
     /// Configuration file path / 配置文件路径
-    #[arg(short, long, value_name = "FILE", help = "Configuration file path / 配置文件路径")]
+    #[arg(
+        short,
+        long,
+        value_name = "FILE",
+        help = "Configuration file path / 配置文件路径"
+    )]
     pub config: Option<String>,
 
     /// Node name / 节点名称
-    #[arg(long, value_name = "NAME", help = "Node name (not unique) / 节点名称（可重复）")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Node name (not unique) / 节点名称（可重复）"
+    )]
     pub node_name: Option<String>,
 
     /// gRPC server address / gRPC服务器地址
-    #[arg(long, value_name = "ADDR", help = "gRPC server address (e.g., 0.0.0.0:50052) / gRPC服务器地址")]
+    #[arg(
+        long,
+        value_name = "ADDR",
+        help = "gRPC server address (e.g., 0.0.0.0:50052) / gRPC服务器地址"
+    )]
     pub grpc_addr: Option<String>,
 
     /// HTTP gateway address / HTTP网关地址
-    #[arg(long, value_name = "ADDR", help = "HTTP gateway address (e.g., 0.0.0.0:8081) / HTTP网关地址")]
+    #[arg(
+        long,
+        value_name = "ADDR",
+        help = "HTTP gateway address (e.g., 0.0.0.0:8081) / HTTP网关地址"
+    )]
     pub http_addr: Option<String>,
 
     /// SMS service address / SMS服务地址
-    #[arg(long = "sms-grpc-addr", value_name = "ADDR", help = "SMS gRPC address (e.g., 127.0.0.1:50051) / SMS gRPC地址")]
+    #[arg(
+        long = "sms-grpc-addr",
+        value_name = "ADDR",
+        help = "SMS gRPC address (e.g., 127.0.0.1:50051) / SMS gRPC地址"
+    )]
     pub sms_grpc_addr: Option<String>,
 
     /// SMS HTTP gateway address / SMS HTTP网关地址
-    #[arg(long, value_name = "ADDR", help = "SMS HTTP gateway address (e.g., 127.0.0.1:8080) / SMS HTTP网关地址")]
+    #[arg(
+        long,
+        value_name = "ADDR",
+        help = "SMS HTTP gateway address (e.g., 127.0.0.1:8080) / SMS HTTP网关地址"
+    )]
     pub sms_http_addr: Option<String>,
 
     /// Storage backend type / 存储后端类型
-    #[arg(long, value_name = "BACKEND", help = "Storage backend type (memory, sled, rocksdb) / 存储后端类型")]
+    #[arg(
+        long,
+        value_name = "BACKEND",
+        help = "Storage backend type (memory, sled, rocksdb) / 存储后端类型"
+    )]
     pub storage_backend: Option<String>,
 
     /// Storage data directory / 存储数据目录
-    #[arg(long, value_name = "PATH", help = "Storage data directory / 存储数据目录")]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Storage data directory / 存储数据目录"
+    )]
     pub storage_path: Option<String>,
 
     /// Auto register with SMS / 自动向SMS注册
@@ -52,7 +85,11 @@ pub struct CliArgs {
     pub auto_register: Option<bool>,
 
     /// Log level / 日志级别
-    #[arg(long, value_name = "LEVEL", help = "Log level (trace, debug, info, warn, error) / 日志级别")]
+    #[arg(
+        long,
+        value_name = "LEVEL",
+        help = "Log level (trace, debug, info, warn, error) / 日志级别"
+    )]
     pub log_level: Option<String>,
 
     #[arg(long, value_name = "MS")]
@@ -62,7 +99,11 @@ pub struct CliArgs {
     pub sms_connect_retry_ms: Option<u64>,
 
     /// Total reconnect timeout after disconnection / 断线后的总重连超时（毫秒）
-    #[arg(long, value_name = "MS", help = "Total reconnect timeout after disconnect / 断线后的总重连超时（毫秒）")]
+    #[arg(
+        long,
+        value_name = "MS",
+        help = "Total reconnect timeout after disconnect / 断线后的总重连超时（毫秒）"
+    )]
     pub reconnect_total_timeout_ms: Option<u64>,
 }
 
@@ -80,29 +121,105 @@ impl AppConfig {
 
         // Apply environment variables (low priority) / 应用环境变量（较低优先级）
         // Prefix: SPEARLET_  例如：SPEARLET_GRPC_ADDR, SPEARLET_HTTP_ADDR
-        if let Ok(v) = std::env::var("SPEARLET_NODE_NAME") { if !v.is_empty() { config.spearlet.node_name = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_SMS_GRPC_ADDR") { if !v.is_empty() { config.spearlet.sms_grpc_addr = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_SMS_HTTP_ADDR") { if !v.is_empty() { config.spearlet.sms_http_addr = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_AUTO_REGISTER") { if let Ok(b) = v.parse::<bool>() { config.spearlet.auto_register = b; } }
-        if let Ok(v) = std::env::var("SPEARLET_HEARTBEAT_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.heartbeat_interval = n; } }
-        if let Ok(v) = std::env::var("SPEARLET_CLEANUP_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.cleanup_interval = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_NODE_NAME") {
+            if !v.is_empty() {
+                config.spearlet.node_name = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_GRPC_ADDR") {
+            if !v.is_empty() {
+                config.spearlet.sms_grpc_addr = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_HTTP_ADDR") {
+            if !v.is_empty() {
+                config.spearlet.sms_http_addr = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_AUTO_REGISTER") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.spearlet.auto_register = b;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_HEARTBEAT_INTERVAL") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.heartbeat_interval = n;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_CLEANUP_INTERVAL") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.cleanup_interval = n;
+            }
+        }
 
-        if let Ok(v) = std::env::var("SPEARLET_GRPC_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.spearlet.grpc.addr = a; } }
-        if let Ok(v) = std::env::var("SPEARLET_HTTP_ADDR") { if let Ok(a) = v.parse::<std::net::SocketAddr>() { config.spearlet.http.server.addr = a; } }
+        if let Ok(v) = std::env::var("SPEARLET_GRPC_ADDR") {
+            if let Ok(a) = v.parse::<std::net::SocketAddr>() {
+                config.spearlet.grpc.addr = a;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_HTTP_ADDR") {
+            if let Ok(a) = v.parse::<std::net::SocketAddr>() {
+                config.spearlet.http.server.addr = a;
+            }
+        }
 
-        if let Ok(v) = std::env::var("SPEARLET_STORAGE_BACKEND") { if !v.is_empty() { config.spearlet.storage.backend = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_STORAGE_DATA_DIR") { if !v.is_empty() { config.spearlet.storage.data_dir = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_CACHE_MB") { if let Ok(n) = v.parse::<u64>() { config.spearlet.storage.max_cache_size_mb = n; } }
-        if let Ok(v) = std::env::var("SPEARLET_STORAGE_COMPRESSION_ENABLED") { if let Ok(b) = v.parse::<bool>() { config.spearlet.storage.compression_enabled = b; } }
-        if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_OBJECT_SIZE") { if let Ok(n) = v.parse::<u64>() { config.spearlet.storage.max_object_size = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_BACKEND") {
+            if !v.is_empty() {
+                config.spearlet.storage.backend = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_DATA_DIR") {
+            if !v.is_empty() {
+                config.spearlet.storage.data_dir = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_CACHE_MB") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.storage.max_cache_size_mb = n;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_COMPRESSION_ENABLED") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.spearlet.storage.compression_enabled = b;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_OBJECT_SIZE") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.storage.max_object_size = n;
+            }
+        }
 
-        if let Ok(v) = std::env::var("SPEARLET_LOG_LEVEL") { if !v.is_empty() { config.spearlet.logging.level = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_LOG_FORMAT") { if !v.is_empty() { config.spearlet.logging.format = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_LOG_FILE") { if !v.is_empty() { config.spearlet.logging.file = Some(v); } }
+        if let Ok(v) = std::env::var("SPEARLET_LOG_LEVEL") {
+            if !v.is_empty() {
+                config.spearlet.logging.level = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LOG_FORMAT") {
+            if !v.is_empty() {
+                config.spearlet.logging.format = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LOG_FILE") {
+            if !v.is_empty() {
+                config.spearlet.logging.file = Some(v);
+            }
+        }
 
-        if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_TIMEOUT_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.sms_connect_timeout_ms = n; } }
-        if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_RETRY_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.sms_connect_retry_ms = n; } }
-        if let Ok(v) = std::env::var("SPEARLET_RECONNECT_TOTAL_TIMEOUT_MS") { if let Ok(n) = v.parse::<u64>() { config.spearlet.reconnect_total_timeout_ms = n; } }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_TIMEOUT_MS") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.sms_connect_timeout_ms = n;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_CONNECT_RETRY_MS") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.sms_connect_retry_ms = n;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_RECONNECT_TOTAL_TIMEOUT_MS") {
+            if let Ok(n) = v.parse::<u64>() {
+                config.spearlet.reconnect_total_timeout_ms = n;
+            }
+        }
 
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.spear/config.toml
@@ -118,7 +235,9 @@ impl AppConfig {
                 if home_path.exists() {
                     let cfg = std::fs::read_to_string(&home_path)?;
                     match toml::from_str::<AppConfig>(&cfg) {
-                        Ok(c) => { config = c; }
+                        Ok(c) => {
+                            config = c;
+                        }
                         Err(e) => {
                             tracing::warn!("Failed to parse home config: {}", e);
                             // fall back to defaults / 回退到默认值
@@ -133,51 +252,64 @@ impl AppConfig {
             let config_content = std::fs::read_to_string(config_path)?;
             config = toml::from_str(&config_content)?;
         }
-        
+
         // Override with CLI arguments / 使用CLI参数覆盖
         if let Some(node_name) = &args.node_name {
             config.spearlet.node_name = node_name.clone();
         }
-        
+
         if let Some(grpc_addr) = &args.grpc_addr {
             config.spearlet.grpc.addr = grpc_addr.parse()?;
         }
-        
+
         if let Some(http_addr) = &args.http_addr {
             config.spearlet.http.server.addr = http_addr.parse()?;
         }
-        
+
         if let Some(sms_grpc_addr) = &args.sms_grpc_addr {
             config.spearlet.sms_grpc_addr = sms_grpc_addr.clone();
         }
         if let Some(sms_http_addr) = &args.sms_http_addr {
             config.spearlet.sms_http_addr = sms_http_addr.clone();
         }
-        
+
         if let Some(storage_backend) = &args.storage_backend {
             config.spearlet.storage.backend = storage_backend.clone();
         }
-        
+
         if let Some(storage_path) = &args.storage_path {
             config.spearlet.storage.data_dir = storage_path.clone();
         }
-        
+
         if let Some(auto_register) = args.auto_register {
             config.spearlet.auto_register = auto_register;
         }
-        
+
         if let Some(log_level) = &args.log_level {
             config.spearlet.logging.level = log_level.clone();
         }
 
-        if let Some(t) = args.sms_connect_timeout_ms { config.spearlet.sms_connect_timeout_ms = t; }
-        if let Some(r) = args.sms_connect_retry_ms { config.spearlet.sms_connect_retry_ms = r; }
-        if let Some(rt) = args.reconnect_total_timeout_ms { config.spearlet.reconnect_total_timeout_ms = rt; }
+        if let Some(t) = args.sms_connect_timeout_ms {
+            config.spearlet.sms_connect_timeout_ms = t;
+        }
+        if let Some(r) = args.sms_connect_retry_ms {
+            config.spearlet.sms_connect_retry_ms = r;
+        }
+        if let Some(rt) = args.reconnect_total_timeout_ms {
+            config.spearlet.reconnect_total_timeout_ms = rt;
+        }
 
         // Implicit auto-register rule: when SMS address is provided via CLI or env, enable auto_register by default
         // 隐式自动注册规则：当通过CLI或环境变量提供了SMS地址时，默认启用auto_register
-        let env_sms = std::env::var("SPEARLET_SMS_GRPC_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
-        let cli_sms = args.sms_grpc_addr.as_ref().map(|v| !v.is_empty()).unwrap_or(false);
+        let env_sms = std::env::var("SPEARLET_SMS_GRPC_ADDR")
+            .ok()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
+        let cli_sms = args
+            .sms_grpc_addr
+            .as_ref()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
         if args.auto_register.is_none() && (env_sms || cli_sms) {
             config.spearlet.auto_register = true;
         }
@@ -269,7 +401,10 @@ impl Default for SpearletConfig {
     fn default() -> Self {
         Self {
             node_name: "spearlet-node".to_string(),
-            grpc: ServerConfig { addr: "0.0.0.0:50052".parse().unwrap(), ..Default::default() },
+            grpc: ServerConfig {
+                addr: "0.0.0.0:50052".parse().unwrap(),
+                ..Default::default()
+            },
             http: HttpConfig::default(),
             storage: StorageConfig::default(),
             logging: LogConfig::default(),
@@ -290,7 +425,10 @@ impl Default for SpearletConfig {
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
-            server: ServerConfig { addr: "0.0.0.0:8081".parse().unwrap(), ..Default::default() },
+            server: ServerConfig {
+                addr: "0.0.0.0:8081".parse().unwrap(),
+                ..Default::default()
+            },
             cors_enabled: true,
             swagger_enabled: true,
         }

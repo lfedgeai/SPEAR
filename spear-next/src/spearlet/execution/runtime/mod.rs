@@ -15,28 +15,26 @@
 //! - Health checks and metrics collection / 健康检查和指标收集
 //! - Dynamic scaling and configuration / 动态扩缩容和配置
 
-use crate::spearlet::execution::{ExecutionError, ExecutionResult};
-use crate::spearlet::execution::instance::{TaskInstance, InstanceConfig, InstanceResourceLimits};
 use crate::spearlet::execution::communication::{
-    SpearMessage, MessageType,
-    ConnectionManager, ConnectionManagerConfig,
+    ConnectionManager, ConnectionManagerConfig, MessageType, SpearMessage,
 };
+use crate::spearlet::execution::instance::{InstanceConfig, InstanceResourceLimits, TaskInstance};
+use crate::spearlet::execution::{ExecutionError, ExecutionResult};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tracing::info;
 
-
 // Re-export runtime implementations / 重新导出运行时实现
+pub mod kubernetes;
 pub mod process;
 pub mod wasm;
-pub mod kubernetes;
 
-pub use process::{ProcessRuntime, ProcessConfig};
-pub use wasm::{WasmRuntime, WasmConfig};
-pub use kubernetes::{KubernetesRuntime, KubernetesConfig};
+pub use kubernetes::{KubernetesConfig, KubernetesRuntime};
+pub use process::{ProcessConfig, ProcessRuntime};
+pub use wasm::{WasmConfig, WasmRuntime};
 
 // Note: ExecutionMode, ExecutionStatus, RuntimeExecutionResponse, and ExecutionContext are defined in this module
 // 注意：ExecutionMode、ExecutionStatus、RuntimeExecutionResponse 和 ExecutionContext 在此模块中定义
@@ -63,8 +61,6 @@ impl RuntimeType {
         }
     }
 }
-
-
 
 /// Runtime configuration / 运行时配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,9 +96,9 @@ impl Default for ResourcePoolConfig {
     fn default() -> Self {
         Self {
             max_concurrent_instances: 100,
-            instance_creation_timeout_ms: 30000,  // 30 seconds
-            instance_cleanup_timeout_ms: 10000,   // 10 seconds
-            monitoring_interval_ms: 5000,         // 5 seconds
+            instance_creation_timeout_ms: 30000, // 30 seconds
+            instance_cleanup_timeout_ms: 10000,  // 10 seconds
+            monitoring_interval_ms: 5000,        // 5 seconds
         }
     }
 }
@@ -260,7 +256,7 @@ pub struct RuntimeExecutionResponse {
     pub duration_ms: u64,
     /// Runtime-specific metadata / 运行时特定的元数据
     pub metadata: HashMap<String, serde_json::Value>,
-    
+
     // === Execution lifecycle fields === / === 执行生命周期字段 ===
     /// Execution mode (sync/async/stream) / 执行模式（同步/异步/流式）
     pub execution_mode: ExecutionMode,
@@ -270,13 +266,13 @@ pub struct RuntimeExecutionResponse {
     pub execution_id: String,
     /// Task identifier for tracking / 任务标识符用于跟踪
     pub task_id: Option<String>,
-    
+
     // === Async execution fields === / === 异步执行字段 ===
     /// Status tracking endpoint for async execution / 异步执行的状态跟踪端点
     pub status_endpoint: Option<String>,
     /// Estimated completion time in milliseconds / 预计完成时间（毫秒）
     pub estimated_completion_ms: Option<u64>,
-    
+
     // === Error handling === / === 错误处理 ===
     /// Error information if execution failed / 执行失败时的错误信息
     pub error: Option<RuntimeExecutionError>,
@@ -302,7 +298,10 @@ pub enum RuntimeExecutionError {
     /// Serialization error / 序列化错误
     SerializationError { message: String },
     /// Unsupported operation / 不支持的操作
-    UnsupportedOperation { operation: String, runtime_type: String },
+    UnsupportedOperation {
+        operation: String,
+        runtime_type: String,
+    },
 }
 
 impl Default for RuntimeExecutionResponse {
@@ -324,11 +323,7 @@ impl Default for RuntimeExecutionResponse {
 
 impl RuntimeExecutionResponse {
     /// Create a new sync execution response / 创建新的同步执行响应
-    pub fn new_sync(
-        execution_id: String,
-        data: Vec<u8>,
-        duration_ms: u64,
-    ) -> Self {
+    pub fn new_sync(execution_id: String, data: Vec<u8>, duration_ms: u64) -> Self {
         Self {
             execution_id,
             data,
@@ -384,10 +379,11 @@ impl RuntimeExecutionResponse {
 
     /// Check if execution has failed / 检查执行是否失败
     pub fn has_failed(&self) -> bool {
-        self.error.is_some() || matches!(
-            self.execution_status,
-            ExecutionStatus::Failed | ExecutionStatus::Cancelled | ExecutionStatus::Timeout
-        )
+        self.error.is_some()
+            || matches!(
+                self.execution_status,
+                ExecutionStatus::Failed | ExecutionStatus::Cancelled | ExecutionStatus::Timeout
+            )
     }
 
     /// Check if execution completed successfully / 检查执行是否成功完成
@@ -399,7 +395,10 @@ impl RuntimeExecutionResponse {
     pub fn is_completed(&self) -> bool {
         matches!(
             self.execution_status,
-            ExecutionStatus::Completed | ExecutionStatus::Failed | ExecutionStatus::Cancelled | ExecutionStatus::Timeout
+            ExecutionStatus::Completed
+                | ExecutionStatus::Failed
+                | ExecutionStatus::Cancelled
+                | ExecutionStatus::Timeout
         )
     }
 }
@@ -411,22 +410,13 @@ pub trait Runtime: Send + Sync {
     fn runtime_type(&self) -> RuntimeType;
 
     /// Create a new instance / 创建新实例
-    async fn create_instance(
-        &self,
-        config: &InstanceConfig,
-    ) -> ExecutionResult<Arc<TaskInstance>>;
+    async fn create_instance(&self, config: &InstanceConfig) -> ExecutionResult<Arc<TaskInstance>>;
 
     /// Start an instance / 启动实例
-    async fn start_instance(
-        &self,
-        instance: &Arc<TaskInstance>,
-    ) -> ExecutionResult<()>;
+    async fn start_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()>;
 
     /// Stop an instance / 停止实例
-    async fn stop_instance(
-        &self,
-        instance: &Arc<TaskInstance>,
-    ) -> ExecutionResult<()>;
+    async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()>;
 
     /// Execute a request on an instance / 在实例上执行请求
     async fn execute(
@@ -436,10 +426,7 @@ pub trait Runtime: Send + Sync {
     ) -> ExecutionResult<RuntimeExecutionResponse>;
 
     /// Perform health check on an instance / 对实例执行健康检查
-    async fn health_check(
-        &self,
-        instance: &Arc<TaskInstance>,
-    ) -> ExecutionResult<bool>;
+    async fn health_check(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<bool>;
 
     /// Get instance metrics / 获取实例指标
     async fn get_metrics(
@@ -455,16 +442,10 @@ pub trait Runtime: Send + Sync {
     ) -> ExecutionResult<()>;
 
     /// Cleanup instance resources / 清理实例资源
-    async fn cleanup_instance(
-        &self,
-        instance: &Arc<TaskInstance>,
-    ) -> ExecutionResult<()>;
+    async fn cleanup_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()>;
 
     /// Validate runtime configuration / 验证运行时配置
-    fn validate_config(
-        &self,
-        config: &InstanceConfig,
-    ) -> ExecutionResult<()>;
+    fn validate_config(&self, config: &InstanceConfig) -> ExecutionResult<()>;
 
     /// Get runtime capabilities / 获取运行时能力
     fn get_capabilities(&self) -> RuntimeCapabilities;
@@ -484,7 +465,10 @@ pub trait Runtime: Send + Sync {
     ) -> ExecutionResult<Option<SocketAddr>> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {
-                operation: format!("listening mode for runtime type '{}'", self.runtime_type().as_str()),
+                operation: format!(
+                    "listening mode for runtime type '{}'",
+                    self.runtime_type().as_str()
+                ),
             });
         }
         Ok(None)
@@ -494,7 +478,10 @@ pub trait Runtime: Send + Sync {
     async fn stop_listening(&self) -> ExecutionResult<()> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {
-                operation: format!("listening mode for runtime type '{}'", self.runtime_type().as_str()),
+                operation: format!(
+                    "listening mode for runtime type '{}'",
+                    self.runtime_type().as_str()
+                ),
             });
         }
         Ok(())
@@ -516,7 +503,10 @@ pub trait Runtime: Send + Sync {
     ) -> ExecutionResult<Option<SpearMessage>> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {
-                operation: format!("message handling for runtime type '{}'", self.runtime_type().as_str()),
+                operation: format!(
+                    "message handling for runtime type '{}'",
+                    self.runtime_type().as_str()
+                ),
             });
         }
         Ok(None)
@@ -534,7 +524,10 @@ pub trait Runtime: Send + Sync {
     ) -> ExecutionResult<()> {
         if !self.supports_listening_mode() {
             return Err(ExecutionError::NotSupported {
-                operation: format!("message handler registration for runtime type '{}'", self.runtime_type().as_str()),
+                operation: format!(
+                    "message handler registration for runtime type '{}'",
+                    self.runtime_type().as_str()
+                ),
             });
         }
         Ok(())
@@ -643,7 +636,11 @@ impl RuntimeFactory {
 
     /// Get available runtime types / 获取可用的运行时类型
     pub fn available_runtimes() -> Vec<RuntimeType> {
-        vec![RuntimeType::Process, RuntimeType::Wasm, RuntimeType::Kubernetes]
+        vec![
+            RuntimeType::Process,
+            RuntimeType::Wasm,
+            RuntimeType::Kubernetes,
+        ]
     }
 
     /// Check if a runtime type is supported / 检查是否支持某个运行时类型
@@ -685,7 +682,7 @@ impl RuntimeManager {
                 message: format!("Runtime {:?} is already registered", runtime_type),
             });
         }
-        
+
         self.runtimes.insert(runtime_type, runtime);
         Ok(())
     }
@@ -701,11 +698,12 @@ impl RuntimeManager {
     }
 
     /// Initialize all runtimes with their configurations / 使用配置初始化所有运行时
-    pub fn initialize_runtimes(
-        &mut self,
-        configs: Vec<RuntimeConfig>,
-    ) -> ExecutionResult<()> {
-        info!("Initializing runtimes: count={} types={:?}", configs.len(), configs.iter().map(|c| c.runtime_type).collect::<Vec<_>>());
+    pub fn initialize_runtimes(&mut self, configs: Vec<RuntimeConfig>) -> ExecutionResult<()> {
+        info!(
+            "Initializing runtimes: count={} types={:?}",
+            configs.len(),
+            configs.iter().map(|c| c.runtime_type).collect::<Vec<_>>()
+        );
         for config in configs {
             let runtime = RuntimeFactory::create_runtime(&config)?;
             self.register_runtime(config.runtime_type, runtime)?;
@@ -725,14 +723,14 @@ impl Default for RuntimeManager {
 mod tests {
     use super::*;
 
-
-
     #[test]
     fn test_runtime_factory() {
         assert!(RuntimeFactory::is_runtime_supported(&RuntimeType::Process));
         assert!(RuntimeFactory::is_runtime_supported(&RuntimeType::Wasm));
-        assert!(RuntimeFactory::is_runtime_supported(&RuntimeType::Kubernetes));
-        
+        assert!(RuntimeFactory::is_runtime_supported(
+            &RuntimeType::Kubernetes
+        ));
+
         let available = RuntimeFactory::available_runtimes();
         assert_eq!(available.len(), 3);
         assert!(available.contains(&RuntimeType::Process));

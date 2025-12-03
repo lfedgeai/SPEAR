@@ -272,25 +272,37 @@ impl SpearMessage {
     }
 
     /// 创建认证响应消息 / Create authentication response message
-    pub fn auth_response(request_id: u64, auth_resp: AuthResponse) -> Result<Self, serde_json::Error> {
+    pub fn auth_response(
+        request_id: u64,
+        auth_resp: AuthResponse,
+    ) -> Result<Self, serde_json::Error> {
         let payload = serde_json::to_vec(&auth_resp)?;
         Ok(Self::new(MessageType::AuthResponse, request_id, payload))
     }
 
     /// 创建执行请求消息 / Create execution request message
-    pub fn execute_request(request_id: u64, exec_req: ExecuteRequest) -> Result<Self, serde_json::Error> {
+    pub fn execute_request(
+        request_id: u64,
+        exec_req: ExecuteRequest,
+    ) -> Result<Self, serde_json::Error> {
         let payload = serde_json::to_vec(&exec_req)?;
         Ok(Self::new(MessageType::ExecuteRequest, request_id, payload))
     }
 
     /// 创建执行响应消息 / Create execution response message
-    pub fn execute_response(request_id: u64, exec_resp: ExecuteResponse) -> Result<Self, serde_json::Error> {
+    pub fn execute_response(
+        request_id: u64,
+        exec_resp: ExecuteResponse,
+    ) -> Result<Self, serde_json::Error> {
         let payload = serde_json::to_vec(&exec_resp)?;
         Ok(Self::new(MessageType::ExecuteResponse, request_id, payload))
     }
 
     /// 创建心跳消息 / Create heartbeat message
-    pub fn heartbeat(request_id: u64, heartbeat: HeartbeatMessage) -> Result<Self, serde_json::Error> {
+    pub fn heartbeat(
+        request_id: u64,
+        heartbeat: HeartbeatMessage,
+    ) -> Result<Self, serde_json::Error> {
         let payload = serde_json::to_vec(&heartbeat)?;
         Ok(Self::new(MessageType::Heartbeat, request_id, payload))
     }
@@ -324,22 +336,22 @@ impl SpearMessage {
 pub mod constants {
     /// 当前协议版本 / Current protocol version
     pub const PROTOCOL_VERSION: u8 = 1;
-    
+
     /// 最大消息大小（字节）/ Maximum message size in bytes
     pub const MAX_MESSAGE_SIZE: usize = 64 * 1024 * 1024; // 64MB
-    
+
     /// 心跳间隔（秒）/ Heartbeat interval in seconds
     pub const HEARTBEAT_INTERVAL_SECS: u64 = 30;
-    
+
     /// 连接超时（秒）/ Connection timeout in seconds
     pub const CONNECTION_TIMEOUT_SECS: u64 = 300; // 5 minutes
-    
+
     /// 认证超时（秒）/ Authentication timeout in seconds
     pub const AUTH_TIMEOUT_SECS: u64 = 30;
-    
+
     /// 默认端口范围开始 / Default port range start
     pub const DEFAULT_PORT_RANGE_START: u16 = 9100;
-    
+
     /// 默认端口范围结束 / Default port range end
     pub const DEFAULT_PORT_RANGE_END: u16 = 9999;
 }

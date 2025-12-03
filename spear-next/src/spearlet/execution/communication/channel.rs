@@ -3,17 +3,17 @@
 //!
 //! This module provides concrete implementations of the CommunicationChannel trait
 //! for different transport mechanisms.
-//! 
+//!
 //! 此模块为不同的传输机制提供 CommunicationChannel trait 的具体实现。
 
+use async_trait::async_trait;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use async_trait::async_trait;
 
 use super::{
-    CommunicationChannel, CommunicationResult, CommunicationError,
-    RuntimeMessage, ChannelConfig, ChannelStats, RuntimeInstanceId,
+    ChannelConfig, ChannelStats, CommunicationChannel, CommunicationError, CommunicationResult,
+    RuntimeInstanceId, RuntimeMessage,
 };
 
 /// Unix Domain Socket communication channel
@@ -40,7 +40,7 @@ impl UnixSocketChannel {
             start_time: Instant::now(),
         })
     }
-    
+
     /// Get the instance ID for this channel
     /// 获取此通道的实例ID
     pub fn instance_id(&self) -> &RuntimeInstanceId {
@@ -67,11 +67,11 @@ impl CommunicationChannel for UnixSocketChannel {
 
         // TODO: Implement actual message sending
         // TODO: 实现实际的消息发送
-        
+
         // Update statistics / 更新统计信息
         let mut stats = self.stats.write().await;
         stats.messages_sent += 1;
-        
+
         Ok(())
     }
 
@@ -82,7 +82,7 @@ impl CommunicationChannel for UnixSocketChannel {
 
         // TODO: Implement actual message receiving
         // TODO: 实现实际的消息接收
-        
+
         // Update statistics / 更新统计信息
         let mut stats = self.stats.write().await;
         stats.messages_received += 1;
@@ -99,21 +99,22 @@ impl CommunicationChannel for UnixSocketChannel {
         timeout: Duration,
     ) -> CommunicationResult<RuntimeMessage> {
         let start = Instant::now();
-        
+
         // Send request / 发送请求
         self.send(request).await?;
-        
+
         // Wait for response with timeout / 等待响应并处理超时
-        let response = tokio::time::timeout(timeout, self.receive()).await
-            .map_err(|_| CommunicationError::Timeout { 
-                timeout_ms: timeout.as_millis() as u64 
+        let response = tokio::time::timeout(timeout, self.receive())
+            .await
+            .map_err(|_| CommunicationError::Timeout {
+                timeout_ms: timeout.as_millis() as u64,
             })??;
-        
+
         // Update latency statistics / 更新延迟统计
         let latency = start.elapsed().as_millis() as f64;
         let mut stats = self.stats.write().await;
         stats.avg_latency_ms = (stats.avg_latency_ms + latency) / 2.0;
-        
+
         Ok(response)
     }
 
@@ -160,7 +161,7 @@ impl TcpChannel {
             start_time: Instant::now(),
         })
     }
-    
+
     /// Get the instance ID for this channel
     /// 获取此通道的实例ID
     pub fn instance_id(&self) -> &RuntimeInstanceId {
@@ -187,10 +188,10 @@ impl CommunicationChannel for TcpChannel {
 
         // TODO: Implement actual TCP message sending
         // TODO: 实现实际的 TCP 消息发送
-        
+
         let mut stats = self.stats.write().await;
         stats.messages_sent += 1;
-        
+
         Ok(())
     }
 
@@ -201,7 +202,7 @@ impl CommunicationChannel for TcpChannel {
 
         // TODO: Implement actual TCP message receiving
         // TODO: 实现实际的 TCP 消息接收
-        
+
         let mut stats = self.stats.write().await;
         stats.messages_received += 1;
 
@@ -216,18 +217,19 @@ impl CommunicationChannel for TcpChannel {
         timeout: Duration,
     ) -> CommunicationResult<RuntimeMessage> {
         let start = Instant::now();
-        
+
         self.send(request).await?;
-        
-        let response = tokio::time::timeout(timeout, self.receive()).await
-            .map_err(|_| CommunicationError::Timeout { 
-                timeout_ms: timeout.as_millis() as u64 
+
+        let response = tokio::time::timeout(timeout, self.receive())
+            .await
+            .map_err(|_| CommunicationError::Timeout {
+                timeout_ms: timeout.as_millis() as u64,
             })??;
-        
+
         let latency = start.elapsed().as_millis() as f64;
         let mut stats = self.stats.write().await;
         stats.avg_latency_ms = (stats.avg_latency_ms + latency) / 2.0;
-        
+
         Ok(response)
     }
 
@@ -274,7 +276,7 @@ impl GrpcChannel {
             start_time: Instant::now(),
         })
     }
-    
+
     /// Get the instance ID for this channel
     /// 获取此通道的实例ID
     pub fn instance_id(&self) -> &RuntimeInstanceId {
@@ -301,10 +303,10 @@ impl CommunicationChannel for GrpcChannel {
 
         // TODO: Implement actual gRPC message sending
         // TODO: 实现实际的 gRPC 消息发送
-        
+
         let mut stats = self.stats.write().await;
         stats.messages_sent += 1;
-        
+
         Ok(())
     }
 
@@ -315,7 +317,7 @@ impl CommunicationChannel for GrpcChannel {
 
         // TODO: Implement actual gRPC message receiving
         // TODO: 实现实际的 gRPC 消息接收
-        
+
         let mut stats = self.stats.write().await;
         stats.messages_received += 1;
 
@@ -330,18 +332,19 @@ impl CommunicationChannel for GrpcChannel {
         timeout: Duration,
     ) -> CommunicationResult<RuntimeMessage> {
         let start = Instant::now();
-        
+
         self.send(request).await?;
-        
-        let response = tokio::time::timeout(timeout, self.receive()).await
-            .map_err(|_| CommunicationError::Timeout { 
-                timeout_ms: timeout.as_millis() as u64 
+
+        let response = tokio::time::timeout(timeout, self.receive())
+            .await
+            .map_err(|_| CommunicationError::Timeout {
+                timeout_ms: timeout.as_millis() as u64,
             })??;
-        
+
         let latency = start.elapsed().as_millis() as f64;
         let mut stats = self.stats.write().await;
         stats.avg_latency_ms = (stats.avg_latency_ms + latency) / 2.0;
-        
+
         Ok(response)
     }
 
@@ -371,16 +374,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_unix_socket_channel_creation() {
-        let instance_id = RuntimeInstanceId::new(
-            RuntimeType::Process,
-            "test-unix-instance".to_string(),
-        );
+        let instance_id =
+            RuntimeInstanceId::new(RuntimeType::Process, "test-unix-instance".to_string());
         let config = ChannelConfig::default();
         let channel = UnixSocketChannel::new(instance_id.clone(), config).unwrap();
-        
+
         assert_eq!(channel.instance_id(), &instance_id);
         assert!(!channel.is_connected().await);
-        
+
         let stats = channel.get_stats().await.unwrap();
         assert_eq!(stats.messages_sent, 0);
         assert_eq!(stats.messages_received, 0);
@@ -388,47 +389,37 @@ mod tests {
 
     #[tokio::test]
     async fn test_tcp_channel_creation() {
-        let instance_id = RuntimeInstanceId::new(
-            RuntimeType::Process,
-            "test-tcp-instance".to_string(),
-        );
+        let instance_id =
+            RuntimeInstanceId::new(RuntimeType::Process, "test-tcp-instance".to_string());
         let config = ChannelConfig {
             instance_id: instance_id.clone(),
             ..Default::default()
         };
         let channel = TcpChannel::new(instance_id.clone(), config).unwrap();
-        
+
         assert_eq!(channel.instance_id(), &instance_id);
         assert!(!channel.is_connected().await);
     }
 
     #[tokio::test]
     async fn test_grpc_channel_creation() {
-        let instance_id = RuntimeInstanceId::new(
-            RuntimeType::Kubernetes,
-            "test-grpc-instance".to_string(),
-        );
+        let instance_id =
+            RuntimeInstanceId::new(RuntimeType::Kubernetes, "test-grpc-instance".to_string());
         let config = ChannelConfig {
             instance_id: instance_id.clone(),
             ..Default::default()
         };
         let channel = GrpcChannel::new(instance_id.clone(), config).unwrap();
-        
+
         assert_eq!(channel.instance_id(), &instance_id);
         assert!(!channel.is_connected().await);
     }
-    
+
     #[tokio::test]
     async fn test_channel_instance_isolation() {
-        let instance1 = RuntimeInstanceId::new(
-            RuntimeType::Process,
-            "instance-1".to_string(),
-        );
-        let instance2 = RuntimeInstanceId::new(
-            RuntimeType::Process,
-            "instance-2".to_string(),
-        );
-        
+        let instance1 = RuntimeInstanceId::new(RuntimeType::Process, "instance-1".to_string());
+        let instance2 = RuntimeInstanceId::new(RuntimeType::Process, "instance-2".to_string());
+
         let config1 = ChannelConfig {
             instance_id: instance1.clone(),
             ..Default::default()
@@ -437,10 +428,10 @@ mod tests {
             instance_id: instance2.clone(),
             ..Default::default()
         };
-        
+
         let channel1 = UnixSocketChannel::new(instance1.clone(), config1).unwrap();
         let channel2 = UnixSocketChannel::new(instance2.clone(), config2).unwrap();
-        
+
         // Channels should have different instance IDs
         // 通道应该有不同的实例ID
         assert_ne!(channel1.instance_id(), channel2.instance_id());

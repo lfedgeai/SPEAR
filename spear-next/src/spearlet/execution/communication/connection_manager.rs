@@ -76,9 +76,7 @@ pub enum ConnectionEvent {
         message_type: MessageType,
     },
     /// 心跳超时 / Heartbeat timeout
-    HeartbeatTimeout {
-        connection_id: String,
-    },
+    HeartbeatTimeout { connection_id: String },
     /// 认证失败 / Authentication failed
     AuthenticationFailed {
         connection_id: String,
@@ -161,18 +159,18 @@ mod serde_instant {
         } else {
             now_instant.duration_since(*instant)
         };
-        
+
         let system_time = if *instant > now_instant {
             now_system + duration_since_now
         } else {
             now_system - duration_since_now
         };
-        
+
         let timestamp = system_time
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         timestamp.serialize(serializer)
     }
 
@@ -184,7 +182,7 @@ mod serde_instant {
         let system_time = UNIX_EPOCH + std::time::Duration::from_secs(timestamp);
         let now_system = SystemTime::now();
         let now_instant = Instant::now();
-        
+
         // Convert back to Instant (approximation)
         if system_time > now_system {
             let duration_ahead = system_time.duration_since(now_system).unwrap_or_default();
@@ -200,7 +198,10 @@ impl Default for ConnectionManagerConfig {
     fn default() -> Self {
         Self {
             listen_addr: "127.0.0.1".to_string(),
-            port_range: (constants::DEFAULT_PORT_RANGE_START, constants::DEFAULT_PORT_RANGE_END),
+            port_range: (
+                constants::DEFAULT_PORT_RANGE_START,
+                constants::DEFAULT_PORT_RANGE_END,
+            ),
             max_connections: 1000,
             connection_timeout: Duration::from_secs(constants::CONNECTION_TIMEOUT_SECS),
             auth_timeout: Duration::from_secs(constants::AUTH_TIMEOUT_SECS),
@@ -246,7 +247,7 @@ impl ConnectionHandler {
         config: ConnectionManagerConfig,
     ) -> (Self, mpsc::UnboundedSender<SpearMessage>) {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        
+
         let state = Arc::new(RwLock::new(ConnectionState {
             connection_id: connection_id.clone(),
             instance_id: None,
@@ -278,22 +279,25 @@ impl ConnectionHandler {
     /// 运行连接处理器 / Run connection handler
     pub async fn run(mut self) {
         info!("Starting connection handler for {}", self.connection_id);
-        
+
         // 发送连接建立事件 / Send connection established event
         let _ = self.event_sender.send(ConnectionEvent::Connected {
             connection_id: self.connection_id.clone(),
             remote_addr: self.state.read().unwrap().remote_addr,
         });
-        
+
         // 将shutdown_receiver移出self以避免借用冲突 / Move shutdown_receiver out of self to avoid borrow conflicts
-        let mut shutdown_receiver = self.shutdown_receiver.take().expect("shutdown_receiver should be available");
-        
+        let mut shutdown_receiver = self
+            .shutdown_receiver
+            .take()
+            .expect("shutdown_receiver should be available");
+
         // 启动读取任务 / Start read task
         let read_task = self.start_read_task();
-        
+
         // 启动写入任务 / Start write task
         let write_task = self.start_write_task();
-        
+
         // 启动心跳任务 / Start heartbeat task
         let heartbeat_task = self.start_heartbeat_task();
 
@@ -332,32 +336,38 @@ impl ConnectionHandler {
 
         tokio::spawn(async move {
             let mut buffer = vec![0u8; max_message_size];
-            
+
             loop {
                 let mut stream_guard = stream.lock().await;
-                
+
                 // 读取消息长度 / Read message length
                 let mut length_bytes = [0u8; 4];
                 match stream_guard.read_exact(&mut length_bytes).await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("Failed to read message length for {}: {}", connection_id, e);
                         break;
                     }
                 }
-                
+
                 let message_length = u32::from_be_bytes(length_bytes) as usize;
                 if message_length > max_message_size {
-                    error!("Message too large for {}: {} bytes", connection_id, message_length);
+                    error!(
+                        "Message too large for {}: {} bytes",
+                        connection_id, message_length
+                    );
                     break;
                 }
 
                 // 读取消息内容 / Read message content
                 buffer.resize(message_length, 0);
                 match stream_guard.read_exact(&mut buffer).await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
-                        error!("Failed to read message content for {}: {}", connection_id, e);
+                        error!(
+                            "Failed to read message content for {}: {}",
+                            connection_id, e
+                        );
                         break;
                     }
                 }
@@ -400,7 +410,7 @@ impl ConnectionHandler {
             while let Some(message) = receiver.recv().await {
                 drop(receiver);
                 let mut stream_guard = stream.lock().await;
-                
+
                 // 序列化消息 / Serialize message
                 let serialized = match message.serialize() {
                     Ok(data) => data,
@@ -414,13 +424,19 @@ impl ConnectionHandler {
                 // 写入消息长度 / Write message length
                 let length_bytes = (serialized.len() as u32).to_be_bytes();
                 if let Err(e) = stream_guard.write_all(&length_bytes).await {
-                    error!("Failed to write message length for {}: {}", connection_id, e);
+                    error!(
+                        "Failed to write message length for {}: {}",
+                        connection_id, e
+                    );
                     break;
                 }
 
                 // 写入消息内容 / Write message content
                 if let Err(e) = stream_guard.write_all(&serialized).await {
-                    error!("Failed to write message content for {}: {}", connection_id, e);
+                    error!(
+                        "Failed to write message content for {}: {}",
+                        connection_id, e
+                    );
                     break;
                 }
 
@@ -437,7 +453,7 @@ impl ConnectionHandler {
                     connection_id: connection_id.clone(),
                     message_type: message.message_type,
                 });
-                
+
                 receiver = message_receiver.lock().await;
             }
         })
@@ -452,10 +468,10 @@ impl ConnectionHandler {
 
         tokio::spawn(async move {
             let mut interval = interval(heartbeat_timeout);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let last_activity = {
                     let state_guard = state.read().unwrap();
                     state_guard.last_activity
@@ -506,9 +522,12 @@ impl ConnectionManager {
     }
 
     /// 创建带有验证器的连接管理器 / Create connection manager with validator
-    pub fn new_with_validator(config: ConnectionManagerConfig, secret_validator: Option<SecretValidator>) -> Self {
+    pub fn new_with_validator(
+        config: ConnectionManagerConfig,
+        secret_validator: Option<SecretValidator>,
+    ) -> Self {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -528,7 +547,7 @@ impl ConnectionManager {
         execution_manager: Arc<TaskExecutionManager>,
     ) -> Self {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -542,17 +561,15 @@ impl ConnectionManager {
         }
     }
 
-
-
     /// 启动连接管理器 / Start connection manager
     pub async fn start(&self) -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
         // 查找可用端口 / Find available port
         let listen_addr = self.find_available_port().await?;
-        
+
         // 绑定监听器 / Bind listener
         let listener = TokioTcpListener::bind(&listen_addr).await?;
         let actual_addr = listener.local_addr()?;
-        
+
         // 保存监听地址 / Save listen address
         {
             let mut addr_guard = self.listen_addr.write().unwrap();
@@ -571,9 +588,11 @@ impl ConnectionManager {
     }
 
     /// 查找可用端口 / Find available port
-    async fn find_available_port(&self) -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
+    async fn find_available_port(
+        &self,
+    ) -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
         let (start_port, end_port) = self.config.port_range;
-        
+
         for port in start_port..=end_port {
             let addr = format!("{}:{}", self.config.listen_addr, port);
             match TokioTcpListener::bind(&addr).await {
@@ -583,7 +602,7 @@ impl ConnectionManager {
                 Err(_) => continue,
             }
         }
-        
+
         Err("No available port found in range".into())
     }
 
@@ -594,26 +613,38 @@ impl ConnectionManager {
         let instance_connections = Arc::clone(&self.instance_connections);
         let secret_validator = self.secret_validator.clone();
         let execution_manager = self.execution_manager.clone();
-        
+
         tokio::spawn(async move {
             let mut receiver = event_receiver.lock().await;
-            
+
             while let Some(event) = receiver.recv().await {
                 match event {
-                    ConnectionEvent::Connected { connection_id, remote_addr } => {
-                        info!("New connection established: {} from {}", connection_id, remote_addr);
+                    ConnectionEvent::Connected {
+                        connection_id,
+                        remote_addr,
+                    } => {
+                        info!(
+                            "New connection established: {} from {}",
+                            connection_id, remote_addr
+                        );
                     }
-                    
-                    ConnectionEvent::Authenticated { connection_id, instance_id, client_type } => {
-                        info!("Connection authenticated: {} for instance {} ({})", 
-                               connection_id, instance_id, client_type);
-                        
+
+                    ConnectionEvent::Authenticated {
+                        connection_id,
+                        instance_id,
+                        client_type,
+                    } => {
+                        info!(
+                            "Connection authenticated: {} for instance {} ({})",
+                            connection_id, instance_id, client_type
+                        );
+
                         // 更新实例连接映射 / Update instance connection mapping
                         {
                             let mut instance_conn_guard = instance_connections.write().unwrap();
                             instance_conn_guard.insert(instance_id.clone(), connection_id.clone());
                         }
-                        
+
                         // 更新连接状态 / Update connection state
                         if let Some(conn_state) = connections.read().unwrap().get(&connection_id) {
                             let mut state_guard = conn_state.write().unwrap();
@@ -622,10 +653,13 @@ impl ConnectionManager {
                             state_guard.client_type = Some(client_type);
                         }
                     }
-                    
-                    ConnectionEvent::Disconnected { connection_id, reason } => {
+
+                    ConnectionEvent::Disconnected {
+                        connection_id,
+                        reason,
+                    } => {
                         info!("Connection disconnected: {} ({})", connection_id, reason);
-                        
+
                         // 清理连接状态 / Clean up connection state
                         let instance_id = {
                             let mut conn_guard = connections.write().unwrap();
@@ -635,20 +669,23 @@ impl ConnectionManager {
                                 None
                             }
                         };
-                        
+
                         // 清理实例连接映射 / Clean up instance connection mapping
                         if let Some(instance_id) = instance_id {
                             let mut instance_conn_guard = instance_connections.write().unwrap();
                             instance_conn_guard.remove(&instance_id);
                         }
                     }
-                    
+
                     ConnectionEvent::HeartbeatTimeout { connection_id } => {
                         warn!("Heartbeat timeout for connection: {}", connection_id);
                         // TODO: 关闭连接 / Close connection
                     }
-                    
-                    ConnectionEvent::MessageReceived { connection_id, message } => {
+
+                    ConnectionEvent::MessageReceived {
+                        connection_id,
+                        message,
+                    } => {
                         // 处理接收到的消息 / Handle received message
                         match message.message_type {
                             MessageType::AuthRequest => {
@@ -660,8 +697,13 @@ impl ConnectionManager {
                                     &instance_connections,
                                     &secret_validator,
                                     &execution_manager,
-                                ).await {
-                                    error!("Failed to handle auth request for {}: {}", connection_id, e);
+                                )
+                                .await
+                                {
+                                    error!(
+                                        "Failed to handle auth request for {}: {}",
+                                        connection_id, e
+                                    );
                                     // 发送身份验证失败事件 / Send authentication failed event
                                     // TODO: 实现事件发送逻辑 / Implement event sending logic
                                 }
@@ -670,24 +712,34 @@ impl ConnectionManager {
                                 // 处理心跳消息 / Handle heartbeat message
                                 debug!("Received heartbeat from connection: {}", connection_id);
                                 // 更新最后活跃时间 / Update last activity time
-                                if let Some(conn_state) = connections.read().unwrap().get(&connection_id) {
+                                if let Some(conn_state) =
+                                    connections.read().unwrap().get(&connection_id)
+                                {
                                     let mut state_guard = conn_state.write().unwrap();
                                     state_guard.last_activity = Instant::now();
                                     state_guard.heartbeat_sequence += 1;
                                 }
                             }
                             _ => {
-                                debug!("Received message type {:?} from connection: {}", 
-                                       message.message_type, connection_id);
+                                debug!(
+                                    "Received message type {:?} from connection: {}",
+                                    message.message_type, connection_id
+                                );
                             }
                         }
                     }
-                    
-                    ConnectionEvent::AuthenticationFailed { connection_id, reason } => {
-                        warn!("Authentication failed for connection {}: {}", connection_id, reason);
+
+                    ConnectionEvent::AuthenticationFailed {
+                        connection_id,
+                        reason,
+                    } => {
+                        warn!(
+                            "Authentication failed for connection {}: {}",
+                            connection_id, reason
+                        );
                         // TODO: 关闭连接 / Close connection
                     }
-                    
+
                     _ => {
                         debug!("Received event: {:?}", event);
                     }
@@ -702,29 +754,32 @@ impl ConnectionManager {
         let connections = Arc::clone(&self.connections);
         let shutdown_senders = Arc::clone(&self.shutdown_senders);
         let config = self.config.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 match listener.accept().await {
                     Ok((stream, remote_addr)) => {
                         let connection_id = Uuid::new_v4().to_string();
-                        
+
                         // 检查连接数限制 / Check connection limit
                         {
                             let conn_guard = connections.read().unwrap();
                             if conn_guard.len() >= config.max_connections {
-                                warn!("Maximum connections reached, rejecting connection from {}", remote_addr);
+                                warn!(
+                                    "Maximum connections reached, rejecting connection from {}",
+                                    remote_addr
+                                );
                                 continue;
                             }
                         }
-                        
+
                         // 创建关闭信号 / Create shutdown signal
                         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
                         {
                             let mut shutdown_guard = shutdown_senders.lock().unwrap();
                             shutdown_guard.insert(connection_id.clone(), shutdown_sender);
                         }
-                        
+
                         // 创建连接处理器 / Create connection handler
                         let (handler, _message_sender) = ConnectionHandler::new(
                             connection_id.clone(),
@@ -734,17 +789,20 @@ impl ConnectionManager {
                             shutdown_receiver,
                             config.clone(),
                         );
-                        
+
                         // 保存连接状态 / Save connection state
                         {
                             let mut conn_guard = connections.write().unwrap();
                             conn_guard.insert(connection_id.clone(), handler.state.clone());
                         }
-                        
+
                         // 启动连接处理器 / Start connection handler
                         tokio::spawn(handler.run());
-                        
-                        info!("Accepted new connection: {} from {}", connection_id, remote_addr);
+
+                        info!(
+                            "Accepted new connection: {} from {}",
+                            connection_id, remote_addr
+                        );
                     }
                     Err(e) => {
                         error!("Failed to accept connection: {}", e);
@@ -815,11 +873,14 @@ impl ConnectionManager {
         execution_manager: &Option<Arc<TaskExecutionManager>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // 解析身份验证请求 / Parse authentication request
-        let auth_request: AuthRequest = message.parse_payload()
+        let auth_request: AuthRequest = message
+            .parse_payload()
             .map_err(|e| format!("Failed to parse auth request: {}", e))?;
 
-        info!("Processing auth request for instance {} from connection {}", 
-              auth_request.instance_id, connection_id);
+        info!(
+            "Processing auth request for instance {} from connection {}",
+            auth_request.instance_id, connection_id
+        );
 
         // 使用 secret 验证器进行身份验证 / Use secret validator for authentication
         let auth_success = if let Some(manager) = execution_manager {
@@ -866,13 +927,16 @@ impl ConnectionManager {
 
         if auth_success {
             // 身份验证成功 / Authentication successful
-            info!("Authentication successful for instance {} from connection {}", 
-                  auth_request.instance_id, connection_id);
+            info!(
+                "Authentication successful for instance {} from connection {}",
+                auth_request.instance_id, connection_id
+            );
 
             // 更新实例连接映射 / Update instance connection mapping
             {
                 let mut instance_conn_guard = instance_connections.write().unwrap();
-                instance_conn_guard.insert(auth_request.instance_id.clone(), connection_id.to_string());
+                instance_conn_guard
+                    .insert(auth_request.instance_id.clone(), connection_id.to_string());
             }
 
             // 更新连接状态 / Update connection state
@@ -895,12 +959,16 @@ impl ConnectionManager {
             };
 
             // TODO: 发送响应消息 / Send response message
-            debug!("Auth response created for connection {}: {:?}", connection_id, auth_response);
-
+            debug!(
+                "Auth response created for connection {}: {:?}",
+                connection_id, auth_response
+            );
         } else {
             // 身份验证失败 / Authentication failed
-            warn!("Authentication failed for instance {} from connection {}: invalid token", 
-                  auth_request.instance_id, connection_id);
+            warn!(
+                "Authentication failed for instance {} from connection {}: invalid token",
+                auth_request.instance_id, connection_id
+            );
 
             // TODO: 发送身份验证失败响应 / Send authentication failure response
             let auth_response = AuthResponse {
@@ -911,7 +979,10 @@ impl ConnectionManager {
                 supported_features: vec![],
             };
 
-            debug!("Auth failure response created for connection {}: {:?}", connection_id, auth_response);
+            debug!(
+                "Auth failure response created for connection {}: {:?}",
+                connection_id, auth_response
+            );
         }
 
         Ok(())
@@ -927,7 +998,7 @@ mod tests {
     async fn test_connection_manager_creation() {
         let config = ConnectionManagerConfig::default();
         let manager = ConnectionManager::new(config);
-        
+
         assert_eq!(manager.get_connection_count(), 0);
         assert!(manager.get_listen_addr().is_none());
     }
@@ -939,7 +1010,7 @@ mod tests {
             ..Default::default()
         };
         let manager = ConnectionManager::new(config);
-        
+
         let addr = manager.find_available_port().await.unwrap();
         assert!(addr.port() >= 9100 && addr.port() <= 9110);
     }

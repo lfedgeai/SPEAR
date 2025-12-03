@@ -60,13 +60,13 @@ impl Default for InstancePoolConfig {
             target_utilization: 0.7,
             scale_up_threshold: 0.8,
             scale_down_threshold: 0.3,
-            scale_up_cooldown_ms: 30000,   // 30 seconds
-            scale_down_cooldown_ms: 60000, // 60 seconds
-            instance_warmup_time_ms: 10000, // 10 seconds
-            health_check_interval_ms: 15000, // 15 seconds
+            scale_up_cooldown_ms: 30000,          // 30 seconds
+            scale_down_cooldown_ms: 60000,        // 60 seconds
+            instance_warmup_time_ms: 10000,       // 10 seconds
+            health_check_interval_ms: 15000,      // 15 seconds
             metrics_collection_interval_ms: 5000, // 5 seconds
-            instance_idle_timeout_ms: 300000, // 5 minutes
-            pool_cleanup_interval_ms: 120000, // 2 minutes
+            instance_idle_timeout_ms: 300000,     // 5 minutes
+            pool_cleanup_interval_ms: 120000,     // 2 minutes
         }
     }
 }
@@ -244,7 +244,11 @@ impl TaskPoolState {
             0.0
         };
 
-        let efficiency = if total > 0 { active as f64 / total as f64 } else { 0.0 };
+        let efficiency = if total > 0 {
+            active as f64 / total as f64
+        } else {
+            0.0
+        };
 
         self.metrics = PoolMetrics {
             total_instances: total,
@@ -278,7 +282,9 @@ impl TaskPoolState {
         }
 
         if let Some(last_scale_down) = self.last_scale_down {
-            if now.duration_since(last_scale_down).as_millis() < config.scale_down_cooldown_ms as u128 {
+            if now.duration_since(last_scale_down).as_millis()
+                < config.scale_down_cooldown_ms as u128
+            {
                 return false;
             }
         }
@@ -360,7 +366,11 @@ impl InstancePool {
     /// Get instance for task / 为任务获取实例
     pub async fn get_instance(&self, task: &Arc<Task>) -> ExecutionResult<Arc<TaskInstance>> {
         let request_id = self.request_counter.fetch_add(1, Ordering::SeqCst);
-        debug!("Getting instance for task {} (request {})", task.id(), request_id);
+        debug!(
+            "Getting instance for task {} (request {})",
+            task.id(),
+            request_id
+        );
 
         // Try to get existing instance / 尝试获取现有实例
         if let Some(instance) = self.get_available_instance(task).await? {
@@ -381,7 +391,10 @@ impl InstancePool {
     }
 
     /// Get available instance from pool / 从池中获取可用实例
-    async fn get_available_instance(&self, task: &Arc<Task>) -> ExecutionResult<Option<Arc<TaskInstance>>> {
+    async fn get_available_instance(
+        &self,
+        task: &Arc<Task>,
+    ) -> ExecutionResult<Option<Arc<TaskInstance>>> {
         let pools = self.pools.read();
         if let Some(pool_state) = pools.get(task.id()) {
             Ok(pool_state.get_available_instance())
@@ -412,12 +425,11 @@ impl InstancePool {
 
     /// Create new instance / 创建新实例
     async fn create_instance(&self, task: &Arc<Task>) -> ExecutionResult<Arc<TaskInstance>> {
-        let runtime = self
-            .runtimes
-            .get(&task.spec.runtime_type)
-            .ok_or_else(|| ExecutionError::RuntimeNotFound {
+        let runtime = self.runtimes.get(&task.spec.runtime_type).ok_or_else(|| {
+            ExecutionError::RuntimeNotFound {
                 runtime_type: format!("{:?}", task.spec.runtime_type),
-            })?;
+            }
+        })?;
 
         let instance_config = task.create_instance_config();
         let instance = timeout(
@@ -436,12 +448,20 @@ impl InstancePool {
         // Register with scheduler / 注册到调度器
         self.scheduler.add_instance(instance.clone()).await?;
 
-        info!("Created new instance {} for task {}", instance.id(), task.id());
+        info!(
+            "Created new instance {} for task {}",
+            instance.id(),
+            task.id()
+        );
         Ok(instance)
     }
 
     /// Add instance to pool / 将实例添加到池
-    async fn add_instance_to_pool(&self, task: &Arc<Task>, instance: Arc<TaskInstance>) -> ExecutionResult<()> {
+    async fn add_instance_to_pool(
+        &self,
+        task: &Arc<Task>,
+        instance: Arc<TaskInstance>,
+    ) -> ExecutionResult<()> {
         let mut pools = self.pools.write();
         let pool_state = (*pools)
             .entry(task.id().to_string())
@@ -451,11 +471,15 @@ impl InstancePool {
     }
 
     /// Remove instance from pool / 从池中移除实例
-    async fn remove_instance_from_pool(&self, task_id: &TaskId, instance_id: &InstanceId) -> ExecutionResult<()> {
+    async fn remove_instance_from_pool(
+        &self,
+        task_id: &TaskId,
+        instance_id: &InstanceId,
+    ) -> ExecutionResult<()> {
         let mut pools = self.pools.write();
         if let Some(pool_state) = pools.get_mut(task_id) {
             pool_state.remove_instance(instance_id);
-            
+
             // Remove empty pools / 移除空池
             if pool_state.instances.is_empty() {
                 pools.remove(task_id);
@@ -466,11 +490,13 @@ impl InstancePool {
 
     /// Scale task instances / 扩缩容任务实例
     async fn scale_task(&self, task_id: &TaskId, decision: ScalingDecision) -> ExecutionResult<()> {
-        let _permit = self.scaling_semaphore.acquire().await.map_err(|_| {
-            ExecutionError::RuntimeError {
-                message: "Failed to acquire scaling permit".to_string(),
-            }
-        })?;
+        let _permit =
+            self.scaling_semaphore
+                .acquire()
+                .await
+                .map_err(|_| ExecutionError::RuntimeError {
+                    message: "Failed to acquire scaling permit".to_string(),
+                })?;
 
         match decision.action {
             ScalingAction::ScaleUp => {
@@ -495,7 +521,10 @@ impl InstancePool {
                         pool_state.metrics.scale_up_events += 1;
                     }
 
-                    info!("Scaled up task {} to {} instances", task_id, decision.target_count);
+                    info!(
+                        "Scaled up task {} to {} instances",
+                        task_id, decision.target_count
+                    );
                 }
             }
             ScalingAction::ScaleDown => {
@@ -524,7 +553,8 @@ impl InstancePool {
                             continue;
                         }
 
-                        self.remove_instance_from_pool(task_id, &instance.id().to_string()).await?;
+                        self.remove_instance_from_pool(task_id, &instance.id().to_string())
+                            .await?;
                         let instance_id = instance.id().to_string();
                         self.scheduler.remove_instance(&instance_id).await?;
                         removed_count += 1;
@@ -538,7 +568,10 @@ impl InstancePool {
                     pool_state.metrics.scale_down_events += 1;
                 }
 
-                info!("Scaled down task {} by {} instances", task_id, removed_count);
+                info!(
+                    "Scaled down task {} by {} instances",
+                    task_id, removed_count
+                );
             }
             ScalingAction::NoAction => {
                 debug!("No scaling action needed for task {}", task_id);
@@ -592,7 +625,11 @@ impl InstancePool {
         for instance in all_instances {
             if let Some(runtime) = self.runtimes.get(&instance.config.runtime_type) {
                 if let Err(e) = runtime.stop_instance(&instance).await {
-                    warn!("Failed to stop instance {} during shutdown: {}", instance.id(), e);
+                    warn!(
+                        "Failed to stop instance {} during shutdown: {}",
+                        instance.id(),
+                        e
+                    );
                 }
             }
         }
@@ -627,27 +664,35 @@ impl InstancePool {
                 .iter()
                 .filter_map(|(task_id, state)| {
                     let current_count = state.instances.len();
-                    
+
                     if state.should_scale_up(&self.config, now) {
-                        let target_count = (current_count + 1).min(self.config.max_instances_per_task);
+                        let target_count =
+                            (current_count + 1).min(self.config.max_instances_per_task);
                         Some(ScalingDecision {
                             task_id: task_id.clone(),
                             action: ScalingAction::ScaleUp,
                             target_count,
                             current_count,
-                            reason: format!("Utilization {} > threshold {}", 
-                                state.calculate_utilization(), self.config.scale_up_threshold),
+                            reason: format!(
+                                "Utilization {} > threshold {}",
+                                state.calculate_utilization(),
+                                self.config.scale_up_threshold
+                            ),
                             timestamp: SystemTime::now(),
                         })
                     } else if state.should_scale_down(&self.config, now) {
-                        let target_count = (current_count - 1).max(self.config.min_instances_per_task);
+                        let target_count =
+                            (current_count - 1).max(self.config.min_instances_per_task);
                         Some(ScalingDecision {
                             task_id: task_id.clone(),
                             action: ScalingAction::ScaleDown,
                             target_count,
                             current_count,
-                            reason: format!("Utilization {} < threshold {}", 
-                                state.calculate_utilization(), self.config.scale_down_threshold),
+                            reason: format!(
+                                "Utilization {} < threshold {}",
+                                state.calculate_utilization(),
+                                self.config.scale_down_threshold
+                            ),
                             timestamp: SystemTime::now(),
                         })
                     } else {
@@ -692,7 +737,9 @@ impl InstancePool {
 
     /// Metrics collection loop / 指标收集循环
     async fn run_metrics_collection_loop(&self) {
-        let mut interval = interval(Duration::from_millis(self.config.metrics_collection_interval_ms));
+        let mut interval = interval(Duration::from_millis(
+            self.config.metrics_collection_interval_ms,
+        ));
 
         loop {
             interval.tick().await;
@@ -703,7 +750,7 @@ impl InstancePool {
     /// Update global metrics / 更新全局指标
     async fn update_global_metrics(&self) {
         let pools = self.pools.read();
-        
+
         let mut global_metrics = PoolMetrics::default();
         let mut total_utilization = 0.0;
         let mut total_response_time = 0.0;
@@ -726,7 +773,8 @@ impl InstancePool {
         if pool_count > 0 {
             global_metrics.average_utilization = total_utilization / pool_count as f64;
             global_metrics.average_response_time_ms = total_response_time / pool_count as f64;
-            global_metrics.pool_efficiency = global_metrics.active_instances as f64 / global_metrics.total_instances as f64;
+            global_metrics.pool_efficiency =
+                global_metrics.active_instances as f64 / global_metrics.total_instances as f64;
         }
 
         *self.global_metrics.write() = global_metrics;
@@ -788,7 +836,7 @@ mod tests {
         artifact::{Artifact, ArtifactSpec, InvocationType},
         instance::{InstanceConfig, InstanceResourceLimits},
         scheduler::SchedulingPolicy,
-        task::{TaskSpec, TaskType, ScalingConfig, HealthCheckConfig, TimeoutConfig},
+        task::{HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig},
     };
 
     fn create_test_task() -> Arc<Task> {
@@ -829,7 +877,7 @@ mod tests {
     async fn test_instance_pool_creation() {
         let config = InstancePoolConfig::default();
         let scheduler = Arc::new(InstanceScheduler::new(SchedulingPolicy::RoundRobin));
-        
+
         let pool = InstancePool::new(config, scheduler).await;
         assert!(pool.is_ok());
     }
@@ -871,7 +919,7 @@ mod tests {
     fn test_task_pool_state() {
         let task = create_test_task();
         let state = TaskPoolState::new(task.clone());
-        
+
         assert_eq!(state.task.id(), task.id());
         assert_eq!(state.instances.len(), 0);
         assert!(state.last_scale_up.is_none());

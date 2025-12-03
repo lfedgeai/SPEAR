@@ -4,7 +4,7 @@
 //! A TaskInstance represents a physical execution instance of a task.
 //! TaskInstance 表示任务的物理执行实例。
 
-use super::{TaskId, RuntimeType, ArtifactId};
+use super::{ArtifactId, RuntimeType, TaskId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -224,7 +224,7 @@ impl TaskInstance {
     pub fn new(task_id: TaskId, config: InstanceConfig) -> Self {
         let id = format!("inst-{}", Uuid::new_v4());
         let now = SystemTime::now();
-        
+
         Self {
             id,
             task_id,
@@ -331,8 +331,13 @@ impl TaskInstance {
 
     /// Check if instance is ready to accept requests / 检查实例是否准备接受请求
     pub fn is_ready(&self) -> bool {
-        matches!(self.status(), InstanceStatus::Ready | InstanceStatus::Running)
-            && matches!(self.health_status(), HealthStatus::Healthy | HealthStatus::Unknown)
+        matches!(
+            self.status(),
+            InstanceStatus::Ready | InstanceStatus::Running
+        ) && matches!(
+            self.health_status(),
+            HealthStatus::Healthy | HealthStatus::Unknown
+        )
     }
 
     /// Check if instance is at capacity / 检查实例是否达到容量上限
@@ -344,7 +349,10 @@ impl TaskInstance {
     /// Check if instance is healthy / 检查实例是否健康
     pub fn is_healthy(&self) -> bool {
         matches!(self.health_status(), HealthStatus::Healthy)
-            && !matches!(self.status(), InstanceStatus::Error(_) | InstanceStatus::Unhealthy)
+            && !matches!(
+                self.status(),
+                InstanceStatus::Error(_) | InstanceStatus::Unhealthy
+            )
     }
 
     /// Get instance load (0.0 to 1.0) / 获取实例负载（0.0 到 1.0）
@@ -407,23 +415,24 @@ impl TaskInstance {
             if metrics.active_requests > 0 {
                 metrics.active_requests -= 1;
             }
-            
+
             if success {
                 metrics.successful_requests += 1;
             } else {
                 metrics.failed_requests += 1;
             }
-            
+
             // Update average request time using exponential moving average / 使用指数移动平均更新平均请求时间
             if metrics.avg_request_time_ms == 0.0 {
                 metrics.avg_request_time_ms = duration_ms;
             } else {
                 metrics.avg_request_time_ms = 0.9 * metrics.avg_request_time_ms + 0.1 * duration_ms;
             }
-            
+
             // Update P95 (simplified approximation) / 更新 P95（简化近似）
             if duration_ms > metrics.p95_request_time_ms {
-                metrics.p95_request_time_ms = 0.95 * metrics.p95_request_time_ms + 0.05 * duration_ms;
+                metrics.p95_request_time_ms =
+                    0.95 * metrics.p95_request_time_ms + 0.05 * duration_ms;
             }
         });
     }
@@ -432,7 +441,7 @@ impl TaskInstance {
     pub fn record_health_check(&self, success: bool) {
         self.update_metrics(|metrics| {
             metrics.last_health_check_time = Some(SystemTime::now());
-            
+
             if success {
                 metrics.health_check_successes += 1;
                 metrics.health_check_failures = 0;
@@ -486,13 +495,13 @@ mod tests {
         };
 
         let instance = TaskInstance::new("task-123".to_string(), config);
-        
+
         // Record request start / 记录请求开始
         instance.record_request_start();
         let metrics = instance.get_metrics();
         assert_eq!(metrics.active_requests, 1);
         assert_eq!(metrics.total_requests, 1);
-        
+
         // Record request completion / 记录请求完成
         instance.record_request_completion(true, 150.0);
         let metrics = instance.get_metrics();
@@ -518,16 +527,16 @@ mod tests {
         };
 
         let instance = TaskInstance::new("task-123".to_string(), config);
-        
+
         // No active requests / 没有活跃请求
         assert_eq!(instance.get_load(), 0.0);
-        
+
         // 5 active requests out of 10 max / 10个最大请求中有5个活跃请求
         instance.update_metrics(|metrics| {
             metrics.active_requests = 5;
         });
         assert_eq!(instance.get_load(), 0.5);
-        
+
         // At capacity / 达到容量上限
         instance.update_metrics(|metrics| {
             metrics.active_requests = 10;
@@ -552,13 +561,13 @@ mod tests {
         };
 
         let instance = TaskInstance::new("task-123".to_string(), config);
-        
+
         // Record successful health check / 记录成功的健康检查
         instance.record_health_check(true);
         let metrics = instance.get_metrics();
         assert_eq!(metrics.health_check_successes, 1);
         assert_eq!(metrics.health_check_failures, 0);
-        
+
         // Record failed health check / 记录失败的健康检查
         instance.record_health_check(false);
         let metrics = instance.get_metrics();

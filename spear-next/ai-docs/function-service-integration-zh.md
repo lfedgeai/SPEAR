@@ -220,10 +220,10 @@ async fn get_health(&self) -> Result<Response<GetHealthResponse>, Status> {
 ### 4. WASM 制品下载路径
 
 - WASM 运行时仅支持 `sms+file://<file_id>` 协议。
-- 从 `RuntimeConfig.spearlet_config` 中读取 `SpearletConfig.sms_addr`，并使用：
+- 从 `RuntimeConfig.spearlet_config` 中读取 `SpearletConfig.sms_grpc_addr`，并使用：
 
 ```rust
-pub async fn fetch_sms_file(sms_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
 ```
 
 ### 3. 测试策略

@@ -109,6 +109,7 @@ sequenceDiagram
     FunctionService->>FunctionService: create_artifact_from_proto()
     FunctionService->>ExecutionManager: execute_task()
     ExecutionManager->>ExecutionManager: create_task_from_artifact()
+    Note over ExecutionManager: Artifacts are created/loaded using client-provided artifact_id as fixed ID
     ExecutionManager->>InstancePool: acquire_instance()
     InstancePool->>Runtime: create_instance()
     Runtime-->>InstancePool: instance_ready
@@ -127,6 +128,7 @@ stateDiagram-v2
     [*] --> Creating: create_instance()
     Creating --> Ready: initialization_complete
     Ready --> Running: execute_task()
+    Note over Instance: InstanceConfig carries ArtifactSnapshot injected from Artifact (location/checksum)
     Running --> Ready: task_complete
     Ready --> Terminating: shutdown()
     Running --> Terminating: force_shutdown()
@@ -173,7 +175,7 @@ pub struct RuntimeConfig {
 }
 ```
 
-Runtimes read full node configuration via `spearlet_config` (e.g., `sms_addr`), avoiding environment variable reads in runtime code.
+Runtimes read full node configuration via `spearlet_config` (e.g., `sms_grpc_addr`), avoiding environment variable reads in runtime code.
 
 ## Error Handling / 错误处理
 

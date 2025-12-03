@@ -73,6 +73,13 @@ message ArtifactSpec {
 }
 ```
 
+说明：
+- `artifact_id` 为客户端提供的固定唯一标识，系统内部直接使用该 ID，不再生成内部 UUID。
+- 当 `artifact_type="wasm"` 时，`location` 支持 `sms+file` 协议：
+  - 显式指定：`sms+file://<host:port>/<file_id>`（优先使用该地址）
+  - 简洁指定：`sms+file://<file_id>`（运行时使用 `SpearletConfig.sms_http_addr` 访问 SMS HTTP 网关）
+- 建议提供 `checksum`（SHA-256）以进行内容校验。
+
 #### ExecutionContext - 执行上下文
 ```protobuf
 message ExecutionContext {

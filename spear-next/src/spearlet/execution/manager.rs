@@ -515,8 +515,12 @@ impl TaskExecutionManager {
         }
 
         let artifact_spec_local = super::artifact::ArtifactSpec::from(artifact_spec);
-        let artifact = Arc::new(Artifact::new(artifact_spec_local));
+        let artifact = Arc::new(Artifact::new_with_id(artifact_id.clone(), artifact_spec_local));
         self.artifacts.insert(artifact_id.clone(), artifact.clone());
+        debug!(
+            proto_artifact_id = %artifact_id,
+            "Registered artifact into manager with fixed id"
+        );
 
         // Update statistics / 更新统计信息
         {
@@ -612,6 +616,19 @@ impl TaskExecutionManager {
                 location: artifact.spec.location.clone(),
                 checksum_sha256: artifact.spec.checksum_sha256.clone(),
             });
+            debug!(
+                task_id = %task.id(),
+                artifact_id = %task.artifact_id(),
+                location = %artifact.spec.location.clone().unwrap_or_default(),
+                checksum = %artifact.spec.checksum_sha256.clone().unwrap_or_default(),
+                "Injected artifact snapshot into instance config"
+            );
+        } else {
+            debug!(
+                task_id = %task.id(),
+                artifact_id = %task.artifact_id(),
+                "Artifact not found in manager when preparing instance; snapshot injection skipped"
+            );
         }
         let instance = timeout(
             Duration::from_millis(self.config.instance_creation_timeout_ms),

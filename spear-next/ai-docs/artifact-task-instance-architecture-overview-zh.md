@@ -173,7 +173,7 @@ pub struct RuntimeConfig {
 }
 ```
 
-运行时通过 `spearlet_config` 读取完整节点配置（例如 `sms_addr`），避免在运行时层读取环境变量。
+运行时通过 `spearlet_config` 读取完整节点配置（例如 `sms_grpc_addr`），避免在运行时层读取环境变量。
 
 ## 错误处理 / Error Handling
 

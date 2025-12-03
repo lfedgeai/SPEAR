@@ -32,15 +32,17 @@ The Spearlet WASM runtime requires a valid WASM binary at instance creation. If 
 
 ### SMS File Scheme and Config Source
 
-- Only `sms+file://<file_id>` is supported for remote download in the WASM runtime.
-- The runtime constructs path `"/api/v1/files/<file_id>"` and reads SMS address from `RuntimeConfig.spearlet_config.sms_addr`.
+- Supported `sms+file` forms:
+  - Explicit override: `sms+file://<host:port>/<file_id>`
+  - Short form: `sms+file://<file_id>` (runtime uses `SpearletConfig.sms_http_addr` for the HTTP gateway)
+- The runtime constructs path `"/api/v1/files/<file_id>"`.
 - Download function:
 
 ```rust
-pub async fn fetch_sms_file(sms_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
 ```
 
-- Configuration is injected at runtime initialization: FunctionService passes the full `SpearletConfig` into each `Runtime` via `RuntimeConfig.spearlet_config`, avoiding ad‑hoc environment variable reads.
+* Configuration is injected at runtime initialization: FunctionService passes the full `SpearletConfig` into each `Runtime` via `RuntimeConfig.spearlet_config`; `sms_http_addr` provides the HTTP gateway address for downloads.
 
 ## Error Behavior
 - Invalid WASM bytes: instance creation fails at validation stage to avoid late execution errors.

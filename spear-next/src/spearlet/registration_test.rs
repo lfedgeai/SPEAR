@@ -13,7 +13,7 @@ fn create_test_config() -> SpearletConfig {
     SpearletConfig {
         node_name: "test-node-001".to_string(),
         auto_register: true,
-        sms_addr: "127.0.0.1:9000".to_string(),
+        sms_grpc_addr: "127.0.0.1:9000".to_string(),
         ..Default::default()
     }
 }
@@ -124,7 +124,7 @@ async fn test_registration_service_with_different_sms_configs() {
     
     for (address, port) in sms_configs {
         let mut config = create_test_config();
-        config.sms_addr = format!("{}:{}", address, port);
+        config.sms_grpc_addr = format!("{}:{}", address, port);
         
         let service = RegistrationService::new(Arc::new(config));
         let state = service.get_state().await;
@@ -283,13 +283,13 @@ mod integration_tests {
             SpearletConfig {
                 node_name: "prod-node-001".to_string(),
                 auto_register: true,
-                sms_addr: "sms.example.com:443".to_string(),
+                sms_grpc_addr: "sms.example.com:443".to_string(),
                 ..Default::default()
             },
             SpearletConfig {
                 node_name: "dev-node-test".to_string(),
                 auto_register: false,
-                sms_addr: "localhost:8080".to_string(),
+                sms_grpc_addr: "localhost:8080".to_string(),
                 ..Default::default()
             },
         ];
@@ -319,7 +319,8 @@ mod integration_tests {
             http: crate::spearlet::config::HttpConfig::default(),
             storage: crate::spearlet::config::StorageConfig::default(),
             logging: crate::config::base::LogConfig::default(),
-            sms_addr: "127.0.0.1:65535".to_string(),
+            sms_grpc_addr: "127.0.0.1:65535".to_string(),
+            sms_http_addr: "127.0.0.1:8080".to_string(),
             auto_register: false,
             heartbeat_interval: 5,
             cleanup_interval: 60,
@@ -370,7 +371,7 @@ mod integration_tests {
         let mut spear_cfg = SpearletConfig::default();
         spear_cfg.grpc = ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() };
         spear_cfg.http.server = ServerConfig { addr: "127.0.0.1:0".parse().unwrap(), ..Default::default() };
-        spear_cfg.sms_addr = format!("127.0.0.1:{}", port);
+        spear_cfg.sms_grpc_addr = format!("127.0.0.1:{}", port);
         spear_cfg.auto_register = false;
 
         let reg = RegistrationService::new(Arc::new(spear_cfg));

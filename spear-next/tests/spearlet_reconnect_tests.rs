@@ -38,14 +38,15 @@ async fn wait_registered(svc: &RegistrationService, max_ms: u64) -> bool {
     timeout(deadline, fut).await.unwrap_or(false)
 }
 
-fn make_spearlet_config(sms_addr: String) -> Arc<SpearletConfig> {
+fn make_spearlet_config(sms_grpc_addr: String) -> Arc<SpearletConfig> {
     Arc::new(SpearletConfig {
         node_name: "test-node".to_string(),
         grpc: spear_next::config::base::ServerConfig { addr: "127.0.0.1:50055".parse().unwrap(), ..Default::default() },
         http: spear_next::spearlet::config::HttpConfig::default(),
         storage: spear_next::spearlet::config::StorageConfig::default(),
         logging: spear_next::config::base::LogConfig { level: "debug".to_string(), format: "json".to_string(), file: None },
-        sms_addr,
+        sms_grpc_addr: sms_grpc_addr,
+        sms_http_addr: "127.0.0.1:8080".to_string(),
         auto_register: true,
         heartbeat_interval: 1,
         cleanup_interval: 10,
@@ -57,8 +58,8 @@ fn make_spearlet_config(sms_addr: String) -> Arc<SpearletConfig> {
 
 #[tokio::test]
 async fn test_attempt_reconnect_and_register() {
-    let (_h, sms_addr) = start_sms_server(None).await;
-    let cfg = make_spearlet_config(sms_addr);
+    let (_h, sms_grpc_addr) = start_sms_server(None).await;
+    let cfg = make_spearlet_config(sms_grpc_addr);
     let svc = RegistrationService::new(cfg.clone());
     svc.start().await.unwrap();
     assert!(wait_registered(&svc, 1200).await);
@@ -66,8 +67,8 @@ async fn test_attempt_reconnect_and_register() {
 
 #[tokio::test]
 async fn test_reconnect_after_server_restart() {
-    let (h1, sms_addr) = start_sms_server(None).await;
-    let cfg = make_spearlet_config(sms_addr.clone());
+    let (h1, sms_grpc_addr) = start_sms_server(None).await;
+    let cfg = make_spearlet_config(sms_grpc_addr.clone());
     let svc = RegistrationService::new(cfg.clone());
     svc.start().await.unwrap();
     assert!(wait_registered(&svc, 1200).await);
@@ -77,7 +78,7 @@ async fn test_reconnect_after_server_restart() {
     sleep(Duration::from_millis(300)).await;
 
     // Restart server
-    let (_h2, _addr2) = start_sms_server(Some(sms_addr.clone())).await;
+    let (_h2, _addr2) = start_sms_server(Some(sms_grpc_addr.clone())).await;
 
     // Wait bounded for reconnect + immediate re-register
     assert!(wait_registered(&svc, 1500).await);

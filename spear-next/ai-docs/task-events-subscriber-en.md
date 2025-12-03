@@ -12,7 +12,7 @@ SPEARlet includes a streaming Task Events subscriber that connects to the SMS `T
 
 ## Key Behaviors
 
-- Connects to SMS via `sms_addr` using gRPC and subscribes to `SubscribeTaskEvents` with `node_uuid` and `last_event_id`.
+- Connects to SMS via `sms_grpc_addr` using gRPC and subscribes to `SubscribeTaskEvents` with `node_uuid` and `last_event_id`.
 - Streams events; on each event:
   - Updates `last_event_id` in memory and persists to disk.
   - For `Create` events, fetches task details via `GetTask` and prepares for execution dispatch (placeholder `todo!`).
@@ -26,7 +26,7 @@ Relevant `SpearletConfig` fields:
 ```toml
 [spearlet]
 node_name = "spearlet-node"
-sms_addr = "127.0.0.1:50051"
+sms_grpc_addr = "127.0.0.1:50051"
 auto_register = true
 heartbeat_interval = 30
 cleanup_interval = 300

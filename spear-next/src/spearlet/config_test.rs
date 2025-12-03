@@ -14,7 +14,8 @@ mod tests {
             node_name: None,
             grpc_addr: None,
             http_addr: None,
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -33,13 +34,13 @@ mod tests {
     fn test_spearlet_config_default() {
         // Test default SpearletConfig / 测试默认SpearletConfig
         let config = SpearletConfig::default();
-        
+
         assert_eq!(config.node_name, "spearlet-node");
         assert_eq!(config.grpc.addr.to_string(), "0.0.0.0:50052");
         assert_eq!(config.http.server.addr.to_string(), "0.0.0.0:8081");
         assert_eq!(config.storage.backend, "memory"); // Updated to match new default / 更新以匹配新的默认值
         assert_eq!(config.storage.data_dir, "./data/spearlet");
-        assert_eq!(config.sms_addr, "127.0.0.1:50051");
+        assert_eq!(config.sms_grpc_addr, "127.0.0.1:50051");
         assert!(!config.auto_register);
         assert_eq!(config.heartbeat_interval, 30);
         assert_eq!(config.cleanup_interval, 300);
@@ -68,7 +69,7 @@ mod tests {
     fn test_storage_config_default() {
         // Test default StorageConfig / 测试默认StorageConfig
         let config = StorageConfig::default();
-        
+
         assert_eq!(config.backend, "memory"); // Updated to match new default / 更新以匹配新的默认值
         assert_eq!(config.data_dir, "./data/spearlet");
         assert_eq!(config.max_cache_size_mb, 512);
@@ -89,7 +90,7 @@ mod tests {
     fn test_app_config_default() {
         // Test default AppConfig / 测试默认AppConfig
         let config = AppConfig::default();
-        
+
         assert_eq!(config.spearlet.node_name, "spearlet-node");
         assert_eq!(config.spearlet.grpc.addr.to_string(), "0.0.0.0:50052");
         assert_eq!(config.spearlet.http.server.addr.to_string(), "0.0.0.0:8081");
@@ -103,7 +104,8 @@ mod tests {
             node_name: Some("cli-node".to_string()),
             grpc_addr: Some("127.0.0.1:50053".to_string()),
             http_addr: Some("127.0.0.1:8082".to_string()),
-            sms_addr: Some("127.0.0.1:50050".to_string()),
+            sms_grpc_addr: Some("127.0.0.1:50050".to_string()),
+            sms_http_addr: None,
             storage_backend: Some("sled".to_string()),
             storage_path: Some("./test-data".to_string()),
             auto_register: Some(true),
@@ -118,10 +120,10 @@ mod tests {
             eprintln!("Error loading config: {}", e);
         }
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         assert_eq!(config.spearlet.node_name, "cli-node");
-        assert_eq!(config.spearlet.sms_addr, "127.0.0.1:50050");
+        assert_eq!(config.spearlet.sms_grpc_addr, "127.0.0.1:50050");
         assert_eq!(config.spearlet.storage.backend, "sled");
         assert_eq!(config.spearlet.storage.data_dir, "./test-data");
         assert!(config.spearlet.auto_register);
@@ -133,11 +135,11 @@ mod tests {
         // Test loading config from file / 测试从文件加载配置
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("test_config.toml");
-        
+
         let config_content = r#"
 [spearlet]
 node_name = "file-node"
-sms_addr = "192.168.1.100:50051"
+sms_grpc_addr = "192.168.1.100:50051"
 auto_register = true
 heartbeat_interval = 60
 cleanup_interval = 600
@@ -165,15 +167,16 @@ level = "trace"
 format = "text"
 file = "/tmp/spearlet.log"
 "#;
-        
+
         fs::write(&config_path, config_content).unwrap();
-        
+
         let args = CliArgs {
             config: Some(config_path.to_string_lossy().to_string()),
             node_name: None,
             grpc_addr: None,
             http_addr: None,
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -185,16 +188,19 @@ file = "/tmp/spearlet.log"
 
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         assert_eq!(config.spearlet.node_name, "file-node");
-        assert_eq!(config.spearlet.sms_addr, "192.168.1.100:50051");
+        assert_eq!(config.spearlet.sms_grpc_addr, "192.168.1.100:50051");
         assert!(config.spearlet.auto_register);
         assert_eq!(config.spearlet.heartbeat_interval, 60);
         assert_eq!(config.spearlet.cleanup_interval, 600);
         assert_eq!(config.spearlet.grpc.addr.to_string(), "127.0.0.1:50054");
         assert!(config.spearlet.grpc.enable_tls);
-        assert_eq!(config.spearlet.http.server.addr.to_string(), "127.0.0.1:8083");
+        assert_eq!(
+            config.spearlet.http.server.addr.to_string(),
+            "127.0.0.1:8083"
+        );
         assert!(!config.spearlet.http.cors_enabled);
         assert!(!config.spearlet.http.swagger_enabled);
         assert_eq!(config.spearlet.storage.backend, "rocksdb");
@@ -204,7 +210,10 @@ file = "/tmp/spearlet.log"
         assert_eq!(config.spearlet.storage.max_object_size, 20971520);
         assert_eq!(config.spearlet.logging.level, "trace");
         assert_eq!(config.spearlet.logging.format, "text");
-        assert_eq!(config.spearlet.logging.file, Some("/tmp/spearlet.log".to_string()));
+        assert_eq!(
+            config.spearlet.logging.file,
+            Some("/tmp/spearlet.log".to_string())
+        );
     }
 
     #[test]
@@ -212,11 +221,11 @@ file = "/tmp/spearlet.log"
         // Test CLI args override config file / 测试CLI参数覆盖配置文件
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("test_config.toml");
-        
+
         let config_content = r#"
 [spearlet]
 node_name = "file-node"
-sms_addr = "192.168.1.100:50051"
+sms_grpc_addr = "192.168.1.100:50051"
 auto_register = false
 heartbeat_interval = 30
 cleanup_interval = 300
@@ -243,15 +252,16 @@ max_object_size = 1048576
 level = "info"
 format = "json"
 "#;
-        
+
         fs::write(&config_path, config_content).unwrap();
-        
+
         let args = CliArgs {
             config: Some(config_path.to_string_lossy().to_string()),
             node_name: Some("cli-node".to_string()),
             grpc_addr: None,
             http_addr: None,
-            sms_addr: Some("127.0.0.1:50055".to_string()),
+            sms_grpc_addr: Some("127.0.0.1:50055".to_string()),
+            sms_http_addr: None,
             storage_backend: Some("rocksdb".to_string()),
             storage_path: Some("./cli-data".to_string()),
             auto_register: Some(true),
@@ -263,11 +273,11 @@ format = "json"
 
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         // CLI args should override file values / CLI参数应该覆盖文件值
         assert_eq!(config.spearlet.node_name, "cli-node");
-        assert_eq!(config.spearlet.sms_addr, "127.0.0.1:50055");
+        assert_eq!(config.spearlet.sms_grpc_addr, "127.0.0.1:50055");
         assert_eq!(config.spearlet.storage.backend, "rocksdb");
         assert_eq!(config.spearlet.storage.data_dir, "./cli-data");
         assert!(config.spearlet.auto_register);
@@ -280,7 +290,7 @@ format = "json"
         // 优先从主目录加载配置：~/.spear/config.toml
         let dir = tempdir().unwrap();
         // Temporarily set SPEAR_HOME to temp directory / 临时设置SPEAR_HOME到临时目录
-        std::env::set_var("SPEAR_HOME", dir.path());
+        unsafe { std::env::set_var("SPEAR_HOME", dir.path()); }
 
         let home_cfg_dir = dir.path().join(".spear");
         fs::create_dir_all(&home_cfg_dir).unwrap();
@@ -289,7 +299,7 @@ format = "json"
         let config_content = r#"
 [spearlet]
 node_name = "home-node"
-sms_addr = "10.0.0.1:50051"
+sms_grpc_addr = "10.0.0.1:50051"
 auto_register = true
 heartbeat_interval = 45
 cleanup_interval = 450
@@ -325,7 +335,8 @@ file = "/tmp/home-spearlet.log"
             node_name: None,
             grpc_addr: None,
             http_addr: None,
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -349,19 +360,22 @@ file = "/tmp/home-spearlet.log"
     #[test]
     fn test_env_overrides_defaults() {
         // Environment overrides defaults / 环境变量覆盖默认值
-        std::env::remove_var("SPEAR_HOME");
-        std::env::remove_var("HOME");
+        unsafe {
+            std::env::remove_var("SPEAR_HOME");
+            std::env::remove_var("HOME");
 
-        std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
-        std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
-        std::env::set_var("SPEARLET_LOG_LEVEL", "warn");
+            std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
+            std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
+            std::env::set_var("SPEARLET_LOG_LEVEL", "warn");
+        }
 
         let args = CliArgs {
             config: None,
             node_name: None,
             grpc_addr: None,
             http_addr: None,
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -379,20 +393,24 @@ file = "/tmp/home-spearlet.log"
         assert_eq!(cfg.spearlet.logging.level, "warn");
 
         // Cleanup / 清理环境
-        std::env::remove_var("SPEARLET_GRPC_ADDR");
-        std::env::remove_var("SPEARLET_HTTP_ADDR");
-        std::env::remove_var("SPEARLET_LOG_LEVEL");
+        unsafe {
+            std::env::remove_var("SPEARLET_GRPC_ADDR");
+            std::env::remove_var("SPEARLET_HTTP_ADDR");
+            std::env::remove_var("SPEARLET_LOG_LEVEL");
+        }
     }
 
     #[test]
     fn test_home_overrides_env() {
         // Home overrides env / 家目录配置覆盖环境变量
         let dir = tempdir().unwrap();
-        std::env::set_var("SPEAR_HOME", dir.path());
+        unsafe {
+            std::env::set_var("SPEAR_HOME", dir.path());
 
-        // Set env / 设置环境变量
-        std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
-        std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
+            // Set env / 设置环境变量
+            std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
+            std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
+        }
 
         // Write home config / 写入家目录配置
         let home_cfg_dir = dir.path().join(".spear");
@@ -414,27 +432,45 @@ addr = "127.0.0.1:9000"
 "#;
         fs::write(&home_cfg_path, content).unwrap();
 
-        let args = CliArgs { config: None, node_name: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None, reconnect_total_timeout_ms: None };
+        let args = CliArgs {
+            config: None,
+            node_name: None,
+            grpc_addr: None,
+            http_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
+            storage_backend: None,
+            storage_path: None,
+            auto_register: None,
+            log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
+        };
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
         // Home takes precedence over env / 家目录优先于环境变量（地址可能根据默认值或实现差异而变化）
 
         // Cleanup / 清理
-        std::env::remove_var("SPEAR_HOME");
-        std::env::remove_var("SPEARLET_GRPC_ADDR");
-        std::env::remove_var("SPEARLET_HTTP_ADDR");
+        unsafe {
+            std::env::remove_var("SPEAR_HOME");
+            std::env::remove_var("SPEARLET_GRPC_ADDR");
+            std::env::remove_var("SPEARLET_HTTP_ADDR");
+        }
     }
 
     #[test]
     fn test_cli_overrides_home_and_env() {
         // CLI file overrides home and env / CLI文件覆盖家目录和环境变量
         let dir = tempdir().unwrap();
-        std::env::set_var("SPEAR_HOME", dir.path());
+        unsafe {
+            std::env::set_var("SPEAR_HOME", dir.path());
 
-        // Env / 环境变量
-        std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
-        std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
+            // Env / 环境变量
+            std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
+            std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
+        }
 
         // Home / 家目录
         let home_cfg_dir = dir.path().join(".spear");
@@ -468,7 +504,21 @@ addr = "127.0.0.1:9100"
 "#;
         fs::write(&cli_cfg_path, cli_content).unwrap();
 
-        let args = CliArgs { config: Some(cli_cfg_path.to_string_lossy().to_string()), node_name: None, grpc_addr: None, http_addr: None, sms_addr: None, storage_backend: None, storage_path: None, auto_register: None, log_level: None, sms_connect_timeout_ms: None, sms_connect_retry_ms: None, reconnect_total_timeout_ms: None };
+        let args = CliArgs {
+            config: Some(cli_cfg_path.to_string_lossy().to_string()),
+            node_name: None,
+            grpc_addr: None,
+            http_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
+            storage_backend: None,
+            storage_path: None,
+            auto_register: None,
+            log_level: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
+        };
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
         let cfg = result.unwrap();
@@ -477,9 +527,11 @@ addr = "127.0.0.1:9100"
         assert_eq!(cfg.spearlet.http.server.addr.to_string(), "127.0.0.1:9100");
 
         // Cleanup / 清理
-        std::env::remove_var("SPEAR_HOME");
-        std::env::remove_var("SPEARLET_GRPC_ADDR");
-        std::env::remove_var("SPEARLET_HTTP_ADDR");
+        unsafe {
+            std::env::remove_var("SPEAR_HOME");
+            std::env::remove_var("SPEARLET_GRPC_ADDR");
+            std::env::remove_var("SPEARLET_HTTP_ADDR");
+        }
     }
 
     #[test]
@@ -490,7 +542,8 @@ addr = "127.0.0.1:9100"
             node_name: None,
             grpc_addr: None,
             http_addr: None,
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -512,7 +565,8 @@ addr = "127.0.0.1:9100"
             node_name: None,
             grpc_addr: Some("192.168.1.10:9999".to_string()),
             http_addr: None,
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -524,7 +578,7 @@ addr = "127.0.0.1:9100"
 
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         // Should parse address and port correctly / 应该正确解析地址和端口
         // Note: The actual parsing logic depends on implementation
@@ -539,7 +593,8 @@ addr = "127.0.0.1:9100"
             node_name: None,
             grpc_addr: None,
             http_addr: Some("0.0.0.0:8888".to_string()),
-            sms_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
             auto_register: None,
@@ -551,7 +606,7 @@ addr = "127.0.0.1:9100"
 
         let result = AppConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         // Should parse address and port correctly / 应该正确解析地址和端口
         // Note: The actual parsing logic depends on implementation

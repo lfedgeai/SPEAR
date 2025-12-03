@@ -32,8 +32,12 @@ pub struct CliArgs {
     pub http_addr: Option<String>,
 
     /// SMS service address / SMS服务地址
-    #[arg(long, value_name = "ADDR", help = "SMS service address (e.g., 127.0.0.1:50051) / SMS服务地址")]
-    pub sms_addr: Option<String>,
+    #[arg(long = "sms-grpc-addr", value_name = "ADDR", help = "SMS gRPC address (e.g., 127.0.0.1:50051) / SMS gRPC地址")]
+    pub sms_grpc_addr: Option<String>,
+
+    /// SMS HTTP gateway address / SMS HTTP网关地址
+    #[arg(long, value_name = "ADDR", help = "SMS HTTP gateway address (e.g., 127.0.0.1:8080) / SMS HTTP网关地址")]
+    pub sms_http_addr: Option<String>,
 
     /// Storage backend type / 存储后端类型
     #[arg(long, value_name = "BACKEND", help = "Storage backend type (memory, sled, rocksdb) / 存储后端类型")]
@@ -77,7 +81,8 @@ impl AppConfig {
         // Apply environment variables (low priority) / 应用环境变量（较低优先级）
         // Prefix: SPEARLET_  例如：SPEARLET_GRPC_ADDR, SPEARLET_HTTP_ADDR
         if let Ok(v) = std::env::var("SPEARLET_NODE_NAME") { if !v.is_empty() { config.spearlet.node_name = v; } }
-        if let Ok(v) = std::env::var("SPEARLET_SMS_ADDR") { if !v.is_empty() { config.spearlet.sms_addr = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_GRPC_ADDR") { if !v.is_empty() { config.spearlet.sms_grpc_addr = v; } }
+        if let Ok(v) = std::env::var("SPEARLET_SMS_HTTP_ADDR") { if !v.is_empty() { config.spearlet.sms_http_addr = v; } }
         if let Ok(v) = std::env::var("SPEARLET_AUTO_REGISTER") { if let Ok(b) = v.parse::<bool>() { config.spearlet.auto_register = b; } }
         if let Ok(v) = std::env::var("SPEARLET_HEARTBEAT_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.heartbeat_interval = n; } }
         if let Ok(v) = std::env::var("SPEARLET_CLEANUP_INTERVAL") { if let Ok(n) = v.parse::<u64>() { config.spearlet.cleanup_interval = n; } }
@@ -142,8 +147,11 @@ impl AppConfig {
             config.spearlet.http.server.addr = http_addr.parse()?;
         }
         
-        if let Some(sms_addr) = &args.sms_addr {
-            config.spearlet.sms_addr = sms_addr.clone();
+        if let Some(sms_grpc_addr) = &args.sms_grpc_addr {
+            config.spearlet.sms_grpc_addr = sms_grpc_addr.clone();
+        }
+        if let Some(sms_http_addr) = &args.sms_http_addr {
+            config.spearlet.sms_http_addr = sms_http_addr.clone();
         }
         
         if let Some(storage_backend) = &args.storage_backend {
@@ -168,8 +176,8 @@ impl AppConfig {
 
         // Implicit auto-register rule: when SMS address is provided via CLI or env, enable auto_register by default
         // 隐式自动注册规则：当通过CLI或环境变量提供了SMS地址时，默认启用auto_register
-        let env_sms = std::env::var("SPEARLET_SMS_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
-        let cli_sms = args.sms_addr.as_ref().map(|v| !v.is_empty()).unwrap_or(false);
+        let env_sms = std::env::var("SPEARLET_SMS_GRPC_ADDR").ok().map(|v| !v.is_empty()).unwrap_or(false);
+        let cli_sms = args.sms_grpc_addr.as_ref().map(|v| !v.is_empty()).unwrap_or(false);
         if args.auto_register.is_none() && (env_sms || cli_sms) {
             config.spearlet.auto_register = true;
         }
@@ -201,7 +209,9 @@ pub struct SpearletConfig {
     /// Logging configuration / 日志配置
     pub logging: LogConfig,
     /// SMS service address / SMS服务地址
-    pub sms_addr: String,
+    pub sms_grpc_addr: String,
+    /// SMS HTTP gateway address / SMS HTTP网关地址
+    pub sms_http_addr: String,
     /// Auto register with SMS / 自动向SMS注册
     pub auto_register: bool,
     /// Heartbeat interval in seconds / 心跳间隔(秒)
@@ -263,7 +273,8 @@ impl Default for SpearletConfig {
             http: HttpConfig::default(),
             storage: StorageConfig::default(),
             logging: LogConfig::default(),
-            sms_addr: "127.0.0.1:50051".to_string(),
+            sms_grpc_addr: "127.0.0.1:50051".to_string(),
+            sms_http_addr: "127.0.0.1:8080".to_string(),
             auto_register: false,
             heartbeat_interval: 30,
             cleanup_interval: 300,

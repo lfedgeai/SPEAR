@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::proto::sms::{
-    NodeResource, UpdateNodeResourceRequest, GetNodeResourceRequest,
-    ListNodeResourcesRequest, GetNodeWithResourceRequest,
+    GetNodeResourceRequest, GetNodeWithResourceRequest, ListNodeResourcesRequest, NodeResource,
+    UpdateNodeResourceRequest,
 };
 use crate::sms::gateway::GatewayState;
 
@@ -52,7 +52,7 @@ pub async fn update_node_resource(
     Json(req): Json<HttpUpdateNodeResourceRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     // Convert HTTP request to gRPC request / 将HTTP请求转换为gRPC请求
     let resource = NodeResource {
         node_uuid: uuid.clone(),
@@ -72,11 +72,11 @@ pub async fn update_node_resource(
         resource_metadata: req.resource_metadata.unwrap_or_default(),
         updated_at: chrono::Utc::now().timestamp(),
     };
-    
+
     let grpc_req = UpdateNodeResourceRequest {
         resource: Some(resource),
     };
-    
+
     match client.update_node_resource(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -98,11 +98,9 @@ pub async fn get_node_resource(
     Path(uuid): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut client = state.node_client.clone();
-    
-    let grpc_req = GetNodeResourceRequest {
-        node_uuid: uuid,
-    };
-    
+
+    let grpc_req = GetNodeResourceRequest { node_uuid: uuid };
+
     match client.get_node_resource(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -142,43 +140,48 @@ pub async fn list_node_resources(
     Query(query): Query<ListNodeResourcesQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     let node_uuids = if let Some(uuids_str) = &query.node_uuids {
-        info!("HTTP list_node_resources called with node_uuids: '{}'", uuids_str);
+        info!(
+            "HTTP list_node_resources called with node_uuids: '{}'",
+            uuids_str
+        );
         uuids_str.split(',').map(|s| s.trim().to_string()).collect()
     } else {
         info!("HTTP list_node_resources called with no node_uuids filter");
         vec![]
     };
-    
-    let grpc_req = ListNodeResourcesRequest {
-        node_uuids,
-    };
-    
+
+    let grpc_req = ListNodeResourcesRequest { node_uuids };
+
     match client.list_node_resources(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
-            let resources: Vec<serde_json::Value> = resp.resources.into_iter().map(|resource| {
-                json!({
-                    "node_uuid": resource.node_uuid,
-                    "cpu_usage_percent": resource.cpu_usage_percent,
-                    "memory_usage_percent": resource.memory_usage_percent,
-                    "total_memory_bytes": resource.total_memory_bytes,
-                    "used_memory_bytes": resource.used_memory_bytes,
-                    "available_memory_bytes": resource.available_memory_bytes,
-                    "disk_usage_percent": resource.disk_usage_percent,
-                    "total_disk_bytes": resource.total_disk_bytes,
-                    "used_disk_bytes": resource.used_disk_bytes,
-                    "network_rx_bytes_per_sec": resource.network_rx_bytes_per_sec,
-                    "network_tx_bytes_per_sec": resource.network_tx_bytes_per_sec,
-                    "load_average_1m": resource.load_average_1m,
-                    "load_average_5m": resource.load_average_5m,
-                    "load_average_15m": resource.load_average_15m,
-                    "resource_metadata": resource.resource_metadata,
-                    "updated_at": resource.updated_at
+            let resources: Vec<serde_json::Value> = resp
+                .resources
+                .into_iter()
+                .map(|resource| {
+                    json!({
+                        "node_uuid": resource.node_uuid,
+                        "cpu_usage_percent": resource.cpu_usage_percent,
+                        "memory_usage_percent": resource.memory_usage_percent,
+                        "total_memory_bytes": resource.total_memory_bytes,
+                        "used_memory_bytes": resource.used_memory_bytes,
+                        "available_memory_bytes": resource.available_memory_bytes,
+                        "disk_usage_percent": resource.disk_usage_percent,
+                        "total_disk_bytes": resource.total_disk_bytes,
+                        "used_disk_bytes": resource.used_disk_bytes,
+                        "network_rx_bytes_per_sec": resource.network_rx_bytes_per_sec,
+                        "network_tx_bytes_per_sec": resource.network_tx_bytes_per_sec,
+                        "load_average_1m": resource.load_average_1m,
+                        "load_average_5m": resource.load_average_5m,
+                        "load_average_15m": resource.load_average_15m,
+                        "resource_metadata": resource.resource_metadata,
+                        "updated_at": resource.updated_at
+                    })
                 })
-            }).collect();
-            
+                .collect();
+
             Ok(Json(json!({
                 "resources": resources
             })))
@@ -196,11 +199,9 @@ pub async fn get_node_with_resource(
     Path(uuid): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut client = state.node_client.clone();
-    
-    let grpc_req = GetNodeWithResourceRequest {
-        uuid: uuid,
-    };
-    
+
+    let grpc_req = GetNodeWithResourceRequest { uuid: uuid };
+
     match client.get_node_with_resource(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -214,7 +215,7 @@ pub async fn get_node_with_resource(
                     "registered_at": node.registered_at,
                     "last_heartbeat": node.last_heartbeat
                 });
-                
+
                 if let Some(resource) = resp.resource {
                     result["resource"] = json!({
                         "cpu_usage_percent": resource.cpu_usage_percent,
@@ -234,7 +235,7 @@ pub async fn get_node_with_resource(
                         "updated_at": resource.updated_at
                     });
                 }
-                
+
                 Ok(Json(result))
             } else {
                 Err(StatusCode::NOT_FOUND)

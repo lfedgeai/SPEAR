@@ -1,10 +1,10 @@
 //! Monitoring and diagnostics module for runtime communication
 //! 运行时通信的监控和诊断模块
 
-use crate::spearlet::execution::communication::{
-    SpearMessage, MessageType, ConnectionState, ConnectionEvent,
-};
 use crate::spearlet::execution::communication::protocol::ConnectionStatus;
+use crate::spearlet::execution::communication::{
+    ConnectionEvent, ConnectionState, MessageType, SpearMessage,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -186,7 +186,7 @@ impl MonitoringService {
     /// Create new monitoring service / 创建新的监控服务
     pub fn new(config: MonitoringConfig) -> Self {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             connection_metrics: Arc::new(RwLock::new(HashMap::new())),
@@ -204,7 +204,11 @@ impl MonitoringService {
             return Ok(());
         }
 
-        let mut receiver = self.event_receiver.write().await.take()
+        let mut receiver = self
+            .event_receiver
+            .write()
+            .await
+            .take()
             .ok_or("Monitoring service already started")?;
 
         let connection_metrics = Arc::clone(&self.connection_metrics);
@@ -223,7 +227,8 @@ impl MonitoringService {
                     &system_metrics_history,
                     &performance_events,
                     &config,
-                ).await;
+                )
+                .await;
             }
         });
 
@@ -241,7 +246,8 @@ impl MonitoringService {
                     &system_metrics_history_clone,
                     &connection_metrics_clone,
                     max_history_size,
-                ).await;
+                )
+                .await;
             }
         });
 
@@ -249,11 +255,7 @@ impl MonitoringService {
     }
 
     /// Record connection event / 记录连接事件
-    pub async fn record_connection_event(
-        &self,
-        connection_id: String,
-        event: ConnectionEvent,
-    ) {
+    pub async fn record_connection_event(&self, connection_id: String, event: ConnectionEvent) {
         if !self.config.enabled || !self.config.enable_connection_tracking {
             return;
         }
@@ -280,7 +282,7 @@ impl MonitoringService {
         }
 
         let size_bytes = serde_json::to_vec(message).unwrap_or_default().len();
-        
+
         let monitoring_event = MonitoringEvent::Message {
             connection_id,
             message_type: message.message_type.clone(),
@@ -333,7 +335,10 @@ impl MonitoringService {
             metadata,
         };
 
-        self.performance_events.write().await.insert(event_id, event);
+        self.performance_events
+            .write()
+            .await
+            .insert(event_id, event);
     }
 
     /// End performance tracking / 结束性能跟踪
@@ -344,7 +349,9 @@ impl MonitoringService {
 
         let mut events = self.performance_events.write().await;
         if let Some(mut event) = events.remove(event_id) {
-            let duration = SystemTime::now().duration_since(event.start_time).unwrap_or_default();
+            let duration = SystemTime::now()
+                .duration_since(event.start_time)
+                .unwrap_or_default();
             event.duration = Some(duration);
 
             let monitoring_event = MonitoringEvent::Performance {
@@ -388,35 +395,38 @@ impl MonitoringService {
         _config: &MonitoringConfig,
     ) {
         match event {
-            MonitoringEvent::Connection { connection_id, event, timestamp } => {
+            MonitoringEvent::Connection {
+                connection_id,
+                event,
+                timestamp,
+            } => {
                 Self::update_connection_metrics(
                     connection_metrics,
                     connection_id,
                     event,
                     *timestamp,
-                ).await;
+                )
+                .await;
             }
-            MonitoringEvent::Message { 
-                connection_id, 
-                message_type, 
-                direction, 
-                size_bytes, 
+            MonitoringEvent::Message {
+                connection_id,
+                message_type,
+                direction,
+                size_bytes,
                 processing_time_ms,
-                timestamp 
+                timestamp,
             } => {
-                Self::update_message_metrics(
-                    message_metrics,
-                    message_type,
-                    *processing_time_ms,
-                ).await;
-                
+                Self::update_message_metrics(message_metrics, message_type, *processing_time_ms)
+                    .await;
+
                 Self::update_connection_message_metrics(
                     connection_metrics,
                     connection_id,
                     *direction,
                     *size_bytes,
                     *timestamp,
-                ).await;
+                )
+                .await;
             }
             MonitoringEvent::Error { connection_id, .. } => {
                 if let Some(conn_id) = connection_id {
@@ -438,7 +448,7 @@ impl MonitoringService {
         timestamp: SystemTime,
     ) {
         let mut metrics = connection_metrics.write().await;
-        
+
         match event {
             ConnectionEvent::Connected { .. } => {
                 let new_metrics = ConnectionMetrics {
@@ -482,8 +492,9 @@ impl MonitoringService {
         processing_time_ms: Option<f64>,
     ) {
         let mut metrics = message_metrics.write().await;
-        let metric = metrics.entry(message_type.clone()).or_insert_with(|| {
-            MessageMetrics {
+        let metric = metrics
+            .entry(message_type.clone())
+            .or_insert_with(|| MessageMetrics {
                 message_type: message_type.clone(),
                 total_count: 0,
                 success_count: 0,
@@ -491,16 +502,16 @@ impl MonitoringService {
                 avg_processing_time_ms: 0.0,
                 max_processing_time_ms: 0.0,
                 min_processing_time_ms: f64::MAX,
-            }
-        });
+            });
 
         metric.total_count += 1;
-        
+
         if let Some(time_ms) = processing_time_ms {
             metric.success_count += 1;
-            
+
             // Update processing time statistics / 更新处理时间统计
-            let total_time = metric.avg_processing_time_ms * (metric.success_count - 1) as f64 + time_ms;
+            let total_time =
+                metric.avg_processing_time_ms * (metric.success_count - 1) as f64 + time_ms;
             metric.avg_processing_time_ms = total_time / metric.success_count as f64;
             metric.max_processing_time_ms = metric.max_processing_time_ms.max(time_ms);
             metric.min_processing_time_ms = metric.min_processing_time_ms.min(time_ms);
@@ -551,20 +562,21 @@ impl MonitoringService {
         max_history_size: usize,
     ) {
         let connections = connection_metrics.read().await;
-        let active_connections = connections.values()
+        let active_connections = connections
+            .values()
             .filter(|m| m.state == ConnectionStatus::Active)
             .count();
-        
+
         let total_connections = connections.len() as u64;
-        let total_messages: u64 = connections.values()
+        let total_messages: u64 = connections
+            .values()
             .map(|m| m.messages_sent + m.messages_received)
             .sum();
-        let total_bytes: u64 = connections.values()
+        let total_bytes: u64 = connections
+            .values()
             .map(|m| m.bytes_sent + m.bytes_received)
             .sum();
-        let total_errors: u64 = connections.values()
-            .map(|m| m.error_count)
-            .sum();
+        let total_errors: u64 = connections.values().map(|m| m.error_count).sum();
 
         drop(connections);
 
@@ -573,19 +585,19 @@ impl MonitoringService {
             active_connections,
             total_connections,
             messages_per_second: total_messages as f64 / 60.0, // Approximate
-            bytes_per_second: total_bytes as f64 / 60.0, // Approximate
-            memory_usage_bytes: 0, // TODO: Implement actual memory tracking
+            bytes_per_second: total_bytes as f64 / 60.0,       // Approximate
+            memory_usage_bytes: 0,  // TODO: Implement actual memory tracking
             cpu_usage_percent: 0.0, // TODO: Implement actual CPU tracking
-            error_rate: if total_messages > 0 { 
-                total_errors as f64 / total_messages as f64 
-            } else { 
-                0.0 
+            error_rate: if total_messages > 0 {
+                total_errors as f64 / total_messages as f64
+            } else {
+                0.0
             },
         };
 
         let mut history = system_metrics_history.write().await;
         history.push(metrics);
-        
+
         // Keep history size under limit / 保持历史大小在限制内
         if history.len() > max_history_size {
             history.remove(0);
@@ -602,7 +614,7 @@ mod tests {
     async fn test_monitoring_service_creation() {
         let config = MonitoringConfig::default();
         let service = MonitoringService::new(config);
-        
+
         assert!(service.get_connection_metrics().await.is_empty());
         assert!(service.get_message_metrics().await.is_empty());
         assert!(service.get_system_metrics_history().await.is_empty());
@@ -612,20 +624,22 @@ mod tests {
     async fn test_connection_event_recording() {
         let config = MonitoringConfig::default();
         let service = MonitoringService::new(config);
-        
+
         service.start().await.unwrap();
-        
-        service.record_connection_event(
-            "test-conn-1".to_string(),
-            ConnectionEvent::Connected {
-                connection_id: "test-conn-1".to_string(),
-                remote_addr: "127.0.0.1:8080".parse().unwrap(),
-            },
-        ).await;
-        
+
+        service
+            .record_connection_event(
+                "test-conn-1".to_string(),
+                ConnectionEvent::Connected {
+                    connection_id: "test-conn-1".to_string(),
+                    remote_addr: "127.0.0.1:8080".parse().unwrap(),
+                },
+            )
+            .await;
+
         // Give some time for event processing / 给事件处理一些时间
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         let metrics = service.get_connection_metrics().await;
         assert!(metrics.contains_key("test-conn-1"));
     }
@@ -634,9 +648,9 @@ mod tests {
     async fn test_message_event_recording() {
         let config = MonitoringConfig::default();
         let service = MonitoringService::new(config);
-        
+
         service.start().await.unwrap();
-        
+
         let message = SpearMessage {
             message_type: MessageType::AuthRequest,
             request_id: 12345,
@@ -647,20 +661,23 @@ mod tests {
                 client_version: "1.0.0".to_string(),
                 client_type: "process".to_string(),
                 extra_params: std::collections::HashMap::new(),
-            }).unwrap(),
+            })
+            .unwrap(),
             version: 1,
         };
-        
-        service.record_message_event(
-            "test-conn-1".to_string(),
-            &message,
-            MessageDirection::Incoming,
-            Some(10.5),
-        ).await;
-        
+
+        service
+            .record_message_event(
+                "test-conn-1".to_string(),
+                &message,
+                MessageDirection::Incoming,
+                Some(10.5),
+            )
+            .await;
+
         // Give some time for event processing / 给事件处理一些时间
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         let metrics = service.get_message_metrics().await;
         assert!(metrics.contains_key(&MessageType::AuthRequest));
     }

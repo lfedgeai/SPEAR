@@ -16,8 +16,8 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::proto::sms::{
-    Node, RegisterNodeRequest, ListNodesRequest, GetNodeRequest, 
-    UpdateNodeRequest, DeleteNodeRequest, HeartbeatRequest,
+    DeleteNodeRequest, GetNodeRequest, HeartbeatRequest, ListNodesRequest, Node,
+    RegisterNodeRequest, UpdateNodeRequest,
 };
 use crate::sms::gateway::GatewayState;
 
@@ -56,7 +56,7 @@ pub async fn register_node(
     Json(req): Json<HttpRegisterNodeRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     let node = Node {
         uuid: Uuid::new_v4().to_string(),
         ip_address: req.ip_address,
@@ -66,27 +66,31 @@ pub async fn register_node(
         registered_at: chrono::Utc::now().timestamp(),
         metadata: req.metadata.unwrap_or_default(),
     };
-    
-    let grpc_req = RegisterNodeRequest {
-        node: Some(node),
-    };
-    
+
+    let grpc_req = RegisterNodeRequest { node: Some(node) };
+
     match client.register_node(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
             if resp.success {
                 info!("Node registered successfully via HTTP: {}", resp.node_uuid);
-                Ok((StatusCode::CREATED, Json(json!({
-                    "success": true,
-                    "message": resp.message,
-                    "node_uuid": resp.node_uuid
-                }))))
+                Ok((
+                    StatusCode::CREATED,
+                    Json(json!({
+                        "success": true,
+                        "message": resp.message,
+                        "node_uuid": resp.node_uuid
+                    })),
+                ))
             } else {
                 warn!("Failed to register node via HTTP: {}", resp.message);
-                Ok((StatusCode::BAD_REQUEST, Json(json!({
-                    "success": false,
-                    "message": resp.message
-                }))))
+                Ok((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "success": false,
+                        "message": resp.message
+                    })),
+                ))
             }
         }
         Err(e) => {
@@ -102,30 +106,35 @@ pub async fn list_nodes(
     Query(query): Query<ListNodesQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     let status_filter = query.status.unwrap_or_default();
-    info!("HTTP list_nodes called with status filter: '{}'", status_filter);
-    
-    let grpc_req = ListNodesRequest {
-        status_filter,
-    };
-    
+    info!(
+        "HTTP list_nodes called with status filter: '{}'",
+        status_filter
+    );
+
+    let grpc_req = ListNodesRequest { status_filter };
+
     match client.list_nodes(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
             info!("Listed {} nodes via HTTP", resp.nodes.len());
             // 手动构建节点数组以避免 serde 版本冲突 / Manually build node array to avoid serde version conflicts
-            let nodes_json: Vec<serde_json::Value> = resp.nodes.into_iter().map(|node| {
-                json!({
-                    "uuid": node.uuid,
-                    "ip_address": node.ip_address,
-                    "port": node.port,
-                    "status": node.status,
-                    "last_heartbeat": node.last_heartbeat,
-                    "registered_at": node.registered_at,
-                    "metadata": node.metadata
+            let nodes_json: Vec<serde_json::Value> = resp
+                .nodes
+                .into_iter()
+                .map(|node| {
+                    json!({
+                        "uuid": node.uuid,
+                        "ip_address": node.ip_address,
+                        "port": node.port,
+                        "status": node.status,
+                        "last_heartbeat": node.last_heartbeat,
+                        "registered_at": node.registered_at,
+                        "metadata": node.metadata
+                    })
                 })
-            }).collect();
+                .collect();
             Ok(Json(json!({
                 "success": true,
                 "nodes": nodes_json
@@ -147,9 +156,9 @@ pub async fn get_node(
     if Uuid::parse_str(&uuid).is_err() {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
-    
+
     let grpc_req = GetNodeRequest { uuid };
-    
+
     match client.get_node(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
@@ -168,23 +177,32 @@ pub async fn get_node(
                 } else {
                     serde_json::Value::Null
                 };
-                Ok((StatusCode::OK, Json(json!({
-                    "success": true,
-                    "node": node_json
-                }))))
+                Ok((
+                    StatusCode::OK,
+                    Json(json!({
+                        "success": true,
+                        "node": node_json
+                    })),
+                ))
             } else {
-                Ok((StatusCode::NOT_FOUND, Json(json!({
-                    "success": false,
-                    "error": "Node not found"
-                }))))
+                Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "error": "Node not found"
+                    })),
+                ))
             }
         }
         Err(e) => {
             if e.code() == tonic::Code::NotFound {
-                Ok((StatusCode::NOT_FOUND, Json(json!({
-                    "success": false,
-                    "error": "Node not found"
-                }))))
+                Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "error": "Node not found"
+                    })),
+                ))
             } else {
                 warn!("gRPC error during node retrieval: {}", e);
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -200,35 +218,41 @@ pub async fn update_node(
     Json(req): Json<HttpUpdateNodeRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     // First get the existing node / 首先获取现有节点
     let get_req = GetNodeRequest { uuid: uuid.clone() };
-    
+
     let existing_node = match client.get_node(get_req).await {
         Ok(response) => {
             let resp = response.into_inner();
             if resp.found {
                 resp.node.unwrap()
             } else {
-                return Ok((StatusCode::NOT_FOUND, Json(json!({
-                    "success": false,
-                    "error": "Node not found"
-                }))));
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "error": "Node not found"
+                    })),
+                ));
             }
         }
         Err(e) => {
             if e.code() == tonic::Code::NotFound {
-                return Ok((StatusCode::NOT_FOUND, Json(json!({
-                    "success": false,
-                    "error": "Node not found"
-                }))));
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "error": "Node not found"
+                    })),
+                ));
             } else {
                 warn!("gRPC error during node retrieval for update: {}", e);
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         }
     };
-    
+
     // Update the node with new values / 使用新值更新节点
     let updated_node = Node {
         uuid: existing_node.uuid,
@@ -239,19 +263,22 @@ pub async fn update_node(
         registered_at: existing_node.registered_at,
         metadata: req.metadata.unwrap_or(existing_node.metadata),
     };
-    
+
     let grpc_req = UpdateNodeRequest {
         uuid,
         node: Some(updated_node),
     };
-    
+
     match client.update_node(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
-            Ok((StatusCode::OK, Json(json!({
-                "success": resp.success,
-                "message": resp.message
-            }))))
+            Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "success": resp.success,
+                    "message": resp.message
+                })),
+            ))
         }
         Err(e) => {
             warn!("gRPC error during node update: {}", e);
@@ -266,25 +293,31 @@ pub async fn delete_node(
     Path(uuid): Path<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     let grpc_req = DeleteNodeRequest { uuid };
-    
+
     match client.delete_node(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
-            Ok((StatusCode::OK, Json(json!({
-                "success": resp.success,
-                "message": resp.message
-            }))))
+            Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "success": resp.success,
+                    "message": resp.message
+                })),
+            ))
         }
         Err(e) => {
             warn!("gRPC error during node deletion: {}", e);
             // Handle specific gRPC error codes / 处理特定的gRPC错误码
             if e.code() == tonic::Code::NotFound {
-                Ok((StatusCode::NOT_FOUND, Json(json!({
-                    "success": false,
-                    "error": "Node not found"
-                }))))
+                Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "error": "Node not found"
+                    })),
+                ))
             } else {
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
@@ -299,29 +332,35 @@ pub async fn heartbeat(
     Json(req): Json<HttpHeartbeatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     let mut client = state.node_client.clone();
-    
+
     let grpc_req = HeartbeatRequest {
         uuid,
         timestamp: chrono::Utc::now().timestamp(),
         health_info: req.health_info.unwrap_or_default(),
     };
-    
+
     match client.heartbeat(grpc_req).await {
         Ok(response) => {
             let resp = response.into_inner();
-            Ok((StatusCode::OK, Json(json!({
-                "success": resp.success,
-                "message": resp.message
-            }))))
+            Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "success": resp.success,
+                    "message": resp.message
+                })),
+            ))
         }
         Err(e) => {
             warn!("gRPC error during heartbeat: {}", e);
             // Handle specific gRPC error codes / 处理特定的gRPC错误码
             if e.code() == tonic::Code::NotFound {
-                Ok((StatusCode::NOT_FOUND, Json(json!({
-                    "success": false,
-                    "error": "Node not found"
-                }))))
+                Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "error": "Node not found"
+                    })),
+                ))
             } else {
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }

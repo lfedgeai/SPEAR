@@ -3,9 +3,9 @@
 #[cfg(test)]
 mod tests {
     use super::super::config::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
-    use serial_test::serial;
 
     #[test]
     fn test_cli_args_default() {
@@ -45,7 +45,7 @@ mod tests {
     fn test_sms_config_default() {
         // Test default SmsConfig / 测试默认SmsConfig
         let config = SmsConfig::default();
-        
+
         assert_eq!(config.grpc.addr.to_string(), "127.0.0.1:50051");
         assert_eq!(config.http.addr.to_string(), "127.0.0.1:8080");
         assert_eq!(config.log.level, "info");
@@ -59,7 +59,7 @@ mod tests {
     fn test_database_config_default() {
         // Test default DatabaseConfig / 测试默认DatabaseConfig
         let config = DatabaseConfig::default();
-        
+
         assert_eq!(config.db_type, "sled");
         assert_eq!(config.path, "./data");
         assert_eq!(config.pool_size, Some(10));
@@ -88,7 +88,7 @@ mod tests {
 
         let result = SmsConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         assert_eq!(config.grpc.addr.to_string(), "127.0.0.1:50052");
         assert_eq!(config.http.addr.to_string(), "127.0.0.1:8081");
@@ -122,7 +122,7 @@ mod tests {
 
         let result = SmsConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         assert!(!config.enable_swagger);
     }
@@ -181,14 +181,14 @@ mod tests {
     fn test_database_config_validation() {
         // Test database configuration validation / 测试数据库配置验证
         let valid_types = vec!["sled", "rocksdb"];
-        
+
         for db_type in valid_types {
             let config = DatabaseConfig {
                 db_type: db_type.to_string(),
                 path: "./test-data".to_string(),
                 pool_size: Some(5),
             };
-            
+
             assert!(config.db_type == "sled" || config.db_type == "rocksdb");
             assert!(!config.path.is_empty());
             assert!(config.pool_size.unwrap() > 0);
@@ -412,7 +412,7 @@ addr = "127.0.0.1:9100"
             http_addr: Some("127.0.0.1:65535".to_string()), // Max port
             db_type: Some("sled".to_string()),
             db_path: Some("/".to_string()), // Root path
-            db_pool_size: Some(1), // Minimum pool size
+            db_pool_size: Some(1),          // Minimum pool size
             enable_swagger: true,
             disable_swagger: false,
             enable_web_admin: false,
@@ -426,7 +426,7 @@ addr = "127.0.0.1:9100"
 
         let result = SmsConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         assert_eq!(config.grpc.addr.port(), 0);
         assert_eq!(config.http.addr.port(), 65535);
@@ -457,7 +457,7 @@ addr = "127.0.0.1:9100"
 
         let result = SmsConfig::load_with_cli(&args);
         assert!(result.is_ok());
-        
+
         let config = result.unwrap();
         // enable_swagger should take precedence / enable_swagger应该优先
         assert!(config.enable_swagger);

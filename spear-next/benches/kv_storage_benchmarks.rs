@@ -5,15 +5,15 @@
 //! to help users choose the most appropriate backend for their use case.
 //! 此模块包含不同KV存储后端的性能基准测试，帮助用户为其用例选择最合适的后端。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use std::time::Duration;
-use tokio::runtime::Runtime;
-use tempfile::TempDir;
-use uuid::Uuid;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::sync::Arc;
+use std::time::Duration;
+use tempfile::TempDir;
+use tokio::runtime::Runtime;
+use uuid::Uuid;
 
-use spear_next::storage::{KvStore, KvStoreConfig, DefaultKvStoreFactory, KvStoreFactory};
 use spear_next::storage::kv::RangeOptions;
+use spear_next::storage::{DefaultKvStoreFactory, KvStore, KvStoreConfig, KvStoreFactory};
 
 /// Benchmark configuration
 /// 基准测试配置
@@ -27,13 +27,11 @@ impl BenchmarkConfig {
     /// Create benchmark configurations for all available backends
     /// 为所有可用后端创建基准测试配置
     fn create_all() -> Vec<Self> {
-        let mut configs = vec![
-            BenchmarkConfig {
-                name: "memory",
-                config: KvStoreConfig::memory(),
-                _temp_dir: None,
-            }
-        ];
+        let mut configs = vec![BenchmarkConfig {
+            name: "memory",
+            config: KvStoreConfig::memory(),
+            _temp_dir: None,
+        }];
 
         #[cfg(feature = "sled")]
         {
@@ -66,8 +64,17 @@ impl BenchmarkConfig {
 fn generate_test_data(count: usize, key_size: usize, value_size: usize) -> Vec<(String, String)> {
     (0..count)
         .map(|i| {
-            let key = format!("{:0width$}_{}", i, Uuid::new_v4().to_string(), width = key_size.saturating_sub(37));
-            let value = format!("{}{}", "x".repeat(value_size.saturating_sub(10)), Uuid::new_v4().to_string());
+            let key = format!(
+                "{:0width$}_{}",
+                i,
+                Uuid::new_v4().to_string(),
+                width = key_size.saturating_sub(37)
+            );
+            let value = format!(
+                "{}{}",
+                "x".repeat(value_size.saturating_sub(10)),
+                Uuid::new_v4().to_string()
+            );
             (key, value)
         })
         .collect()
@@ -78,14 +85,15 @@ fn generate_test_data(count: usize, key_size: usize, value_size: usize) -> Vec<(
 fn bench_single_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let configs = BenchmarkConfig::create_all();
-    
+
     let mut group = c.benchmark_group("single_operations");
     group.measurement_time(Duration::from_secs(10));
-    
+
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
-        
+        let store: Arc<dyn KvStore> =
+            Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
+
         // Benchmark SET operations
         // 基准测试SET操作
         group.bench_with_input(
@@ -108,18 +116,18 @@ fn bench_single_operations(c: &mut Criterion) {
                 });
             },
         );
-        
+
         // Setup data for GET benchmarks
         // 为GET基准测试设置数据
         rt.block_on(async {
             for i in 0..1000 {
                 let key = format!("get_bench_key_{}", i);
-                    let value = format!("get_bench_value_{}", i);
-                    let vb = value.as_bytes().to_vec();
-                    store.put(&key, &vb).await.unwrap();
+                let value = format!("get_bench_value_{}", i);
+                let vb = value.as_bytes().to_vec();
+                store.put(&key, &vb).await.unwrap();
             }
         });
-        
+
         // Benchmark GET operations
         // 基准测试GET操作
         group.bench_with_input(
@@ -140,7 +148,7 @@ fn bench_single_operations(c: &mut Criterion) {
                 });
             },
         );
-        
+
         // Benchmark DELETE operations
         // 基准测试DELETE操作
         group.bench_with_input(
@@ -164,7 +172,7 @@ fn bench_single_operations(c: &mut Criterion) {
                 });
             },
         );
-        
+
         // Benchmark EXISTS operations
         // 基准测试EXISTS操作
         group.bench_with_input(
@@ -186,7 +194,7 @@ fn bench_single_operations(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -195,19 +203,20 @@ fn bench_single_operations(c: &mut Criterion) {
 fn bench_batch_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let configs = BenchmarkConfig::create_all();
-    
+
     let mut group = c.benchmark_group("batch_operations");
     group.measurement_time(Duration::from_secs(15));
-    
+
     let batch_sizes = vec![10, 100, 1000];
-    
+
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        
+
         for &batch_size in &batch_sizes {
-            let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
+            let store: Arc<dyn KvStore> =
+                Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
             let test_data = generate_test_data(batch_size, 32, 128);
-            
+
             // Benchmark batch SET operations
             // 基准测试批量SET操作
             group.bench_with_input(
@@ -233,7 +242,7 @@ fn bench_batch_operations(c: &mut Criterion) {
                     });
                 },
             );
-            
+
             // Setup data for batch GET operations
             // 为批量GET操作设置数据
             rt.block_on(async {
@@ -242,7 +251,7 @@ fn bench_batch_operations(c: &mut Criterion) {
                     store.put(key, &vb).await.unwrap();
                 }
             });
-            
+
             // Benchmark batch GET operations
             // 基准测试批量GET操作
             group.bench_with_input(
@@ -264,7 +273,7 @@ fn bench_batch_operations(c: &mut Criterion) {
             );
         }
     }
-    
+
     group.finish();
 }
 
@@ -273,14 +282,15 @@ fn bench_batch_operations(c: &mut Criterion) {
 fn bench_scan_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let configs = BenchmarkConfig::create_all();
-    
+
     let mut group = c.benchmark_group("scan_operations");
     group.measurement_time(Duration::from_secs(15));
-    
+
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
-        
+        let store: Arc<dyn KvStore> =
+            Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
+
         // Setup test data with different prefixes
         // 使用不同前缀设置测试数据
         rt.block_on(async {
@@ -293,7 +303,7 @@ fn bench_scan_operations(c: &mut Criterion) {
                 }
             }
         });
-        
+
         // Benchmark keys_with_prefix
         // 基准测试keys_with_prefix
         group.bench_with_input(
@@ -315,7 +325,7 @@ fn bench_scan_operations(c: &mut Criterion) {
                 });
             },
         );
-        
+
         // Benchmark scan_prefix
         // 基准测试scan_prefix
         group.bench_with_input(
@@ -337,7 +347,7 @@ fn bench_scan_operations(c: &mut Criterion) {
                 });
             },
         );
-        
+
         // Benchmark range operations
         // 基准测试范围操作
         group.bench_with_input(
@@ -366,7 +376,7 @@ fn bench_scan_operations(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -375,25 +385,29 @@ fn bench_scan_operations(c: &mut Criterion) {
 fn bench_large_value_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let configs = BenchmarkConfig::create_all();
-    
+
     let mut group = c.benchmark_group("large_value_operations");
     group.measurement_time(Duration::from_secs(20));
     group.sample_size(10); // Reduce sample size for large operations
-    
+
     let value_sizes = vec![1024, 10240, 102400]; // 1KB, 10KB, 100KB
-    
+
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        
+
         for &value_size in &value_sizes {
-            let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
+            let store: Arc<dyn KvStore> =
+                Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
             let large_value = "x".repeat(value_size);
             let large_value_bytes = large_value.clone().into_bytes();
-            
+
             // Benchmark large value SET
             // 基准测试大值SET
             group.bench_with_input(
-                BenchmarkId::new(format!("large_set_{}_{}", config.name, value_size), value_size),
+                BenchmarkId::new(
+                    format!("large_set_{}_{}", config.name, value_size),
+                    value_size,
+                ),
                 &value_size,
                 |b, _| {
                     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -412,7 +426,7 @@ fn bench_large_value_operations(c: &mut Criterion) {
                     });
                 },
             );
-            
+
             // Setup data for large value GET
             // 为大值GET设置数据
             rt.block_on(async {
@@ -421,11 +435,14 @@ fn bench_large_value_operations(c: &mut Criterion) {
                     store.put(&key, &large_value_bytes).await.unwrap();
                 }
             });
-            
+
             // Benchmark large value GET
             // 基准测试大值GET
             group.bench_with_input(
-                BenchmarkId::new(format!("large_get_{}_{}", config.name, value_size), value_size),
+                BenchmarkId::new(
+                    format!("large_get_{}_{}", config.name, value_size),
+                    value_size,
+                ),
                 &value_size,
                 |b, _| {
                     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -444,7 +461,7 @@ fn bench_large_value_operations(c: &mut Criterion) {
             );
         }
     }
-    
+
     group.finish();
 }
 
@@ -453,15 +470,16 @@ fn bench_large_value_operations(c: &mut Criterion) {
 fn bench_concurrent_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let configs = BenchmarkConfig::create_all();
-    
+
     let mut group = c.benchmark_group("concurrent_operations");
     group.measurement_time(Duration::from_secs(20));
     group.sample_size(10);
-    
+
     for config in &configs {
         let factory = DefaultKvStoreFactory::new();
-        let store: Arc<dyn KvStore> = Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
-        
+        let store: Arc<dyn KvStore> =
+            Arc::from(rt.block_on(factory.create(&config.config)).unwrap());
+
         // Benchmark concurrent SET operations
         // 基准测试并发SET操作
         group.bench_with_input(
@@ -470,34 +488,36 @@ fn bench_concurrent_operations(c: &mut Criterion) {
             |b, _| {
                 let mut counter = std::sync::atomic::AtomicUsize::new(0);
                 b.to_async(&rt).iter(|| async {
-                    let tasks: Vec<_> = (0..10).map(|task_id| {
-                        let store = Arc::clone(&store);
-                        let counter = &counter;
-                        async move {
-                            let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            let key = format!("concurrent_key_{}_{}", task_id, id);
-                            let value = format!("concurrent_value_{}_{}", task_id, id);
-                            let vb = value.into_bytes();
-                            store.put(&key, &vb).await.unwrap();
-                        }
-                    }).collect();
-                    
+                    let tasks: Vec<_> = (0..10)
+                        .map(|task_id| {
+                            let store = Arc::clone(&store);
+                            let counter = &counter;
+                            async move {
+                                let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                let key = format!("concurrent_key_{}_{}", task_id, id);
+                                let value = format!("concurrent_value_{}_{}", task_id, id);
+                                let vb = value.into_bytes();
+                                store.put(&key, &vb).await.unwrap();
+                            }
+                        })
+                        .collect();
+
                     black_box(futures::future::join_all(tasks).await);
                 });
             },
         );
-        
+
         // Setup data for concurrent GET operations
         // 为并发GET操作设置数据
         rt.block_on(async {
-                for i in 0..100 {
-                    let key = format!("concurrent_get_key_{}", i);
-                    let value = format!("concurrent_get_value_{}", i);
-                    let vb = value.as_bytes().to_vec();
-                    store.put(&key, &vb).await.unwrap();
-                }
+            for i in 0..100 {
+                let key = format!("concurrent_get_key_{}", i);
+                let value = format!("concurrent_get_value_{}", i);
+                let vb = value.as_bytes().to_vec();
+                store.put(&key, &vb).await.unwrap();
+            }
         });
-        
+
         // Benchmark concurrent GET operations
         // 基准测试并发GET操作
         group.bench_with_input(
@@ -506,22 +526,24 @@ fn bench_concurrent_operations(c: &mut Criterion) {
             |b, _| {
                 let mut counter = std::sync::atomic::AtomicUsize::new(0);
                 b.to_async(&rt).iter(|| async {
-                    let tasks: Vec<_> = (0..10).map(|_| {
-                        let store = Arc::clone(&store);
-                        let counter = &counter;
-                        async move {
-                            let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            let key = format!("concurrent_get_key_{}", id % 100);
-                            store.get(&key).await.unwrap()
-                        }
-                    }).collect();
-                    
+                    let tasks: Vec<_> = (0..10)
+                        .map(|_| {
+                            let store = Arc::clone(&store);
+                            let counter = &counter;
+                            async move {
+                                let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                let key = format!("concurrent_get_key_{}", id % 100);
+                                store.get(&key).await.unwrap()
+                            }
+                        })
+                        .collect();
+
                     black_box(futures::future::join_all(tasks).await);
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 

@@ -3,33 +3,40 @@
 //!
 //! This module provides a unified communication interface for different runtime types,
 //! abstracting away the underlying transport mechanisms (Unix sockets, TCP, gRPC, etc.)
-//! 
+//!
 //! 此模块为不同的运行时类型提供统一的通信接口，
 //! 抽象了底层传输机制（Unix socket、TCP、gRPC 等）
 
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use serde::{Deserialize, Serialize};
-use async_trait::async_trait;
 
 pub mod channel;
-pub mod transport;
-pub mod factory;
-pub mod protocol;
 pub mod connection_manager;
+pub mod factory;
 pub mod monitoring;
+pub mod protocol;
+pub mod transport;
 
 #[cfg(test)]
 pub mod secret_validation_test;
 
 // Re-export key types for convenience
 // 为方便使用重新导出关键类型
-pub use channel::{UnixSocketChannel, TcpChannel, GrpcChannel};
-pub use transport::{TransportConfig, TransportStats, Transport, TransportFactory};
+pub use channel::{GrpcChannel, TcpChannel, UnixSocketChannel};
+pub use connection_manager::{
+    ConnectionEvent, ConnectionManager, ConnectionManagerConfig, ConnectionState,
+};
 pub use factory::{CommunicationFactory, CommunicationStrategy, CommunicationStrategyBuilder};
-pub use protocol::{SpearMessage, MessageType, AuthRequest, AuthResponse, ExecuteRequest, ExecuteResponse};
-pub use connection_manager::{ConnectionManager, ConnectionManagerConfig, ConnectionState, ConnectionEvent};
-pub use monitoring::{MonitoringService, MonitoringConfig, ConnectionMetrics, MessageMetrics, SystemMetrics, MonitoringEvent, MessageDirection, PerformanceEvent};
+pub use monitoring::{
+    ConnectionMetrics, MessageDirection, MessageMetrics, MonitoringConfig, MonitoringEvent,
+    MonitoringService, PerformanceEvent, SystemMetrics,
+};
+pub use protocol::{
+    AuthRequest, AuthResponse, ExecuteRequest, ExecuteResponse, MessageType, SpearMessage,
+};
+pub use transport::{Transport, TransportConfig, TransportFactory, TransportStats};
 
 /// Core communication result type
 /// 核心通信结果类型
@@ -76,25 +83,27 @@ pub enum CommunicationError {
     /// 不支持的传输类型
     #[error("Unsupported transport type: {transport_type}")]
     UnsupportedTransport { transport_type: String },
-    
+
     /// Unsupported runtime type
     /// 不支持的运行时类型
     #[error("Unsupported runtime type: {runtime_type}")]
     UnsupportedRuntime { runtime_type: String },
-    
+
     /// Unsupported channel type
     /// 不支持的通道类型
     #[error("Unsupported channel type: {channel_type}")]
     UnsupportedChannel { channel_type: String },
-    
+
     /// Channel creation failed
     /// 通道创建失败
-    #[error("Failed to create channel for runtime {runtime_type}, attempted types: {attempted_types:?}")]
+    #[error(
+        "Failed to create channel for runtime {runtime_type}, attempted types: {attempted_types:?}"
+    )]
     ChannelCreationFailed {
         runtime_type: String,
         attempted_types: Vec<String>,
     },
-    
+
     /// Invalid configuration
     /// 无效配置
     #[error("Invalid configuration: {message}")]
@@ -126,9 +135,7 @@ pub enum RuntimeMessage {
 
     /// Health check request
     /// 健康检查请求
-    HealthCheck {
-        request_id: String,
-    },
+    HealthCheck { request_id: String },
 
     /// Health check response
     /// 健康检查响应
@@ -140,16 +147,11 @@ pub enum RuntimeMessage {
 
     /// Shutdown signal
     /// 关闭信号
-    Shutdown {
-        graceful: bool,
-        timeout_ms: u64,
-    },
+    Shutdown { graceful: bool, timeout_ms: u64 },
 
     /// Acknowledgment message
     /// 确认消息
-    Ack {
-        request_id: String,
-    },
+    Ack { request_id: String },
 
     /// Error message
     /// 错误消息
@@ -170,8 +172,8 @@ pub enum ExecutionResult {
 
     /// Execution failed with error
     /// 执行失败并返回错误
-    Error { 
-        message: String, 
+    Error {
+        message: String,
         error_code: u32,
         stack_trace: Option<String>,
     },
@@ -242,11 +244,11 @@ pub struct RuntimeInstanceId {
     /// Runtime type
     /// 运行时类型
     pub runtime_type: crate::spearlet::execution::RuntimeType,
-    
+
     /// Unique instance identifier within the runtime type
     /// 运行时类型内的唯一实例标识符
     pub instance_id: String,
-    
+
     /// Optional namespace for grouping instances
     /// 用于分组实例的可选命名空间
     pub namespace: Option<String>,
@@ -255,17 +257,14 @@ pub struct RuntimeInstanceId {
 impl RuntimeInstanceId {
     /// Create a new runtime instance identifier
     /// 创建新的运行时实例标识符
-    pub fn new(
-        runtime_type: crate::spearlet::execution::RuntimeType,
-        instance_id: String,
-    ) -> Self {
+    pub fn new(runtime_type: crate::spearlet::execution::RuntimeType, instance_id: String) -> Self {
         Self {
             runtime_type,
             instance_id,
             namespace: None,
         }
     }
-    
+
     /// Create a new runtime instance identifier with namespace
     /// 创建带命名空间的新运行时实例标识符
     pub fn with_namespace(
@@ -279,7 +278,7 @@ impl RuntimeInstanceId {
             namespace: Some(namespace),
         }
     }
-    
+
     /// Get the full identifier string
     /// 获取完整的标识符字符串
     pub fn full_id(&self) -> String {
@@ -303,23 +302,23 @@ pub enum InstanceStatus {
     /// Instance is starting up
     /// 实例正在启动
     Starting,
-    
+
     /// Instance is running and healthy
     /// 实例正在运行且健康
     Running,
-    
+
     /// Instance is degraded but still functional
     /// 实例性能下降但仍可运行
     Degraded { reason: String },
-    
+
     /// Instance is unhealthy
     /// 实例不健康
     Unhealthy { reason: String },
-    
+
     /// Instance is shutting down
     /// 实例正在关闭
     Stopping,
-    
+
     /// Instance has stopped
     /// 实例已停止
     Stopped,
@@ -332,23 +331,23 @@ pub struct InstanceMetadata {
     /// Instance identifier
     /// 实例标识符
     pub instance_id: RuntimeInstanceId,
-    
+
     /// Current status
     /// 当前状态
     pub status: InstanceStatus,
-    
+
     /// Creation timestamp
     /// 创建时间戳
     pub created_at: SystemTime,
-    
+
     /// Last health check timestamp
     /// 最后健康检查时间戳
     pub last_health_check: Option<SystemTime>,
-    
+
     /// Instance configuration
     /// 实例配置
     pub config: ChannelConfig,
-    
+
     /// Additional metadata
     /// 额外元数据
     pub extra_metadata: HashMap<String, String>,
@@ -367,25 +366,25 @@ impl InstanceMetadata {
             extra_metadata: HashMap::new(),
         }
     }
-    
+
     /// Update instance status
     /// 更新实例状态
     pub fn update_status(&mut self, status: InstanceStatus) {
         self.status = status;
     }
-    
+
     /// Update last health check timestamp
     /// 更新最后健康检查时间戳
     pub fn update_health_check(&mut self) {
         self.last_health_check = Some(SystemTime::now());
     }
-    
+
     /// Check if instance is healthy
     /// 检查实例是否健康
     pub fn is_healthy(&self) -> bool {
         matches!(self.status, InstanceStatus::Running)
     }
-    
+
     /// Check if instance is active (not stopped)
     /// 检查实例是否活跃（未停止）
     pub fn is_active(&self) -> bool {
@@ -400,7 +399,7 @@ pub struct ChannelConfig {
     /// Runtime instance this channel connects to
     /// 此通道连接的运行时实例
     pub instance_id: RuntimeInstanceId,
-    
+
     /// Channel type (unix_socket, tcp, grpc)
     /// 通道类型 (unix_socket, tcp, grpc)
     pub channel_type: String,
@@ -463,7 +462,7 @@ pub trait CommunicationChannel: Send + Sync {
     /// Send a request and wait for response
     /// 发送请求并等待响应
     async fn request_response(
-        &self, 
+        &self,
         request: RuntimeMessage,
         timeout: Duration,
     ) -> CommunicationResult<RuntimeMessage>;

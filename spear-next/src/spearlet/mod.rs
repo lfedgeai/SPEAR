@@ -43,9 +43,9 @@ mod function_service_test;
 #[cfg(test)]
 mod grpc_server_test;
 #[cfg(test)]
-mod object_service_test;
-#[cfg(test)]
 mod http_gateway_test;
+#[cfg(test)]
+mod object_service_test;
 #[cfg(test)]
 mod registration_test;
 

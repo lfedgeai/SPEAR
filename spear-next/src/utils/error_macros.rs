@@ -6,10 +6,12 @@
 #[macro_export]
 macro_rules! parse_uuid {
     ($uuid_str:expr, $context:expr) => {
-        uuid::Uuid::parse_str($uuid_str)
-            .map_err(|e| crate::sms::services::error::SmsError::Serialization(
-                format!("Invalid UUID in {}: {}", $context, e)
+        uuid::Uuid::parse_str($uuid_str).map_err(|e| {
+            crate::sms::services::error::SmsError::Serialization(format!(
+                "Invalid UUID in {}: {}",
+                $context, e
             ))
+        })
     };
 }
 
@@ -18,9 +20,9 @@ macro_rules! parse_uuid {
 #[macro_export]
 macro_rules! handle_task_join {
     ($task:expr) => {
-        $task.map_err(|e| crate::sms::services::error::SmsError::Serialization(
-            format!("Task join error: {}", e)
-        ))
+        $task.map_err(|e| {
+            crate::sms::services::error::SmsError::Serialization(format!("Task join error: {}", e))
+        })
     };
 }
 
@@ -29,11 +31,9 @@ macro_rules! handle_task_join {
 #[macro_export]
 macro_rules! spawn_blocking_task {
     ($task:expr) => {
-        tokio::task::spawn_blocking($task)
-            .await
-            .map_err(|e| crate::sms::services::error::SmsError::Serialization(
-                format!("Task join error: {}", e)
-            ))?
+        tokio::task::spawn_blocking($task).await.map_err(|e| {
+            crate::sms::services::error::SmsError::Serialization(format!("Task join error: {}", e))
+        })?
     };
 }
 
@@ -42,9 +42,12 @@ macro_rules! spawn_blocking_task {
 #[macro_export]
 macro_rules! handle_sled_error {
     ($operation:expr, $op_name:expr) => {
-        $operation.map_err(|e| crate::sms::services::error::SmsError::Serialization(
-            format!("Sled {} error: {}", $op_name, e)
-        ))
+        $operation.map_err(|e| {
+            crate::sms::services::error::SmsError::Serialization(format!(
+                "Sled {} error: {}",
+                $op_name, e
+            ))
+        })
     };
 }
 
@@ -53,9 +56,12 @@ macro_rules! handle_sled_error {
 #[macro_export]
 macro_rules! handle_rocksdb_error {
     ($operation:expr, $op_name:expr) => {
-        $operation.map_err(|e| crate::sms::services::error::SmsError::Serialization(
-            format!("RocksDB {} error: {}", $op_name, e)
-        ))
+        $operation.map_err(|e| {
+            crate::sms::services::error::SmsError::Serialization(format!(
+                "RocksDB {} error: {}",
+                $op_name, e
+            ))
+        })
     };
 }
 
@@ -64,9 +70,12 @@ macro_rules! handle_rocksdb_error {
 #[macro_export]
 macro_rules! handle_utf8_error {
     ($operation:expr) => {
-        $operation.map_err(|e| crate::sms::services::error::SmsError::Serialization(
-            format!("Invalid UTF-8 key: {}", e)
-        ))
+        $operation.map_err(|e| {
+            crate::sms::services::error::SmsError::Serialization(format!(
+                "Invalid UTF-8 key: {}",
+                e
+            ))
+        })
     };
 }
 
@@ -75,9 +84,8 @@ macro_rules! handle_utf8_error {
 #[macro_export]
 macro_rules! grpc_invalid_arg {
     ($operation:expr, $context:expr) => {
-        $operation.map_err(|e| tonic::Status::invalid_argument(
-            format!("Invalid {}: {}", $context, e)
-        ))
+        $operation
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid {}: {}", $context, e)))
     };
 }
 
@@ -86,8 +94,6 @@ macro_rules! grpc_invalid_arg {
 #[macro_export]
 macro_rules! grpc_internal_error {
     ($operation:expr, $context:expr) => {
-        $operation.map_err(|e| tonic::Status::internal(
-            format!("Failed to {}: {}", $context, e)
-        ))
+        $operation.map_err(|e| tonic::Status::internal(format!("Failed to {}: {}", $context, e)))
     };
 }

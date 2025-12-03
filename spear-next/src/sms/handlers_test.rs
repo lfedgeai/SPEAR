@@ -1,7 +1,6 @@
 //! Tests for SMS HTTP Handlers
 //! SMS HTTP处理器测试
 
-use std::collections::HashMap;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
@@ -10,13 +9,13 @@ use axum::{
 };
 use serde_json::json;
 use serde_urlencoded;
+use std::collections::HashMap;
 use tower::ServiceExt;
 
 use crate::sms::handlers::{
-    health_check,
-    HttpRegisterNodeRequest, HttpUpdateNodeRequest, HttpHeartbeatRequest, ListNodesQuery,
-    HttpUpdateNodeResourceRequest, ListNodeResourcesQuery,
-    RegisterTaskParams, ListTasksParams, UnregisterTaskParams,
+    health_check, HttpHeartbeatRequest, HttpRegisterNodeRequest, HttpUpdateNodeRequest,
+    HttpUpdateNodeResourceRequest, ListNodeResourcesQuery, ListNodesQuery, ListTasksParams,
+    RegisterTaskParams, UnregisterTaskParams,
 };
 
 // Mock tests for handlers that don't require gRPC clients / 不需要gRPC客户端的处理器模拟测试
@@ -25,13 +24,13 @@ use crate::sms::handlers::{
 async fn test_health_check_handler() {
     // Test health check endpoint / 测试健康检查端点
     let response = health_check().await;
-    
+
     // Verify response structure / 验证响应结构
     let value = response.0;
     assert!(value.get("status").is_some());
     assert!(value.get("timestamp").is_some());
     assert!(value.get("service").is_some());
-    
+
     // Verify specific values / 验证具体值
     assert_eq!(value["status"], "healthy");
     assert_eq!(value["service"], "sms");
@@ -43,19 +42,19 @@ fn test_http_register_node_request_serialization() {
     let mut metadata = HashMap::new();
     metadata.insert("region".to_string(), "us-west-1".to_string());
     metadata.insert("zone".to_string(), "a".to_string());
-    
+
     let request = HttpRegisterNodeRequest {
         ip_address: "192.168.1.100".to_string(),
         port: 8080,
         metadata: Some(metadata.clone()),
     };
-    
+
     // Test serialization / 测试序列化
     let json_str = serde_json::to_string(&request).unwrap();
     assert!(json_str.contains("192.168.1.100"));
     assert!(json_str.contains("8080"));
     assert!(json_str.contains("us-west-1"));
-    
+
     // Test deserialization / 测试反序列化
     let deserialized: HttpRegisterNodeRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.ip_address, "192.168.1.100");
@@ -68,20 +67,20 @@ fn test_http_update_node_request_serialization() {
     // Test HTTP update node request serialization / 测试HTTP更新节点请求序列化
     let mut metadata = HashMap::new();
     metadata.insert("updated".to_string(), "true".to_string());
-    
+
     let request = HttpUpdateNodeRequest {
         ip_address: Some("192.168.1.101".to_string()),
         port: Some(8081),
         status: Some("inactive".to_string()),
         metadata: Some(metadata.clone()),
     };
-    
+
     // Test serialization / 测试序列化
     let json_str = serde_json::to_string(&request).unwrap();
     assert!(json_str.contains("192.168.1.101"));
     assert!(json_str.contains("8081"));
     assert!(json_str.contains("inactive"));
-    
+
     // Test deserialization / 测试反序列化
     let deserialized: HttpUpdateNodeRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.ip_address.unwrap(), "192.168.1.101");
@@ -96,16 +95,16 @@ fn test_http_heartbeat_request_serialization() {
     let mut health_info = HashMap::new();
     health_info.insert("cpu_usage".to_string(), "45.2".to_string());
     health_info.insert("memory_usage".to_string(), "67.8".to_string());
-    
+
     let request = HttpHeartbeatRequest {
         health_info: Some(health_info.clone()),
     };
-    
+
     // Test serialization / 测试序列化
     let json_str = serde_json::to_string(&request).unwrap();
     assert!(json_str.contains("cpu_usage"));
     assert!(json_str.contains("45.2"));
-    
+
     // Test deserialization / 测试反序列化
     let deserialized: HttpHeartbeatRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.health_info.unwrap(), health_info);
@@ -117,7 +116,7 @@ fn test_list_nodes_query_deserialization() {
     let query_str = "status=active";
     let query: ListNodesQuery = serde_urlencoded::from_str(query_str).unwrap();
     assert_eq!(query.status.unwrap(), "active");
-    
+
     // Test empty query / 测试空查询
     let empty_query: ListNodesQuery = serde_urlencoded::from_str("").unwrap();
     assert!(empty_query.status.is_none());
@@ -129,7 +128,7 @@ fn test_http_update_node_resource_request_serialization() {
     let mut resource_metadata = HashMap::new();
     resource_metadata.insert("gpu_count".to_string(), "4".to_string());
     resource_metadata.insert("gpu_type".to_string(), "RTX4090".to_string());
-    
+
     let request = HttpUpdateNodeResourceRequest {
         cpu_usage_percent: Some(75.5),
         memory_usage_percent: Some(82.3),
@@ -146,12 +145,12 @@ fn test_http_update_node_resource_request_serialization() {
         load_average_15m: Some(1.8),
         resource_metadata: Some(resource_metadata.clone()),
     };
-    
+
     // Test serialization / 测试序列化
     let json_str = serde_json::to_string(&request).unwrap();
     assert!(json_str.contains("75.5"));
     assert!(json_str.contains("RTX4090"));
-    
+
     // Test deserialization / 测试反序列化
     let deserialized: HttpUpdateNodeResourceRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.cpu_usage_percent.unwrap(), 75.5);
@@ -164,7 +163,7 @@ fn test_list_node_resources_query_deserialization() {
     let query_str = "node_uuids=uuid1,uuid2,uuid3";
     let query: ListNodeResourcesQuery = serde_urlencoded::from_str(query_str).unwrap();
     assert_eq!(query.node_uuids.unwrap(), "uuid1,uuid2,uuid3");
-    
+
     // Test empty query / 测试空查询
     let empty_query: ListNodeResourcesQuery = serde_urlencoded::from_str("").unwrap();
     assert!(empty_query.node_uuids.is_none());
@@ -176,11 +175,11 @@ fn test_register_task_params_serialization() {
     let mut metadata = HashMap::new();
     metadata.insert("author".to_string(), "test_user".to_string());
     metadata.insert("version".to_string(), "1.0.0".to_string());
-    
+
     let mut config = HashMap::new();
     config.insert("timeout".to_string(), "30".to_string());
     config.insert("retry_count".to_string(), "3".to_string());
-    
+
     let params = RegisterTaskParams {
         name: "test_task".to_string(),
         description: Some("A test task".to_string()),
@@ -193,13 +192,13 @@ fn test_register_task_params_serialization() {
         config: Some(config.clone()),
         executable: None,
     };
-    
+
     // Test serialization / 测试序列化
     let json_str = serde_json::to_string(&params).unwrap();
     assert!(json_str.contains("test_task"));
     assert!(json_str.contains("high"));
     assert!(json_str.contains("node-123"));
-    
+
     // Test deserialization / 测试反序列化
     let deserialized: RegisterTaskParams = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.name, "test_task");
@@ -213,13 +212,13 @@ fn test_list_tasks_params_deserialization() {
     // Test list tasks params deserialization / 测试列出任务参数反序列化
     let query_str = "node_uuid=node-123&status=active&priority=high&limit=10&offset=0";
     let params: ListTasksParams = serde_urlencoded::from_str(query_str).unwrap();
-    
+
     assert_eq!(params.node_uuid.unwrap(), "node-123");
     assert_eq!(params.status.unwrap(), "active");
     assert_eq!(params.priority.unwrap(), "high");
     assert_eq!(params.limit.unwrap(), 10);
     assert_eq!(params.offset.unwrap(), 0);
-    
+
     // Test partial query / 测试部分查询
     let partial_query_str = "status=inactive&limit=5";
     let partial_params: ListTasksParams = serde_urlencoded::from_str(partial_query_str).unwrap();
@@ -236,26 +235,27 @@ fn test_unregister_task_params_serialization() {
     let params = UnregisterTaskParams {
         reason: Some("Task completed successfully".to_string()),
     };
-    
+
     // Test serialization / 测试序列化
     let json_str = serde_json::to_string(&params).unwrap();
     assert!(json_str.contains("Task completed successfully"));
-    
+
     // Test deserialization / 测试反序列化
     let deserialized: UnregisterTaskParams = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.reason.unwrap(), "Task completed successfully");
-    
+
     // Test with no reason / 测试无原因情况
     let no_reason_params = UnregisterTaskParams { reason: None };
     let no_reason_json = serde_json::to_string(&no_reason_params).unwrap();
-    let no_reason_deserialized: UnregisterTaskParams = serde_json::from_str(&no_reason_json).unwrap();
+    let no_reason_deserialized: UnregisterTaskParams =
+        serde_json::from_str(&no_reason_json).unwrap();
     assert!(no_reason_deserialized.reason.is_none());
 }
 
 #[test]
 fn test_request_validation() {
     // Test request validation for various edge cases / 测试各种边界情况的请求验证
-    
+
     // Test empty node registration / 测试空节点注册
     let empty_node_request = HttpRegisterNodeRequest {
         ip_address: "".to_string(),
@@ -266,7 +266,7 @@ fn test_request_validation() {
     let deserialized: HttpRegisterNodeRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.ip_address, "");
     assert_eq!(deserialized.port, 0);
-    
+
     // Test invalid port numbers / 测试无效端口号
     let invalid_port_request = HttpRegisterNodeRequest {
         ip_address: "127.0.0.1".to_string(),
@@ -276,7 +276,7 @@ fn test_request_validation() {
     let json_str = serde_json::to_string(&invalid_port_request).unwrap();
     let deserialized: HttpRegisterNodeRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.port, -1);
-    
+
     // Test large port numbers / 测试大端口号
     let large_port_request = HttpRegisterNodeRequest {
         ip_address: "127.0.0.1".to_string(),
@@ -291,7 +291,7 @@ fn test_request_validation() {
 #[test]
 fn test_resource_request_edge_cases() {
     // Test resource request edge cases / 测试资源请求边界情况
-    
+
     // Test with zero values / 测试零值
     let zero_resource_request = HttpUpdateNodeResourceRequest {
         cpu_usage_percent: Some(0.0),
@@ -309,12 +309,12 @@ fn test_resource_request_edge_cases() {
         load_average_15m: Some(0.0),
         resource_metadata: None,
     };
-    
+
     let json_str = serde_json::to_string(&zero_resource_request).unwrap();
     let deserialized: HttpUpdateNodeResourceRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.cpu_usage_percent.unwrap(), 0.0);
     assert_eq!(deserialized.total_memory_bytes.unwrap(), 0);
-    
+
     // Test with maximum values / 测试最大值
     let max_resource_request = HttpUpdateNodeResourceRequest {
         cpu_usage_percent: Some(100.0),
@@ -332,7 +332,7 @@ fn test_resource_request_edge_cases() {
         load_average_15m: Some(f32::MAX),
         resource_metadata: None,
     };
-    
+
     let json_str = serde_json::to_string(&max_resource_request).unwrap();
     let deserialized: HttpUpdateNodeResourceRequest = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.cpu_usage_percent.unwrap(), 100.0);
@@ -342,7 +342,7 @@ fn test_resource_request_edge_cases() {
 #[test]
 fn test_task_params_edge_cases() {
     // Test task params edge cases / 测试任务参数边界情况
-    
+
     // Test with empty strings / 测试空字符串
     let empty_task_params = RegisterTaskParams {
         name: "".to_string(),
@@ -356,13 +356,13 @@ fn test_task_params_edge_cases() {
         config: Some(HashMap::new()),
         executable: None,
     };
-    
+
     let json_str = serde_json::to_string(&empty_task_params).unwrap();
     let deserialized: RegisterTaskParams = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.name, "");
     assert_eq!(deserialized.endpoint, "");
     assert!(deserialized.capabilities.unwrap().is_empty());
-    
+
     // Test with very long strings / 测试很长的字符串
     let long_string = "a".repeat(1000);
     let long_task_params = RegisterTaskParams {
@@ -377,7 +377,7 @@ fn test_task_params_edge_cases() {
         config: Some(HashMap::from([(long_string.clone(), long_string.clone())])),
         executable: None,
     };
-    
+
     let json_str = serde_json::to_string(&long_task_params).unwrap();
     let deserialized: RegisterTaskParams = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.name.len(), 1000);
@@ -388,34 +388,34 @@ fn test_task_params_edge_cases() {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_health_check_response_format() {
         // Test health check response format / 测试健康检查响应格式
         let response = health_check().await;
         let value = response.0;
-        
+
         // Verify all required fields are present / 验证所有必需字段都存在
         assert!(value.get("status").is_some());
         assert!(value.get("timestamp").is_some());
         assert!(value.get("service").is_some());
-        
+
         // Verify field types / 验证字段类型
         assert!(value["status"].is_string());
         assert!(value["timestamp"].is_string());
         assert!(value["service"].is_string());
-        
+
         // Verify timestamp format (should be RFC3339) / 验证时间戳格式（应为RFC3339）
         let timestamp_str = value["timestamp"].as_str().unwrap();
         assert!(chrono::DateTime::parse_from_rfc3339(timestamp_str).is_ok());
     }
-    
+
     #[test]
     fn test_concurrent_serialization() {
         // Test concurrent serialization of requests / 测试请求的并发序列化
         use std::sync::Arc;
         use std::thread;
-        
+
         let request = Arc::new(HttpRegisterNodeRequest {
             ip_address: "192.168.1.100".to_string(),
             port: 8080,
@@ -424,26 +424,27 @@ mod integration_tests {
                 ("zone".to_string(), "a".to_string()),
             ])),
         });
-        
+
         let mut handles = vec![];
-        
+
         for _ in 0..10 {
             let request_clone = Arc::clone(&request);
             let handle = thread::spawn(move || {
                 let json_str = serde_json::to_string(&*request_clone).unwrap();
-                let deserialized: HttpRegisterNodeRequest = serde_json::from_str(&json_str).unwrap();
+                let deserialized: HttpRegisterNodeRequest =
+                    serde_json::from_str(&json_str).unwrap();
                 deserialized
             });
             handles.push(handle);
         }
-        
+
         for handle in handles {
             let result = handle.join().unwrap();
             assert_eq!(result.ip_address, "192.168.1.100");
             assert_eq!(result.port, 8080);
         }
     }
-    
+
     #[test]
     fn test_memory_usage() {
         // Test memory usage of request structures / 测试请求结构的内存使用
@@ -452,7 +453,7 @@ mod integration_tests {
             port: 8080,
             metadata: Some(HashMap::new()),
         };
-        
+
         let resource_request = HttpUpdateNodeResourceRequest {
             cpu_usage_percent: Some(50.0),
             memory_usage_percent: Some(60.0),
@@ -469,11 +470,11 @@ mod integration_tests {
             load_average_15m: Some(1.0),
             resource_metadata: Some(HashMap::new()),
         };
-        
+
         // Verify structures don't use excessive memory / 验证结构不使用过多内存
         let node_size = std::mem::size_of_val(&node_request);
         let resource_size = std::mem::size_of_val(&resource_request);
-        
+
         // These are reasonable upper bounds for the structures / 这些是结构的合理上限
         assert!(node_size < 1024); // Less than 1KB / 小于1KB
         assert!(resource_size < 2048); // Less than 2KB / 小于2KB

@@ -2,26 +2,26 @@
 //! SMS (SPEAR元数据服务器) 主入口点
 
 use clap::Parser;
-use spear_next::sms::config::{CliArgs, SmsConfig, DatabaseConfig};
-use spear_next::config::base::{ServerConfig, LogConfig};
+use spear_next::config::base::{LogConfig, ServerConfig};
+use spear_next::config::init_tracing;
+use spear_next::sms::config::{CliArgs, DatabaseConfig, SmsConfig};
 use spear_next::sms::grpc_server::GrpcServer;
 use spear_next::sms::http_gateway::HttpGateway;
-use spear_next::sms::web_admin::WebAdminServer;
-use spear_next::sms::services::{NodeService, ResourceService, TaskService};
 use spear_next::sms::service::SmsServiceImpl;
-use spear_next::config::init_tracing;
-use tokio::sync::RwLock;
+use spear_next::sms::services::{NodeService, ResourceService, TaskService};
+use spear_next::sms::web_admin::WebAdminServer;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments / 解析命令行参数
     let args = CliArgs::parse();
-    
+
     // Store args values for logging before they are moved / 在参数被移动之前存储参数值用于日志记录
     let log_args = format!("{:?}", args);
-    
+
     // Load configuration with home-first, then CLI override /
     // 先从主目录加载配置，其次使用命令行覆盖
     let cfg = SmsConfig::load_with_cli(&args)?;
@@ -29,45 +29,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize logging with configuration / 使用配置初始化日志
     init_tracing(&config.log.to_logging_config()).unwrap();
-    
+
     tracing::info!("Starting SMS server with args: {}", log_args);
-    
+
     tracing::info!("SMS server starting with:");
     tracing::info!("  - gRPC server on: {}", config.grpc.addr);
     tracing::info!("  - HTTP gateway on: {}", config.http.addr);
     tracing::info!("  - Database type: {:?}", config.database.db_type);
     tracing::info!("  - Database path: {:?}", config.database.path);
     tracing::info!("  - Enable Swagger: {}", config.enable_swagger);
-    
+
     // Initialize services / 初始化服务
     let node_service = NodeService::new();
     let resource_service = ResourceService::new();
     let _task_service = TaskService::new();
-    
+
     // Create SMS service collection / 创建SMS服务集合
     let sms_service = SmsServiceImpl::new(
         Arc::new(RwLock::new(node_service)),
         Arc::new(resource_service),
         config.clone(),
-    ).await;
+    )
+    .await;
     let sms_service_for_cleanup = sms_service.clone();
-    
+
     // Initialize gRPC server / 初始化gRPC服务器
     let grpc_server = GrpcServer::new(config.grpc.addr, sms_service);
     let (shutdown_tx_grpc, shutdown_rx_grpc) = tokio::sync::oneshot::channel::<()>();
     let grpc_handle = tokio::spawn({
         async move {
-            if let Err(e) = grpc_server.start_with_shutdown(async move { let _ = shutdown_rx_grpc.await; }).await {
+            if let Err(e) = grpc_server
+                .start_with_shutdown(async move {
+                    let _ = shutdown_rx_grpc.await;
+                })
+                .await
+            {
                 tracing::error!("gRPC server error: {}", e);
             }
         }
     });
-    
+
     // Initialize HTTP gateway / 初始化HTTP网关
-    let http_gateway = HttpGateway::new(config.http.addr, config.grpc.addr, config.enable_swagger, config.max_upload_bytes as usize);
+    let http_gateway = HttpGateway::new(
+        config.http.addr,
+        config.grpc.addr,
+        config.enable_swagger,
+        config.max_upload_bytes as usize,
+    );
     let (shutdown_tx_http, shutdown_rx_http) = tokio::sync::oneshot::channel::<()>();
     let http_handle = tokio::spawn(async move {
-        if let Err(e) = http_gateway.start_with_shutdown(async move { let _ = shutdown_rx_http.await; }).await {
+        if let Err(e) = http_gateway
+            .start_with_shutdown(async move {
+                let _ = shutdown_rx_http.await;
+            })
+            .await
+        {
             tracing::error!("HTTP gateway error: {}", e);
         }
     });
@@ -78,7 +94,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let web_admin_server = WebAdminServer::new(web_admin_addr, config.grpc.addr, web_admin_enabled);
     let (shutdown_tx_admin, shutdown_rx_admin) = tokio::sync::oneshot::channel::<()>();
     let admin_handle = tokio::spawn(async move {
-        if let Err(e) = web_admin_server.start_with_shutdown(async move { let _ = shutdown_rx_admin.await; }).await {
+        if let Err(e) = web_admin_server
+            .start_with_shutdown(async move {
+                let _ = shutdown_rx_admin.await;
+            })
+            .await
+        {
             tracing::error!("Web Admin server error: {}", e);
         }
     });
@@ -105,11 +126,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if changed > 0 {
-                tracing::debug!("Cleanup updated node statuses, changed={} (timeout={}s)", changed, timeout);
+                tracing::debug!(
+                    "Cleanup updated node statuses, changed={} (timeout={}s)",
+                    changed,
+                    timeout
+                );
             }
         }
     });
-    
+
     tracing::info!("SMS server started successfully");
     tracing::info!("gRPC server: http://{}", config.grpc.addr);
     tracing::info!("HTTP gateway: http://{}", config.http.addr);
@@ -119,13 +144,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if web_admin_enabled {
         tracing::info!("Web Admin: http://{}", web_admin_addr);
     }
-    
+
     tokio::signal::ctrl_c().await?;
     tracing::info!("SMS server shutting down");
     let _ = shutdown_tx_grpc.send(());
     let _ = shutdown_tx_http.send(());
     let _ = shutdown_tx_admin.send(());
-    
+
     let timeout = std::time::Duration::from_secs(5);
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
@@ -141,6 +166,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    
+
     Ok(())
 }

@@ -5,12 +5,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
 
-use tracing::{info, error};
+use tracing::{error, info};
 
+use crate::proto::spearlet::object_service_server::ObjectServiceServer;
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::function_service::FunctionServiceImpl;
 use crate::spearlet::object_service::ObjectServiceImpl;
-use crate::proto::spearlet::object_service_server::ObjectServiceServer;
 // use crate::proto::spearlet::function_service_server::FunctionService;
 // TODO: Add FunctionServiceServer import when proto is regenerated
 // TODO: 当proto重新生成时添加FunctionServiceServer导入
@@ -28,10 +28,14 @@ pub struct GrpcServer {
 
 impl GrpcServer {
     /// Create new gRPC server / 创建新的gRPC服务器
-    pub async fn new(config: Arc<SpearletConfig>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let object_service = Arc::new(ObjectServiceImpl::new_with_memory(config.storage.max_object_size));
+    pub async fn new(
+        config: Arc<SpearletConfig>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let object_service = Arc::new(ObjectServiceImpl::new_with_memory(
+            config.storage.max_object_size,
+        ));
         let function_service = Arc::new(FunctionServiceImpl::new(config.clone()).await?);
-        
+
         Ok(Self {
             config,
             object_service,
@@ -67,12 +71,17 @@ impl GrpcServer {
     }
 
     /// Start gRPC server with shutdown signal / 使用关闭信号启动gRPC服务器
-    pub async fn start_with_shutdown<F>(self, shutdown: F) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    pub async fn start_with_shutdown<F>(
+        self,
+        shutdown: F,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
         let (addr, object_service) = self.prepare().await?;
-        let server = Server::builder().add_service(object_service).serve_with_shutdown(addr, shutdown);
+        let server = Server::builder()
+            .add_service(object_service)
+            .serve_with_shutdown(addr, shutdown);
 
         match server.await {
             Ok(_) => {
@@ -86,10 +95,12 @@ impl GrpcServer {
         }
     }
 
-    async fn prepare(self) -> Result<(
-        SocketAddr,
-        ObjectServiceServer<Arc<ObjectServiceImpl>>
-    ), Box<dyn std::error::Error + Send + Sync>> {
+    async fn prepare(
+        self,
+    ) -> Result<
+        (SocketAddr, ObjectServiceServer<Arc<ObjectServiceImpl>>),
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let addr: SocketAddr = self.config.grpc.addr;
         info!("Starting gRPC server on {}", addr);
 
@@ -112,7 +123,7 @@ impl HealthService {
         object_service: Arc<ObjectServiceImpl>,
         function_service: Arc<FunctionServiceImpl>,
     ) -> Self {
-        Self { 
+        Self {
             object_service,
             function_service,
         }

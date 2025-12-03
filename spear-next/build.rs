@@ -6,16 +6,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let path = protoc_bin_vendored::protoc_bin_path()?;
-    std::env::set_var("PROTOC", &path);
+    unsafe {
+        std::env::set_var("PROTOC", &path);
+    }
     // Compile SMS protobuf files / 编译SMS protobuf文件
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
         .compile_protos(
-            &[
-                "proto/sms/node.proto",
-                "proto/sms/task.proto"
-            ],
+            &["proto/sms/node.proto", "proto/sms/task.proto"],
             &["proto"],
         )?;
 
@@ -26,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 "proto/spearlet/object.proto",
-                "proto/spearlet/function.proto"
+                "proto/spearlet/function.proto",
             ],
             &["proto"],
         )?;
@@ -48,12 +47,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let br_path = std::path::Path::new(&out_dir).join(format!("{}.br", name));
         let gz_path = std::path::Path::new(&out_dir).join(format!("{}.gz", name));
         {
-            let mut w = brotli::CompressorWriter::new(std::fs::File::create(&br_path)?, 4096, 5, 22);
+            let mut w =
+                brotli::CompressorWriter::new(std::fs::File::create(&br_path)?, 4096, 5, 22);
             use std::io::Write;
             w.write_all(&data)?;
         }
         {
-            use flate2::{Compression, write::GzEncoder};
+            use flate2::{write::GzEncoder, Compression};
             use std::io::Write;
             let mut w = GzEncoder::new(std::fs::File::create(&gz_path)?, Compression::default());
             w.write_all(&data)?;

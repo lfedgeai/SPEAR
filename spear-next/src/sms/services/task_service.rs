@@ -75,36 +75,40 @@ impl TaskService {
                         return false;
                     }
                 }
-                
+
                 // Filter by status if specified / 如果指定则按状态过滤
                 if let Some(status) = status_filter {
                     if status >= 0 && task.status != status {
                         return false;
                     }
                 }
-                
+
                 // Filter by priority if specified / 如果指定则按优先级过滤
                 if let Some(priority) = priority_filter {
                     if priority >= 0 && task.priority != priority {
                         return false;
                     }
                 }
-                
+
                 true
             })
             .cloned()
             .collect();
-        
+
         // Apply offset and limit / 应用偏移量和限制
         let offset = offset.unwrap_or(0) as usize;
         let limit = limit.unwrap_or(100) as usize;
-        
+
         if offset < filtered_tasks.len() {
-            filtered_tasks = filtered_tasks.into_iter().skip(offset).take(limit).collect();
+            filtered_tasks = filtered_tasks
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect();
         } else {
             filtered_tasks.clear();
         }
-        
+
         Ok(filtered_tasks)
     }
 

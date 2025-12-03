@@ -1,9 +1,4 @@
-use axum::{
-    response::Html,
-    Json,
-    extract::Path,
-    http::StatusCode,
-};
+use axum::{extract::Path, http::StatusCode, response::Html, Json};
 use serde_json::json;
 
 /// OpenAPI specification / OpenAPI规范

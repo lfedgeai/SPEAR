@@ -1,19 +1,16 @@
 //! HTTP gateway implementation for SMS (SPEAR Metadata Server)
 //! SMS（SPEAR元数据服务器）的HTTP网关实现
 
-use std::net::SocketAddr;
 use anyhow::Result;
+use std::net::SocketAddr;
 
-use tracing::{info, error};
+use tracing::{error, info};
 
+use super::gateway::{create_gateway_router, GatewayState};
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient,
-    task_service_client::TaskServiceClient,
+    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
 };
-use super::{gateway::{create_gateway_router, GatewayState}};
 use tokio_util::sync::CancellationToken;
-
-
 
 /// SMS HTTP gateway / SMS HTTP网关
 pub struct HttpGateway {
@@ -25,7 +22,12 @@ pub struct HttpGateway {
 
 impl HttpGateway {
     /// Create a new HTTP gateway / 创建新的HTTP网关
-    pub fn new(addr: SocketAddr, grpc_addr: SocketAddr, enable_swagger: bool, max_upload_bytes: usize) -> Self {
+    pub fn new(
+        addr: SocketAddr,
+        grpc_addr: SocketAddr,
+        enable_swagger: bool,
+        max_upload_bytes: usize,
+    ) -> Self {
         Self {
             addr,
             grpc_addr,
@@ -86,7 +88,12 @@ impl HttpGateway {
         let node_client = NodeServiceClient::new(channel.clone());
         let task_client = TaskServiceClient::new(channel);
 
-        let state = GatewayState { node_client, task_client, cancel_token: CancellationToken::new(), max_upload_bytes: self.max_upload_bytes };
+        let state = GatewayState {
+            node_client,
+            task_client,
+            cancel_token: CancellationToken::new(),
+            max_upload_bytes: self.max_upload_bytes,
+        };
         let app = create_gateway_router(state);
 
         info!("SMS HTTP gateway listening on {}", self.addr);

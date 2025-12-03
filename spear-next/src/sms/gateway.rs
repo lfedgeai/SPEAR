@@ -3,14 +3,13 @@
 
 use axum::Router;
 use rust_embed::RustEmbed;
-use tower_http::cors::CorsLayer;
 use tokio_util::sync::CancellationToken;
+use tower_http::cors::CorsLayer;
 
-use crate::proto::sms::{
-    node_service_client::NodeServiceClient,
-    task_service_client::TaskServiceClient,
-};
 use super::routes::create_routes;
+use crate::proto::sms::{
+    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
+};
 
 /// Embedded static files for Swagger UI / Swagger UI的嵌入式静态文件
 #[derive(RustEmbed)]
@@ -29,6 +28,5 @@ pub struct GatewayState {
 /// Create HTTP gateway router / 创建HTTP网关路由器
 pub fn create_gateway_router(state: GatewayState) -> Router {
     // Use the centralized route creation function / 使用集中的路由创建函数
-    create_routes(state)
-        .layer(CorsLayer::permissive()) // Add CORS support / 添加CORS支持
+    create_routes(state).layer(CorsLayer::permissive()) // Add CORS support / 添加CORS支持
 }

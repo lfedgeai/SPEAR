@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use super::super::events::TaskEventBus;
+    use crate::proto::sms::{Task, TaskPriority, TaskStatus};
     use crate::storage::kv::MemoryKvStore;
     use std::sync::Arc;
-    use crate::proto::sms::{Task, TaskStatus, TaskPriority};
 
     fn sample_task(node_uuid: &str, name: &str) -> Task {
         Task {
@@ -51,10 +51,12 @@ mod tests {
         let t2 = sample_task(&node_uuid, "t2");
         let e2 = bus.publish_create(&t2).await.unwrap();
 
-        let replay = bus.replay_since(&node_uuid, e1.event_id, 100).await.unwrap();
+        let replay = bus
+            .replay_since(&node_uuid, e1.event_id, 100)
+            .await
+            .unwrap();
         assert_eq!(replay.len(), 1);
         assert_eq!(replay[0].event_id, e2.event_id);
         assert_eq!(replay[0].task_id, t2.task_id);
     }
 }
-

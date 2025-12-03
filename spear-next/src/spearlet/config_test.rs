@@ -290,7 +290,9 @@ format = "json"
         // 优先从主目录加载配置：~/.spear/config.toml
         let dir = tempdir().unwrap();
         // Temporarily set SPEAR_HOME to temp directory / 临时设置SPEAR_HOME到临时目录
-        unsafe { std::env::set_var("SPEAR_HOME", dir.path()); }
+        unsafe {
+            std::env::set_var("SPEAR_HOME", dir.path());
+        }
 
         let home_cfg_dir = dir.path().join(".spear");
         fs::create_dir_all(&home_cfg_dir).unwrap();

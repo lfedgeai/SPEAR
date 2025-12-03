@@ -9,12 +9,12 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::proto::sms::Node;
-use crate::sms::services::node_service::{NodeInfo, NodeStatus, NodeService};
-use crate::sms::services::resource_service::NodeResourceInfo;
-use crate::sms::config::SmsConfig;
-use crate::storage::KvStoreConfig;
 use crate::config::base::StorageConfig;
+use crate::proto::sms::Node;
+use crate::sms::config::SmsConfig;
+use crate::sms::services::node_service::{NodeInfo, NodeService, NodeStatus};
+use crate::sms::services::resource_service::NodeResourceInfo;
+use crate::storage::KvStoreConfig;
 
 /// Test data generator for creating sample nodes / 创建示例节点的测试数据生成器
 pub struct TestDataGenerator;
@@ -49,16 +49,14 @@ impl TestDataGenerator {
     /// Create multiple sample nodes / 创建多个示例节点
     pub fn create_sample_nodes(count: usize) -> Vec<Node> {
         (0..count)
-            .map(|i| {
-                Node {
-                    uuid: Uuid::new_v4().to_string(),
-                    ip_address: format!("127.0.0.{}", i + 1),
-                    port: 8080 + i as i32,
-                    status: "online".to_string(),
-                    last_heartbeat: Utc::now().timestamp(),
-                    registered_at: Utc::now().timestamp(),
-                    metadata: HashMap::new(),
-                }
+            .map(|i| Node {
+                uuid: Uuid::new_v4().to_string(),
+                ip_address: format!("127.0.0.{}", i + 1),
+                port: 8080 + i as i32,
+                status: "online".to_string(),
+                last_heartbeat: Utc::now().timestamp(),
+                registered_at: Utc::now().timestamp(),
+                metadata: HashMap::new(),
             })
             .collect()
     }
@@ -70,7 +68,7 @@ impl TestDataGenerator {
             NodeStatus::Offline => "offline",
             NodeStatus::Maintenance => "maintenance",
         };
-        
+
         Node {
             uuid: Uuid::new_v4().to_string(),
             ip_address: "127.0.0.1".to_string(),
@@ -134,9 +132,9 @@ impl TestDataGenerator {
 
     /// Create test configuration / 创建测试配置
     pub fn create_test_config() -> SmsConfig {
-        use crate::config::base::{ServerConfig, LogConfig};
+        use crate::config::base::{LogConfig, ServerConfig};
         use crate::sms::config::DatabaseConfig;
-        
+
         SmsConfig {
             grpc: ServerConfig {
                 addr: "127.0.0.1:50051".parse().unwrap(),
@@ -154,7 +152,10 @@ impl TestDataGenerator {
                 pool_size: Some(5),
             },
             enable_web_admin: false,
-            web_admin: ServerConfig { addr: "127.0.0.1:8081".parse().unwrap(), ..Default::default() },
+            web_admin: ServerConfig {
+                addr: "127.0.0.1:8081".parse().unwrap(),
+                ..Default::default()
+            },
             heartbeat_timeout: 90,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
@@ -168,9 +169,9 @@ impl TestDataGenerator {
         http_addr: &str,
         _heartbeat_timeout: u64,
     ) -> SmsConfig {
-        use crate::config::base::{ServerConfig, LogConfig};
+        use crate::config::base::{LogConfig, ServerConfig};
         use crate::sms::config::DatabaseConfig;
-        
+
         SmsConfig {
             grpc: ServerConfig {
                 addr: grpc_addr.parse().unwrap(),
@@ -188,7 +189,10 @@ impl TestDataGenerator {
                 pool_size: Some(5),
             },
             enable_web_admin: false,
-            web_admin: ServerConfig { addr: "127.0.0.1:8081".parse().unwrap(), ..Default::default() },
+            web_admin: ServerConfig {
+                addr: "127.0.0.1:8081".parse().unwrap(),
+                ..Default::default()
+            },
             heartbeat_timeout: _heartbeat_timeout,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
@@ -203,13 +207,13 @@ pub struct TestHelpers;
 impl TestHelpers {
     /// Setup a test handler with sample nodes / 设置包含示例节点的测试处理器
     pub async fn setup_test_registry() -> NodeService {
-    let mut service = NodeService::new();
+        let mut service = NodeService::new();
         let nodes = TestDataGenerator::create_sample_nodes(3);
-        
+
         for node in nodes {
             service.register_node(node).await.unwrap();
         }
-        
+
         service
     }
 
@@ -282,19 +286,19 @@ impl TestHelpers {
 pub mod test_constants {
     /// Default test timeout in seconds / 默认测试超时时间（秒）
     pub const DEFAULT_TIMEOUT: u64 = 60;
-    
+
     /// Test gRPC address / 测试gRPC地址
     pub const TEST_GRPC_ADDR: &str = "127.0.0.1:50051";
-    
+
     /// Test HTTP address / 测试HTTP地址
     pub const TEST_HTTP_ADDR: &str = "127.0.0.1:8080";
-    
+
     /// Test node IP addresses / 测试节点IP地址
     pub const TEST_NODE_IPS: &[&str] = &["127.0.0.1", "127.0.0.2", "127.0.0.3"];
-    
+
     /// Test node ports / 测试节点端口
     pub const TEST_NODE_PORTS: &[u16] = &[8080, 8081, 8082];
-    
+
     /// High load thresholds / 高负载阈值
     pub const HIGH_CPU_THRESHOLD: f64 = 80.0;
     pub const HIGH_MEMORY_THRESHOLD: f64 = 85.0;
@@ -319,7 +323,7 @@ mod tests {
         // Test creating multiple nodes / 测试创建多个节点
         let nodes = TestDataGenerator::create_sample_nodes(3);
         assert_eq!(nodes.len(), 3);
-        
+
         for (i, node) in nodes.iter().enumerate() {
             assert_eq!(node.ip_address, format!("127.0.0.{}", i + 1));
             assert_eq!(node.port, 8080 + i as i32);
@@ -365,7 +369,7 @@ mod tests {
         // Test setting up mixed health registry / 测试设置混合健康状态注册表
         let registry = TestHelpers::setup_mixed_health_registry().await;
         assert_eq!(registry.node_count().await.unwrap(), 3);
-        
+
         // Just verify we have nodes / 只验证我们有节点
         let all_nodes = registry.list_nodes().await.unwrap();
         assert_eq!(all_nodes.len(), 3);
@@ -376,7 +380,7 @@ mod tests {
         // Test timestamp assertion helpers / 测试时间戳断言辅助函数
         let now = Utc::now();
         let recent = now - chrono::Duration::seconds(5);
-        
+
         TestHelpers::assert_timestamps_close(now, recent, 10);
         TestHelpers::assert_timestamp_recent(now, 5);
     }

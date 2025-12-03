@@ -3,7 +3,7 @@
 //!
 //! This module implements a three-tier execution architecture:
 //! 该模块实现了三层执行架构：
-//! 
+//!
 //! - **Artifact**: A deployable unit containing one or more tasks
 //! - **Artifact**: 包含一个或多个任务的可部署单元
 //! - **Task**: A logical execution unit within an artifact
@@ -34,32 +34,32 @@
 //! - **资源管理**: 自动扩缩容和生命周期管理
 
 pub mod artifact;
+pub mod artifact_fetch;
+pub mod communication;
+pub mod http_adapter;
 pub mod instance;
 pub mod manager;
 pub mod pool;
 pub mod runtime;
-pub mod artifact_fetch;
 pub mod scheduler;
 pub mod task;
-pub mod http_adapter;
-pub mod communication;
 
 // Re-export commonly used types / 重新导出常用类型
 pub use artifact::{Artifact, ArtifactId, ArtifactSpec, ArtifactStatus};
-pub use instance::{TaskInstance, InstanceId, InstanceStatus, InstanceMetrics};
-pub use manager::{TaskExecutionManager, TaskExecutionManagerConfig, ExecutionStatistics};
-pub use pool::{InstancePool, InstancePoolConfig, PoolMetrics, ScalingDecision, ScalingAction};
-pub use runtime::{Runtime, RuntimeType, RuntimeConfig};
-pub use scheduler::{InstanceScheduler, SchedulingPolicy, SchedulingDecision, SchedulingMetrics};
-pub use task::{Task, TaskId, TaskSpec, TaskStatus, TaskType};
 pub use communication::{
-    CommunicationChannel, CommunicationFactory, CommunicationStrategy,
-    RuntimeMessage, ChannelConfig, ChannelStats,
+    ChannelConfig, ChannelStats, CommunicationChannel, CommunicationFactory, CommunicationStrategy,
+    RuntimeMessage,
 };
+pub use instance::{InstanceId, InstanceMetrics, InstanceStatus, TaskInstance};
+pub use manager::{ExecutionStatistics, TaskExecutionManager, TaskExecutionManagerConfig};
+pub use pool::{InstancePool, InstancePoolConfig, PoolMetrics, ScalingAction, ScalingDecision};
+pub use runtime::{Runtime, RuntimeConfig, RuntimeType};
+pub use scheduler::{InstanceScheduler, SchedulingDecision, SchedulingMetrics, SchedulingPolicy};
+pub use task::{Task, TaskId, TaskSpec, TaskStatus, TaskType};
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
-use serde::{Deserialize, Serialize};
 
 // Execution context / 执行上下文
 #[derive(Debug, Clone, Serialize, Deserialize)]

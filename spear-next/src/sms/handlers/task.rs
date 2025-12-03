@@ -14,13 +14,13 @@ use std::collections::HashMap;
 use tonic::Request;
 use tracing::{debug, error, info};
 
-use crate::sms::FilterState;
+use super::common::ErrorResponse;
 use crate::proto::sms::{
-    RegisterTaskRequest, ListTasksRequest, GetTaskRequest,
-    UnregisterTaskRequest, TaskStatus, TaskPriority, TaskExecutable, ExecutableType
+    ExecutableType, GetTaskRequest, ListTasksRequest, RegisterTaskRequest, TaskExecutable,
+    TaskPriority, TaskStatus, UnregisterTaskRequest,
 };
 use crate::sms::gateway::GatewayState;
-use super::common::ErrorResponse;
+use crate::sms::FilterState;
 
 // HTTP request/response types / HTTP请求/响应类型
 
@@ -98,8 +98,6 @@ pub struct TaskActionResponse {
     pub message: String,
 }
 
-
-
 // Helper function to convert TaskStatus enum / 转换TaskStatus枚举的辅助函数
 fn parse_task_status(status: &str) -> Option<TaskStatus> {
     match status.to_lowercase().as_str() {
@@ -123,8 +121,6 @@ fn parse_task_priority(priority: &str) -> TaskPriority {
         _ => TaskPriority::Normal,
     }
 }
-
-
 
 // Helper function to convert proto Task to TaskResponse / 转换proto Task为TaskResponse的辅助函数
 fn task_to_response(task: crate::proto::sms::Task) -> TaskResponse {
@@ -166,14 +162,17 @@ pub async fn register_task(
 ) -> Result<Json<RegisterTaskResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!("HTTP: Registering task: {}", params.name);
 
-    let priority = params.priority
+    let priority = params
+        .priority
         .as_ref()
         .map(|p| parse_task_priority(p))
         .unwrap_or(TaskPriority::Normal);
 
     let request = Request::new(RegisterTaskRequest {
         name: params.name.clone(),
-        description: params.description.unwrap_or_else(|| format!("Task: {}", params.name)),
+        description: params
+            .description
+            .unwrap_or_else(|| format!("Task: {}", params.name)),
         priority: priority as i32,
         node_uuid: params.node_uuid.unwrap_or_default(),
         endpoint: params.endpoint,
@@ -198,7 +197,12 @@ pub async fn register_task(
         }),
     });
 
-    match gateway_state.task_client.clone().register_task(request).await {
+    match gateway_state
+        .task_client
+        .clone()
+        .register_task(request)
+        .await
+    {
         Ok(response) => {
             let resp = response.into_inner();
             Ok(Json(RegisterTaskResponse {
@@ -229,14 +233,16 @@ pub async fn list_tasks(
 
     // Convert optional filters to FilterState and then to i32 for protobuf compatibility
     // 将可选过滤器转换为FilterState，然后转换为i32以兼容protobuf
-    let status_filter = params.status
+    let status_filter = params
+        .status
         .as_ref()
         .and_then(|s| parse_task_status(s))
         .map(|s| FilterState::Value(s as i32))
         .unwrap_or(FilterState::None)
         .to_i32();
-    
-    let priority_filter = params.priority
+
+    let priority_filter = params
+        .priority
         .as_ref()
         .map(|p| FilterState::Value(parse_task_priority(p) as i32))
         .unwrap_or(FilterState::None)
@@ -254,7 +260,7 @@ pub async fn list_tasks(
         Ok(response) => {
             let resp = response.into_inner();
             let tasks = resp.tasks.into_iter().map(task_to_response).collect();
-            
+
             Ok(Json(ListTasksResponse {
                 tasks,
                 total_count: resp.total_count,
@@ -323,7 +329,12 @@ pub async fn unregister_task(
         reason: params.reason.unwrap_or_default(),
     });
 
-    match gateway_state.task_client.clone().unregister_task(request).await {
+    match gateway_state
+        .task_client
+        .clone()
+        .unregister_task(request)
+        .await
+    {
         Ok(response) => {
             let resp = response.into_inner();
             Ok(Json(TaskActionResponse {

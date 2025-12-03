@@ -39,38 +39,38 @@
 //! - `service`: Main SMS service implementation / 主要SMS服务实现
 
 pub mod config;
-pub mod types;
-pub mod services;
-pub mod handlers;
-pub mod grpc_server;
-pub mod http_gateway;
-pub mod web_admin;
-pub mod service;
 pub mod events;
 pub mod gateway;
+pub mod grpc_server;
+pub mod handlers;
+pub mod http_gateway;
 pub mod routes;
+pub mod service;
+pub mod services;
+pub mod types;
+pub mod web_admin;
 
 #[cfg(test)]
 pub mod config_test;
 #[cfg(test)]
-pub mod grpc_server_test;
-#[cfg(test)]
-pub mod http_gateway_test;
-#[cfg(test)]
-pub mod handlers_test;
-#[cfg(test)]
-pub mod routes_test;
-#[cfg(test)]
-pub mod gateway_test;
+pub mod events_test;
 #[cfg(test)]
 pub mod file_service_test;
 #[cfg(test)]
-pub mod events_test;
+pub mod gateway_test;
+#[cfg(test)]
+pub mod grpc_server_test;
+#[cfg(test)]
+pub mod handlers_test;
+#[cfg(test)]
+pub mod http_gateway_test;
+#[cfg(test)]
+pub mod routes_test;
 
 // Re-export commonly used types / 重新导出常用类型
-pub use types::*;
-pub use services::*;
-pub use handlers::*;
 pub use grpc_server::GrpcServer;
+pub use handlers::*;
 pub use http_gateway::HttpGateway;
 pub use service::SmsServiceImpl;
+pub use services::*;
+pub use types::*;

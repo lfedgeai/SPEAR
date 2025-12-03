@@ -5,17 +5,16 @@
 //! artifacts, tasks, instances, and runtime execution.
 //! 该模块提供中央任务执行管理系统，协调 artifact、任务、实例和运行时执行。
 
+use super::runtime::RuntimeType;
 use super::{
     artifact::{Artifact, ArtifactId},
     instance::{InstanceId, InstanceStatus, TaskInstance},
-    runtime::{RuntimeManager, ExecutionContext},
+    runtime::{ExecutionContext, RuntimeManager},
     scheduler::{InstanceScheduler, SchedulingPolicy},
     task::{Task, TaskId, TaskType},
     ExecutionError, ExecutionResult,
 };
-use crate::proto::spearlet::{
-    ArtifactSpec as ProtoArtifactSpec, InvokeFunctionRequest,
-};
+use crate::proto::spearlet::{ArtifactSpec as ProtoArtifactSpec, InvokeFunctionRequest};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -25,7 +24,6 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
-use super::runtime::RuntimeType;
 
 /// Task execution manager configuration / 任务执行管理器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,9 +63,9 @@ impl Default for TaskExecutionManagerConfig {
             health_check_interval_ms: 10000,
             metrics_collection_interval_ms: 5000,
             cleanup_interval_ms: 60000,
-            artifact_idle_timeout_ms: 300000,  // 5 minutes
-            task_idle_timeout_ms: 180000,      // 3 minutes
-            instance_idle_timeout_ms: 120000,  // 2 minutes
+            artifact_idle_timeout_ms: 300000, // 5 minutes
+            task_idle_timeout_ms: 180000,     // 3 minutes
+            instance_idle_timeout_ms: 120000, // 2 minutes
         }
     }
 }
@@ -210,7 +208,9 @@ impl TaskExecutionManager {
         // Start background tasks / 启动后台任务
         let manager_clone = manager.clone();
         tokio::spawn(async move {
-            manager_clone.run_execution_loop(request_receiver, shutdown_receiver).await;
+            manager_clone
+                .run_execution_loop(request_receiver, shutdown_receiver)
+                .await;
         });
 
         let manager_clone = manager.clone();
@@ -246,15 +246,18 @@ impl TaskExecutionManager {
             self.request_counter.fetch_add(1, Ordering::SeqCst)
         );
 
-        let artifact_spec = request.artifact_spec.ok_or_else(|| ExecutionError::InvalidRequest {
-            message: "Missing artifact specification".to_string(),
-        })?;
+        let artifact_spec =
+            request
+                .artifact_spec
+                .ok_or_else(|| ExecutionError::InvalidRequest {
+                    message: "Missing artifact specification".to_string(),
+                })?;
 
         let execution_context = ExecutionContext {
             execution_id: request_id.clone(),
             payload: Vec::new(), // TODO: Extract payload from request
             headers: std::collections::HashMap::new(), // TODO: Extract headers from request
-            timeout_ms: 30000, // TODO: Extract timeout from request context
+            timeout_ms: 30000,   // TODO: Extract timeout from request context
             context_data: std::collections::HashMap::new(), // TODO: Extract context data from request
         };
 
@@ -282,11 +285,11 @@ impl TaskExecutionManager {
         };
 
         // Send to execution loop / 发送到执行循环
-        self.request_sender.send(execution_request).map_err(|_| {
-            ExecutionError::RuntimeError {
+        self.request_sender
+            .send(execution_request)
+            .map_err(|_| ExecutionError::RuntimeError {
                 message: "Failed to submit execution request".to_string(),
-            }
-        })?;
+            })?;
 
         // Update statistics / 更新统计信息
         {
@@ -295,9 +298,11 @@ impl TaskExecutionManager {
         }
 
         // Wait for response / 等待响应
-        response_receiver.await.map_err(|_| ExecutionError::RuntimeError {
-            message: "Execution request was cancelled".to_string(),
-        })?
+        response_receiver
+            .await
+            .map_err(|_| ExecutionError::RuntimeError {
+                message: "Execution request was cancelled".to_string(),
+            })?
     }
 
     /// Get artifact by ID / 根据 ID 获取 artifact
@@ -336,7 +341,10 @@ impl TaskExecutionManager {
     }
 
     /// Get execution status by execution ID / 根据执行ID获取执行状态
-    pub async fn get_execution_status(&self, _execution_id: &str) -> ExecutionResult<Option<super::ExecutionResponse>> {
+    pub async fn get_execution_status(
+        &self,
+        _execution_id: &str,
+    ) -> ExecutionResult<Option<super::ExecutionResponse>> {
         // TODO: Implement proper execution status tracking
         // For now, return None to indicate execution not found
         // 待办：实现适当的执行状态跟踪
@@ -407,16 +415,20 @@ impl TaskExecutionManager {
         let _permit = match self.execution_semaphore.acquire().await {
             Ok(permit) => permit,
             Err(_) => {
-                let _ = request.response_sender.send(Err(ExecutionError::RuntimeError {
-                    message: "Failed to acquire execution permit".to_string(),
-                }));
+                let _ = request
+                    .response_sender
+                    .send(Err(ExecutionError::RuntimeError {
+                        message: "Failed to acquire execution permit".to_string(),
+                    }));
                 warn!(request_id = %request_id, "Failed to acquire execution permit");
                 return;
             }
         };
         let artifact_id = request.artifact_spec.artifact_id.clone();
         debug!(request_id = %request_id, artifact_id = %artifact_id, "Starting execution");
-        let result = self.execute_request(request.artifact_spec, request.execution_context).await;
+        let result = self
+            .execute_request(request.artifact_spec, request.execution_context)
+            .await;
 
         let execution_time = start_time.elapsed();
         let execution_time_ms = execution_time.as_millis() as u64;
@@ -433,7 +445,7 @@ impl TaskExecutionManager {
         {
             let mut stats = self.statistics.write();
             stats.total_execution_time_ms += execution_time_ms;
-            stats.average_execution_time_ms = 
+            stats.average_execution_time_ms =
                 stats.total_execution_time_ms as f64 / stats.total_executions as f64;
 
             match &result {
@@ -462,32 +474,39 @@ impl TaskExecutionManager {
         let instance = self.get_or_create_instance(&task).await?;
 
         // Execute on instance / 在实例上执行
-        let runtime = self.runtime_manager.get_runtime(&task.spec.runtime_type)
+        let runtime = self
+            .runtime_manager
+            .get_runtime(&task.spec.runtime_type)
             .ok_or_else(|| ExecutionError::RuntimeError {
                 message: format!("Runtime not found for type: {:?}", task.spec.runtime_type),
             })?;
         let execution_id = execution_context.execution_id.clone();
         let runtime_response = runtime.execute(&instance, execution_context).await?;
-        
+
         // Convert RuntimeExecutionResponse to ExecutionResponse / 转换运行时响应到执行响应
         let is_successful = runtime_response.is_successful();
         let has_failed = runtime_response.has_failed();
-        let error_message = runtime_response.error.as_ref().map(|e| Self::extract_error_message(e));
+        let error_message = runtime_response
+            .error
+            .as_ref()
+            .map(|e| Self::extract_error_message(e));
         let duration_ms = runtime_response.duration_ms;
-        let metadata = runtime_response.metadata.into_iter()
+        let metadata = runtime_response
+            .metadata
+            .into_iter()
             .map(|(k, v)| (k, v.to_string()))
             .collect();
         let data = runtime_response.data;
-        
+
         Ok(super::ExecutionResponse {
             request_id: execution_id,
             output_data: data,
-            status: if is_successful { 
-                "completed".to_string() 
-            } else if has_failed { 
-                "failed".to_string() 
-            } else { 
-                "pending".to_string() 
+            status: if is_successful {
+                "completed".to_string()
+            } else if has_failed {
+                "failed".to_string()
+            } else {
+                "pending".to_string()
             },
             error_message,
             execution_time_ms: duration_ms,
@@ -510,12 +529,18 @@ impl TaskExecutionManager {
         // Check artifact limit / 检查 artifact 限制
         if self.artifacts.len() >= self.config.max_artifacts {
             return Err(ExecutionError::ResourceExhausted {
-                message: format!("Maximum artifacts limit reached: {}", self.config.max_artifacts),
+                message: format!(
+                    "Maximum artifacts limit reached: {}",
+                    self.config.max_artifacts
+                ),
             });
         }
 
         let artifact_spec_local = super::artifact::ArtifactSpec::from(artifact_spec);
-        let artifact = Arc::new(Artifact::new_with_id(artifact_id.clone(), artifact_spec_local));
+        let artifact = Arc::new(Artifact::new_with_id(
+            artifact_id.clone(),
+            artifact_spec_local,
+        ));
         self.artifacts.insert(artifact_id.clone(), artifact.clone());
         debug!(
             proto_artifact_id = %artifact_id,
@@ -551,9 +576,9 @@ impl TaskExecutionManager {
         }
 
         // Create TaskSpec from ArtifactSpec / 从 ArtifactSpec 创建 TaskSpec
-        use super::task::{TaskSpec, ScalingConfig, HealthCheckConfig, TimeoutConfig};
+        use super::task::{HealthCheckConfig, ScalingConfig, TaskSpec, TimeoutConfig};
         use std::collections::HashMap;
-        
+
         let task_spec = TaskSpec {
             name: artifact.spec.name.clone(),
             task_type: TaskType::HttpHandler,
@@ -603,7 +628,9 @@ impl TaskExecutionManager {
 
         // Create new instance / 创建新实例
         let instance_id = task.generate_instance_id();
-        let runtime = self.runtime_manager.get_runtime(&task.spec.runtime_type)
+        let runtime = self
+            .runtime_manager
+            .get_runtime(&task.spec.runtime_type)
             .ok_or_else(|| ExecutionError::RuntimeError {
                 message: format!("Runtime not found for type: {:?}", task.spec.runtime_type),
             })?;
@@ -659,12 +686,17 @@ impl TaskExecutionManager {
 
     /// Stop instance / 停止实例
     async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        let runtime = self.runtime_manager.get_runtime(&instance.config.runtime_type)
+        let runtime = self
+            .runtime_manager
+            .get_runtime(&instance.config.runtime_type)
             .ok_or_else(|| ExecutionError::RuntimeError {
-                message: format!("Runtime not found for type: {:?}", instance.config.runtime_type),
+                message: format!(
+                    "Runtime not found for type: {:?}",
+                    instance.config.runtime_type
+                ),
             })?;
         runtime.stop_instance(instance).await?;
-        
+
         self.instances.remove(instance.id());
         self.scheduler.remove_instance(&instance.id).await?;
 
@@ -680,19 +712,21 @@ impl TaskExecutionManager {
 
     /// Health check loop / 健康检查循环
     async fn run_health_check_loop(&self) {
-        let mut interval = tokio::time::interval(Duration::from_millis(
-            self.config.health_check_interval_ms,
-        ));
+        let mut interval =
+            tokio::time::interval(Duration::from_millis(self.config.health_check_interval_ms));
 
         loop {
             interval.tick().await;
 
             for instance_entry in self.instances.iter() {
                 let instance = instance_entry.value();
-                if let Some(runtime) = self.runtime_manager.get_runtime(&instance.config.runtime_type) {
+                if let Some(runtime) = self
+                    .runtime_manager
+                    .get_runtime(&instance.config.runtime_type)
+                {
                     if let Err(e) = runtime.health_check(instance).await {
                         warn!("Health check failed for instance {}: {}", instance.id(), e);
-                        
+
                         // Mark instance as unhealthy / 标记实例为不健康
                         instance.set_status(InstanceStatus::Unhealthy);
                     }
@@ -712,9 +746,16 @@ impl TaskExecutionManager {
 
             for instance_entry in self.instances.iter() {
                 let instance = instance_entry.value();
-                if let Some(runtime) = self.runtime_manager.get_runtime(&instance.config.runtime_type) {
+                if let Some(runtime) = self
+                    .runtime_manager
+                    .get_runtime(&instance.config.runtime_type)
+                {
                     if let Ok(metrics) = runtime.get_metrics(instance).await {
-                        debug!("Collected metrics for instance {}: {:?}", instance.id(), metrics);
+                        debug!(
+                            "Collected metrics for instance {}: {:?}",
+                            instance.id(),
+                            metrics
+                        );
                     }
                 }
             }
@@ -723,9 +764,8 @@ impl TaskExecutionManager {
 
     /// Cleanup loop / 清理循环
     async fn run_cleanup_loop(&self) {
-        let mut interval = tokio::time::interval(Duration::from_millis(
-            self.config.cleanup_interval_ms,
-        ));
+        let mut interval =
+            tokio::time::interval(Duration::from_millis(self.config.cleanup_interval_ms));
 
         loop {
             interval.tick().await;
@@ -799,15 +839,29 @@ impl TaskExecutionManager {
     fn extract_error_message(error: &super::runtime::RuntimeExecutionError) -> String {
         use super::runtime::RuntimeExecutionError;
         match error {
-            RuntimeExecutionError::InstanceNotFound { instance_id } => format!("Instance not found: {}", instance_id),
-            RuntimeExecutionError::InstanceNotReady { instance_id } => format!("Instance not ready: {}", instance_id),
-            RuntimeExecutionError::ExecutionTimeout { timeout_ms } => format!("Execution timeout after {} ms", timeout_ms),
-            RuntimeExecutionError::ResourceLimitExceeded { resource, limit } => format!("Resource limit exceeded: {} (limit: {})", resource, limit),
+            RuntimeExecutionError::InstanceNotFound { instance_id } => {
+                format!("Instance not found: {}", instance_id)
+            }
+            RuntimeExecutionError::InstanceNotReady { instance_id } => {
+                format!("Instance not ready: {}", instance_id)
+            }
+            RuntimeExecutionError::ExecutionTimeout { timeout_ms } => {
+                format!("Execution timeout after {} ms", timeout_ms)
+            }
+            RuntimeExecutionError::ResourceLimitExceeded { resource, limit } => {
+                format!("Resource limit exceeded: {} (limit: {})", resource, limit)
+            }
             RuntimeExecutionError::ConfigurationError { message } => message.clone(),
             RuntimeExecutionError::RuntimeError { message } => message.clone(),
             RuntimeExecutionError::IoError { message } => message.clone(),
             RuntimeExecutionError::SerializationError { message } => message.clone(),
-            RuntimeExecutionError::UnsupportedOperation { operation, runtime_type } => format!("Unsupported operation: {} for runtime: {}", operation, runtime_type),
+            RuntimeExecutionError::UnsupportedOperation {
+                operation,
+                runtime_type,
+            } => format!(
+                "Unsupported operation: {} for runtime: {}",
+                operation, runtime_type
+            ),
         }
     }
 }
@@ -840,7 +894,7 @@ mod tests {
     async fn test_task_execution_manager_creation() {
         let config = TaskExecutionManagerConfig::default();
         let runtime_manager = Arc::new(RuntimeManager::new());
-        
+
         let manager = TaskExecutionManager::new(config, runtime_manager).await;
         assert!(manager.is_ok());
     }
@@ -851,13 +905,13 @@ mod tests {
         assert_eq!(stats.total_executions, 0);
         assert_eq!(stats.successful_executions, 0);
         assert_eq!(stats.failed_executions, 0);
-        
+
         stats.total_executions = 10;
         stats.successful_executions = 8;
         stats.failed_executions = 2;
         stats.total_execution_time_ms = 5000;
         stats.average_execution_time_ms = 500.0;
-        
+
         assert_eq!(stats.total_executions, 10);
         assert_eq!(stats.successful_executions, 8);
         assert_eq!(stats.failed_executions, 2);

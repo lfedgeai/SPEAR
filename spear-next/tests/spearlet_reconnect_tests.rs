@@ -1,22 +1,25 @@
-use spear_next::sms::service::SmsServiceImpl;
 use spear_next::proto::sms::node_service_server::NodeServiceServer;
-use spear_next::spearlet::registration::RegistrationService;
+use spear_next::sms::service::SmsServiceImpl;
 use spear_next::spearlet::config::SpearletConfig;
+use spear_next::spearlet::registration::RegistrationService;
+use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::time::{sleep, timeout, Duration};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
-use std::sync::Arc;
-use tokio::time::{timeout, Duration, sleep};
 
 async fn start_sms_server(bind: Option<String>) -> (tokio::task::JoinHandle<()>, String) {
     let bind_addr = bind.unwrap_or_else(|| "127.0.0.1:0".to_string());
     let listener = TcpListener::bind(&bind_addr).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let service = SmsServiceImpl::new(
-        Arc::new(tokio::sync::RwLock::new(spear_next::sms::services::NodeService::new())),
+        Arc::new(tokio::sync::RwLock::new(
+            spear_next::sms::services::NodeService::new(),
+        )),
         Arc::new(spear_next::sms::services::ResourceService::new()),
         Arc::new(spear_next::sms::config::SmsConfig::default()),
-    ).await;
+    )
+    .await;
     let handle = tokio::spawn(async move {
         Server::builder()
             .add_service(NodeServiceServer::new(service))
@@ -31,7 +34,9 @@ async fn wait_registered(svc: &RegistrationService, max_ms: u64) -> bool {
     let deadline = Duration::from_millis(max_ms);
     let fut = async {
         loop {
-            if svc.get_state().await.is_registered() { break true; }
+            if svc.get_state().await.is_registered() {
+                break true;
+            }
             sleep(Duration::from_millis(50)).await;
         }
     };
@@ -41,10 +46,17 @@ async fn wait_registered(svc: &RegistrationService, max_ms: u64) -> bool {
 fn make_spearlet_config(sms_grpc_addr: String) -> Arc<SpearletConfig> {
     Arc::new(SpearletConfig {
         node_name: "test-node".to_string(),
-        grpc: spear_next::config::base::ServerConfig { addr: "127.0.0.1:50055".parse().unwrap(), ..Default::default() },
+        grpc: spear_next::config::base::ServerConfig {
+            addr: "127.0.0.1:50055".parse().unwrap(),
+            ..Default::default()
+        },
         http: spear_next::spearlet::config::HttpConfig::default(),
         storage: spear_next::spearlet::config::StorageConfig::default(),
-        logging: spear_next::config::base::LogConfig { level: "debug".to_string(), format: "json".to_string(), file: None },
+        logging: spear_next::config::base::LogConfig {
+            level: "debug".to_string(),
+            format: "json".to_string(),
+            file: None,
+        },
         sms_grpc_addr: sms_grpc_addr,
         sms_http_addr: "127.0.0.1:8080".to_string(),
         auto_register: true,

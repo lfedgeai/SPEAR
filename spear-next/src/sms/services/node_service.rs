@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-
 use crate::proto::sms::Node;
 use crate::sms::error::{SmsError, SmsResult};
 
@@ -49,7 +48,10 @@ impl NodeService {
             node.last_heartbeat = timestamp;
             Ok(())
         } else {
-            Err(SmsError::NotFound(format!("Node with UUID {} not found", uuid)))
+            Err(SmsError::NotFound(format!(
+                "Node with UUID {} not found",
+                uuid
+            )))
         }
     }
 
@@ -60,7 +62,10 @@ impl NodeService {
             nodes.insert(node.uuid.clone(), node);
             Ok(())
         } else {
-            Err(SmsError::NotFound(format!("Node with UUID {} not found", node.uuid)))
+            Err(SmsError::NotFound(format!(
+                "Node with UUID {} not found",
+                node.uuid
+            )))
         }
     }
 
@@ -70,7 +75,10 @@ impl NodeService {
         if nodes.remove(uuid).is_some() {
             Ok(())
         } else {
-            Err(SmsError::NotFound(format!("Node with UUID {} not found", uuid)))
+            Err(SmsError::NotFound(format!(
+                "Node with UUID {} not found",
+                uuid
+            )))
         }
     }
 
@@ -81,11 +89,14 @@ impl NodeService {
     }
 
     /// Cleanup unhealthy nodes / 清理不健康的节点
-    pub async fn cleanup_unhealthy_nodes(&mut self, timeout_seconds: u64) -> SmsResult<Vec<String>> {
+    pub async fn cleanup_unhealthy_nodes(
+        &mut self,
+        timeout_seconds: u64,
+    ) -> SmsResult<Vec<String>> {
         let mut nodes = self.nodes.write().await;
         let current_time = chrono::Utc::now().timestamp();
         let timeout_threshold = current_time - timeout_seconds as i64;
-        
+
         let mut removed_nodes = Vec::new();
         nodes.retain(|uuid, node| {
             if node.last_heartbeat < timeout_threshold {
@@ -95,7 +106,7 @@ impl NodeService {
                 true
             }
         });
-        
+
         Ok(removed_nodes)
     }
 }

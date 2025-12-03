@@ -15,17 +15,18 @@
 //! 定义自己的配置结构，同时共享通用的基础配置。
 
 use anyhow::{Context, Result};
-use figment::{providers::{Env, Serialized, Toml, Format}, Figment};
+use figment::{
+    providers::{Env, Format, Serialized, Toml},
+    Figment,
+};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-
-
 /// Base configuration shared by all applications / 所有应用程序共享的基础配置
 pub mod base;
-pub use base::*;
 pub use crate::storage::kv::KvStoreConfig;
+pub use base::*;
 
 /// Base configuration trait / 基础配置特征
 /// All application configurations should implement this trait
@@ -33,7 +34,7 @@ pub use crate::storage::kv::KvStoreConfig;
 pub trait AppConfig: for<'de> Deserialize<'de> + Serialize + Clone + std::fmt::Debug {
     /// Load configuration from multiple sources with proper precedence
     /// 从多个源加载配置，具有适当的优先级
-    /// 
+    ///
     /// Precedence order (highest to lowest):
     /// 优先级顺序（从高到低）：
     /// 1. Command line arguments / 命令行参数
@@ -47,9 +48,7 @@ pub trait AppConfig: for<'de> Deserialize<'de> + Serialize + Clone + std::fmt::D
             .merge(Env::prefixed("SPEAR_"))
             .merge(Self::cli_overrides()?);
 
-        figment
-            .extract()
-            .context("Failed to load configuration")
+        figment.extract().context("Failed to load configuration")
     }
 
     /// Load configuration from a specific file
@@ -141,8 +140,8 @@ pub fn init_tracing(config: &LoggingConfig) -> Result<()> {
         &config.level
     };
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     let subscriber = tracing_subscriber::registry().with(env_filter);
 

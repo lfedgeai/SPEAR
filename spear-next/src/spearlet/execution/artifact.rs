@@ -4,8 +4,10 @@
 //! An Artifact represents a deployable unit that contains one or more tasks.
 //! Artifact 表示包含一个或多个任务的可部署单元。
 
-use super::{ExecutionError, ExecutionResult, TaskId, RuntimeType};
-use crate::proto::spearlet::{ArtifactSpec as ProtoArtifactSpec, InvocationType as ProtoInvocationType};
+use super::{ExecutionError, ExecutionResult, RuntimeType, TaskId};
+use crate::proto::spearlet::{
+    ArtifactSpec as ProtoArtifactSpec, InvocationType as ProtoInvocationType,
+};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -179,7 +181,7 @@ impl Artifact {
     pub fn new(spec: ArtifactSpec) -> Self {
         let id = format!("artifact-{}", Uuid::new_v4());
         let now = SystemTime::now();
-        
+
         Self {
             id,
             spec,
@@ -260,7 +262,10 @@ impl Artifact {
 
     /// List all tasks / 列出所有任务
     pub fn list_tasks(&self) -> Vec<Arc<super::Task>> {
-        self.tasks.iter().map(|entry| entry.value().clone()).collect()
+        self.tasks
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
     }
 
     /// Get the number of tasks in this artifact / 获取此 Artifact 中的任务数量
@@ -295,7 +300,10 @@ impl Artifact {
 
     /// Check if artifact is ready for execution / 检查 Artifact 是否准备就绪可执行
     pub fn is_ready(&self) -> bool {
-        matches!(self.status(), ArtifactStatus::Ready | ArtifactStatus::Running)
+        matches!(
+            self.status(),
+            ArtifactStatus::Ready | ArtifactStatus::Running
+        )
     }
 
     /// Check if artifact can be modified / 检查 Artifact 是否可以修改
@@ -331,19 +339,27 @@ impl From<ProtoArtifactSpec> for ArtifactSpec {
             "wasm" => RuntimeType::Wasm,
             _ => RuntimeType::Process, // default fallback
         };
-        
+
         Self {
             name: proto.artifact_id.clone(), // Use artifact_id as name / 使用 artifact_id 作为名称
             version: proto.version,
             description: None, // Proto doesn't have description field / Proto 没有 description 字段
             runtime_type,
             runtime_config: std::collections::HashMap::new(), // Proto doesn't have runtime_config / Proto 没有 runtime_config
-            location: if proto.location.is_empty() { None } else { Some(proto.location) },
-            checksum_sha256: if proto.checksum.is_empty() { None } else { Some(proto.checksum) },
+            location: if proto.location.is_empty() {
+                None
+            } else {
+                Some(proto.location)
+            },
+            checksum_sha256: if proto.checksum.is_empty() {
+                None
+            } else {
+                Some(proto.checksum)
+            },
             environment: std::collections::HashMap::new(), // Proto doesn't have environment / Proto 没有 environment
-            resource_limits: ResourceLimits::default(), // TODO: Add to proto
-            invocation_type: InvocationType::NewTask, // Default value / 默认值
-            max_execution_timeout_ms: 30000, // Default timeout / 默认超时时间
+            resource_limits: ResourceLimits::default(),    // TODO: Add to proto
+            invocation_type: InvocationType::NewTask,      // Default value / 默认值
+            max_execution_timeout_ms: 30000,               // Default timeout / 默认超时时间
             labels: proto.metadata, // Use metadata as labels / 使用 metadata 作为 labels
         }
     }
@@ -397,7 +413,7 @@ mod tests {
         let artifact = Artifact::new(spec);
         let id1 = artifact.generate_execution_id();
         let id2 = artifact.generate_execution_id();
-        
+
         assert_ne!(id1, id2);
         assert!(id1.contains(&artifact.id));
         assert!(id2.contains(&artifact.id));

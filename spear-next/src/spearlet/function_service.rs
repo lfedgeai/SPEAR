@@ -2,9 +2,9 @@
 //! spearlet的函数服务实现
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::pin::Pin;
 use tokio::sync::RwLock;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
@@ -13,35 +13,44 @@ use uuid::Uuid;
 
 use crate::proto::spearlet::{
     function_service_server::FunctionService,
-    // Request and response types / 请求和响应类型
-    InvokeFunctionRequest, InvokeFunctionResponse,
-    GetExecutionStatusRequest, GetExecutionStatusResponse,
-    CancelExecutionRequest, CancelExecutionResponse,
-    StreamExecutionResult,
-    // Task management / 任务管理
-    ListTasksRequest, ListTasksResponse,
-    GetTaskRequest, GetTaskResponse,
-    DeleteTaskRequest, DeleteTaskResponse,
-    ListExecutionsRequest, ListExecutionsResponse,
+    ArtifactSpec,
+    CancelExecutionRequest,
+    CancelExecutionResponse,
+    DeleteTaskRequest,
+    DeleteTaskResponse,
+    ExecutionResult,
+    ExecutionStats,
+    ExecutionStatus,
+    GetExecutionStatusRequest,
+    GetExecutionStatusResponse,
     // Health and stats / 健康状态和统计
-    GetHealthRequest, GetHealthResponse,
-    GetStatsRequest, GetStatsResponse,
+    GetHealthRequest,
+    GetHealthResponse,
+    GetStatsRequest,
+    GetStatsResponse,
+    GetTaskRequest,
+    GetTaskResponse,
     // Common types / 通用类型
     HealthDetails,
-    ServiceStats, TaskStats, ExecutionStats,
-    ExecutionStatus,
-    ArtifactSpec, ExecutionResult,
+    // Request and response types / 请求和响应类型
+    InvokeFunctionRequest,
+    InvokeFunctionResponse,
+    ListExecutionsRequest,
+    ListExecutionsResponse,
+    // Task management / 任务管理
+    ListTasksRequest,
+    ListTasksResponse,
+    ServiceStats,
+    StreamExecutionResult,
+    TaskStats,
 };
 
 use crate::spearlet::execution::{
-    Artifact, ArtifactSpec as ExecutionArtifactSpec,
-    TaskExecutionManager, TaskExecutionManagerConfig,
-    InstancePool, InstancePoolConfig,
-    InstanceScheduler, SchedulingPolicy,
-    ExecutionResponse, ExecutionError,
-    RuntimeType,
-    runtime::{RuntimeManager, RuntimeFactory, RuntimeConfig, ResourcePoolConfig},
     artifact::InvocationType as ExecutionInvocationType,
+    runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeFactory, RuntimeManager},
+    Artifact, ArtifactSpec as ExecutionArtifactSpec, ExecutionError, ExecutionResponse,
+    InstancePool, InstancePoolConfig, InstanceScheduler, RuntimeType, SchedulingPolicy,
+    TaskExecutionManager, TaskExecutionManagerConfig,
 };
 use crate::spearlet::SpearletConfig;
 
@@ -138,44 +147,56 @@ impl FunctionServiceImpl {
         _task_id: &str,
     ) -> Result<ExecutionResult, Status> {
         // 使用 TaskExecutionManager 执行同步任务 / Use TaskExecutionManager for sync execution
-        match self.execution_manager.submit_execution(request.clone()).await {
+        match self
+            .execution_manager
+            .submit_execution(request.clone())
+            .await
+        {
             Ok(execution_response) => {
                 // 使用 HTTP 适配器转换响应 / Use HTTP adapter to convert response
                 let http_adapter = crate::spearlet::execution::http_adapter::HttpAdapter::new();
                 let _http_response = http_adapter.to_sync_response(&execution_response);
-                
+
                 // 转换为 protobuf ExecutionResult / Convert to protobuf ExecutionResult
                 Ok(ExecutionResult {
-                    status: if execution_response.status == "completed" { 
-                        ExecutionStatus::Completed as i32 
-                    } else { 
-                        ExecutionStatus::Failed as i32 
+                    status: if execution_response.status == "completed" {
+                        ExecutionStatus::Completed as i32
+                    } else {
+                        ExecutionStatus::Failed as i32
                     },
                     result: Some(prost_types::Any {
                         type_url: "type.googleapis.com/spearlet.ExecutionData".to_string(),
                         value: execution_response.output_data.clone(),
                     }),
-                    error_message: execution_response.error_message.clone()
-                        .unwrap_or_default(),
-                    error_code: execution_response.error_message.as_ref()
+                    error_message: execution_response.error_message.clone().unwrap_or_default(),
+                    error_code: execution_response
+                        .error_message
+                        .as_ref()
                         .map(|_| "EXECUTION_ERROR".to_string())
                         .unwrap_or_default(),
                     execution_time_ms: execution_response.execution_time_ms as i64,
                     memory_used_bytes: 0, // TODO: 从 metadata 中获取 / TODO: Get from metadata
                     metrics: execution_response.metadata.clone(),
                     started_at: Some(prost_types::Timestamp {
-                        seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                        seconds: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64,
                         nanos: 0,
                     }),
                     completed_at: Some(prost_types::Timestamp {
-                        seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                        seconds: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64,
                         nanos: 0,
                     }),
                 })
-            },
-            Err(e) => {
-                Err(Status::internal(format!("执行失败 / Execution failed: {}", e)))
             }
+            Err(e) => Err(Status::internal(format!(
+                "执行失败 / Execution failed: {}",
+                e
+            ))),
         }
     }
 
@@ -190,24 +211,31 @@ impl FunctionServiceImpl {
         let execution_manager = self.execution_manager.clone();
         let request_clone = request.clone();
         let execution_id_clone = execution_id.to_string();
-        
+
         // 在后台启动异步执行 / Start async execution in background
         tokio::spawn(async move {
             match execution_manager.submit_execution(request_clone).await {
                 Ok(_execution_response) => {
                     // 异步执行完成，结果会存储在 execution_manager 中 / Async execution completed, result stored in execution_manager
-                    tracing::info!("异步执行完成 / Async execution completed: {}", execution_id_clone);
-                },
+                    tracing::info!(
+                        "异步执行完成 / Async execution completed: {}",
+                        execution_id_clone
+                    );
+                }
                 Err(e) => {
-                    tracing::error!("异步执行失败 / Async execution failed: {} - {}", execution_id_clone, e);
+                    tracing::error!(
+                        "异步执行失败 / Async execution failed: {} - {}",
+                        execution_id_clone,
+                        e
+                    );
                 }
             }
         });
-        
+
         // 返回状态端点和预估完成时间 / Return status endpoint and estimated completion time
         let status_endpoint = format!("/api/v1/executions/{}/status", execution_id);
         let estimated_completion_ms = 5000; // 预估5秒完成 / Estimated 5 seconds to complete
-        
+
         (status_endpoint, estimated_completion_ms)
     }
 
@@ -218,7 +246,9 @@ impl FunctionServiceImpl {
             result: None,
             error_message: match error_code {
                 "SYNC_EXECUTION_FAILED" => "同步执行失败 / Sync execution failed".to_string(),
-                "STREAM_MODE_NOT_SUPPORTED" => "不支持流式模式 / Stream mode not supported".to_string(),
+                "STREAM_MODE_NOT_SUPPORTED" => {
+                    "不支持流式模式 / Stream mode not supported".to_string()
+                }
                 "UNKNOWN_EXECUTION_MODE" => "未知执行模式 / Unknown execution mode".to_string(),
                 _ => "执行失败 / Execution failed".to_string(),
             },
@@ -227,11 +257,17 @@ impl FunctionServiceImpl {
             memory_used_bytes: 0,
             metrics: HashMap::new(),
             started_at: Some(prost_types::Timestamp {
-                seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                seconds: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
                 nanos: 0,
             }),
             completed_at: Some(prost_types::Timestamp {
-                seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                seconds: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
                 nanos: 0,
             }),
         }
@@ -243,7 +279,7 @@ impl FunctionServiceImpl {
         // 从执行管理器和实例池更新统计信息
         let execution_stats = self.execution_manager.get_statistics();
         let pool_metrics = self.instance_pool.get_global_metrics();
-        
+
         let mut stats = self.stats.write().await;
         stats.task_count = self.execution_manager.list_tasks().len();
         stats.artifact_count = self.execution_manager.list_artifacts().len();
@@ -254,13 +290,16 @@ impl FunctionServiceImpl {
         stats.successful_executions = execution_stats.successful_executions as usize;
         stats.failed_executions = execution_stats.failed_executions as usize;
         stats.average_response_time_ms = pool_metrics.average_response_time_ms;
-        
+
         stats.clone()
     }
 
     /// Create artifact from proto spec / 从 proto 规范创建 artifact
     #[allow(dead_code)]
-    async fn create_artifact_from_proto(&self, proto_spec: &ArtifactSpec) -> Result<Arc<Artifact>, ExecutionError> {
+    async fn create_artifact_from_proto(
+        &self,
+        proto_spec: &ArtifactSpec,
+    ) -> Result<Arc<Artifact>, ExecutionError> {
         let artifact_spec = ExecutionArtifactSpec {
             name: proto_spec.artifact_id.clone(),
             version: proto_spec.version.clone(),
@@ -283,7 +322,7 @@ impl FunctionServiceImpl {
         };
 
         let artifact = Artifact::new(artifact_spec);
-        
+
         Ok(Arc::new(artifact))
     }
 
@@ -308,11 +347,19 @@ impl FunctionServiceImpl {
             memory_used_bytes: 0, // TODO: Add memory tracking
             metrics: response.metadata.clone(),
             started_at: Some(prost_types::Timestamp {
-                seconds: response.timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                seconds: response
+                    .timestamp
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
                 nanos: 0,
             }),
             completed_at: Some(prost_types::Timestamp {
-                seconds: response.timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                seconds: response
+                    .timestamp
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
                 nanos: 0,
             }),
         }
@@ -327,7 +374,10 @@ impl FunctionService for FunctionServiceImpl {
         request: Request<InvokeFunctionRequest>,
     ) -> Result<Response<InvokeFunctionResponse>, Status> {
         let req = request.into_inner();
-        debug!("收到函数调用请求 / Received function invocation request: {:?}", req);
+        debug!(
+            "收到函数调用请求 / Received function invocation request: {:?}",
+            req
+        );
 
         // 生成执行 ID / Generate execution ID
         let execution_id = self.generate_execution_id();
@@ -337,29 +387,36 @@ impl FunctionService for FunctionServiceImpl {
         match req.execution_mode() {
             crate::proto::spearlet::ExecutionMode::Sync => {
                 // 同步执行：等待完成后返回完整结果 / Sync execution: wait for completion and return complete result
-                let result = self.handle_sync_execution(&req, &execution_id, &task_id).await;
-                
+                let result = self
+                    .handle_sync_execution(&req, &execution_id, &task_id)
+                    .await;
+
                 let response = InvokeFunctionResponse {
                     success: result.is_ok(),
-                    message: if result.is_ok() { 
-                        "函数执行成功 / Function executed successfully".to_string() 
-                    } else { 
-                        "函数执行失败 / Function execution failed".to_string() 
+                    message: if result.is_ok() {
+                        "函数执行成功 / Function executed successfully".to_string()
+                    } else {
+                        "函数执行失败 / Function execution failed".to_string()
                     },
                     execution_id: execution_id.clone(),
                     task_id: task_id.clone(),
                     instance_id: String::new(),
-                    result: Some(result.unwrap_or_else(|_| self.create_failed_result("SYNC_EXECUTION_FAILED"))),
+                    result: Some(
+                        result
+                            .unwrap_or_else(|_| self.create_failed_result("SYNC_EXECUTION_FAILED")),
+                    ),
                     status_endpoint: String::new(), // 同步模式不需要状态端点 / No status endpoint needed for sync mode
                     estimated_completion_ms: 0,
                 };
 
                 Ok(Response::new(response))
-            },
+            }
             crate::proto::spearlet::ExecutionMode::Async => {
                 // 异步执行：立即返回执行ID和状态端点 / Async execution: immediately return execution ID and status endpoint
-                let (status_endpoint, estimated_ms) = self.handle_async_execution(&req, &execution_id, &task_id).await;
-                
+                let (status_endpoint, estimated_ms) = self
+                    .handle_async_execution(&req, &execution_id, &task_id)
+                    .await;
+
                 let result = ExecutionResult {
                     status: ExecutionStatus::Pending as i32,
                     result: None,
@@ -369,7 +426,10 @@ impl FunctionService for FunctionServiceImpl {
                     memory_used_bytes: 0,
                     metrics: HashMap::new(),
                     started_at: Some(prost_types::Timestamp {
-                        seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                        seconds: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64,
                         nanos: 0,
                     }),
                     completed_at: None, // 异步执行尚未完成 / Async execution not yet completed
@@ -387,11 +447,11 @@ impl FunctionService for FunctionServiceImpl {
                 };
 
                 Ok(Response::new(response))
-            },
+            }
             crate::proto::spearlet::ExecutionMode::Stream => {
                 // 流式执行应使用 StreamFunction RPC / Streaming execution should use StreamFunction RPC
                 let result = self.create_failed_result("STREAM_MODE_NOT_SUPPORTED");
-                
+
                 let response = InvokeFunctionResponse {
                     success: false,
                     message: "流式模式请使用 StreamFunction RPC / Use StreamFunction RPC for streaming mode".to_string(),
@@ -404,11 +464,11 @@ impl FunctionService for FunctionServiceImpl {
                 };
 
                 Ok(Response::new(response))
-            },
+            }
             _ => {
                 // 未知执行模式 / Unknown execution mode
                 let result = self.create_failed_result("UNKNOWN_EXECUTION_MODE");
-                
+
                 let response = InvokeFunctionResponse {
                     success: false,
                     message: "未知的执行模式 / Unknown execution mode".to_string(),
@@ -431,38 +491,52 @@ impl FunctionService for FunctionServiceImpl {
         request: Request<GetExecutionStatusRequest>,
     ) -> Result<Response<GetExecutionStatusResponse>, Status> {
         let req = request.into_inner();
-        debug!("收到执行状态查询请求 / Received execution status request: {:?}", req);
+        debug!(
+            "收到执行状态查询请求 / Received execution status request: {:?}",
+            req
+        );
 
         // 尝试从 execution_manager 获取执行状态 / Try to get execution status from execution_manager
-        match self.execution_manager.get_execution_status(&req.execution_id).await {
+        match self
+            .execution_manager
+            .get_execution_status(&req.execution_id)
+            .await
+        {
             Ok(Some(execution_response)) => {
                 // 直接构建响应 / Build response directly
                 let result = if execution_response.is_completed() {
                     Some(ExecutionResult {
-                        status: if execution_response.is_successful() { 
-                            ExecutionStatus::Completed as i32 
-                        } else { 
-                            ExecutionStatus::Failed as i32 
+                        status: if execution_response.is_successful() {
+                            ExecutionStatus::Completed as i32
+                        } else {
+                            ExecutionStatus::Failed as i32
                         },
                         result: Some(prost_types::Any {
                             type_url: "type.googleapis.com/spearlet.ExecutionData".to_string(),
                             value: execution_response.output_data.clone(),
                         }),
-                        error_message: execution_response.error_message.clone()
-                            .unwrap_or_default(),
-                        error_code: execution_response.error_message.as_ref()
+                        error_message: execution_response.error_message.clone().unwrap_or_default(),
+                        error_code: execution_response
+                            .error_message
+                            .as_ref()
                             .map(|_| "EXECUTION_ERROR".to_string())
                             .unwrap_or_default(),
                         execution_time_ms: execution_response.execution_time_ms as i64,
                         memory_used_bytes: 0,
                         metrics: execution_response.metadata.clone(),
                         started_at: Some(prost_types::Timestamp {
-                            seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                            seconds: SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs() as i64,
                             nanos: 0,
                         }),
                         completed_at: if execution_response.status == "completed" {
                             Some(prost_types::Timestamp {
-                                seconds: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
+                                seconds: SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs() as i64,
                                 nanos: 0,
                             })
                         } else {
@@ -485,7 +559,7 @@ impl FunctionService for FunctionServiceImpl {
                 };
 
                 Ok(Response::new(response))
-            },
+            }
             Ok(None) => {
                 // 执行未找到 / Execution not found
                 let response = GetExecutionStatusResponse {
@@ -496,10 +570,11 @@ impl FunctionService for FunctionServiceImpl {
                 };
 
                 Ok(Response::new(response))
-            },
-            Err(e) => {
-                Err(Status::internal(format!("查询执行状态失败 / Failed to query execution status: {}", e)))
             }
+            Err(e) => Err(Status::internal(format!(
+                "查询执行状态失败 / Failed to query execution status: {}",
+                e
+            ))),
         }
     }
 
@@ -509,7 +584,10 @@ impl FunctionService for FunctionServiceImpl {
         request: Request<CancelExecutionRequest>,
     ) -> Result<Response<CancelExecutionResponse>, Status> {
         let req = request.into_inner();
-        debug!("收到取消执行请求 / Received cancel execution request: {:?}", req);
+        debug!(
+            "收到取消执行请求 / Received cancel execution request: {:?}",
+            req
+        );
 
         let response = CancelExecutionResponse {
             success: true,
@@ -520,7 +598,8 @@ impl FunctionService for FunctionServiceImpl {
         Ok(Response::new(response))
     }
 
-    type StreamFunctionStream = Pin<Box<dyn Stream<Item = Result<StreamExecutionResult, Status>> + Send>>;
+    type StreamFunctionStream =
+        Pin<Box<dyn Stream<Item = Result<StreamExecutionResult, Status>> + Send>>;
 
     /// Stream function execution / 流式函数执行
     async fn stream_function(
@@ -528,7 +607,10 @@ impl FunctionService for FunctionServiceImpl {
         request: Request<InvokeFunctionRequest>,
     ) -> Result<Response<Self::StreamFunctionStream>, Status> {
         let req = request.into_inner();
-        debug!("收到流式函数调用请求 / Received stream function request: {:?}", req);
+        debug!(
+            "收到流式函数调用请求 / Received stream function request: {:?}",
+            req
+        );
 
         // 创建一个简单的流响应 / Create a simple stream response
         let execution_id = self.generate_execution_id();
@@ -589,7 +671,10 @@ impl FunctionService for FunctionServiceImpl {
             found: false,
             task: None,
             executions: vec![],
-            message: format!("任务 {} 未找到 / Task {} not found", req.task_id, req.task_id),
+            message: format!(
+                "任务 {} 未找到 / Task {} not found",
+                req.task_id, req.task_id
+            ),
         };
 
         Ok(Response::new(response))
@@ -786,14 +871,18 @@ impl FunctionService for Arc<FunctionServiceImpl> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::runtime::{WasmRuntime, RuntimeConfig, ResourcePoolConfig, RuntimeType};
-    use crate::spearlet::execution::runtime::Runtime;
-    use crate::spearlet::execution::task::{Task, TaskSpec, TaskType};
     use crate::spearlet::execution::artifact::{Artifact, ArtifactSpec};
+    use crate::spearlet::execution::runtime::Runtime;
+    use crate::spearlet::execution::runtime::{
+        ResourcePoolConfig, RuntimeConfig, RuntimeType, WasmRuntime,
+    };
+    use crate::spearlet::execution::task::{Task, TaskSpec, TaskType};
 
     #[tokio::test]
     async fn test_function_service_initializes_runtimes() {
-        let svc = FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default())).await.unwrap();
+        let svc = FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default()))
+            .await
+            .unwrap();
         let mgr = svc.get_execution_manager();
         let types = mgr.list_runtime_types();
         assert!(types.contains(&RuntimeType::Process));
@@ -851,7 +940,14 @@ mod tests {
         let wasm = WasmRuntime::new(&rt_cfg).unwrap();
 
         // Verify TASK_ID injected into environment without creating instance
-        assert_eq!(instance_config.environment.get("TASK_ID").cloned().unwrap_or_default(), task.id());
+        assert_eq!(
+            instance_config
+                .environment
+                .get("TASK_ID")
+                .cloned()
+                .unwrap_or_default(),
+            task.id()
+        );
         // Creating instance without valid wasm bytes should error per current logic
         let result = wasm.create_instance(&instance_config).await;
         assert!(result.is_err());

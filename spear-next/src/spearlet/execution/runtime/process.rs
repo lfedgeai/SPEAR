@@ -5,25 +5,25 @@
 //! 该模块提供基于原生进程的执行运行时。
 
 use super::{
-    ExecutionContext, RuntimeExecutionResponse, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeType,
-    RuntimeListeningConfig, ListeningStatus, MessageHandler,
+    ExecutionContext, ListeningStatus, MessageHandler, Runtime, RuntimeCapabilities, RuntimeConfig,
+    RuntimeExecutionResponse, RuntimeListeningConfig, RuntimeType,
 };
 use crate::spearlet::execution::{
-    ExecutionError, ExecutionResult, InstanceStatus,
-    instance::{InstanceConfig, InstanceResourceLimits, TaskInstance},
     communication::{
-        SpearMessage, MessageType, ConnectionManager, ConnectionManagerConfig, 
-        MonitoringService, MonitoringConfig, MessageDirection,
+        ConnectionManager, ConnectionManagerConfig, MessageDirection, MessageType,
+        MonitoringConfig, MonitoringService, SpearMessage,
     },
+    instance::{InstanceConfig, InstanceResourceLimits, TaskInstance},
+    ExecutionError, ExecutionResult, InstanceStatus,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::{info, debug};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::{debug, info};
 
 use tokio::process::{Child as TokioChild, Command};
 use tokio::sync::{Mutex, RwLock};
@@ -110,11 +110,7 @@ impl Default for ProcessConfig {
                 run_as_group: None,
                 drop_privileges: true,
                 allowed_syscalls: vec![],
-                env_whitelist: vec![
-                    "PATH".to_string(),
-                    "HOME".to_string(),
-                    "USER".to_string(),
-                ],
+                env_whitelist: vec!["PATH".to_string(), "HOME".to_string(), "USER".to_string()],
             },
         }
     }
@@ -168,7 +164,8 @@ impl std::fmt::Debug for ProcessRuntime {
 impl ProcessRuntime {
     /// Create a new Process runtime / 创建新的进程运行时
     pub fn new(runtime_config: &RuntimeConfig) -> ExecutionResult<Self> {
-        let process_config = if let Some(process_settings) = runtime_config.settings.get("process") {
+        let process_config = if let Some(process_settings) = runtime_config.settings.get("process")
+        {
             serde_json::from_value(process_settings.clone()).map_err(|e| {
                 ExecutionError::InvalidConfiguration {
                     message: format!("Invalid Process configuration: {}", e),
@@ -241,7 +238,12 @@ impl ProcessRuntime {
 
     /// Build process command with listening configuration / 构建带有监听配置的进程命令
     #[allow(dead_code)]
-    fn _build_process_command_with_listening(&self, instance_config: &InstanceConfig, service_addr: &str, secret: &str) -> Command {
+    fn _build_process_command_with_listening(
+        &self,
+        instance_config: &InstanceConfig,
+        service_addr: &str,
+        secret: &str,
+    ) -> Command {
         let executable = instance_config
             .runtime_config
             .get("executable")
@@ -296,13 +298,17 @@ impl ProcessRuntime {
     }
 
     /// Monitor process resources / 监控进程资源
-    async fn monitor_process_resources(&self, pid: u32) -> ExecutionResult<HashMap<String, serde_json::Value>> {
+    async fn monitor_process_resources(
+        &self,
+        pid: u32,
+    ) -> ExecutionResult<HashMap<String, serde_json::Value>> {
         let mut metrics = HashMap::new();
 
         #[cfg(unix)]
         {
             // Read process status from /proc/[pid]/stat / 从 /proc/[pid]/stat 读取进程状态
-            if let Ok(stat_content) = tokio::fs::read_to_string(format!("/proc/{}/stat", pid)).await {
+            if let Ok(stat_content) = tokio::fs::read_to_string(format!("/proc/{}/stat", pid)).await
+            {
                 let fields: Vec<&str> = stat_content.split_whitespace().collect();
                 if fields.len() > 23 {
                     // CPU time (user + system) / CPU 时间（用户 + 系统）
@@ -331,7 +337,9 @@ impl ProcessRuntime {
             }
 
             // Read process status from /proc/[pid]/status / 从 /proc/[pid]/status 读取进程状态
-            if let Ok(status_content) = tokio::fs::read_to_string(format!("/proc/{}/status", pid)).await {
+            if let Ok(status_content) =
+                tokio::fs::read_to_string(format!("/proc/{}/status", pid)).await
+            {
                 for line in status_content.lines() {
                     if line.starts_with("FDSize:") {
                         if let Some(fd_count) = line.split_whitespace().nth(1) {
@@ -397,7 +405,7 @@ impl ProcessRuntime {
     fn generate_instance_secret(&self, instance_id: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         // Create a deterministic secret based on instance ID and current time / 基于实例ID和当前时间创建确定性密钥
         let mut hasher = DefaultHasher::new();
         instance_id.hash(&mut hasher);
@@ -406,7 +414,7 @@ impl ProcessRuntime {
             .unwrap_or_default()
             .as_secs()
             .hash(&mut hasher);
-        
+
         // Generate a hex string from the hash / 从哈希生成十六进制字符串
         format!("{:x}", hasher.finish())
     }
@@ -418,10 +426,7 @@ impl Runtime for ProcessRuntime {
         RuntimeType::Process
     }
 
-    async fn create_instance(
-        &self,
-        config: &InstanceConfig,
-    ) -> ExecutionResult<Arc<TaskInstance>> {
+    async fn create_instance(&self, config: &InstanceConfig) -> ExecutionResult<Arc<TaskInstance>> {
         debug!("ProcessRuntime::create_instance task_id={}", config.task_id);
         let instance = Arc::new(TaskInstance::new(config.task_id.clone(), config.clone()));
 
@@ -430,7 +435,7 @@ impl Runtime for ProcessRuntime {
         instance.set_secret(secret);
 
         let mut command = self.build_process_command(config);
-        
+
         // Add arguments if specified / 如果指定了参数则添加
         if let Some(args) = config.runtime_config.get("args") {
             if let Some(args_array) = args.as_array() {
@@ -447,7 +452,7 @@ impl Runtime for ProcessRuntime {
         })?;
 
         let pid = child.id().unwrap_or(0);
-        
+
         let process_handle = ProcessHandle {
             pid,
             command: self.config.default_executable.clone(),
@@ -465,15 +470,20 @@ impl Runtime for ProcessRuntime {
     }
 
     async fn start_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        debug!("ProcessRuntime::start_instance instance_id={}", instance.id());
+        debug!(
+            "ProcessRuntime::start_instance instance_id={}",
+            instance.id()
+        );
         // Process is already started when created / 进程在创建时已经启动
         instance.set_status(InstanceStatus::Running);
-        
+
         // Get the secret that was generated during instance creation / 获取在实例创建时生成的secret
-        let secret = instance.get_secret().ok_or_else(|| {
-            ExecutionError::RuntimeError { message: "Instance secret not found".to_string() }
-        })?;
-        
+        let secret = instance
+            .get_secret()
+            .ok_or_else(|| ExecutionError::RuntimeError {
+                message: "Instance secret not found".to_string(),
+            })?;
+
         // Start listening mode for this instance / 为此实例启动监听模式
         let listening_config = RuntimeListeningConfig {
             enabled: true,
@@ -486,21 +496,26 @@ impl Runtime for ProcessRuntime {
             },
             message_config: super::MessageHandlingConfig::default(),
         };
-        
+
         // Start listening and get the address / 启动监听并获取地址
         if let Some(listening_addr) = self.start_listening(&listening_config).await? {
             // Store the listening address in the instance / 将监听地址存储在实例中
             instance.set_listening_address(listening_addr.to_string());
-            
-            info!("Instance {} listening on {} with secret authentication enabled", 
-                  instance.id, listening_addr);
+
+            info!(
+                "Instance {} listening on {} with secret authentication enabled",
+                instance.id, listening_addr
+            );
         }
-        
+
         Ok(())
     }
 
     async fn stop_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        debug!("ProcessRuntime::stop_instance instance_id={}", instance.id());
+        debug!(
+            "ProcessRuntime::stop_instance instance_id={}",
+            instance.id()
+        );
         let handle = instance
             .get_runtime_handle::<ProcessHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
@@ -526,7 +541,11 @@ impl Runtime for ProcessRuntime {
         instance: &Arc<TaskInstance>,
         _context: ExecutionContext,
     ) -> ExecutionResult<RuntimeExecutionResponse> {
-        debug!("ProcessRuntime::execute instance_id={} execution_id={}", instance.id(), _context.execution_id);
+        debug!(
+            "ProcessRuntime::execute instance_id={} execution_id={}",
+            instance.id(),
+            _context.execution_id
+        );
         let start_time = Instant::now();
         instance.record_request_start();
 
@@ -543,7 +562,7 @@ impl Runtime for ProcessRuntime {
             // This is a simplified implementation / 这是一个简化的实现
             // In a real implementation, you would have a proper protocol for communication
             // 在真实实现中，您需要有一个适当的通信协议
-            
+
             let duration = start_time.elapsed();
             let duration_ms = duration.as_millis() as u64;
 
@@ -558,7 +577,7 @@ impl Runtime for ProcessRuntime {
             let duration = start_time.elapsed();
             let duration_ms = duration.as_millis() as u64;
             instance.record_request_completion(false, duration_ms as f64);
-            
+
             Err(ExecutionError::RuntimeError {
                 message: "Process not available".to_string(),
             })
@@ -622,14 +641,20 @@ impl Runtime for ProcessRuntime {
         _instance: &Arc<TaskInstance>,
         _new_limits: &InstanceResourceLimits,
     ) -> ExecutionResult<()> {
-        debug!("ProcessRuntime::scale_instance instance_id={}", _instance.id());
+        debug!(
+            "ProcessRuntime::scale_instance instance_id={}",
+            _instance.id()
+        );
         // Process runtime supports limited scaling through ulimit / 进程运行时通过 ulimit 支持有限的扩缩容
         // This is a simplified implementation / 这是一个简化的实现
         Ok(())
     }
 
     async fn cleanup_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
-        debug!("ProcessRuntime::cleanup_instance instance_id={}", instance.id());
+        debug!(
+            "ProcessRuntime::cleanup_instance instance_id={}",
+            instance.id()
+        );
         if let Some(handle) = instance.get_runtime_handle::<ProcessHandle>() {
             self.kill_process_tree(handle.pid).await?;
         }
@@ -712,13 +737,14 @@ impl Runtime for ProcessRuntime {
             enable_performance_profiling: false,
         };
         let monitoring_service = Arc::new(MonitoringService::new(monitoring_config));
-        
+
         // Start monitoring service / 启动监控服务
-        monitoring_service.start().await.map_err(|e| {
-            ExecutionError::RuntimeError {
+        monitoring_service
+            .start()
+            .await
+            .map_err(|e| ExecutionError::RuntimeError {
                 message: format!("Failed to start monitoring service: {}", e),
-            }
-        })?;
+            })?;
 
         // Create connection manager with secret validator
         // 创建带有 secret 验证器的连接管理器
@@ -729,18 +755,20 @@ impl Runtime for ProcessRuntime {
             // 基本验证：secret 不应为空且至少 8 个字符
             !secret.is_empty() && secret.len() >= 8 && !instance_id.is_empty()
         });
-        
+
         let connection_manager = Arc::new(ConnectionManager::new_with_validator(
             config.connection_config.clone(),
             Some(secret_validator),
         ));
-        
+
         // Start connection manager / 启动连接管理器
-        let listening_addr = connection_manager.start().await.map_err(|e| {
-            ExecutionError::RuntimeError {
-                message: format!("Failed to start connection manager: {}", e),
-            }
-        })?;
+        let listening_addr =
+            connection_manager
+                .start()
+                .await
+                .map_err(|e| ExecutionError::RuntimeError {
+                    message: format!("Failed to start connection manager: {}", e),
+                })?;
 
         // Store services / 存储服务
         *self.connection_manager.write().await = Some(Arc::clone(&connection_manager));
@@ -788,12 +816,14 @@ impl Runtime for ProcessRuntime {
     ) -> ExecutionResult<Option<SpearMessage>> {
         // Record message event / 记录消息事件
         if let Some(monitoring) = self.monitoring_service.read().await.as_ref() {
-            monitoring.record_message_event(
-                instance_id.to_string(),
-                &message,
-                MessageDirection::Incoming,
-                None,
-            ).await;
+            monitoring
+                .record_message_event(
+                    instance_id.to_string(),
+                    &message,
+                    MessageDirection::Incoming,
+                    None,
+                )
+                .await;
         }
 
         // Simple echo response for now / 目前简单回显响应
@@ -801,9 +831,9 @@ impl Runtime for ProcessRuntime {
             "status": "received",
             "original_type": format!("{:?}", message.message_type)
         });
-        let payload_bytes = serde_json::to_vec(&response_payload)
-            .map_err(|e| ExecutionError::Serialization(e))?;
-        
+        let payload_bytes =
+            serde_json::to_vec(&response_payload).map_err(|e| ExecutionError::Serialization(e))?;
+
         let response_message = SpearMessage {
             message_type: MessageType::ExecuteResponse,
             request_id: message.request_id,
@@ -831,7 +861,9 @@ impl Runtime for ProcessRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::instance::{InstanceConfig, InstanceResourceLimits, NetworkConfig};
+    use crate::spearlet::execution::instance::{
+        InstanceConfig, InstanceResourceLimits, NetworkConfig,
+    };
 
     #[test]
     fn test_process_config_default() {
@@ -854,7 +886,7 @@ mod tests {
 
         let runtime = ProcessRuntime::new(&runtime_config);
         assert!(runtime.is_ok());
-        
+
         let runtime = runtime.unwrap();
         assert_eq!(runtime.runtime_type(), RuntimeType::Process);
     }
@@ -870,7 +902,7 @@ mod tests {
         };
 
         let runtime = ProcessRuntime::new(&runtime_config).unwrap();
-        
+
         let valid_config = InstanceConfig {
             task_id: "task-xyz".to_string(),
             artifact_id: "artifact-xyz".to_string(),
@@ -913,15 +945,15 @@ mod tests {
         };
 
         let runtime = ProcessRuntime::new(&runtime_config).unwrap();
-        
+
         // Use current process PID for testing / 使用当前进程 PID 进行测试
         let pid = std::process::id();
         let metrics = runtime.monitor_process_resources(pid).await;
-        
+
         // On Unix systems, we should get some metrics / 在 Unix 系统上，我们应该得到一些指标
         #[cfg(unix)]
         assert!(metrics.is_ok());
-        
+
         #[cfg(not(unix))]
         {
             if let Ok(metrics_map) = metrics {

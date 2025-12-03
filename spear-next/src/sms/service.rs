@@ -5,39 +5,51 @@ use tonic::{Request, Response, Status};
 
 use uuid::Uuid;
 
-use crate::sms::services::{
-    node_service::NodeService, 
-    task_service::TaskService as TaskServiceImpl,
-    resource_service::ResourceService,
-};
 use crate::sms::config::SmsConfig;
-use crate::storage::kv::{KvStoreConfig, create_kv_store_from_config, get_kv_store_factory};
 use crate::sms::events::TaskEventBus;
-use tokio_stream::StreamExt;
+use crate::sms::services::{
+    node_service::NodeService, resource_service::ResourceService,
+    task_service::TaskService as TaskServiceImpl,
+};
+use crate::storage::kv::{create_kv_store_from_config, get_kv_store_factory, KvStoreConfig};
 use futures::stream::unfold;
+use tokio_stream::StreamExt;
 use tracing::{debug, warn};
-
 
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
     node_service_server::NodeService as NodeServiceTrait,
     task_service_server::TaskService as TaskServiceTrait,
+    DeleteNodeRequest,
+    DeleteNodeResponse,
+    GetNodeRequest,
+    GetNodeResourceRequest,
+    GetNodeResourceResponse,
+    GetNodeResponse,
+    GetNodeWithResourceRequest,
+    GetNodeWithResourceResponse,
+    GetTaskRequest,
+    GetTaskResponse,
+    HeartbeatRequest,
+    HeartbeatResponse,
+    ListNodeResourcesRequest,
+    ListNodeResourcesResponse,
+    ListNodesRequest,
+    ListNodesResponse,
+    ListTasksRequest,
+    ListTasksResponse,
     // Node service messages / 节点服务消息
-    RegisterNodeRequest, RegisterNodeResponse,
-    UpdateNodeRequest, UpdateNodeResponse,
-    DeleteNodeRequest, DeleteNodeResponse,
-    HeartbeatRequest, HeartbeatResponse,
-    ListNodesRequest, ListNodesResponse,
-    GetNodeRequest, GetNodeResponse,
-    UpdateNodeResourceRequest, UpdateNodeResourceResponse,
-    GetNodeResourceRequest, GetNodeResourceResponse,
-    ListNodeResourcesRequest, ListNodeResourcesResponse,
-    GetNodeWithResourceRequest, GetNodeWithResourceResponse,
+    RegisterNodeRequest,
+    RegisterNodeResponse,
     // Task service messages / 任务服务消息
-    RegisterTaskRequest, RegisterTaskResponse,
-    ListTasksRequest, ListTasksResponse,
-    GetTaskRequest, GetTaskResponse,
-    UnregisterTaskRequest, UnregisterTaskResponse,
+    RegisterTaskRequest,
+    RegisterTaskResponse,
+    UnregisterTaskRequest,
+    UnregisterTaskResponse,
+    UpdateNodeRequest,
+    UpdateNodeResourceRequest,
+    UpdateNodeResourceResponse,
+    UpdateNodeResponse,
 };
 
 // Note: SpearletRegistrationService is not defined in current proto files
@@ -70,12 +82,24 @@ impl SmsServiceImpl {
         // Create KV store for events via factory, allow separate config / 事件KV支持独立配置
         let supported = get_kv_store_factory().supported_backends();
         let kv_cfg = if let Some(ev) = &config.event_kv {
-            let backend = if supported.contains(&ev.backend) { ev.backend.clone() } else { "memory".to_string() };
-            KvStoreConfig { backend, params: ev.params.clone() }
+            let backend = if supported.contains(&ev.backend) {
+                ev.backend.clone()
+            } else {
+                "memory".to_string()
+            };
+            KvStoreConfig {
+                backend,
+                params: ev.params.clone(),
+            }
         } else {
-            KvStoreConfig { backend: "memory".to_string(), params: std::collections::HashMap::new() }
+            KvStoreConfig {
+                backend: "memory".to_string(),
+                params: std::collections::HashMap::new(),
+            }
         };
-        let kv_box = create_kv_store_from_config(&kv_cfg).await.expect("Failed to create KV store from config");
+        let kv_box = create_kv_store_from_config(&kv_cfg)
+            .await
+            .expect("Failed to create KV store from config");
         let kv: Arc<dyn crate::storage::kv::KvStore> = Arc::from(kv_box);
         let events = Arc::new(TaskEventBus::new(kv));
 
@@ -90,7 +114,9 @@ impl SmsServiceImpl {
 
     /// Convert proto Node to internal NodeInfo / 将proto Node转换为内部NodeInfo
     #[allow(dead_code)]
-    fn proto_node_to_node_info(proto_node: crate::proto::sms::Node) -> crate::sms::services::node_service::NodeInfo {
+    fn proto_node_to_node_info(
+        proto_node: crate::proto::sms::Node,
+    ) -> crate::sms::services::node_service::NodeInfo {
         use crate::sms::services::node_service::NodeInfo;
 
         let uuid = proto_node.uuid.clone();
@@ -105,11 +131,15 @@ impl SmsServiceImpl {
 
     /// Convert internal NodeInfo to proto Node / 将内部NodeInfo转换为proto Node
     #[allow(dead_code)]
-    fn node_info_to_proto_node(node_info: &crate::sms::services::node_service::NodeInfo) -> crate::proto::sms::Node {
+    fn node_info_to_proto_node(
+        node_info: &crate::sms::services::node_service::NodeInfo,
+    ) -> crate::proto::sms::Node {
         // Parse IP and port from address
         let (ip, port) = if let Some(colon_pos) = node_info.address.rfind(':') {
             let ip = node_info.address[..colon_pos].to_string();
-            let port = node_info.address[colon_pos + 1..].parse::<i32>().unwrap_or(8080);
+            let port = node_info.address[colon_pos + 1..]
+                .parse::<i32>()
+                .unwrap_or(8080);
             (ip, port)
         } else {
             (node_info.address.clone(), 8080)
@@ -127,7 +157,9 @@ impl SmsServiceImpl {
     }
 
     /// Convert proto NodeResource to internal NodeResourceInfo / 将proto NodeResource转换为内部NodeResourceInfo
-    fn proto_resource_to_resource_info(proto_resource: &crate::proto::sms::NodeResource) -> Result<crate::sms::services::resource_service::NodeResourceInfo, Status> {
+    fn proto_resource_to_resource_info(
+        proto_resource: &crate::proto::sms::NodeResource,
+    ) -> Result<crate::sms::services::resource_service::NodeResourceInfo, Status> {
         let node_uuid = uuid::Uuid::parse_str(&proto_resource.node_uuid)
             .map_err(|_| Status::invalid_argument("Invalid node UUID format"))?;
 
@@ -159,7 +191,9 @@ impl SmsServiceImpl {
     }
 
     /// Convert internal NodeResourceInfo to proto NodeResource / 将内部NodeResourceInfo转换为proto NodeResource
-    fn resource_info_to_proto_resource(resource_info: &crate::sms::services::resource_service::NodeResourceInfo) -> crate::proto::sms::NodeResource {
+    fn resource_info_to_proto_resource(
+        resource_info: &crate::sms::services::resource_service::NodeResourceInfo,
+    ) -> crate::proto::sms::NodeResource {
         crate::proto::sms::NodeResource {
             node_uuid: resource_info.node_uuid.to_string(),
             cpu_usage_percent: resource_info.cpu_usage_percent,
@@ -181,18 +215,15 @@ impl SmsServiceImpl {
     }
 
     /// Create SMS service with storage configuration / 使用存储配置创建SMS服务
-    pub async fn with_storage_config(
-        storage_config: &crate::config::base::StorageConfig,
-    ) -> Self {
+    pub async fn with_storage_config(storage_config: &crate::config::base::StorageConfig) -> Self {
         // Create KV store from storage config / 从存储配置创建KV存储
-        use crate::storage::{KvStoreConfig, create_kv_store_from_config};
+        use crate::storage::{create_kv_store_from_config, KvStoreConfig};
         let kv_config = KvStoreConfig::from_storage_config(storage_config);
-        let _kv_store = create_kv_store_from_config(&kv_config).await
+        let _kv_store = create_kv_store_from_config(&kv_config)
+            .await
             .expect("Failed to create KV store from storage config");
-        
-        let node_service = Arc::new(RwLock::new(
-            NodeService::new()
-        ));
+
+        let node_service = Arc::new(RwLock::new(NodeService::new()));
         let resource_service = Arc::new(ResourceService::new());
         let config = Arc::new(SmsConfig::default());
 
@@ -224,11 +255,13 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<RegisterNodeRequest>,
     ) -> Result<Response<RegisterNodeResponse>, Status> {
         let req = request.into_inner();
-        let mut node = req.node.ok_or_else(|| Status::invalid_argument("Node is required"))?;
-        
+        let mut node = req
+            .node
+            .ok_or_else(|| Status::invalid_argument("Node is required"))?;
+
         // Register node directly / 直接注册节点
         let mut node_service = self.node_service.write().await;
-        
+
         match node_service.register_node(node.clone()).await {
             Ok(()) => {
                 tracing::info!(uuid = %node.uuid, ip = %node.ip_address, port = %node.port, "SPEARlet registered");
@@ -256,11 +289,13 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<UpdateNodeRequest>,
     ) -> Result<Response<UpdateNodeResponse>, Status> {
         let req = request.into_inner();
-        let mut node = req.node.ok_or_else(|| Status::invalid_argument("Node is required"))?;
-        
+        let mut node = req
+            .node
+            .ok_or_else(|| Status::invalid_argument("Node is required"))?;
+
         // Use update_node to update the existing node / 使用update_node来更新现有节点
         let mut node_service = self.node_service.write().await;
-        
+
         match node_service.update_node(node).await {
             Ok(_) => {
                 let response = UpdateNodeResponse {
@@ -281,9 +316,9 @@ impl NodeServiceTrait for SmsServiceImpl {
         let req = request.into_inner();
         let node_uuid = Uuid::parse_str(&req.uuid)
             .map_err(|_| Status::invalid_argument("Invalid UUID format"))?;
-        
+
         let mut node_service = self.node_service.write().await;
-        
+
         match node_service.remove_node(&node_uuid.to_string()).await {
             Ok(_) => {
                 tracing::info!(uuid = %node_uuid, "SPEARlet unregistered");
@@ -304,8 +339,11 @@ impl NodeServiceTrait for SmsServiceImpl {
     ) -> Result<Response<HeartbeatResponse>, Status> {
         let req = request.into_inner();
         let mut node_service = self.node_service.write().await;
-        
-        match node_service.update_heartbeat(&req.uuid, chrono::Utc::now().timestamp()).await {
+
+        match node_service
+            .update_heartbeat(&req.uuid, chrono::Utc::now().timestamp())
+            .await
+        {
             Ok(_) => {
                 tracing::debug!(uuid = %req.uuid, "Heartbeat received");
                 let response = HeartbeatResponse {
@@ -326,14 +364,12 @@ impl NodeServiceTrait for SmsServiceImpl {
     ) -> Result<Response<ListNodesResponse>, Status> {
         let _req = request.into_inner();
         let node_service = self.node_service.read().await;
-        
+
         let nodes = node_service.list_nodes().await;
-        
+
         match nodes {
             Ok(node_list) => {
-                let response = ListNodesResponse {
-                    nodes: node_list,
-                };
+                let response = ListNodesResponse { nodes: node_list };
                 Ok(Response::new(response))
             }
             Err(e) => Err(Status::internal(format!("List nodes failed: {}", e))),
@@ -347,7 +383,7 @@ impl NodeServiceTrait for SmsServiceImpl {
     ) -> Result<Response<GetNodeResponse>, Status> {
         let req = request.into_inner();
         let node_service = self.node_service.read().await;
-        
+
         match node_service.get_node(&req.uuid).await {
             Ok(Some(node)) => {
                 let response = GetNodeResponse {
@@ -356,9 +392,7 @@ impl NodeServiceTrait for SmsServiceImpl {
                 };
                 Ok(Response::new(response))
             }
-            Ok(None) => {
-                Err(Status::not_found("Node not found"))
-            }
+            Ok(None) => Err(Status::not_found("Node not found")),
             Err(e) => Err(e.into()),
         }
     }
@@ -369,12 +403,13 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<UpdateNodeResourceRequest>,
     ) -> Result<Response<UpdateNodeResourceResponse>, Status> {
         let req = request.into_inner();
-        
-        let resource = req.resource
+
+        let resource = req
+            .resource
             .ok_or_else(|| Status::invalid_argument("Resource is required"))?;
-        
+
         let resource_info = Self::proto_resource_to_resource_info(&resource)?;
-        
+
         match self.resource_service.update_resource(resource_info).await {
             Ok(_) => {
                 let response = UpdateNodeResourceResponse {
@@ -402,7 +437,9 @@ impl NodeServiceTrait for SmsServiceImpl {
         // Allow non-UUID identifiers: if parsing fails, treat as no resource found
         let res = if let Ok(u) = uuid::Uuid::parse_str(&req.node_uuid) {
             self.resource_service.get_resource(&u).await
-        } else { Ok(None) };
+        } else {
+            Ok(None)
+        };
         match res {
             Ok(Some(resource_info)) => {
                 let response = GetNodeResourceResponse {
@@ -428,7 +465,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<ListNodeResourcesRequest>,
     ) -> Result<Response<ListNodeResourcesResponse>, Status> {
         let req = request.into_inner();
-        
+
         let resources = if req.node_uuids.is_empty() {
             // List all resources / 列出所有资源
             self.resource_service.list_resources().await
@@ -440,15 +477,18 @@ impl NodeServiceTrait for SmsServiceImpl {
                     node_uuids.push(uuid);
                 }
             }
-            self.resource_service.list_resources_by_nodes(&node_uuids).await
+            self.resource_service
+                .list_resources_by_nodes(&node_uuids)
+                .await
         };
-        
+
         match resources {
             Ok(resource_list) => {
-                let proto_resources: Vec<_> = resource_list.iter()
+                let proto_resources: Vec<_> = resource_list
+                    .iter()
                     .map(|resource| Self::resource_info_to_proto_resource(resource))
                     .collect();
-                
+
                 let response = ListNodeResourcesResponse {
                     resources: proto_resources,
                 };
@@ -465,17 +505,19 @@ impl NodeServiceTrait for SmsServiceImpl {
     ) -> Result<Response<GetNodeWithResourceResponse>, Status> {
         let req = request.into_inner();
         let node_id = req.uuid;
-        
+
         // Get node info / 获取节点信息
         let node_service = self.node_service.read().await;
         let node_result = node_service.get_node(&node_id).await;
         drop(node_service);
-        
+
         // Get resource info / 获取资源信息（如果node_id不是UUID则返回None）
         let resource_result = if let Ok(uuid) = uuid::Uuid::parse_str(&node_id) {
             self.resource_service.get_resource(&uuid).await
-        } else { Ok(None) };
-        
+        } else {
+            Ok(None)
+        };
+
         match (node_result, resource_result) {
             (Ok(Some(node)), Ok(resource_info)) => {
                 let response = GetNodeWithResourceResponse {
@@ -502,14 +544,20 @@ impl NodeServiceTrait for SmsServiceImpl {
 // Implement TaskService trait / 实现TaskService trait
 #[tonic::async_trait]
 impl TaskServiceTrait for SmsServiceImpl {
-    type SubscribeTaskEventsStream = std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<crate::proto::sms::TaskEvent, Status>> + Send + 'static>>;
+    type SubscribeTaskEventsStream = std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<crate::proto::sms::TaskEvent, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
     /// Register a new task / 注册新任务
     async fn register_task(
         &self,
         request: Request<RegisterTaskRequest>,
     ) -> Result<Response<RegisterTaskResponse>, Status> {
         let req = request.into_inner();
-        
+
         // Create task from request fields
         let task = crate::proto::sms::Task {
             task_id: uuid::Uuid::new_v4().to_string(),
@@ -527,30 +575,32 @@ impl TaskServiceTrait for SmsServiceImpl {
             config: req.config,
             executable: req.executable,
         };
-        
+
         let mut task_service = self.task_service.write().await;
         match task_service.register_task(task.clone()).await {
             Ok(_) => {
                 debug!(task_id = %task.task_id, node_uuid = %task.node_uuid, "RegisterTask: publishing create event");
-                 // Publish create event / 发布创建事件
-                 if let Err(e) = self.events.publish_create(&task).await { warn!(error = %e, "Publish create event failed"); }
-                 let response = RegisterTaskResponse {
-                     success: true,
-                     message: "Task registered successfully".to_string(),
-                     task_id: task.task_id.clone(),
-                     task: Some(task),
-                 };
-                 Ok(Response::new(response))
-             }
-             Err(e) => {
-                 let response = RegisterTaskResponse {
-                     success: false,
-                     message: format!("Failed to register task: {}", e),
-                     task_id: String::new(),
-                     task: None,
-                 };
-                 Ok(Response::new(response))
-             }
+                // Publish create event / 发布创建事件
+                if let Err(e) = self.events.publish_create(&task).await {
+                    warn!(error = %e, "Publish create event failed");
+                }
+                let response = RegisterTaskResponse {
+                    success: true,
+                    message: "Task registered successfully".to_string(),
+                    task_id: task.task_id.clone(),
+                    task: Some(task),
+                };
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                let response = RegisterTaskResponse {
+                    success: false,
+                    message: format!("Failed to register task: {}", e),
+                    task_id: String::new(),
+                    task: None,
+                };
+                Ok(Response::new(response))
+            }
         }
     }
 
@@ -560,34 +610,51 @@ impl TaskServiceTrait for SmsServiceImpl {
         request: Request<ListTasksRequest>,
     ) -> Result<Response<ListTasksResponse>, Status> {
         let req = request.into_inner();
-        
+
         let task_service = self.task_service.read().await;
-        
+
         // Convert filter parameters / 转换过滤参数
-        let node_uuid = if req.node_uuid.is_empty() { None } else { Some(req.node_uuid.as_str()) };
-        let status_filter = if req.status_filter < 0 { None } else { Some(req.status_filter) };
-        let priority_filter = if req.priority_filter < 0 { None } else { Some(req.priority_filter) };
-        let limit = if req.limit <= 0 { None } else { Some(req.limit) };
-        let offset = if req.offset < 0 { None } else { Some(req.offset) };
-        
-        match task_service.list_tasks_with_filters(
-            node_uuid,
-            status_filter,
-            priority_filter,
-            limit,
-            offset,
-        ).await {
-             Ok(tasks) => {
-                 // Get total count before filtering for pagination / 获取过滤前的总数用于分页
-                 let all_tasks = task_service.list_tasks().await.unwrap_or_default();
-                 let response = ListTasksResponse {
-                     tasks: tasks.clone(),
-                     total_count: all_tasks.len() as i32,
-                 };
-                 Ok(Response::new(response))
-             }
-             Err(e) => Err(Status::internal(format!("Failed to list tasks: {}", e))),
-         }
+        let node_uuid = if req.node_uuid.is_empty() {
+            None
+        } else {
+            Some(req.node_uuid.as_str())
+        };
+        let status_filter = if req.status_filter < 0 {
+            None
+        } else {
+            Some(req.status_filter)
+        };
+        let priority_filter = if req.priority_filter < 0 {
+            None
+        } else {
+            Some(req.priority_filter)
+        };
+        let limit = if req.limit <= 0 {
+            None
+        } else {
+            Some(req.limit)
+        };
+        let offset = if req.offset < 0 {
+            None
+        } else {
+            Some(req.offset)
+        };
+
+        match task_service
+            .list_tasks_with_filters(node_uuid, status_filter, priority_filter, limit, offset)
+            .await
+        {
+            Ok(tasks) => {
+                // Get total count before filtering for pagination / 获取过滤前的总数用于分页
+                let all_tasks = task_service.list_tasks().await.unwrap_or_default();
+                let response = ListTasksResponse {
+                    tasks: tasks.clone(),
+                    total_count: all_tasks.len() as i32,
+                };
+                Ok(Response::new(response))
+            }
+            Err(e) => Err(Status::internal(format!("Failed to list tasks: {}", e))),
+        }
     }
 
     /// Get task details by ID / 根据ID获取任务详情
@@ -596,7 +663,7 @@ impl TaskServiceTrait for SmsServiceImpl {
         request: Request<GetTaskRequest>,
     ) -> Result<Response<GetTaskResponse>, Status> {
         let req = request.into_inner();
-        
+
         let task_service = self.task_service.read().await;
         match task_service.get_task(&req.task_id).await {
             Ok(Some(task)) => {
@@ -623,7 +690,7 @@ impl TaskServiceTrait for SmsServiceImpl {
         request: Request<UnregisterTaskRequest>,
     ) -> Result<Response<UnregisterTaskResponse>, Status> {
         let req = request.into_inner();
-        
+
         let mut task_service = self.task_service.write().await;
         match task_service.remove_task(&req.task_id).await {
             Ok(_) => {
@@ -651,11 +718,14 @@ impl TaskServiceTrait for SmsServiceImpl {
         request: Request<crate::proto::sms::SubscribeTaskEventsRequest>,
     ) -> Result<tonic::Response<Self::SubscribeTaskEventsStream>, Status> {
         let req = request.into_inner();
-        if req.node_uuid.is_empty() { return Err(Status::invalid_argument("node_uuid is required")); }
+        if req.node_uuid.is_empty() {
+            return Err(Status::invalid_argument("node_uuid is required"));
+        }
         let node_uuid = req.node_uuid;
         let last = req.last_event_id;
         // Durable replay first
-        let replay = self.events
+        let replay = self
+            .events
             .replay_since(&node_uuid, last, 1000)
             .await
             .map_err(|e| Status::internal(format!("Replay failed: {}", e)))?;
@@ -667,7 +737,10 @@ impl TaskServiceTrait for SmsServiceImpl {
         let live_stream = unfold(rx, |mut r| async move {
             match r.recv().await {
                 Ok(ev) => Some((Ok(ev), r)),
-                Err(e) => { warn!(error = %e, "Broadcast receive error, ending live stream"); None },
+                Err(e) => {
+                    warn!(error = %e, "Broadcast receive error, ending live stream");
+                    None
+                }
             }
         });
         let stream = replay_stream.chain(live_stream);

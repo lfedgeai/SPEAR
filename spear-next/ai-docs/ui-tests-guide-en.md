@@ -15,6 +15,7 @@
 - `task_modal.spec.ts`: select `sms+file`, click `Use` in picker to fill URI
 - `task_modal_scheme_prefill.spec.ts`: scheme selection pre-fills `Executable URI`
 - `executable_select_unit.spec.ts`: uses hidden native `select` for stable type selection
+- Execution Kind select: mirrored with a hidden native `select[aria-label="Execution Kind"]` for test stability
 - `files.spec.ts`: upload a small file and copy URI
 - `files_delete.spec.ts`: delete a file and verify the list updates
 - `files_modified_tz.spec.ts`: human-readable timestamps in selected timezone
@@ -27,10 +28,10 @@
 ## Notes
 
 - Dropdown stability: tests use a native `select` mirror to avoid portal positioning flakiness
+- Execution Kind and Executable Type both provide native `select` mirrors for accessibility and reliable automation
 - Delete verification: prefer row-matching and message assertion over global row counts
 
 ## CI
 
 - Can run in CI; refer to `ui-tests/package.json` scripts
 - Logs and artifacts: failed runs produce context files under `test-results`
-

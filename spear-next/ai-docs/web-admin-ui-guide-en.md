@@ -41,6 +41,15 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
   - Click `Use` to set `Executable URI = sms+file://<id>` and `Executable Name`
 - Parameters: `Capabilities` (comma), `Args` (comma), `Env` (`key=value` per line)
 
+### Execution Kind
+
+- Option: `Short Running | Long Running`
+- Mapping: sent via `metadata.execution_kind` in `POST /admin/api/tasks`
+- Policy:
+  - `Short Running` supports ExistingTask invocation
+  - `Long Running` is created via SMS events; invoking as ExistingTask is rejected by policy
+- Table: Tasks list shows `Exec Kind` column reflecting the server response
+
 ## Known Issues & Fixes
 
 - Always-open dropdown: removed forced `open`; default interaction restored
@@ -51,4 +60,3 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
 
 - `ai-docs/web-admin-overview-en.md`
 - `ai-docs/ui-tests-guide-en.md`
-

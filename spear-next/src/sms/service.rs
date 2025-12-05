@@ -50,6 +50,10 @@ use crate::proto::sms::{
     UpdateNodeResourceRequest,
     UpdateNodeResourceResponse,
     UpdateNodeResponse,
+    UpdateTaskResultRequest,
+    UpdateTaskResultResponse,
+    UpdateTaskStatusRequest,
+    UpdateTaskStatusResponse,
 };
 
 // Note: SpearletRegistrationService is not defined in current proto files
@@ -559,7 +563,7 @@ impl TaskServiceTrait for SmsServiceImpl {
         let req = request.into_inner();
 
         // Create task from request fields
-        let task = crate::proto::sms::Task {
+        let mut task = crate::proto::sms::Task {
             task_id: uuid::Uuid::new_v4().to_string(),
             name: req.name,
             description: req.description,
@@ -574,7 +578,30 @@ impl TaskServiceTrait for SmsServiceImpl {
             metadata: req.metadata,
             config: req.config,
             executable: req.executable,
+            result_uris: Vec::new(),
+            last_result_uri: String::new(),
+            last_result_status: String::new(),
+            last_completed_at: 0,
+            last_result_metadata: std::collections::HashMap::new(),
+            execution_kind: crate::proto::sms::TaskExecutionKind::Unknown as i32,
         };
+        // Derive execution_kind / 解析执行类型
+        task.execution_kind =
+            if req.execution_kind != crate::proto::sms::TaskExecutionKind::Unknown as i32 {
+                req.execution_kind
+            } else {
+                let ek = task
+                    .metadata
+                    .get("execution_kind")
+                    .cloned()
+                    .or_else(|| task.config.get("execution_kind").cloned())
+                    .unwrap_or_else(|| "short_running".to_string());
+                if ek.eq_ignore_ascii_case("long_running") {
+                    crate::proto::sms::TaskExecutionKind::LongRunning as i32
+                } else {
+                    crate::proto::sms::TaskExecutionKind::ShortRunning as i32
+                }
+            };
 
         let mut task_service = self.task_service.write().await;
         match task_service.register_task(task.clone()).await {
@@ -746,5 +773,113 @@ impl TaskServiceTrait for SmsServiceImpl {
         let stream = replay_stream.chain(live_stream);
         debug!(node_uuid = %node_uuid, "Subscribe: returning combined stream");
         Ok(tonic::Response::new(Box::pin(stream)))
+    }
+
+    /// Update task status (observed state) / 更新任务状态（观测态）
+    async fn update_task_status(
+        &self,
+        request: Request<UpdateTaskStatusRequest>,
+    ) -> Result<Response<UpdateTaskStatusResponse>, Status> {
+        let req = request.into_inner();
+        debug!(task_id = %req.task_id, node_uuid = %req.node_uuid, status = req.status, status_version = req.status_version, updated_at = req.updated_at, reason = %req.reason, "UpdateTaskStatus: request received");
+        if req.task_id.is_empty() {
+            return Err(Status::invalid_argument("task_id is required"));
+        }
+
+        let mut task_service = self.task_service.write().await;
+        match task_service.get_task(&req.task_id).await {
+            Ok(Some(mut task)) => {
+                // Apply status update / 应用状态更新
+                let old_status = task.status;
+                task.status = req.status as i32;
+                if req.updated_at > 0 {
+                    task.last_heartbeat = req.updated_at;
+                } else {
+                    task.last_heartbeat = chrono::Utc::now().timestamp();
+                }
+                debug!(task_id = %task.task_id, old_status = old_status, new_status = task.status, last_heartbeat = task.last_heartbeat, "UpdateTaskStatus: applied state change");
+                // Persist / 持久化
+                match task_service.register_task(task.clone()).await {
+                    Ok(_) => {
+                        debug!(task_id = %task.task_id, "UpdateTaskStatus: persisted");
+                    }
+                    Err(e) => {
+                        warn!(error = %e.to_string(), task_id = %task.task_id, "UpdateTaskStatus: persist failed");
+                    }
+                }
+
+                // Optionally publish update event / 可选发布更新事件
+                if let Err(e) = self.events.publish_update(&task).await {
+                    warn!(error = %e, task_id = %task.task_id, "Publish update event failed");
+                }
+
+                let resp = UpdateTaskStatusResponse {
+                    success: true,
+                    message: "Task status updated".to_string(),
+                    task: Some(task),
+                };
+                Ok(Response::new(resp))
+            }
+            Ok(None) => {
+                debug!(task_id = %req.task_id, "UpdateTaskStatus: task not found");
+                let resp = UpdateTaskStatusResponse {
+                    success: false,
+                    message: "Task not found".to_string(),
+                    task: None,
+                };
+                Ok(Response::new(resp))
+            }
+            Err(e) => Err(Status::internal(format!("Failed to get task: {}", e))),
+        }
+    }
+
+    /// Update task result fields / 更新任务结果字段
+    async fn update_task_result(
+        &self,
+        request: Request<UpdateTaskResultRequest>,
+    ) -> Result<Response<UpdateTaskResultResponse>, Status> {
+        let req = request.into_inner();
+        if req.task_id.is_empty() {
+            return Err(Status::invalid_argument("task_id is required"));
+        }
+        let mut task_service = self.task_service.write().await;
+        match task_service.get_task(&req.task_id).await {
+            Ok(Some(mut task)) => {
+                if !req.result_uri.is_empty() {
+                    task.last_result_uri = req.result_uri.clone();
+                    if !task.result_uris.contains(&req.result_uri) {
+                        task.result_uris.push(req.result_uri.clone());
+                    }
+                }
+                task.last_result_status = req.result_status.clone();
+                task.last_completed_at = if req.completed_at > 0 {
+                    req.completed_at
+                } else {
+                    chrono::Utc::now().timestamp()
+                };
+                task.last_result_metadata = req.result_metadata.clone();
+
+                match task_service.register_task(task.clone()).await {
+                    Ok(_) => {}
+                    Err(e) => return Err(Status::internal(format!("Persist failed: {}", e))),
+                }
+
+                if let Err(e) = self.events.publish_update(&task).await {
+                    warn!(error = %e, task_id = %task.task_id, "Publish update event failed");
+                }
+                let resp = UpdateTaskResultResponse {
+                    success: true,
+                    message: "Task result updated".to_string(),
+                    task: Some(task),
+                };
+                Ok(Response::new(resp))
+            }
+            Ok(None) => Ok(Response::new(UpdateTaskResultResponse {
+                success: false,
+                message: "Task not found".to_string(),
+                task: None,
+            })),
+            Err(e) => Err(Status::internal(format!("Failed to get task: {}", e))),
+        }
     }
 }

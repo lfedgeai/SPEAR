@@ -14,7 +14,8 @@
 
 - `task_modal.spec.ts`：选择 `sms+file`，在弹窗中点击 `Use` 填充 URI
 - `task_modal_scheme_prefill.spec.ts`：切换 Scheme 自动预填 `Executable URI`
-- `executable_select_unit.spec.ts`：使用隐藏原生 `select` 钩子验证类型选择（稳定，不受弹层干扰）
+- `executable_select_unit.spec.ts`：使用隐藏原生 `select` 验证类型选择（稳定，不受弹层干扰）
+- 执行类型选择（Execution Kind）：提供隐藏原生 `select[aria-label="Execution Kind"]`，便于自动化稳定选择
 - `files.spec.ts`：上传文件并复制 URI
 - `files_delete.spec.ts`：删除文件并校验列表变化
 - `files_modified_tz.spec.ts`：按设置的时区显示人类可读时间
@@ -27,10 +28,10 @@
 ## 常见问题
 
 - 下拉选择不稳定：通过隐藏原生 `select` 作为测试入口，避免 Antd 弹层选择的定位波动
+- 执行类型与可执行类型均提供原生 `select` 镜像，兼顾可访问性与自动化稳定性
 - 删除校验：优先通过提示与行匹配校验，减少依赖全局行计数
 
 ## 提示
 
 - 可在 CI 中运行：结合 `ui-tests/package.json` 脚本
 - 日志与截图：Playwright 默认在失败时生成上下文文件，可在 `test-results` 查看
-

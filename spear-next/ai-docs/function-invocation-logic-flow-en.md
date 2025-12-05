@@ -22,36 +22,8 @@ Route Processing Based on invocation_type
 ### 2. New Task Creation Flow (INVOCATION_TYPE_NEW_TASK)
 
 ```
-Start New Task Creation
-    ↓
-Validate Required Parameters
-├── task_name (required)
-├── artifact_spec (required)
-└── function_name (required)
-    ↓
-Check if Task Already Exists
-├── Exists → Handle Based on Policy
-│   ├── If force_new_instance=true → Create New Instance
-│   └── Otherwise → Use Existing Task
-└── Not Exists → Continue Creation Flow
-    ↓
-Artifact Processing
-├── Download Artifact (if remote location)
-├── Verify Artifact Integrity (checksum)
-├── Parse Artifact Metadata
-└── Cache Artifact Locally
-    ↓
-Task Instance Creation
-├── Assign Unique task_id
-├── Create Task Runtime Environment
-├── Load Artifact into Runtime
-└── Initialize Task Instance
-    ↓
-Optional: Register to SMS
-├── If SMS Integration Configured
-└── Send RegisterTask Request
-    ↓
-Execute Function Call → Go to Execution Phase
+Disabled in execution path.
+Tasks are created/ensured via SMS → Spearlet events, not via InvokeFunction.
 ```
 
 ### 3. Existing Task Invocation Flow (INVOCATION_TYPE_EXISTING_TASK)
@@ -70,11 +42,7 @@ Find Task Instance
 └── If Still Not Found
     ↓
 Handle Task Not Found
-├── If create_if_not_exists=true
-│   ├── Check if Sufficient Info to Create Task
-│   ├── If Has artifact_spec → Create New Task
-│   └── Otherwise → Return Error
-└── Otherwise → Return Task Not Found Error
+└── Return Task Not Found Error
     ↓
 Task Instance Acquisition/Creation
 ├── If Task Exists but No Available Instance

@@ -21,8 +21,9 @@ This document provides a detailed explanation of the specific differences, use c
 #### Synchronous Mode Request
 ```protobuf
 InvokeFunctionRequest {
-  invocation_type = INVOCATION_TYPE_NEW_TASK;
+  invocation_type = INVOCATION_TYPE_EXISTING_TASK;
   execution_mode = EXECUTION_MODE_SYNC;  // 🔑 Key: Sync mode
+  task_id = "existing-task-123";        // 🔑 Invoke existing task
   function_name = "quick_calculation";
   parameters = [
     { name = "input", value = "123" }
@@ -37,8 +38,9 @@ InvokeFunctionRequest {
 #### Asynchronous Mode Request
 ```protobuf
 InvokeFunctionRequest {
-  invocation_type = INVOCATION_TYPE_NEW_TASK;
+  invocation_type = INVOCATION_TYPE_EXISTING_TASK;
   execution_mode = EXECUTION_MODE_ASYNC;  // 🔑 Key: Async mode
+  task_id = "existing-task-124";         // 🔑 Invoke existing task
   function_name = "long_running_process";
   parameters = [
     { name = "dataset", value = "large_data.csv" }
@@ -117,7 +119,7 @@ sequenceDiagram
     Client->>Spearlet: InvokeFunction(SYNC)
     Note over Spearlet: Validate request parameters
     
-    Spearlet->>TaskInstance: Get/Create task instance
+    Spearlet->>TaskInstance: Find existing task → Get/Create instance
     TaskInstance-->>Spearlet: Instance ready
     
     Spearlet->>Function: Invoke function
@@ -145,7 +147,7 @@ sequenceDiagram
     Client->>Spearlet: InvokeFunction(ASYNC)
     Note over Spearlet: Validate request parameters
     
-    Spearlet->>TaskInstance: Get/Create task instance
+    Spearlet->>TaskInstance: Find existing task → Get/Create instance
     TaskInstance-->>Spearlet: Instance ready
     
     Spearlet->>ExecutionManager: Create async execution
@@ -178,8 +180,11 @@ sequenceDiagram
 async fn handle_sync_invocation(
     request: &InvokeFunctionRequest
 ) -> Result<InvokeFunctionResponse> {
-    // 1. Get task instance
-    let instance = get_or_create_task_instance(&request).await?;
+    // 1. Acquire existing task and instance
+    let task = execution_manager
+        .get_task_by_id(&request.task_id)
+        .ok_or("TaskNotFound")?;
+    let instance = execution_manager.get_or_create_instance(&task).await?;
     
     // 2. Set synchronous execution context
     let context = ExecutionContext {
@@ -221,8 +226,11 @@ async fn handle_sync_invocation(
 async fn handle_async_invocation(
     request: &InvokeFunctionRequest
 ) -> Result<InvokeFunctionResponse> {
-    // 1. Get task instance
-    let instance = get_or_create_task_instance(&request).await?;
+    // 1. Acquire existing task and instance
+    let task = execution_manager
+        .get_task_by_id(&request.task_id)
+        .ok_or("TaskNotFound")?;
+    let instance = execution_manager.get_or_create_instance(&task).await?;
     
     // 2. Create async execution
     let execution_id = generate_execution_id();

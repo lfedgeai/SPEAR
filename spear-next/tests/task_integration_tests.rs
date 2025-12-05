@@ -139,6 +139,17 @@ async fn test_task_lifecycle() {
     );
     assert_eq!(task_details["priority"], "normal");
     assert_eq!(task_details["endpoint"], "http://localhost:8080/task");
+    // Verify result fields exist with default values / 验证结果字段存在且为默认值
+    assert!(task_details.get("result_uris").is_some());
+    assert!(task_details["result_uris"].is_array());
+    assert!(task_details.get("last_result_uri").is_some());
+    assert!(task_details["last_result_uri"].is_string());
+    assert!(task_details.get("last_result_status").is_some());
+    assert!(task_details["last_result_status"].is_string());
+    assert!(task_details.get("last_completed_at").is_some());
+    assert!(task_details["last_completed_at"].is_number());
+    assert!(task_details.get("last_result_metadata").is_some());
+    assert!(task_details["last_result_metadata"].is_object());
 
     // Test 3: List tasks / 测试3：列出任务
     let response = server.get("/api/v1/tasks").await;

@@ -55,6 +55,18 @@ pub enum TaskStatus {
     Error(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExecutionKind {
+    LongRunning,
+    ShortRunning,
+}
+
+impl Default for ExecutionKind {
+    fn default() -> Self {
+        ExecutionKind::ShortRunning
+    }
+}
+
 /// Task specification / Task 规格
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskSpec {
@@ -84,6 +96,7 @@ pub struct TaskSpec {
     pub health_check: HealthCheckConfig,
     /// Timeout configuration / 超时配置
     pub timeout_config: TimeoutConfig,
+    pub execution_kind: ExecutionKind,
 }
 
 /// Scaling configuration / 扩缩容配置
@@ -241,6 +254,22 @@ impl Task {
         let id = format!("task-{}", Uuid::new_v4());
         let now = SystemTime::now();
 
+        Self {
+            id,
+            artifact_id,
+            spec,
+            status: Arc::new(parking_lot::RwLock::new(TaskStatus::Initializing)),
+            instances: Arc::new(DashMap::new()),
+            metrics: Arc::new(parking_lot::RwLock::new(TaskMetrics::default())),
+            created_at: now,
+            updated_at: Arc::new(parking_lot::RwLock::new(now)),
+            instance_counter: AtomicU64::new(0),
+        }
+    }
+
+    /// Create a new task with fixed ID / 使用固定ID创建新的 Task
+    pub fn new_with_id(id: TaskId, artifact_id: ArtifactId, spec: TaskSpec) -> Self {
+        let now = SystemTime::now();
         Self {
             id,
             artifact_id,
@@ -480,6 +509,7 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
         };
 
         let task = Task::new("artifact-123".to_string(), spec);
@@ -505,6 +535,7 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
         };
 
         let task = Task::new("artifact-123".to_string(), spec);
@@ -534,6 +565,7 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
         };
 
         spec.scaling_config.scale_up_cpu_threshold = 70.0;
@@ -583,6 +615,7 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
         };
 
         let task = Task::new("artifact-123".to_string(), spec);

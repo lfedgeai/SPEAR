@@ -33,17 +33,18 @@
    ) -> ExecutionResult<super::ExecutionResponse>
    ```
 
-2. **创建或获取 Artifact**
+2. **通过事件确保 Artifact 和 Task**
+   - 在 TaskEvents 订阅者中，先确保本地存在对应的 Artifact 与 Task：
    ```rust
-   // 获取或创建 artifact
-   let artifact = self.get_or_create_artifact(artifact_spec).await?;
+   // 在 TaskEventSubscriber::execute_task 中
+   let artifact = mgr.ensure_artifact_from_sms(&sms_task).await?;
+   let _ = mgr.ensure_task_from_sms(&sms_task, &artifact).await?;
+   // 随后提交 ExistingTask 执行
+   let _ = mgr.submit_execution(req).await;
    ```
 
-3. **创建或获取 Task**
-   ```rust
-   // 获取或创建任务
-   let task = self.get_or_create_task(&artifact).await?;
-   ```
+3. **执行路径约束**
+   - `execute_request` 仅支持调用已存在任务；不会创建 Artifact 或 Task。
 
 ### 阶段 2：Instance 创建和启动
 

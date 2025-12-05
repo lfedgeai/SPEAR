@@ -22,37 +22,8 @@ InvokeFunctionRequest 接收
 ### 2. 新任务创建流程 (INVOCATION_TYPE_NEW_TASK)
 
 ```
-开始新任务创建
-    ↓
-验证必需参数
-├── task_name (必需)
-├── artifact_spec (必需)
-└── function_name (必需)
-    ↓
-检查任务是否已存在
-├── 存在 → 根据策略处理
-│   ├── 如果 force_new_instance=true → 创建新实例
-│   └── 否则 → 使用现有任务
-└── 不存在 → 继续创建流程
-    ↓
-制品处理
-├── 使用请求中的 `artifact_id` 作为系统内固定ID创建/查找制品
-├── 下载制品 (如果是远程位置)
-├── 验证制品完整性 (checksum)
-├── 解析制品元数据
-└── 缓存制品到本地
-    ↓
-任务实例创建
-├── 分配唯一 task_id
-├── 创建任务运行时环境
-├── 加载制品到运行时
-└── 初始化任务实例
-    ↓
-可选：注册到 SMS
-├── 如果配置了 SMS 集成
-└── 发送 RegisterTask 请求
-    ↓
-执行函数调用 → 转到执行阶段
+执行路径中禁用。
+任务创建/确保通过 SMS → Spearlet 事件完成，而非 InvokeFunction。
 ```
 
 ### 3. 现有任务调用流程 (INVOCATION_TYPE_EXISTING_TASK)
@@ -71,11 +42,7 @@ InvokeFunctionRequest 接收
 └── 如果仍未找到
     ↓
 任务不存在处理
-├── 如果 create_if_not_exists=true
-│   ├── 检查是否有足够信息创建任务
-│   ├── 如果有 artifact_spec → 创建新任务
-│   └── 否则 → 返回错误
-└── 否则 → 返回任务不存在错误
+└── 返回任务不存在错误
     ↓
 任务实例获取/创建
 ├── 如果任务存在但无可用实例

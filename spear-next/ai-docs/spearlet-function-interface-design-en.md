@@ -133,21 +133,8 @@ Used for streaming execution mode, returning execution results in real-time.
 ### Scenario 1: Create New Task and Invoke Function
 
 ```
-Client Request -> Spearlet
-├── invocation_type = INVOCATION_TYPE_NEW_TASK
-├── task_name = "my-new-task"
-├── artifact_spec = { artifact_type: "zip", location: "http://example.com/task.zip" }
-├── function_name = "process_data"
-└── parameters = [...]
-
-Spearlet Processing Flow:
-1. Check if task already exists
-2. If not exists, create new task:
-   - Download and verify artifact
-   - Create task instance
-   - Register to SMS (optional)
-3. Execute function invocation
-4. Return execution result
+Disabled in execution path.
+Tasks are created/ensured via SMS → Spearlet events, not via InvokeFunction.
 ```
 
 ### Scenario 2: Invoke Function on Existing Task
@@ -161,7 +148,7 @@ Client Request -> Spearlet
 
 Spearlet Processing Flow:
 1. Find specified task instance
-2. If task doesn't exist and create_if_not_exists=true, create it
+2. If task doesn't exist → return error
 3. Get or create task instance
 4. Execute function invocation
 5. Return execution result
@@ -187,9 +174,9 @@ GetExecutionStatus(execution_id="exec-456")
 ## Integration with Existing Architecture
 
 ### 1. Coordination with SMS
-- Optional registration to SMS when creating new tasks
+- Tasks are registered and ensured via SMS events
 - Support SMS task discovery and load balancing
-- Execution status can be synchronized to SMS
+- Execution status and results can be synchronized to SMS
 
 ### 2. Integration with Artifact Management
 - Use unified `ArtifactSpec` specification

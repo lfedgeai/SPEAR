@@ -15,6 +15,7 @@ use tonic::Request;
 use tracing::{debug, error, info};
 
 use super::common::ErrorResponse;
+use crate::proto::sms::TaskExecutionKind;
 use crate::proto::sms::{
     ExecutableType, GetTaskRequest, ListTasksRequest, RegisterTaskRequest, TaskExecutable,
     TaskPriority, TaskStatus, UnregisterTaskRequest,
@@ -77,6 +78,11 @@ pub struct TaskResponse {
     pub last_heartbeat: i64,
     pub metadata: HashMap<String, String>,
     pub config: HashMap<String, String>,
+    pub result_uris: Vec<String>,
+    pub last_result_uri: String,
+    pub last_result_status: String,
+    pub last_completed_at: i64,
+    pub last_result_metadata: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,6 +109,7 @@ fn parse_task_status(status: &str) -> Option<TaskStatus> {
     match status.to_lowercase().as_str() {
         "unknown" => Some(TaskStatus::Unknown),
         "registered" => Some(TaskStatus::Registered),
+        "created" => Some(TaskStatus::Created),
         "active" => Some(TaskStatus::Active),
         "inactive" => Some(TaskStatus::Inactive),
         "unregistered" => Some(TaskStatus::Unregistered),
@@ -131,6 +138,7 @@ fn task_to_response(task: crate::proto::sms::Task) -> TaskResponse {
         status: match TaskStatus::try_from(task.status).unwrap_or(TaskStatus::Unknown) {
             TaskStatus::Unknown => "unknown".to_string(),
             TaskStatus::Registered => "registered".to_string(),
+            TaskStatus::Created => "created".to_string(),
             TaskStatus::Active => "active".to_string(),
             TaskStatus::Inactive => "inactive".to_string(),
             TaskStatus::Unregistered => "unregistered".to_string(),
@@ -150,6 +158,11 @@ fn task_to_response(task: crate::proto::sms::Task) -> TaskResponse {
         last_heartbeat: task.last_heartbeat,
         metadata: task.metadata,
         config: task.config,
+        result_uris: task.result_uris,
+        last_result_uri: task.last_result_uri,
+        last_result_status: task.last_result_status,
+        last_completed_at: task.last_completed_at,
+        last_result_metadata: task.last_result_metadata,
     }
 }
 
@@ -168,6 +181,7 @@ pub async fn register_task(
         .map(|p| parse_task_priority(p))
         .unwrap_or(TaskPriority::Normal);
 
+    let meta = params.metadata.clone().unwrap_or_default();
     let request = Request::new(RegisterTaskRequest {
         name: params.name.clone(),
         description: params
@@ -178,7 +192,7 @@ pub async fn register_task(
         endpoint: params.endpoint,
         version: params.version,
         capabilities: params.capabilities.unwrap_or_default(),
-        metadata: params.metadata.unwrap_or_default(),
+        metadata: meta.clone(),
         config: params.config.unwrap_or_default(),
         executable: params.executable.as_ref().map(|e| TaskExecutable {
             r#type: match e.r#type.to_lowercase().as_str() {
@@ -195,6 +209,17 @@ pub async fn register_task(
             args: e.args.clone().unwrap_or_default(),
             env: e.env.clone().unwrap_or_default(),
         }),
+        execution_kind: {
+            let ek = meta
+                .get("execution_kind")
+                .cloned()
+                .unwrap_or_else(|| "short_running".to_string());
+            if ek.to_lowercase() == "long_running" {
+                TaskExecutionKind::LongRunning as i32
+            } else {
+                TaskExecutionKind::ShortRunning as i32
+            }
+        },
     });
 
     match gateway_state

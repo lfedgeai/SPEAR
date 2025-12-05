@@ -68,7 +68,7 @@
 
   function TaskCreateModal({open,onClose,onCreated,tz}){
     const headers=useAuthHeaders();
-    const [form,setForm]=useState({ name:'', description:'', priority:'normal', node_uuid:'', endpoint:'', version:'', executable_type:'no-executable', executable_name:'', executable_uri:'', checksum:'', capabilities:'', args:'', env:'' });
+    const [form,setForm]=useState({ name:'', description:'', priority:'normal', node_uuid:'', endpoint:'', version:'', executable_type:'no-executable', executable_name:'', executable_uri:'', checksum:'', capabilities:'', args:'', env:'', execution_kind:'short_running' });
     const [uriScheme,setUriScheme]=useState('');
     const [filePickerOpen,setFilePickerOpen]=useState(false);
     const filesForPicker=ReactQuery.useQuery(['files-for-picker'],()=>fetchJSON('/admin/api/files',headers),{ enabled:filePickerOpen, refetchOnWindowFocus:false, staleTime:5000 });
@@ -89,6 +89,7 @@
         endpoint: form.endpoint,
         version: form.version,
         capabilities: caps,
+        metadata: { execution_kind: form.execution_kind },
         executable: (form.executable_type && form.executable_type!=='no-executable')? { type: form.executable_type, name: form.executable_name||undefined, uri: form.executable_uri||undefined, checksum_sha256: form.checksum||undefined, args, env: envObj }: undefined,
       };
       try{
@@ -99,22 +100,30 @@
         onCreated&&onCreated(); onClose();
       }catch(e){ message.error('Create failed: '+e.message); }
     }
-    return React.createElement(Modal,{open,onCancel:onClose,onOk:submit,title:'Create Task'},
-      React.createElement(Space,{direction:'vertical',style:{width:'100%'}},
-        React.createElement(Input,{placeholder:'Name',value:form.name,onChange:e=>setForm({...form,name:e.target.value})}),
-        React.createElement(Input,{placeholder:'Description',value:form.description,onChange:e=>setForm({...form,description:e.target.value})}),
-        React.createElement(Select,{value:form.priority,onChange:v=>setForm({...form,priority:v}),style:{width:'100%'}},
-          React.createElement(Select.Option,{value:'low'},'Low'),
-          React.createElement(Select.Option,{value:'normal'},'Normal'),
-          React.createElement(Select.Option,{value:'high'},'High'),
-          React.createElement(Select.Option,{value:'urgent'},'Urgent')
-        ),
-        React.createElement(Select,{value:form.node_uuid,onChange:v=>setForm({...form,node_uuid:v}),style:{width:'100%'},placeholder:'Node (UUID)',showSearch:true,optionFilterProp:'children',loading:!nodesData,disabled:!(nodesData&&nodesData.nodes&&nodesData.nodes.length)},
-          (nodesData&&nodesData.nodes||[]).map(n=>React.createElement(Select.Option,{key:n.uuid,value:n.uuid}, (n.name? (n.name+' '):'')+n.uuid ))
-        ),
-        React.createElement(Input,{placeholder:'Endpoint',value:form.endpoint,onChange:e=>setForm({...form,endpoint:e.target.value})}),
-        React.createElement(Input,{placeholder:'Version',value:form.version,onChange:e=>setForm({...form,version:e.target.value})}),
-        React.createElement(Input,{placeholder:'Capabilities (comma separated)',value:form.capabilities,onChange:e=>setForm({...form,capabilities:e.target.value})}),
+      return React.createElement(Modal,{open,onCancel:onClose,onOk:submit,title:'Create Task'},
+        React.createElement(Space,{direction:'vertical',style:{width:'100%'}},
+          React.createElement(Input,{placeholder:'Name',value:form.name,onChange:e=>setForm({...form,name:e.target.value})}),
+          React.createElement(Input,{placeholder:'Description',value:form.description,onChange:e=>setForm({...form,description:e.target.value})}),
+          React.createElement(Select,{value:form.priority,onChange:v=>setForm({...form,priority:v}),style:{width:'100%'}},
+            React.createElement(Select.Option,{value:'low'},'Low'),
+            React.createElement(Select.Option,{value:'normal'},'Normal'),
+            React.createElement(Select.Option,{value:'high'},'High'),
+            React.createElement(Select.Option,{value:'urgent'},'Urgent')
+          ),
+          React.createElement(Select,{value:form.execution_kind,onChange:v=>setForm({...form,execution_kind:v}),style:{width:'100%'},placeholder:'Execution Kind','aria-label':'Execution Kind'},
+            React.createElement(Select.Option,{value:'short_running'},'Short Running'),
+            React.createElement(Select.Option,{value:'long_running'},'Long Running')
+          ),
+          React.createElement('select',{value:form.execution_kind,onChange:e=>setForm({...form,execution_kind:e.target.value}), 'aria-label':'Execution Kind', style:{position:'absolute', left:'-9999px', width:'1px', height:'1px'}},
+            React.createElement('option',{value:'short_running'},'Short Running'),
+            React.createElement('option',{value:'long_running'},'Long Running')
+          ),
+          React.createElement(Select,{value:form.node_uuid,onChange:v=>setForm({...form,node_uuid:v}),style:{width:'100%'},placeholder:'Node (UUID)',showSearch:true,optionFilterProp:'children',loading:!nodesData,disabled:!(nodesData&&nodesData.nodes&&nodesData.nodes.length)},
+            (nodesData&&nodesData.nodes||[]).map(n=>React.createElement(Select.Option,{key:n.uuid,value:n.uuid}, (n.name? (n.name+' '):'')+n.uuid ))
+          ),
+          React.createElement(Input,{placeholder:'Endpoint',value:form.endpoint,onChange:e=>setForm({...form,endpoint:e.target.value})}),
+          React.createElement(Input,{placeholder:'Version',value:form.version,onChange:e=>setForm({...form,version:e.target.value})}),
+          React.createElement(Input,{placeholder:'Capabilities (comma separated)',value:form.capabilities,onChange:e=>setForm({...form,capabilities:e.target.value})}),
         React.createElement(Select,{value:form.executable_type,onChange:v=>setForm({...form,executable_type:v}),style:{width:'100%'},placeholder:'No Executable','aria-label':'No Executable'},
           React.createElement(Select.Option,{value:'no-executable'},'No Executable'),
           React.createElement(Select.Option,{value:'binary'},'Binary'),
@@ -181,6 +190,7 @@
     const columns=[
       { title:'Task ID', dataIndex:'task_id', key:'task_id', render:(v)=>React.createElement('a',{onClick:()=>openDetail(v)},v) },
       { title:'Name', dataIndex:'name', key:'name' },
+      { title:'Exec Kind', dataIndex:'execution_kind', key:'execution_kind' },
       { title:'Exec Type', dataIndex:'executable_type', key:'executable_type' },
       { title:'Exec Name', dataIndex:'executable_name', key:'executable_name' },
       { title:'Exec URI', dataIndex:'executable_uri', key:'executable_uri' },

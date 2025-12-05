@@ -21,8 +21,9 @@
 #### 同步模式请求
 ```protobuf
 InvokeFunctionRequest {
-  invocation_type = INVOCATION_TYPE_NEW_TASK;
+  invocation_type = INVOCATION_TYPE_EXISTING_TASK;
   execution_mode = EXECUTION_MODE_SYNC;  // 🔑 关键：同步模式
+  task_id = "existing-task-123";        // 🔑 调用已存在任务
   function_name = "quick_calculation";
   parameters = [
     { name = "input", value = "123" }
@@ -37,8 +38,9 @@ InvokeFunctionRequest {
 #### 异步模式请求
 ```protobuf
 InvokeFunctionRequest {
-  invocation_type = INVOCATION_TYPE_NEW_TASK;
+  invocation_type = INVOCATION_TYPE_EXISTING_TASK;
   execution_mode = EXECUTION_MODE_ASYNC;  // 🔑 关键：异步模式
+  task_id = "existing-task-124";         // 🔑 调用已存在任务
   function_name = "long_running_process";
   parameters = [
     { name = "dataset", value = "large_data.csv" }
@@ -117,7 +119,7 @@ sequenceDiagram
     Client->>Spearlet: InvokeFunction(SYNC)
     Note over Spearlet: 验证请求参数
     
-    Spearlet->>TaskInstance: 获取/创建任务实例
+    Spearlet->>TaskInstance: 查找已存在任务 → 获取/创建实例
     TaskInstance-->>Spearlet: 实例就绪
     
     Spearlet->>Function: 调用函数
@@ -145,7 +147,7 @@ sequenceDiagram
     Client->>Spearlet: InvokeFunction(ASYNC)
     Note over Spearlet: 验证请求参数
     
-    Spearlet->>TaskInstance: 获取/创建任务实例
+    Spearlet->>TaskInstance: 查找已存在任务 → 获取/创建实例
     TaskInstance-->>Spearlet: 实例就绪
     
     Spearlet->>ExecutionManager: 创建异步执行
@@ -178,8 +180,11 @@ sequenceDiagram
 async fn handle_sync_invocation(
     request: &InvokeFunctionRequest
 ) -> Result<InvokeFunctionResponse> {
-    // 1. 获取任务实例
-    let instance = get_or_create_task_instance(&request).await?;
+    // 1. 获取已存在任务与实例
+    let task = execution_manager
+        .get_task_by_id(&request.task_id)
+        .ok_or("TaskNotFound")?;
+    let instance = execution_manager.get_or_create_instance(&task).await?;
     
     // 2. 设置同步执行上下文
     let context = ExecutionContext {
@@ -221,8 +226,11 @@ async fn handle_sync_invocation(
 async fn handle_async_invocation(
     request: &InvokeFunctionRequest
 ) -> Result<InvokeFunctionResponse> {
-    // 1. 获取任务实例
-    let instance = get_or_create_task_instance(&request).await?;
+    // 1. 获取已存在任务与实例
+    let task = execution_manager
+        .get_task_by_id(&request.task_id)
+        .ok_or("TaskNotFound")?;
+    let instance = execution_manager.get_or_create_instance(&task).await?;
     
     // 2. 创建异步执行
     let execution_id = generate_execution_id();

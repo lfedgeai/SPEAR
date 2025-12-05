@@ -32,6 +32,18 @@
 - `GET /admin/api/stats` → 统计总数/在线/离线/最近 60s
 - `GET /admin/api/nodes/stream[?once=true]` → SSE 快照事件
 
+### 任务接口
+
+- `GET /admin/api/tasks` → 返回任务列表，包含字段：
+  - `task_id`、`name`、`description`、`status`、`priority`、`node_uuid`、`endpoint`、`version`
+  - `execution_kind`（`short_running | long_running`）、`executable_type`、`executable_uri`、`executable_name`
+  - `registered_at`、`last_heartbeat`、`metadata`、`config`
+  - `result_uris`、`last_result_uri`、`last_result_status`、`last_completed_at`、`last_result_metadata`
+- `GET /admin/api/tasks/{task_id}` → 返回任务详情（字段同上）
+- `POST /admin/api/tasks` → 创建任务
+  - 请求体包含 `name`、`description`、`priority`、`node_uuid`、`endpoint`、`version`、`capabilities`、`metadata`、`config`、可选 `executable`
+  - `metadata.execution_kind` 映射为服务端的 `execution_kind` 枚举
+
 ## 测试
 
 - SSE 集成测试使用 `?once=true` 避免阻塞

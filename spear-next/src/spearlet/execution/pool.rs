@@ -868,6 +868,7 @@ mod tests {
             scaling_config: Default::default(),
             health_check: Default::default(),
             timeout_config: Default::default(),
+            execution_kind: crate::spearlet::execution::task::ExecutionKind::ShortRunning,
         };
         let artifact_id = "test-artifact".to_string();
         Arc::new(Task::new(artifact_id, task_spec))

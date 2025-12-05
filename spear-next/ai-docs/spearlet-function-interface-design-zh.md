@@ -135,21 +135,8 @@ rpc StreamFunction(InvokeFunctionRequest) returns (stream StreamExecutionResult)
 ### 场景1：创建新任务并调用函数
 
 ```
-客户端请求 -> Spearlet
-├── invocation_type = INVOCATION_TYPE_NEW_TASK
-├── task_name = "my-new-task"
-├── artifact_spec = { artifact_type: "zip", location: "http://example.com/task.zip" }
-├── function_name = "process_data"
-└── parameters = [...]
-
-Spearlet 处理流程：
-1. 检查任务是否已存在
-2. 如果不存在，创建新任务：
-   - 下载并验证制品
-   - 创建任务实例
-   - 注册到 SMS（可选）
-3. 执行函数调用
-4. 返回执行结果
+执行路径中禁用。
+任务创建/确保通过 SMS → Spearlet 事件完成，而非 InvokeFunction。
 ```
 
 ### 场景2：调用现有任务的函数
@@ -163,7 +150,7 @@ Spearlet 处理流程：
 
 Spearlet 处理流程：
 1. 查找指定的任务实例
-2. 如果任务不存在且 create_if_not_exists=true，则创建
+2. 如果任务不存在 → 返回错误
 3. 获取或创建任务实例
 4. 执行函数调用
 5. 返回执行结果
@@ -189,9 +176,9 @@ GetExecutionStatus(execution_id="exec-456")
 ## 与现有架构的集成
 
 ### 1. 与 SMS 的协调
-- 新任务创建时可选择是否注册到 SMS
+- 任务通过 SMS 事件在 Spearlet 侧注册与确保
 - 支持 SMS 的任务发现和负载均衡
-- 执行状态可同步到 SMS
+- 执行状态与结果可同步到 SMS
 
 ### 2. 与制品管理的集成
 - 使用统一的 `ArtifactSpec` 规范

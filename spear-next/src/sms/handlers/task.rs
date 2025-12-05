@@ -15,6 +15,7 @@ use tonic::Request;
 use tracing::{debug, error, info};
 
 use super::common::ErrorResponse;
+use crate::proto::sms::TaskExecutionKind;
 use crate::proto::sms::{
     ExecutableType, GetTaskRequest, ListTasksRequest, RegisterTaskRequest, TaskExecutable,
     TaskPriority, TaskStatus, UnregisterTaskRequest,
@@ -180,6 +181,7 @@ pub async fn register_task(
         .map(|p| parse_task_priority(p))
         .unwrap_or(TaskPriority::Normal);
 
+    let meta = params.metadata.clone().unwrap_or_default();
     let request = Request::new(RegisterTaskRequest {
         name: params.name.clone(),
         description: params
@@ -190,7 +192,7 @@ pub async fn register_task(
         endpoint: params.endpoint,
         version: params.version,
         capabilities: params.capabilities.unwrap_or_default(),
-        metadata: params.metadata.unwrap_or_default(),
+        metadata: meta.clone(),
         config: params.config.unwrap_or_default(),
         executable: params.executable.as_ref().map(|e| TaskExecutable {
             r#type: match e.r#type.to_lowercase().as_str() {
@@ -207,6 +209,17 @@ pub async fn register_task(
             args: e.args.clone().unwrap_or_default(),
             env: e.env.clone().unwrap_or_default(),
         }),
+        execution_kind: {
+            let ek = meta
+                .get("execution_kind")
+                .cloned()
+                .unwrap_or_else(|| "short_running".to_string());
+            if ek.to_lowercase() == "long_running" {
+                TaskExecutionKind::LongRunning as i32
+            } else {
+                TaskExecutionKind::ShortRunning as i32
+            }
+        },
     });
 
     match gateway_state

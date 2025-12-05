@@ -474,6 +474,31 @@ impl TaskExecutionManager {
             }
         }
 
+        // Publish task result to SMS / 将任务结果回写到SMS
+        if let Ok(resp) = &result {
+            let result_status = resp.status.clone();
+            let completed_at = chrono::Utc::now().timestamp();
+            let mut meta = resp.metadata.clone();
+            meta.insert(
+                "execution_time_ms".to_string(),
+                resp.execution_time_ms.to_string(),
+            );
+            if let Some(err) = &resp.error_message {
+                meta.insert("error_message".to_string(), err.clone());
+            }
+            let task_id = request.desired_task_id.unwrap_or_default();
+            if !task_id.is_empty() {
+                self.publish_task_result(
+                    &task_id,
+                    "".to_string(),
+                    result_status,
+                    completed_at,
+                    meta,
+                )
+                .await;
+            }
+        }
+
         // Send response / 发送响应
         let _ = request.response_sender.send(result);
     }
@@ -485,11 +510,25 @@ impl TaskExecutionManager {
         execution_context: ExecutionContext,
         desired_task_id: Option<String>,
     ) -> ExecutionResult<super::ExecutionResponse> {
-        // Get or create artifact / 获取或创建 artifact
-        let artifact = self.get_or_create_artifact(artifact_spec).await?;
-
-        // Get or create task / 获取或创建任务
-        let task = self.get_or_create_task(&artifact, desired_task_id).await?;
+        let task = if let Some(id) = &desired_task_id {
+            if let Some(t) = self.tasks.get(id) {
+                if matches!(
+                    t.spec.execution_kind,
+                    super::task::ExecutionKind::LongRunning
+                ) {
+                    return Err(ExecutionError::NotSupported {
+                        operation: "existing_task_invocation_for_long_running".to_string(),
+                    });
+                }
+                t.clone()
+            } else {
+                return Err(ExecutionError::TaskNotFound { id: id.clone() });
+            }
+        } else {
+            return Err(ExecutionError::NotSupported {
+                operation: "new_task_invocation_via_execute_request_disabled".to_string(),
+            });
+        };
 
         // Get or create instance / 获取或创建实例
         let instance = self.get_or_create_instance(&task).await?;
@@ -536,18 +575,15 @@ impl TaskExecutionManager {
         })
     }
 
-    /// Get or create artifact / 获取或创建 artifact
-    async fn get_or_create_artifact(
+    pub fn get_artifact_by_id(&self, artifact_id: &str) -> Option<Arc<Artifact>> {
+        self.artifacts.get(artifact_id).map(|a| a.clone())
+    }
+
+    pub fn create_artifact_with_id(
         &self,
-        artifact_spec: ProtoArtifactSpec,
+        artifact_id: String,
+        spec: super::artifact::ArtifactSpec,
     ) -> ExecutionResult<Arc<Artifact>> {
-        let artifact_id = artifact_spec.artifact_id.clone();
-
-        if let Some(artifact) = self.artifacts.get(&artifact_id) {
-            return Ok(artifact.clone());
-        }
-
-        // Check artifact limit / 检查 artifact 限制
         if self.artifacts.len() >= self.config.max_artifacts {
             return Err(ExecutionError::ResourceExhausted {
                 message: format!(
@@ -556,43 +592,97 @@ impl TaskExecutionManager {
                 ),
             });
         }
-
-        let artifact_spec_local = super::artifact::ArtifactSpec::from(artifact_spec);
-        let artifact = Arc::new(Artifact::new_with_id(
-            artifact_id.clone(),
-            artifact_spec_local,
-        ));
+        let artifact = Arc::new(Artifact::new_with_id(artifact_id.clone(), spec));
         self.artifacts.insert(artifact_id.clone(), artifact.clone());
-        debug!(
-            proto_artifact_id = %artifact_id,
-            "Registered artifact into manager with fixed id"
-        );
-
-        // Update statistics / 更新统计信息
         {
             let mut stats = self.statistics.write();
             stats.active_artifacts = self.artifacts.len() as u64;
         }
-
-        info!("Created new artifact: {}", artifact_id);
         Ok(artifact)
     }
 
-    /// Get or create task / 获取或创建任务
-    async fn get_or_create_task(
+    pub fn ensure_artifact_with_id(
         &self,
-        artifact: &Arc<Artifact>,
-        desired_task_id: Option<String>,
-    ) -> ExecutionResult<Arc<Task>> {
-        // Prefer task_id from request if provided, else derive / 优先使用请求中的 task_id，否则派生
-        let task_id = desired_task_id
-            .unwrap_or_else(|| format!("task-{}-{:?}", artifact.id(), TaskType::HttpHandler));
-
-        if let Some(task) = self.tasks.get(&task_id) {
-            return Ok(task.clone());
+        artifact_id: String,
+        spec: super::artifact::ArtifactSpec,
+    ) -> ExecutionResult<Arc<Artifact>> {
+        if let Some(existing) = self.get_artifact_by_id(&artifact_id) {
+            return Ok(existing);
         }
+        self.create_artifact_with_id(artifact_id, spec)
+    }
 
-        // Check task limit / 检查任务限制
+    /// Ensure artifact exists from SMS Task / 从 SMS Task 确保 Artifact 存在
+    pub async fn ensure_artifact_from_sms(
+        &self,
+        sms_task: &crate::proto::sms::Task,
+    ) -> ExecutionResult<Arc<Artifact>> {
+        let (runtime_type, location_opt, checksum_opt, env) = if let Some(ex) = &sms_task.executable
+        {
+            let rt = match ex.r#type {
+                3 => super::RuntimeType::Kubernetes,
+                4 => super::RuntimeType::Wasm,
+                _ => super::RuntimeType::Process,
+            };
+            let loc = if ex.uri.is_empty() {
+                None
+            } else {
+                Some(ex.uri.clone())
+            };
+            let chk = if ex.checksum_sha256.is_empty() {
+                None
+            } else {
+                Some(ex.checksum_sha256.clone())
+            };
+            (rt, loc, chk, ex.env.clone())
+        } else {
+            (
+                super::RuntimeType::Process,
+                None,
+                None,
+                std::collections::HashMap::new(),
+            )
+        };
+
+        let artifact_id = if let Some(chk) = &checksum_opt {
+            chk.clone()
+        } else if let Some(loc) = &location_opt {
+            use sha2::Digest;
+            let d = sha2::Sha256::digest(loc.as_bytes());
+            d.iter().map(|b| format!("{:02x}", b)).collect()
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        };
+
+        use super::artifact::{ArtifactSpec, InvocationType, ResourceLimits};
+        let spec = ArtifactSpec {
+            name: artifact_id.clone(),
+            version: sms_task.version.clone(),
+            description: None,
+            runtime_type,
+            runtime_config: std::collections::HashMap::new(),
+            location: location_opt,
+            checksum_sha256: checksum_opt,
+            environment: env,
+            resource_limits: ResourceLimits::default(),
+            invocation_type: InvocationType::ExistingTask,
+            max_execution_timeout_ms: 30000,
+            labels: sms_task.metadata.clone(),
+        };
+        self.ensure_artifact_with_id(artifact_id, spec)
+    }
+
+    /// Task helpers / 任务相关辅助方法
+    pub fn get_task_by_id(&self, task_id: &str) -> Option<Arc<Task>> {
+        self.tasks.get(task_id).map(|t| t.clone())
+    }
+
+    pub fn create_task_with_id(
+        &self,
+        task_id: String,
+        artifact: &Arc<Artifact>,
+        spec: super::task::TaskSpec,
+    ) -> ExecutionResult<Arc<Task>> {
         if artifact.task_count() >= self.config.max_tasks_per_artifact {
             return Err(ExecutionError::ResourceExhausted {
                 message: format!(
@@ -601,49 +691,70 @@ impl TaskExecutionManager {
                 ),
             });
         }
+        let task = Arc::new(Task::new_with_id(
+            task_id.clone(),
+            artifact.id().to_string(),
+            spec,
+        ));
+        self.tasks.insert(task_id.clone(), task.clone());
+        artifact.add_task(task.clone())?;
+        {
+            let mut stats = self.statistics.write();
+            stats.active_tasks = self.tasks.len() as u64;
+        }
+        Ok(task)
+    }
 
-        // Create TaskSpec from ArtifactSpec / 从 ArtifactSpec 创建 TaskSpec
-        use super::task::{HealthCheckConfig, ScalingConfig, TaskSpec, TimeoutConfig};
+    pub fn ensure_task_with_id(
+        &self,
+        task_id: String,
+        artifact: &Arc<Artifact>,
+        spec: super::task::TaskSpec,
+    ) -> ExecutionResult<Arc<Task>> {
+        if let Some(existing) = self.get_task_by_id(&task_id) {
+            return Ok(existing);
+        }
+        self.create_task_with_id(task_id, artifact, spec)
+    }
+
+    /// Ensure task exists from SMS Task using provided artifact / 使用提供的Artifact从 SMS Task 确保 Task 存在
+    pub async fn ensure_task_from_sms(
+        &self,
+        sms_task: &crate::proto::sms::Task,
+        artifact: &Arc<Artifact>,
+    ) -> ExecutionResult<Arc<Task>> {
+        use super::task::{
+            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TimeoutConfig,
+        };
         use std::collections::HashMap;
-
+        let env = if let Some(ex) = &sms_task.executable {
+            ex.env.clone()
+        } else {
+            std::collections::HashMap::new()
+        };
+        let runtime_type = artifact.spec.runtime_type.clone();
         let task_spec = TaskSpec {
-            name: artifact.spec.name.clone(),
-            task_type: TaskType::HttpHandler,
-            runtime_type: artifact.spec.runtime_type.clone(),
-            entry_point: "main".to_string(), // Default entry point / 默认入口点
+            name: sms_task.name.clone(),
+            task_type: super::task::TaskType::HttpHandler,
+            runtime_type,
+            entry_point: "main".to_string(),
             handler_config: HashMap::new(),
-            environment: artifact.spec.environment.clone(),
-            invocation_type: artifact.spec.invocation_type.clone(),
+            environment: env,
+            invocation_type: super::artifact::InvocationType::ExistingTask,
             min_instances: 1,
             max_instances: 10,
             target_concurrency: 100,
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
+            execution_kind: match sms_task.execution_kind {
+                x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
+                    ExecutionKind::LongRunning
+                }
+                _ => ExecutionKind::ShortRunning,
+            },
         };
-
-        let task = Arc::new(Task::new_with_id(
-            task_id.clone(),
-            artifact.id().to_string(),
-            task_spec,
-        ));
-        self.tasks.insert(task_id.clone(), task.clone());
-        artifact.add_task(task.clone())?;
-
-        // Update statistics / 更新统计信息
-        {
-            let mut stats = self.statistics.write();
-            stats.active_tasks = self.tasks.len() as u64;
-        }
-
-        info!("Created new task: {}", task_id);
-        self.publish_task_status(
-            &task_id,
-            crate::proto::sms::TaskStatus::Created,
-            Some("created".to_string()),
-        )
-        .await;
-        Ok(task)
+        self.ensure_task_with_id(sms_task.task_id.clone(), artifact, task_spec)
     }
 
     /// Get or create instance / 获取或创建实例
@@ -1007,6 +1118,39 @@ impl TaskExecutionManager {
         });
     }
 
+    async fn publish_task_result(
+        &self,
+        task_id: &str,
+        result_uri: String,
+        result_status: String,
+        completed_at: i64,
+        result_metadata: std::collections::HashMap<String, String>,
+    ) {
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        let url = format!("http://{}", addr);
+        let req = crate::proto::sms::UpdateTaskResultRequest {
+            task_id: task_id.to_string(),
+            result_uri,
+            result_status,
+            completed_at,
+            result_metadata,
+        };
+        tokio::spawn(async move {
+            match Channel::from_shared(url).unwrap().connect().await {
+                Ok(channel) => {
+                    let mut client =
+                        crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
+                    if let Err(e) = client.update_task_result(req).await {
+                        warn!(error = %e.to_string(), "publish_task_result: rpc call failed");
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e.to_string(), "publish_task_result: connect failed");
+                }
+            }
+        });
+    }
+
     /// Extract error message from RuntimeExecutionError enum / 从RuntimeExecutionError枚举中提取错误消息
     fn extract_error_message(error: &super::runtime::RuntimeExecutionError) -> String {
         use super::runtime::RuntimeExecutionError;
@@ -1213,8 +1357,32 @@ mod tests {
             metadata: StdHashMap::new(),
         };
 
-        let artifact = manager.get_or_create_artifact(proto).await.unwrap();
-        let task = manager.get_or_create_task(&artifact, None).await.unwrap();
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
+        let artifact = manager
+            .ensure_artifact_with_id("artifact-test".to_string(), spec_local)
+            .unwrap();
+        use crate::spearlet::execution::task::{
+            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+        };
+        let task_spec = TaskSpec {
+            name: "task-test".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: artifact.spec.runtime_type.clone(),
+            entry_point: "main".to_string(),
+            handler_config: StdHashMap::new(),
+            environment: artifact.spec.environment.clone(),
+            invocation_type: artifact.spec.invocation_type.clone(),
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 100,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
+        };
+        let task = manager
+            .ensure_task_with_id("task-test".to_string(), &artifact, task_spec)
+            .unwrap();
         let instance = manager.get_or_create_instance(&task).await.unwrap();
 
         assert_eq!(task.instance_count(), 1);
@@ -1260,8 +1428,32 @@ mod tests {
             metadata: StdHashMap::new(),
         };
 
-        let artifact = manager.get_or_create_artifact(proto).await.unwrap();
-        let task = manager.get_or_create_task(&artifact, None).await.unwrap();
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
+        let artifact = manager
+            .ensure_artifact_with_id("artifact-cleanup".to_string(), spec_local)
+            .unwrap();
+        use crate::spearlet::execution::task::{
+            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+        };
+        let task_spec = TaskSpec {
+            name: "task-cleanup".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: artifact.spec.runtime_type.clone(),
+            entry_point: "main".to_string(),
+            handler_config: StdHashMap::new(),
+            environment: artifact.spec.environment.clone(),
+            invocation_type: artifact.spec.invocation_type.clone(),
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 100,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
+        };
+        let task = manager
+            .ensure_task_with_id("task-cleanup".to_string(), &artifact, task_spec)
+            .unwrap();
         let task_id = task.id().to_string();
 
         let handle = {
@@ -1274,6 +1466,66 @@ mod tests {
 
         assert!(manager.get_task(&task_id).is_none());
         assert!(artifact.get_task(&task_id).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_or_create_task_uses_desired_task_id() {
+        let mut rm = RuntimeManager::new();
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(DummyRuntime {
+                ty: RuntimeType::Process,
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+
+        let manager = TaskExecutionManager::new(
+            TaskExecutionManagerConfig::default(),
+            rm,
+            Arc::new(crate::spearlet::config::SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let proto = crate::proto::spearlet::ArtifactSpec {
+            artifact_id: "artifact-fixed".to_string(),
+            artifact_type: "process".to_string(),
+            location: "file:///bin/foo".to_string(),
+            version: "1.0.0".to_string(),
+            checksum: "".to_string(),
+            metadata: StdHashMap::new(),
+        };
+
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
+        let artifact = manager
+            .ensure_artifact_with_id("artifact-fixed".to_string(), spec_local)
+            .unwrap();
+        let desired = "sms-task-123".to_string();
+        use crate::spearlet::execution::task::{
+            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+        };
+        let task_spec = TaskSpec {
+            name: desired.clone(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: artifact.spec.runtime_type.clone(),
+            entry_point: "main".to_string(),
+            handler_config: StdHashMap::new(),
+            environment: artifact.spec.environment.clone(),
+            invocation_type: artifact.spec.invocation_type.clone(),
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 100,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
+        };
+        let task = manager
+            .ensure_task_with_id(desired.clone(), &artifact, task_spec)
+            .unwrap();
+        assert_eq!(task.id(), desired);
+        assert!(manager.get_task(&desired).is_some());
     }
 
     #[tokio::test]
@@ -1392,8 +1644,32 @@ mod tests {
             metadata: StdHashMap::new(),
         };
 
-        let artifact = manager.get_or_create_artifact(proto).await.unwrap();
-        let task = manager.get_or_create_task(&artifact, None).await.unwrap();
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
+        let artifact = manager
+            .ensure_artifact_with_id("artifact-hc".to_string(), spec_local)
+            .unwrap();
+        use crate::spearlet::execution::task::{
+            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+        };
+        let task_spec = TaskSpec {
+            name: "task-hc".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: artifact.spec.runtime_type.clone(),
+            entry_point: "main".to_string(),
+            handler_config: StdHashMap::new(),
+            environment: artifact.spec.environment.clone(),
+            invocation_type: artifact.spec.invocation_type.clone(),
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 100,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::ShortRunning,
+        };
+        let task = manager
+            .ensure_task_with_id("task-hc".to_string(), &artifact, task_spec)
+            .unwrap();
         let instance = manager.get_or_create_instance(&task).await.unwrap();
 
         fail_flag.store(true, Ordering::SeqCst);

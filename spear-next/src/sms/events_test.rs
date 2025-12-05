@@ -26,6 +26,7 @@ mod tests {
             last_result_status: String::new(),
             last_completed_at: 0,
             last_result_metadata: Default::default(),
+            execution_kind: crate::proto::sms::TaskExecutionKind::ShortRunning as i32,
         }
     }
 

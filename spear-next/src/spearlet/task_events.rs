@@ -5,7 +5,7 @@ use tonic::transport::Channel;
 
 use crate::proto::sms::{
     task_service_client::TaskServiceClient, GetTaskRequest, SubscribeTaskEventsRequest, Task,
-    TaskEvent, TaskEventKind,
+    TaskEvent, TaskEventKind, TaskExecutionKind,
 };
 use crate::proto::spearlet::{ArtifactSpec as SpearletArtifactSpec, InvokeFunctionRequest};
 use crate::spearlet::config::SpearletConfig;
@@ -147,6 +147,8 @@ impl TaskEventSubscriber {
                 Err(_) => None,
             };
             Self::execute_task(mgr, ev.task_id, task);
+        } else {
+            debug!(event_id = ev.event_id, kind = ev.kind, task_id = %ev.task_id, "Unhandled TaskEvent kind, ignoring");
         }
     }
 
@@ -195,9 +197,20 @@ impl TaskEventSubscriber {
             req.invocation_type = crate::proto::spearlet::InvocationType::ExistingTask as i32;
             req.task_id = t.task_id.clone();
             req.artifact_spec = Some(spec);
-            req.execution_mode = crate::proto::spearlet::ExecutionMode::Async as i32;
+            let is_long = t.execution_kind == TaskExecutionKind::LongRunning as i32;
+            if is_long {
+                req.execution_mode = crate::proto::spearlet::ExecutionMode::Async as i32;
+                req.wait = false;
+            } else {
+                req.execution_mode = crate::proto::spearlet::ExecutionMode::Sync as i32;
+                req.wait = true;
+            }
             let mgr_cloned = mgr.clone();
+            let t_clone = t.clone();
             tokio::spawn(async move {
+                if let Ok(artifact) = mgr_cloned.ensure_artifact_from_sms(&t_clone).await {
+                    let _ = mgr_cloned.ensure_task_from_sms(&t_clone, &artifact).await;
+                }
                 let _ = mgr_cloned.submit_execution(req).await;
             });
         } else {
@@ -213,7 +226,238 @@ impl TaskEventSubscriber {
         if ev.kind == TaskEventKind::Create as i32 {
             Self::execute_task(&self.execution_manager, ev.task_id, task);
         } else {
-            // ignore update/cancel in current implementation
+            tracing::debug!(event_id = ev.event_id, kind = ev.kind, task_id = %ev.task_id, "Unhandled TaskEvent kind in test");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proto::sms::{
+        Task, TaskEvent, TaskEventKind, TaskExecutable, TaskPriority, TaskStatus,
+    };
+    use crate::spearlet::execution::instance;
+    use crate::spearlet::execution::runtime::{Runtime, RuntimeCapabilities, RuntimeType};
+    use crate::spearlet::execution::TaskExecutionManagerConfig;
+    use async_trait::async_trait;
+    use sha2::Digest;
+    use std::collections::HashMap as StdHashMap;
+
+    struct DummyRuntime {
+        ty: RuntimeType,
+    }
+
+    #[async_trait]
+    impl Runtime for DummyRuntime {
+        fn runtime_type(&self) -> RuntimeType {
+            self.ty
+        }
+        async fn create_instance(
+            &self,
+            config: &instance::InstanceConfig,
+        ) -> crate::spearlet::execution::ExecutionResult<Arc<instance::TaskInstance>> {
+            Ok(Arc::new(instance::TaskInstance::new(
+                config.task_id.clone(),
+                config.clone(),
+            )))
+        }
+        async fn start_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> crate::spearlet::execution::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn stop_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> crate::spearlet::execution::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+            _context: crate::spearlet::execution::runtime::ExecutionContext,
+        ) -> crate::spearlet::execution::ExecutionResult<
+            crate::spearlet::execution::runtime::RuntimeExecutionResponse,
+        > {
+            Ok(crate::spearlet::execution::runtime::RuntimeExecutionResponse::default())
+        }
+        async fn health_check(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> crate::spearlet::execution::ExecutionResult<bool> {
+            Ok(true)
+        }
+        async fn get_metrics(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> crate::spearlet::execution::ExecutionResult<StdHashMap<String, serde_json::Value>>
+        {
+            Ok(StdHashMap::new())
+        }
+        async fn scale_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+            _new_limits: &instance::InstanceResourceLimits,
+        ) -> crate::spearlet::execution::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn cleanup_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> crate::spearlet::execution::ExecutionResult<()> {
+            Ok(())
+        }
+        fn validate_config(
+            &self,
+            _config: &instance::InstanceConfig,
+        ) -> crate::spearlet::execution::ExecutionResult<()> {
+            Ok(())
+        }
+        fn get_capabilities(&self) -> RuntimeCapabilities {
+            RuntimeCapabilities::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_event_existing_task_uses_task_id_and_checksum_artifact_id() {
+        let mut rm = crate::spearlet::execution::runtime::RuntimeManager::new();
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(DummyRuntime {
+                ty: RuntimeType::Process,
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+        let mgr = TaskExecutionManager::new(
+            TaskExecutionManagerConfig::default(),
+            rm,
+            Arc::new(SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let mut cfg = SpearletConfig::default();
+        cfg.node_name = uuid::Uuid::new_v4().to_string();
+        let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), mgr.clone());
+        let node_uuid = TaskEventSubscriber::compute_node_uuid(&cfg);
+
+        let mut meta = std::collections::HashMap::new();
+        meta.insert("version".to_string(), "v1".to_string());
+        let sms_task = Task {
+            task_id: "task-x".to_string(),
+            name: "t".to_string(),
+            description: String::new(),
+            status: TaskStatus::Registered as i32,
+            priority: TaskPriority::Normal as i32,
+            node_uuid: node_uuid.clone(),
+            endpoint: String::new(),
+            version: "v1".to_string(),
+            capabilities: vec![],
+            registered_at: chrono::Utc::now().timestamp(),
+            last_heartbeat: chrono::Utc::now().timestamp(),
+            metadata: meta,
+            config: std::collections::HashMap::new(),
+            executable: Some(TaskExecutable {
+                r#type: 5,
+                uri: "http://example/bin".to_string(),
+                name: String::new(),
+                checksum_sha256: "deadbeef".to_string(),
+                args: vec![],
+                env: std::collections::HashMap::new(),
+            }),
+            result_uris: Vec::new(),
+            last_result_uri: String::new(),
+            last_result_status: String::new(),
+            last_completed_at: 0,
+            last_result_metadata: std::collections::HashMap::new(),
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+        };
+        let ev = TaskEvent {
+            event_id: 1,
+            ts: chrono::Utc::now().timestamp(),
+            node_uuid: node_uuid.clone(),
+            task_id: "task-x".to_string(),
+            kind: TaskEventKind::Create as i32,
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+        };
+        sub.handle_event_for_test(ev, Some(sms_task)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(mgr.get_task(&"task-x".to_string()).is_some());
+        assert!(mgr.get_artifact(&"deadbeef".to_string()).is_some());
+    }
+
+    #[tokio::test]
+    async fn test_event_artifact_id_hashes_uri_when_no_checksum() {
+        let mut rm = crate::spearlet::execution::runtime::RuntimeManager::new();
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(DummyRuntime {
+                ty: RuntimeType::Process,
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+        let mgr = TaskExecutionManager::new(
+            TaskExecutionManagerConfig::default(),
+            rm,
+            Arc::new(SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let mut cfg = SpearletConfig::default();
+        cfg.node_name = uuid::Uuid::new_v4().to_string();
+        let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), mgr.clone());
+        let node_uuid = TaskEventSubscriber::compute_node_uuid(&cfg);
+
+        let uri = "http://example/abc";
+        let sms_task = Task {
+            task_id: "task-y".to_string(),
+            name: "t".to_string(),
+            description: String::new(),
+            status: TaskStatus::Registered as i32,
+            priority: TaskPriority::Normal as i32,
+            node_uuid: node_uuid.clone(),
+            endpoint: String::new(),
+            version: "v1".to_string(),
+            capabilities: vec![],
+            registered_at: chrono::Utc::now().timestamp(),
+            last_heartbeat: chrono::Utc::now().timestamp(),
+            metadata: std::collections::HashMap::new(),
+            config: std::collections::HashMap::new(),
+            executable: Some(TaskExecutable {
+                r#type: 5,
+                uri: uri.to_string(),
+                name: String::new(),
+                checksum_sha256: String::new(),
+                args: vec![],
+                env: std::collections::HashMap::new(),
+            }),
+            result_uris: Vec::new(),
+            last_result_uri: String::new(),
+            last_result_status: String::new(),
+            last_completed_at: 0,
+            last_result_metadata: std::collections::HashMap::new(),
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+        };
+        let ev = TaskEvent {
+            event_id: 2,
+            ts: chrono::Utc::now().timestamp(),
+            node_uuid: node_uuid.clone(),
+            task_id: "task-y".to_string(),
+            kind: TaskEventKind::Create as i32,
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+        };
+        sub.handle_event_for_test(ev, Some(sms_task)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let d = sha2::Sha256::digest(uri.as_bytes());
+        let expected: String = d.iter().map(|b| format!("{:02x}", b)).collect();
+        assert!(mgr.get_task(&"task-y".to_string()).is_some());
+        assert!(mgr.get_artifact(&expected).is_some());
     }
 }

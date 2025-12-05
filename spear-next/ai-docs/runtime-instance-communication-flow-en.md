@@ -33,17 +33,18 @@ In spear-next, the process of runtime creating task instances and obtaining comm
    ) -> ExecutionResult<super::ExecutionResponse>
    ```
 
-2. **Create or Get Artifact**
+2. **Prepare Artifact and Task via Events**
+   - Artifact/Task are ensured before invocation in the TaskEvents subscriber:
    ```rust
-   // Get or create artifact
-   let artifact = self.get_or_create_artifact(artifact_spec).await?;
+   // In TaskEventSubscriber::execute_task
+   let artifact = mgr.ensure_artifact_from_sms(&sms_task).await?;
+   let _ = mgr.ensure_task_from_sms(&sms_task, &artifact).await?;
+   // Then submit ExistingTask execution
+   let _ = mgr.submit_execution(req).await;
    ```
 
-3. **Create or Get Task**
-   ```rust
-   // Get or create task
-   let task = self.get_or_create_task(&artifact).await?;
-   ```
+3. **Execution Path Constraint**
+   - `execute_request` only supports invoking existing tasks; it does not create artifacts or tasks.
 
 ### Phase 2: Instance Creation and Startup
 

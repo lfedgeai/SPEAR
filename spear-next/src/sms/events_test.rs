@@ -21,6 +21,12 @@ mod tests {
             metadata: Default::default(),
             config: Default::default(),
             executable: None,
+            result_uris: Vec::new(),
+            last_result_uri: String::new(),
+            last_result_status: String::new(),
+            last_completed_at: 0,
+            last_result_metadata: Default::default(),
+            execution_kind: crate::proto::sms::TaskExecutionKind::ShortRunning as i32,
         }
     }
 

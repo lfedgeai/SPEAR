@@ -32,6 +32,18 @@ This document summarizes the new Web Admin in `spear-next`.
 - `GET /admin/api/stats` → counts (total/online/offline/recent_60s)
 - `GET /admin/api/nodes/stream[?once=true]` → SSE snapshot events
 
+### Tasks Endpoints
+
+- `GET /admin/api/tasks` → returns task list with fields:
+  - `task_id`, `name`, `description`, `status`, `priority`, `node_uuid`, `endpoint`, `version`
+  - `execution_kind` (`short_running | long_running`), `executable_type`, `executable_uri`, `executable_name`
+  - `registered_at`, `last_heartbeat`, `metadata`, `config`
+  - `result_uris`, `last_result_uri`, `last_result_status`, `last_completed_at`, `last_result_metadata`
+- `GET /admin/api/tasks/{task_id}` → returns detail with the same fields
+- `POST /admin/api/tasks` → create task
+  - Body includes `name`, `description`, `priority`, `node_uuid`, `endpoint`, `version`, `capabilities`, `metadata`, `config`, optional `executable`
+  - `metadata.execution_kind` determines `execution_kind` enum mapping on the server
+
 ## Testing
 
 - Integration test for SSE uses `?once=true` to avoid blocking

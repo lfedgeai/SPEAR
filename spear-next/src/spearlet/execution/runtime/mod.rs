@@ -31,6 +31,8 @@ use tracing::info;
 pub mod kubernetes;
 pub mod process;
 pub mod wasm;
+#[cfg(feature = "wasmedge")]
+pub mod wasm_hostcalls;
 
 pub use kubernetes::{KubernetesConfig, KubernetesRuntime};
 pub use process::{ProcessConfig, ProcessRuntime};
@@ -449,6 +451,14 @@ pub trait Runtime: Send + Sync {
 
     /// Get runtime capabilities / 获取运行时能力
     fn get_capabilities(&self) -> RuntimeCapabilities;
+
+    /// Get currently running function name if any / 获取当前正在运行的函数名（如有）
+    async fn get_running_function(
+        &self,
+        _instance: &Arc<TaskInstance>,
+    ) -> ExecutionResult<Option<String>> {
+        Ok(None)
+    }
 
     // 监听模式相关方法 / Listening mode related methods
 

@@ -41,6 +41,15 @@
   - 点击 `Use` 将 `Executable URI = sms+file://<id>` 与 `Executable Name` 带回表单
 - 参数：`Capabilities`（逗号分隔）、`Args`（逗号分隔）、`Env`（每行 `key=value`）
 
+### 执行类型（Execution Kind）
+
+- 选项：`Short Running | Long Running`
+- 映射：在 `POST /admin/api/tasks` 中作为 `metadata.execution_kind` 传递
+- 策略：
+  - `Short Running` 支持 ExistingTask 调用
+  - `Long Running` 通过 SMS 事件创建；作为 ExistingTask 调用会被策略拒绝
+- 列表：任务列表提供 `Exec Kind` 列显示后端返回的执行类型
+
 ## 常见问题
 
 - 下拉长期悬浮：已移除强制 `open`，恢复默认交互
@@ -51,4 +60,3 @@
 
 - `ai-docs/web-admin-overview-zh.md`
 - `ai-docs/ui-tests-guide-zh.md`
-

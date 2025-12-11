@@ -4,6 +4,8 @@
 //! This module provides WebAssembly-based execution runtime using Wasmtime.
 //! 该模块使用 Wasmtime 提供基于 WebAssembly 的执行运行时。
 
+#[cfg(feature = "wasmedge")]
+use super::wasm_hostcalls::{build_spear_import, build_spear_import_with_api};
 use super::{
     ExecutionContext, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeExecutionResponse,
     RuntimeType,
@@ -14,13 +16,16 @@ use crate::spearlet::execution::{
     ExecutionError, ExecutionResult, InstanceStatus,
 };
 use async_trait::async_trait;
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::debug;
+#[cfg(feature = "wasmedge")]
+use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
+#[cfg(feature = "wasmedge")]
+use wasmedge_sdk::{params, vm::SyncInst, wasi::WasiModule, wat2wasm, Module, Vm};
 
 // Note: In a real implementation, you would use wasmedge crate
 // 注意：在真实实现中，您会使用 wasmedge crate
@@ -157,8 +162,14 @@ pub struct WasmInstanceHandle {
     pub state: Arc<Mutex<WasmInstanceState>>,
     /// Execution statistics / 执行统计
     pub execution_stats: Arc<Mutex<WasmExecutionStats>>,
-    #[cfg(feature = "wasmedge")]
-    pub vm: wasmedge_sdk::Vm,
+    pub req_tx: std::sync::mpsc::Sender<ExecRequest>,
+    pub exec_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+#[derive(Debug)]
+pub struct ExecRequest {
+    function_name: String,
+    reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
 }
 
 /// WASM instance state / WASM 实例状态
@@ -172,6 +183,10 @@ pub struct WasmInstanceState {
     pub fuel_remaining: u64,
     /// Last execution time / 上次执行时间
     pub last_execution_time: Option<std::time::SystemTime>,
+    /// Whether instance is currently running / 是否正在运行
+    pub is_running: bool,
+    /// Current function name / 当前函数名
+    pub current_function: Option<String>,
 }
 
 /// WASM execution statistics / WASM 执行统计
@@ -295,43 +310,72 @@ impl WasmRuntime {
             memory_usage: module_handle.memory_usage,
             fuel_remaining: self.config.security_config.fuel_limit,
             last_execution_time: None,
+            is_running: false,
+            current_function: None,
         };
 
         #[cfg(feature = "wasmedge")]
-        let vm_built = {
-            use wasmedge_sdk::config::{
-                CommonConfigOptions, ConfigBuilder, HostRegistrationConfigOptions,
-            };
-            use wasmedge_sdk::VmBuilder;
+        let (req_tx, req_rx) = std::sync::mpsc::channel::<ExecRequest>();
+        #[cfg(feature = "wasmedge")]
+        {
+            use std::collections::HashMap;
+            use wasmedge_sdk::Store;
             let c = ConfigBuilder::new(CommonConfigOptions::default())
-                .with_host_registration_config(HostRegistrationConfigOptions::default().wasi(true))
                 .build()
                 .map_err(|e| ExecutionError::RuntimeError {
                     message: format!("wasmedge config error: {}", e),
                 })?;
-            let mut vm = VmBuilder::new().with_config(c).build().map_err(|e| {
-                ExecutionError::RuntimeError {
-                    message: format!("wasmedge vm build error: {}", e),
-                }
-            })?;
             let bytes = if module_handle
                 .module_bytes
                 .starts_with(&[0x00, 0x61, 0x73, 0x6d])
             {
                 module_handle.module_bytes.clone()
             } else {
-                // return error
                 return Err(ExecutionError::InvalidConfiguration {
                     message: "Invalid WASM module format".to_string(),
                 });
             };
-            vm = vm
-                .register_module_from_bytes(&module_handle.module_name, &bytes)
-                .map_err(|e| ExecutionError::RuntimeError {
-                    message: format!("wasmedge register error: {}", e),
-                })?;
-            vm
-        };
+            let runtime_config = self.runtime_config.clone();
+            let handle_module_name = module_handle.module_name.clone();
+            std::thread::spawn(move || {
+                let mut wasi_module = WasiModule::create(None, None, None).unwrap();
+                let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
+                instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());
+
+                let mut spear_import = build_spear_import_with_api(runtime_config).unwrap();
+                let spear_name = "spear".to_string();
+                let spear_inst: &mut dyn SyncInst = &mut spear_import;
+                instances.insert(spear_name, spear_inst);
+
+                let store = Store::new(Some(&c), instances).unwrap();
+                let mut vm = Vm::new(store);
+                let module = Module::from_bytes(None, &bytes).unwrap();
+                vm.register_module(Some(&handle_module_name), module)
+                    .unwrap();
+                loop {
+                    match req_rx.recv() {
+                        Ok(r) => {
+                            if r.function_name == "__stop__" {
+                                let _ = r.reply_tx.send(Ok(Vec::new()));
+                                break;
+                            }
+                            let res = match vm.run_func(
+                                Some(&handle_module_name),
+                                &r.function_name,
+                                params!(),
+                            ) {
+                                Ok(values) => Ok(format!("{:?}", values).into_bytes()),
+                                Err(e) => Err(ExecutionError::RuntimeError {
+                                    message: format!("wasmedge exec error: {}", e),
+                                }),
+                            };
+                            let _ = r.reply_tx.send(res);
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
 
         let instance_handle = WasmInstanceHandle {
             instance_id,
@@ -339,11 +383,15 @@ impl WasmRuntime {
             state: Arc::new(Mutex::new(state)),
             execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
             #[cfg(feature = "wasmedge")]
-            vm: vm_built,
+            req_tx,
+            #[cfg(feature = "wasmedge")]
+            exec_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
 
         Ok(instance_handle)
     }
+
+    
 
     /// Execute WASM function / 执行 WASM 函数
     async fn execute_wasm_function(
@@ -354,27 +402,48 @@ impl WasmRuntime {
     ) -> ExecutionResult<Vec<u8>> {
         let start_time = Instant::now();
 
-        // Update state / 更新状态
-        {
-            let mut state = instance_handle.state.lock().await;
-            state.last_execution_time = Some(std::time::SystemTime::now());
-        }
-
         #[cfg(feature = "wasmedge")]
         let output = {
-            use wasmedge_sdk::params;
-            match instance_handle.vm.run_func(
-                Some(&instance_handle.module_handle.module_name),
-                function_name,
-                params!(),
-            ) {
-                Ok(values) => format!("{:?}", values),
+            let _exec_guard = match instance_handle.exec_lock.try_lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    return Err(ExecutionError::InvalidRequest {
+                        message: "another execution already in progress".to_string(),
+                    });
+                }
+            };
+            {
+                let mut state = instance_handle.state.lock().await;
+                state.last_execution_time = Some(std::time::SystemTime::now());
+                state.is_running = true;
+                state.current_function = Some(function_name.to_string());
+            }
+            let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
+            let req = ExecRequest {
+                function_name: function_name.to_string(),
+                reply_tx: tx,
+            };
+            let send_res = instance_handle.req_tx.send(req);
+            if send_res.is_err() {
+                return Err(ExecutionError::RuntimeError {
+                    message: "wasm instance thread unavailable".to_string(),
+                });
+            }
+            let recv_res = tokio::task::spawn_blocking(move || rx.recv())
+                .await
+                .map_err(|e| ExecutionError::RuntimeError {
+                    message: e.to_string(),
+                })?;
+            let bytes: Vec<u8> = match recv_res {
+                Ok(Ok(b)) => b,
+                Ok(Err(e)) => return Err(e),
                 Err(e) => {
                     return Err(ExecutionError::RuntimeError {
-                        message: format!("wasmedge exec error: {}", e),
+                        message: e.to_string(),
                     })
                 }
-            }
+            };
+            bytes
         };
         #[cfg(not(feature = "wasmedge"))]
         let output = {
@@ -399,7 +468,14 @@ impl WasmRuntime {
             stats.fuel_consumed += 1000; // Mock fuel consumption / 模拟燃料消耗
         }
 
-        Ok(output.into_bytes())
+        // Reset running state / 重置运行状态
+        {
+            let mut state = instance_handle.state.lock().await;
+            state.is_running = false;
+            state.current_function = None;
+        }
+
+        Ok(output)
     }
 
     /// Get WASM instance metrics / 获取 WASM 实例指标
@@ -581,8 +657,28 @@ impl Runtime for WasmRuntime {
         debug!("WasmRuntime::stop_instance instance_id={}", instance.id());
         instance.set_status(InstanceStatus::Stopping);
 
-        // WASM instances don't need explicit stopping / WASM 实例不需要显式停止
-        // Just mark as stopped / 只需标记为已停止
+        let wasm_handle = instance
+            .get_runtime_handle::<WasmInstanceHandle>()
+            .ok_or_else(|| ExecutionError::RuntimeError {
+                message: "No WASM instance handle found".to_string(),
+            })?;
+
+        let _g = wasm_handle.exec_lock.lock().await;
+        let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
+        let req = ExecRequest { function_name: "__stop__".to_string(), reply_tx: tx };
+        wasm_handle
+            .req_tx
+            .send(req)
+            .map_err(|e| ExecutionError::RuntimeError {
+                message: e.to_string(),
+            })?;
+
+        let _ = tokio::task::spawn_blocking(move || rx.recv()).await;
+        {
+            let mut state = wasm_handle.state.lock().await;
+            state.is_running = false;
+            state.current_function = None;
+        }
         instance.set_status(InstanceStatus::Stopped);
         Ok(())
     }
@@ -735,6 +831,23 @@ impl Runtime for WasmRuntime {
         Ok(())
     }
 
+    async fn get_running_function(
+        &self,
+        instance: &Arc<TaskInstance>,
+    ) -> ExecutionResult<Option<String>> {
+        let wasm_handle = instance
+            .get_runtime_handle::<WasmInstanceHandle>()
+            .ok_or_else(|| ExecutionError::RuntimeError {
+                message: "No WASM instance handle found".to_string(),
+            })?;
+        let state = wasm_handle.state.lock().await;
+        Ok(if state.is_running {
+            state.current_function.clone()
+        } else {
+            None
+        })
+    }
+
     fn validate_config(&self, config: &InstanceConfig) -> ExecutionResult<()> {
         debug!("WasmRuntime::validate_config task_id={}", config.task_id);
         if config.runtime_type != RuntimeType::Wasm {
@@ -785,11 +898,13 @@ impl Runtime for WasmRuntime {
 }
 
 #[cfg(test)]
-mod tests {
+mod wasm_runtime_thread_tests {
     use super::*;
     use crate::spearlet::execution::instance::{
         InstanceConfig, InstanceResourceLimits, NetworkConfig,
     };
+    #[cfg(feature = "wasmedge")]
+    use wasmedge_sdk::{params, wat2wasm, Module};
 
     #[test]
     fn test_wasm_config_default() {
@@ -934,5 +1049,287 @@ mod tests {
         // According to current logic, missing valid wasm module bytes should error
         let result = runtime.create_instance(&valid_config).await;
         assert!(result.is_err());
+    }
+
+    #[cfg(feature = "wasmedge")]
+    fn link_wat(wat: &str) {
+        use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
+        use wasmedge_sdk::{Store, Vm};
+
+        let bytes = wat2wasm(wat.as_bytes()).unwrap();
+        let c = ConfigBuilder::new(CommonConfigOptions::default())
+            .build()
+            .unwrap();
+        let spear_import = build_spear_import().unwrap();
+        let mut imports = HashMap::new();
+        let spear_static = Box::leak(Box::new(spear_import));
+        imports.insert("spear".to_string(), spear_static);
+        let store = Store::new(Some(&c), imports).unwrap();
+        let mut vm = Vm::new(store);
+
+        // In wasmedge-sdk 0.14, ImportObject registration needs to be handled differently
+        // This test needs to be updated to use the new API pattern
+        // For now, we'll comment out this line to avoid compilation errors
+        let module = Module::from_bytes(None, bytes).unwrap();
+        let _vm = vm.register_module(Some("extern"), module).unwrap();
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_time_now_ms() {
+        let wat = r#"(module
+            (type $t (func (result i64)))
+            (import "spear" "time_now_ms" (func $time_now_ms (type $t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_wall_time_s() {
+        let wat = r#"(module
+            (type $t (func (result i64)))
+            (import "spear" "wall_time_s" (func $wall_time_s (type $t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_random_i64() {
+        let wat = r#"(module
+            (type $t (func (result i64)))
+            (import "spear" "random_i64" (func $random_i64 (type $t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_sleep_ms() {
+        let wat = r#"(module
+            (type $t (func (param i32)))
+            (import "spear" "sleep_ms" (func $sleep_ms (type $t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+}
+
+#[cfg(test)]
+mod wasm_runtime_tests {
+    use super::*;
+    use crate::spearlet::execution::instance::{
+        InstanceConfig, InstanceResourceLimits, InstanceStatus, NetworkConfig, TaskInstance,
+    };
+    use crate::spearlet::execution::runtime::{RuntimeConfig, RuntimeType};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    fn rt_cfg() -> RuntimeConfig {
+        RuntimeConfig {
+            runtime_type: RuntimeType::Wasm,
+            settings: HashMap::new(),
+            global_environment: HashMap::new(),
+            spearlet_config: None,
+            resource_pool: super::super::ResourcePoolConfig::default(),
+        }
+    }
+
+    fn dummy_instance_config() -> InstanceConfig {
+        InstanceConfig {
+            task_id: "task-1".to_string(),
+            artifact_id: "art-1".to_string(),
+            runtime_type: RuntimeType::Wasm,
+            runtime_config: HashMap::new(),
+            artifact: None,
+            environment: HashMap::new(),
+            resource_limits: InstanceResourceLimits::default(),
+            network_config: NetworkConfig::default(),
+            max_concurrent_requests: 1,
+            request_timeout_ms: 1000,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_updates_state_and_stats() {
+        let rt = WasmRuntime::new(&rt_cfg()).unwrap();
+        let mh = WasmModuleHandle {
+            module_id: uuid::Uuid::new_v4().to_string(),
+            module_name: "user_module".to_string(),
+            module_size: 0,
+            module_hash: "h".to_string(),
+            compilation_time: std::time::SystemTime::now(),
+            exported_functions: vec!["main".to_string()],
+            memory_usage: 0,
+            module_bytes: vec![],
+        };
+
+        let state = WasmInstanceState {
+            initialized: true,
+            memory_usage: 0,
+            fuel_remaining: 1000,
+            last_execution_time: None,
+            is_running: false,
+            current_function: None,
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel::<ExecRequest>();
+        std::thread::spawn(move || loop {
+            match rx.recv() {
+                Ok(r) => {
+                    if r.function_name == "__stop__" {
+                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                        break;
+                    }
+                    let _ = r.reply_tx.send(Ok(b"[]".to_vec()));
+                }
+                Err(_) => break,
+            }
+        });
+
+        let handle = WasmInstanceHandle {
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            module_handle: mh,
+            state: Arc::new(Mutex::new(state)),
+            execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
+            req_tx: tx,
+            exec_lock: Arc::new(tokio::sync::Mutex::new(())),
+        };
+
+        let out = rt
+            .execute_wasm_function(&handle, "main", &[])
+            .await
+            .unwrap();
+        assert_eq!(out, b"[]");
+        let s = handle.state.lock().await.clone();
+        assert!(!s.is_running);
+        assert!(s.current_function.is_none());
+        let stats = handle.execution_stats.lock().await.clone();
+        assert_eq!(stats.total_executions, 1);
+    }
+
+    #[tokio::test]
+    async fn test_execute_returns_error_when_already_running() {
+        use std::time::Duration;
+        let rt = WasmRuntime::new(&rt_cfg()).unwrap();
+        let mh = WasmModuleHandle {
+            module_id: uuid::Uuid::new_v4().to_string(),
+            module_name: "user_module".to_string(),
+            module_size: 0,
+            module_hash: "h".to_string(),
+            compilation_time: std::time::SystemTime::now(),
+            exported_functions: vec!["main".to_string()],
+            memory_usage: 0,
+            module_bytes: vec![],
+        };
+
+        let state = WasmInstanceState {
+            initialized: true,
+            memory_usage: 0,
+            fuel_remaining: 1000,
+            last_execution_time: None,
+            is_running: false,
+            current_function: None,
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel::<ExecRequest>();
+        std::thread::spawn(move || loop {
+            match rx.recv() {
+                Ok(r) => {
+                    if r.function_name == "__stop__" {
+                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(150));
+                    let _ = r.reply_tx.send(Ok(Vec::new()));
+                }
+                Err(_) => break,
+            }
+        });
+
+        let handle = WasmInstanceHandle {
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            module_handle: mh,
+            state: Arc::new(Mutex::new(state)),
+            execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
+            req_tx: tx,
+            exec_lock: Arc::new(tokio::sync::Mutex::new(())),
+        };
+
+        let _hold = handle.exec_lock.lock().await;
+        // Attempt an execution while lock is held; should fail fast
+        let h2 = rt.execute_wasm_function(&handle, "main", &[]).await;
+        assert!(h2.is_err());
+        if let Err(ExecutionError::InvalidRequest { message }) = h2 {
+            assert!(message.contains("already in progress"));
+        } else {
+            panic!("expected InvalidRequest error");
+        }
+        drop(_hold);
+    }
+
+    #[tokio::test]
+    async fn test_stop_instance_sends_stop_and_updates_status() {
+        let rt = WasmRuntime::new(&rt_cfg()).unwrap();
+        let inst_cfg = dummy_instance_config();
+        let instance = Arc::new(TaskInstance::new(
+            inst_cfg.task_id.clone(),
+            inst_cfg.clone(),
+        ));
+
+        let mh = WasmModuleHandle {
+            module_id: uuid::Uuid::new_v4().to_string(),
+            module_name: "user_module".to_string(),
+            module_size: 0,
+            module_hash: "h".to_string(),
+            compilation_time: std::time::SystemTime::now(),
+            exported_functions: vec!["main".to_string()],
+            memory_usage: 0,
+            module_bytes: vec![],
+        };
+
+        let state = WasmInstanceState {
+            initialized: true,
+            memory_usage: 0,
+            fuel_remaining: 1000,
+            last_execution_time: None,
+            is_running: false,
+            current_function: None,
+        };
+        let (tx, rx) = std::sync::mpsc::channel::<ExecRequest>();
+        std::thread::spawn(move || loop {
+            match rx.recv() {
+                Ok(r) => {
+                    if r.function_name == "__stop__" {
+                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                        break;
+                    }
+                    let _ = r.reply_tx.send(Ok(Vec::new()));
+                }
+                Err(_) => break,
+            }
+        });
+        let handle = WasmInstanceHandle {
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            module_handle: mh,
+            state: Arc::new(Mutex::new(state)),
+            execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
+            req_tx: tx,
+            exec_lock: Arc::new(tokio::sync::Mutex::new(())),
+        };
+        instance.set_runtime_handle(Arc::new(handle));
+
+        rt.start_instance(&instance).await.unwrap();
+        assert_eq!(instance.status(), InstanceStatus::Running);
+        rt.stop_instance(&instance).await.unwrap();
+        assert_eq!(instance.status(), InstanceStatus::Stopped);
     }
 }

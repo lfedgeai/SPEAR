@@ -31,7 +31,7 @@ mod tests {
     async fn test_cursor_store_roundtrip() {
         let cfg = tmp_cfg();
         let runtime_manager = Arc::new(RuntimeManager::new());
-        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager)
+        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager, cfg.clone())
             .await
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr);
@@ -47,7 +47,7 @@ mod tests {
         cfg.sms_grpc_addr = "127.0.0.1:65535".to_string();
         let cfg = Arc::new(cfg);
         let runtime_manager = Arc::new(RuntimeManager::new());
-        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager)
+        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager, cfg.clone())
             .await
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr);
@@ -80,7 +80,7 @@ mod tests {
         cfg.node_name = "00000000-0000-0000-0000-000000000000".to_string();
         let cfg = Arc::new(cfg);
         let runtime_manager = Arc::new(RuntimeManager::new());
-        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager)
+        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager, cfg.clone())
             .await
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr.clone());
@@ -99,7 +99,7 @@ mod tests {
         cfg.node_name = "00000000-0000-0000-0000-000000000000".to_string();
         let cfg = Arc::new(cfg);
         let runtime_manager = Arc::new(RuntimeManager::new());
-        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager)
+        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager, cfg.clone())
             .await
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr.clone());
@@ -118,7 +118,7 @@ mod tests {
         cfg.node_name = "00000000-0000-0000-0000-000000000000".to_string();
         let cfg = Arc::new(cfg);
         let runtime_manager = Arc::new(RuntimeManager::new());
-        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager)
+        let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), runtime_manager, cfg.clone())
             .await
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr.clone());

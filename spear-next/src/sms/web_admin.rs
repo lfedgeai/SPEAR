@@ -313,6 +313,15 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
             } else {
                 (String::new(), String::new(), String::new())
             };
+            let execution_kind = match t.execution_kind {
+                x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
+                    "long_running".to_string()
+                }
+                x if x == crate::proto::sms::TaskExecutionKind::ShortRunning as i32 => {
+                    "short_running".to_string()
+                }
+                _ => "short_running".to_string(),
+            };
             json!({
                 "task_id": t.task_id,
                 "name": t.name,
@@ -327,9 +336,15 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
                 "last_heartbeat": t.last_heartbeat,
                 "metadata": t.metadata,
                 "config": t.config,
+                "execution_kind": execution_kind,
                 "executable_type": exec_type,
                 "executable_uri": exec_uri,
                 "executable_name": exec_name,
+                "result_uris": t.result_uris,
+                "last_result_uri": t.last_result_uri,
+                "last_result_status": t.last_result_status,
+                "last_completed_at": t.last_completed_at,
+                "last_result_metadata": t.last_result_metadata,
             })
         })
         .collect::<Vec<_>>();
@@ -449,6 +464,7 @@ async fn create_task(
             env: e.env.clone().unwrap_or_default(),
         }
     });
+    let meta = body.metadata.clone().unwrap_or_default();
     let req = RegisterTaskRequest {
         name: body.name,
         description: body.description.unwrap_or_default(),
@@ -457,9 +473,20 @@ async fn create_task(
         endpoint: body.endpoint,
         version: body.version,
         capabilities: body.capabilities.unwrap_or_default(),
-        metadata: body.metadata.unwrap_or_default(),
+        metadata: meta.clone(),
         config: body.config.unwrap_or_default(),
         executable: exe,
+        execution_kind: {
+            let ek = meta
+                .get("execution_kind")
+                .cloned()
+                .unwrap_or_else(|| "short_running".to_string());
+            if ek.to_lowercase() == "long_running" {
+                crate::proto::sms::TaskExecutionKind::LongRunning as i32
+            } else {
+                crate::proto::sms::TaskExecutionKind::ShortRunning as i32
+            }
+        },
     };
     let mut client = state.task_client.clone();
     let resp = client.register_task(tonic::Request::new(req)).await;
@@ -527,6 +554,15 @@ async fn get_task_detail(
                             std::collections::HashMap::new(),
                         )
                     };
+                let execution_kind = match t.execution_kind {
+                    x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
+                        "long_running".to_string()
+                    }
+                    x if x == crate::proto::sms::TaskExecutionKind::ShortRunning as i32 => {
+                        "short_running".to_string()
+                    }
+                    _ => "short_running".to_string(),
+                };
                 Json(json!({
                     "found": true,
                     "task": {
@@ -543,12 +579,18 @@ async fn get_task_detail(
                         "last_heartbeat": t.last_heartbeat,
                         "metadata": t.metadata,
                         "config": t.config,
+                        "execution_kind": execution_kind,
                         "executable_type": exec_type,
                         "executable_uri": exec_uri,
                         "executable_name": exec_name,
                         "executable_checksum": exec_sum,
                         "executable_args": exec_args,
                         "executable_env": exec_env,
+                        "result_uris": t.result_uris,
+                        "last_result_uri": t.last_result_uri,
+                        "last_result_status": t.last_result_status,
+                        "last_completed_at": t.last_completed_at,
+                        "last_result_metadata": t.last_result_metadata,
                     }
                 }))
             } else {

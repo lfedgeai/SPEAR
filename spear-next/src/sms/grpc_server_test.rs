@@ -58,6 +58,7 @@ async fn test_register_task_returns_uuid_on_success() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
+        execution_kind: crate::proto::sms::TaskExecutionKind::ShortRunning as i32,
     };
 
     let resp = sms_service.register_task(Request::new(req)).await.unwrap();

@@ -93,7 +93,7 @@ md5 = "0.7"
 # Random number generation / 随机数生成
 rand = "0.8"
 futures = "0.3"
-wasmedge-sdk = { version = "0.13", optional = true, features = ["standalone"] }
+wasmedge-sdk = { version = "0.14", optional = true, features = ["standalone"] }
 
 [dev-dependencies]
 # Testing utilities / 测试工具

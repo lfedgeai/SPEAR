@@ -187,6 +187,7 @@ async fn test_function_invocation_basic() {
         create_if_not_exists: true,
         force_new_instance: false,
         invocation_metadata: HashMap::new(),
+        wait: true,
     });
 
     let response = client.invoke_function(request).await;

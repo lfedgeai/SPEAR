@@ -36,6 +36,7 @@
 pub mod artifact;
 pub mod artifact_fetch;
 pub mod communication;
+pub mod host_api;
 pub mod http_adapter;
 pub mod instance;
 pub mod manager;

@@ -1,0 +1,49 @@
+bin
+bin/dummy_task
+bin/spearlet
+.idea
+.DS_Store
+*.whl
+*.egg-info
+sdk/python/dist
+sdk/python/build/
+sdk/python/spear/proto/
+__pycache__
+sdk/python/pyproject.toml
+pkg/spear/
+
+# Workload build artifacts / 工作负载构建产物
+workload/docker/python/**/bin/
+
+# Coverage files / 覆盖率文件
+*.profraw
+*.profdata
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+coverage.json
+coverage-summary/
+coverage-report-*/
+
+# Rust build artifacts / Rust构建产物
+target/
+Cargo.lock
+
+# IDE and editor files / IDE和编辑器文件
+*.swp
+*.swo
+*~
+.vscode/
+*.code-workspace
+
+# OS generated files / 操作系统生成的文件
+Thumbs.db
+ehthumbs.db
+
+# Temporary files / 临时文件
+*.tmp
+*.temp
+*.log
+*.pid
+*.lock
+*.cache

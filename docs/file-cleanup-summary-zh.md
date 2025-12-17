@@ -23,8 +23,8 @@ This document summarizes the file cleanup work performed on the spear-next proje
 ### 2. 示例文件整理 / Example File Organization
 
 #### 移动的文件 / Moved Files
-- `ai-docs/kv-examples.rs` → `examples/kv-examples.rs`
-- `ai-docs/kv-factory-examples.rs` → `examples/kv-factory-examples.rs`
+- `docs/kv-examples.rs` → `examples/kv-examples.rs`
+- `docs/kv-factory-examples.rs` → `examples/kv-factory-examples.rs`
 
 #### 删除的文件 / Deleted Files
 - `debug_test.rs` - 临时调试文件，已删除
@@ -32,10 +32,10 @@ This document summarizes the file cleanup work performed on the spear-next proje
 ### 3. 引用更新 / Reference Updates
 
 更新了以下文档中的文件路径引用：
-- `ai-docs/kv-factory-implementation-summary.md`
-- `ai-docs/README.md`
-- `ai-docs/kv-factory-pattern-zh.md`
-- `ai-docs/kv-factory-pattern-en.md`
+- `docs/kv-factory-implementation-summary.md`
+- `docs/README.md`
+- `docs/kv-factory-pattern-zh.md`
+- `docs/kv-factory-pattern-en.md`
 
 ### 4. 代码修复 / Code Fixes
 
@@ -84,7 +84,7 @@ This document summarizes the file cleanup work performed on the spear-next proje
 ### 清理前 / Before Cleanup
 ```
 spear-next/
-├── ai-docs/
+├── docs/
 │   ├── kv-examples.rs          # 示例文件放错位置
 │   ├── kv-factory-examples.rs  # 示例文件放错位置
 │   └── ...
@@ -97,14 +97,14 @@ spear-next/
 ### 清理后 / After Cleanup
 ```
 spear-next/
-├── ai-docs/
+├── docs/
 │   ├── README.md               # 更新了文件引用
 │   ├── kv-factory-*.md         # 更新了文件引用
 │   └── ...
 ├── examples/
 │   ├── kv_factory_usage.rs
-│   ├── kv-examples.rs          # 从 ai-docs 移动过来
-│   └── kv-factory-examples.rs  # 从 ai-docs 移动过来
+│   ├── kv-examples.rs          # 从 docs 移动过来
+│   └── kv-factory-examples.rs  # 从 docs 移动过来
 └── ...
 ```
 

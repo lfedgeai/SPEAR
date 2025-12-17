@@ -36,10 +36,10 @@ message InvokeFunctionResponse {
 ### 2. Documentation and Design (Completed)
 
 The project has detailed documentation explaining sync/async mode differences:
-- `ai-docs/sync-async-invocation-comparison-zh.md`
-- `ai-docs/sync-async-invocation-comparison-en.md`
-- `ai-docs/function-invocation-logic-flow-zh.md`
-- `ai-docs/function-invocation-logic-flow-en.md`
+- `docs/sync-async-invocation-comparison-zh.md`
+- `docs/sync-async-invocation-comparison-en.md`
+- `docs/function-invocation-logic-flow-zh.md`
+- `docs/function-invocation-logic-flow-en.md`
 
 ### 3. Actual Implementation (Incomplete)
 

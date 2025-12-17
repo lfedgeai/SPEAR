@@ -58,5 +58,5 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
 
 ## Related Docs
 
-- `ai-docs/web-admin-overview-en.md`
-- `ai-docs/ui-tests-guide-en.md`
+- `docs/web-admin-overview-en.md`
+- `docs/ui-tests-guide-en.md`

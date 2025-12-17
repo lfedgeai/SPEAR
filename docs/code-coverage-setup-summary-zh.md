@@ -15,8 +15,8 @@
 - `scripts/quick-coverage.sh` - 快速覆盖率测试脚本
 
 ### 文档文件
-- `ai-docs/code-coverage-zh.md` - 中文版代码覆盖率指南
-- `ai-docs/code-coverage-en.md` - 英文版代码覆盖率指南
+- `docs/code-coverage-zh.md` - 中文版代码覆盖率指南
+- `docs/code-coverage-en.md` - 英文版代码覆盖率指南
 
 ### Makefile 目标
 - `coverage` - 完整覆盖率测试

@@ -1,8 +1,8 @@
-# AI Documentation / AI文档
+# Documentation / 文档
 
-This directory contains AI-generated documentation and examples for the spear-next project. These documents are created to facilitate knowledge transfer and help future developers understand and extend the project using AI tools.
+This directory contains project documentation and examples for the spear-next project. These documents are created to facilitate knowledge transfer and help future developers understand and extend the project.
 
-此目录包含为spear-next项目生成的AI文档和示例。这些文档旨在促进知识传递，帮助未来的开发者理解并使用AI工具扩展项目。
+此目录包含为 spear-next 项目整理的文档与示例。这些文档旨在促进知识传递，帮助未来的开发者理解并扩展项目。
 
 ## Contents / 内容
 
@@ -194,7 +194,7 @@ This documentation was created to facilitate AI-assisted development. When worki
 - Reference these documents for context about the KV abstraction layer / 参考这些文档了解KV抽象层的上下文
 - Use the examples as templates for new functionality / 使用示例作为新功能的模板
 - Maintain the bilingual documentation standard / 保持双语文档标准
-- Update ai-docs when making significant changes / 进行重大更改时更新ai-docs
+- Update docs when making significant changes / 进行重大更改时更新 docs
 
 ---
 

@@ -15,8 +15,8 @@ This document summarizes the complete process of setting up code coverage testin
 - `scripts/quick-coverage.sh` - Quick coverage testing script
 
 ### Documentation Files
-- `ai-docs/code-coverage-zh.md` - Chinese code coverage guide
-- `ai-docs/code-coverage-en.md` - English code coverage guide
+- `docs/code-coverage-zh.md` - Chinese code coverage guide
+- `docs/code-coverage-en.md` - English code coverage guide
 
 ### Makefile Targets
 - `coverage` - Full coverage testing

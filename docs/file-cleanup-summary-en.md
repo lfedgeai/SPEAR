@@ -21,8 +21,8 @@ This document summarizes the file cleanup work performed on the spear-next proje
 ### 2. Example File Organization
 
 #### Moved Files
-- `ai-docs/kv-examples.rs` → `examples/kv-examples.rs`
-- `ai-docs/kv-factory-examples.rs` → `examples/kv-factory-examples.rs`
+- `docs/kv-examples.rs` → `examples/kv-examples.rs`
+- `docs/kv-factory-examples.rs` → `examples/kv-factory-examples.rs`
 
 #### Deleted Files
 - `debug_test.rs` - Temporary debug file, deleted
@@ -30,10 +30,10 @@ This document summarizes the file cleanup work performed on the spear-next proje
 ### 3. Reference Updates
 
 Updated file path references in the following documents:
-- `ai-docs/kv-factory-implementation-summary.md`
-- `ai-docs/README.md`
-- `ai-docs/kv-factory-pattern-zh.md`
-- `ai-docs/kv-factory-pattern-en.md`
+- `docs/kv-factory-implementation-summary.md`
+- `docs/README.md`
+- `docs/kv-factory-pattern-zh.md`
+- `docs/kv-factory-pattern-en.md`
 
 ### 4. Code Fixes
 
@@ -82,7 +82,7 @@ Updated file path references in the following documents:
 ### Before Cleanup
 ```
 spear-next/
-├── ai-docs/
+├── docs/
 │   ├── kv-examples.rs          # Example file in wrong location
 │   ├── kv-factory-examples.rs  # Example file in wrong location
 │   └── ...
@@ -95,14 +95,14 @@ spear-next/
 ### After Cleanup
 ```
 spear-next/
-├── ai-docs/
+├── docs/
 │   ├── README.md               # Updated file references
 │   ├── kv-factory-*.md         # Updated file references
 │   └── ...
 ├── examples/
 │   ├── kv_factory_usage.rs
-│   ├── kv-examples.rs          # Moved from ai-docs
-│   └── kv-factory-examples.rs  # Moved from ai-docs
+│   ├── kv-examples.rs          # Moved from docs
+│   └── kv-factory-examples.rs  # Moved from docs
 └── ...
 ```
 

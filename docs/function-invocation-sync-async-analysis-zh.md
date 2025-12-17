@@ -36,10 +36,10 @@ message InvokeFunctionResponse {
 ### 2. 文档和设计（已完成）
 
 项目中已有详细的文档说明同步异步模式的区别：
-- `ai-docs/sync-async-invocation-comparison-zh.md`
-- `ai-docs/sync-async-invocation-comparison-en.md`
-- `ai-docs/function-invocation-logic-flow-zh.md`
-- `ai-docs/function-invocation-logic-flow-en.md`
+- `docs/sync-async-invocation-comparison-zh.md`
+- `docs/sync-async-invocation-comparison-en.md`
+- `docs/function-invocation-logic-flow-zh.md`
+- `docs/function-invocation-logic-flow-en.md`
 
 ### 3. 实际实现（未完成）
 

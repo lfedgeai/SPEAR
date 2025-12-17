@@ -58,5 +58,5 @@
 
 ## 相关文档
 
-- `ai-docs/web-admin-overview-zh.md`
-- `ai-docs/ui-tests-guide-zh.md`
+- `docs/web-admin-overview-zh.md`
+- `docs/ui-tests-guide-zh.md`

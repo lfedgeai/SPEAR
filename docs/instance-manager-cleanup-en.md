@@ -71,8 +71,8 @@ If instance management functionality is needed in the future, it can be:
 
 1. `src/spearlet/execution/communication/mod.rs` - Removed module declaration and exports, added type definitions
 2. `src/spearlet/execution/communication/instance_manager.rs` - **DELETED**
-3. `ai-docs/spearlet-architecture-redesign-en.md` - Removed InstanceManager references
-4. `ai-docs/spearlet-architecture-redesign-zh.md` - Removed InstanceManager references
+3. `docs/spearlet-architecture-redesign-en.md` - Removed InstanceManager references
+4. `docs/spearlet-architecture-redesign-zh.md` - Removed InstanceManager references
 
 ## Cleanup Summary / 清理总结
 

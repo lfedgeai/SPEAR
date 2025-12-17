@@ -123,8 +123,8 @@ Err(e) => {
 
 ## 修改的相关文件
 - `src/sms/service.rs`: 包含错误处理修复的主要实现
-- `ai-docs/grpc-error-handling-fix-en.md`: 更新的文档
-- `ai-docs/grpc-error-handling-fix-zh.md`: 更新的文档
+- `docs/grpc-error-handling-fix-en.md`: 更新的文档
+- `docs/grpc-error-handling-fix-zh.md`: 更新的文档
 
 ## 未来建议
 1. **一致的错误模式**: 在所有 gRPC 服务中实现类似的错误处理模式

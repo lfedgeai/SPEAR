@@ -1,4 +1,4 @@
-# AI Documentation Index / AI文档索引
+# Documentation Index / 文档索引
 
 ## 文档分类 / Document Categories
 
@@ -7,8 +7,6 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Project Architecture Overview | [project-architecture-overview-en.md](./project-architecture-overview-en.md) | [project-architecture-overview-zh.md](./project-architecture-overview-zh.md) | 项目架构全面概述 |
-| Project Architecture | [../ARCHITECTURE-en.md](../ARCHITECTURE-en.md) | [../ARCHITECTURE-zh.md](../ARCHITECTURE-zh.md) | 项目整体架构设计 |
-| Project Refactoring | [project-refactoring-en.md](./project-refactoring-en.md) | [project-refactoring-zh.md](./project-refactoring-zh.md) | 模块化架构重构文档 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
 | ObjectRef API Removal | [objectref-api-removal-en.md](./objectref-api-removal-en.md) | [objectref-api-removal-zh.md](./objectref-api-removal-zh.md) | ObjectRef API移除文档 |
 
@@ -27,6 +25,7 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Task API Refactor | [task-api-refactor-en.md](./task-api-refactor-en.md) | [task-api-refactor-zh.md](./task-api-refactor-zh.md) | Task API重构文档 |
+| Task List Filtering | [task-filter-refactoring-en.md](./task-filter-refactoring-en.md) | [task-filter-refactoring-zh.md](./task-filter-refactoring-zh.md) | Task 列表过滤与分页实现说明 |
 | Task Service Optimization | [task-service-optimization-en.md](./task-service-optimization-en.md) | [task-service-optimization-zh.md](./task-service-optimization-zh.md) | Task服务优化文档 |
 | Resource Service Refactoring | [resource-service-refactoring-en.md](./resource-service-refactoring-en.md) | [resource-service-refactoring-zh.md](./resource-service-refactoring-zh.md) | 资源服务代码重构指南 |
 | Config Service Refactoring | [config-service-refactoring-en.md](./config-service-refactoring-en.md) | [config-service-refactoring-zh.md](./config-service-refactoring-zh.md) | 配置服务代码重构指南 |
@@ -37,6 +36,13 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Kubernetes Runtime Implementation | [kubernetes-runtime-implementation-en.md](./kubernetes-runtime-implementation-en.md) | [kubernetes-runtime-implementation-zh.md](./kubernetes-runtime-implementation-zh.md) | Kubernetes运行时实现文档 |
+| Execution Mode Support | [execution-mode-support-en.md](./execution-mode-support-en.md) | [execution-mode-support-zh.md](./execution-mode-support-zh.md) | 函数调用执行模式（Sync/Async/Stream）支持 |
+
+### 🧩 Hostcall API / Hostcall API
+
+| 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
+|---|---|---|---|
+| Spear Hostcall Chat Completion | [api/spear-hostcall/chat-completion-en.md](./api/spear-hostcall/chat-completion-en.md) | [api/spear-hostcall/chat-completion-zh.md](./api/spear-hostcall/chat-completion-zh.md) | WASM hostcall 的 Chat Completion 设计 |
 
 ### 🌐 HTTP Layer / HTTP层
 
@@ -63,7 +69,6 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Constants Module Refactoring | [constants-refactoring-en.md](./constants-refactoring-en.md) | [constants-refactoring-zh.md](./constants-refactoring-zh.md) | Constants模块重构文档 |
-| Middleware Cleanup | [middleware-cleanup-en.md](./middleware-cleanup-en.md) | [middleware-cleanup-zh.md](./middleware-cleanup-zh.md) | 未使用中间件清理文档 |
 
 ### 🔧 Troubleshooting & Operations / 故障排除与运维
 
@@ -96,7 +101,7 @@
 
 | 文件 / File | 描述 / Description |
 |---|---|
-| [kv-factory-examples.rs](./kv-factory-examples.rs) | KV工厂模式使用示例 |
+| [kv-factory-examples.rs](../examples/kv-factory-examples.rs) | KV工厂模式使用示例 |
 | [kv-factory-implementation-summary.md](./kv-factory-implementation-summary.md) | KV工厂实现摘要 |
 
 ### 🔄 Proto File Management / Proto文件管理
@@ -145,7 +150,7 @@
 1. **新功能开发** / **New Feature Development**
    - 参考相应层级的架构文档
    - 遵循现有的设计模式
-   - 更新相关的 AI 文档
+   - 更新相关的文档
 
 2. **问题排查** / **Troubleshooting**
    - 查看测试修复文档
@@ -187,5 +192,5 @@
 
 ---
 
-*此索引由 AI 生成并维护，用于促进项目的 AI 辅助开发*  
-*This index is generated and maintained by AI to facilitate AI-assisted development*
+*此索引用于快速定位项目文档与示例*  
+*This index helps locate project documentation and examples*

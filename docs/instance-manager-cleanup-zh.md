@@ -71,8 +71,8 @@ cargo test --lib spearlet::execution::communication
 
 1. `src/spearlet/execution/communication/mod.rs` - 移除模块声明和导出，添加类型定义
 2. `src/spearlet/execution/communication/instance_manager.rs` - **已删除**
-3. `ai-docs/spearlet-architecture-redesign-en.md` - 移除 InstanceManager 引用
-4. `ai-docs/spearlet-architecture-redesign-zh.md` - 移除 InstanceManager 引用
+3. `docs/spearlet-architecture-redesign-en.md` - 移除 InstanceManager 引用
+4. `docs/spearlet-architecture-redesign-zh.md` - 移除 InstanceManager 引用
 
 ## 清理总结 / Cleanup Summary
 

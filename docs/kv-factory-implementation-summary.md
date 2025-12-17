@@ -81,10 +81,10 @@ This document summarizes the implementation of the KV Store Factory Pattern for 
 ### Created Documents / 创建的文档
 
 1. **English Documentation / 英文文档**:
-   - `ai-docs/kv-factory-pattern-en.md`: Comprehensive English documentation / 全面的英文文档
+   - `docs/kv-factory-pattern-en.md`: Comprehensive English documentation / 全面的英文文档
 
 2. **Chinese Documentation / 中文文档**:
-   - `ai-docs/kv-factory-pattern-zh.md`: Comprehensive Chinese documentation / 全面的中文文档
+   - `docs/kv-factory-pattern-zh.md`: Comprehensive Chinese documentation / 全面的中文文档
 
 3. **Examples / 示例**:
    - `examples/kv-factory-examples.rs`: Code examples for all patterns / 所有模式的代码示例
@@ -92,7 +92,7 @@ This document summarizes the implementation of the KV Store Factory Pattern for 
 
 4. **Updated Documentation / 更新的文档**:
    - `README.md`: Added factory pattern section / 添加了工厂模式章节
-   - `ai-docs/README.md`: Updated with factory pattern overview / 更新了工厂模式概述
+   - `docs/README.md`: Updated with factory pattern overview / 更新了工厂模式概述
    - `src/storage/mod.rs`: Updated exports / 更新了导出
 
 ## Usage Examples / 使用示例

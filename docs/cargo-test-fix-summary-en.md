@@ -123,8 +123,8 @@ The fix resolved error handling for three critical scenarios:
 
 ## Related Files Modified
 - `src/sms/service.rs`: Main implementation with error handling fixes
-- `ai-docs/grpc-error-handling-fix-en.md`: Updated documentation
-- `ai-docs/grpc-error-handling-fix-zh.md`: Updated documentation
+- `docs/grpc-error-handling-fix-en.md`: Updated documentation
+- `docs/grpc-error-handling-fix-zh.md`: Updated documentation
 
 ## Future Recommendations
 1. **Consistent Error Patterns**: Implement similar error handling patterns across all gRPC services

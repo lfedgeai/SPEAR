@@ -391,8 +391,6 @@ impl WasmRuntime {
         Ok(instance_handle)
     }
 
-    
-
     /// Execute WASM function / 执行 WASM 函数
     async fn execute_wasm_function(
         &self,
@@ -665,7 +663,10 @@ impl Runtime for WasmRuntime {
 
         let _g = wasm_handle.exec_lock.lock().await;
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
-        let req = ExecRequest { function_name: "__stop__".to_string(), reply_tx: tx };
+        let req = ExecRequest {
+            function_name: "__stop__".to_string(),
+            reply_tx: tx,
+        };
         wasm_handle
             .req_tx
             .send(req)
@@ -1116,6 +1117,30 @@ mod wasm_runtime_thread_tests {
         let wat = r#"(module
             (type $t (func (param i32)))
             (import "spear" "sleep_ms" (func $sleep_ms (type $t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_cchat_hostcalls() {
+        let wat = r#"(module
+            (type $create_t (func (result i32)))
+            (type $write_msg_t (func (param i32 i32 i32 i32 i32) (result i32)))
+            (type $write_fn_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $send_t (func (param i32 i32) (result i32)))
+            (type $recv_t (func (param i32 i32 i32) (result i32)))
+            (type $close_t (func (param i32) (result i32)))
+            (import "spear" "cchat_create" (func $cchat_create (type $create_t)))
+            (import "spear" "cchat_write_msg" (func $cchat_write_msg (type $write_msg_t)))
+            (import "spear" "cchat_write_fn" (func $cchat_write_fn (type $write_fn_t)))
+            (import "spear" "cchat_ctl" (func $cchat_ctl (type $ctl_t)))
+            (import "spear" "cchat_send" (func $cchat_send (type $send_t)))
+            (import "spear" "cchat_recv" (func $cchat_recv (type $recv_t)))
+            (import "spear" "cchat_close" (func $cchat_close (type $close_t)))
             (func $dummy (result i32) i32.const 0)
             (export "dummy" (func $dummy))
         )"#;

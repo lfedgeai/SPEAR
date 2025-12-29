@@ -22,4 +22,4 @@ This directory contains the Spear Backend Adapter Layer design (multi-operation 
 
 - `reliability-security-observability-en.md`: error model, security boundaries, observability
 - `migration-mvp-en.md`: mapping from legacy Go and phased implementation plan
-
+- `implementation-plan-en.md`: implementation plan (file/function level)

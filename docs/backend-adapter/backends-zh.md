@@ -81,3 +81,98 @@ transports = ["websocket"]
 
 - `api_key_env` 与 base_url 必须由 host 配置提供；WASM 不可注入。
 - backend allowlist/denylist 由 host 配置控制，请求侧只能收缩。
+
+### 6.1 API key 的存储方式（建议）
+
+建议只在配置里保存“环境变量名”，不在配置文件中保存明文 key。
+
+- 在 `[[llm.backends]]` 中使用 `api_key_env = "OPENAI_API_KEY"`
+- 在 spearlet 进程启动环境中注入 `OPENAI_API_KEY=...`
+
+这样可以：
+
+- 避免 key 进入仓库、配置分发链路与日志
+- 便于按实例/按节点做差异化配置与 key 轮换
+
+### 6.2 API key 的读取与使用（host-side）
+
+后端 adapter 发送请求时：
+
+- 根据 `api_key_env` 读取对应环境变量的值
+- 组装到 HTTP Header（例如 `Authorization: Bearer <key>`）
+- 禁止打印/回传 key（包括错误日志与 `raw` 字段）
+
+在当前 Rust 代码中，host 侧可通过 `SpearHostApi::get_env` 读取环境变量（实现目前从 `RuntimeConfig.global_environment` 获取，见 `src/spearlet/execution/host_api.rs:309-311`）。
+
+### 6.3 缺失 key 的行为（建议）
+
+- 若 `api_key_env` 未配置或对应环境变量不存在：
+  - 视为该 backend instance 不可用（从 candidates 里过滤），或在调用时返回 `BackendNotEnabled/InvalidConfiguration` 类错误
+- discovery 对外输出时：
+  - 可以仅输出 `api_key_env` 名称，不输出值
+
+### 6.4 轮换与多 key
+
+- 轮换：通过更新 spearlet 进程环境变量并滚动重启实现（MVP）；后续可加入热更新机制。
+- 多 key：允许为不同 backend instance 配置不同 `api_key_env`。
+
+### 6.5 多 API key 的组织最佳实践
+
+#### 6.5.1 命名与映射
+
+- 按“提供方/区域/用途/实例”命名环境变量，避免复用同一个 key 覆盖多个实例：
+  - 例如：`OPENAI_API_KEY_US_PRIMARY`、`OPENAI_API_KEY_US_FALLBACK`、`AZURE_OPENAI_KEY_EASTUS`、`VLLM_TOKEN_CLUSTER_A`
+- 配置里只引用 env 名称：每个 `BackendInstance` 绑定一个 `api_key_env`，做到可追踪、可轮换、可审计。
+
+#### 6.5.2 多 key 用于同一个 backend instance（key pool）
+
+当同一个 endpoint 需要多个 key（配额拆分、限流分摊、灰度/AB）时，建议引入 “key pool” 的抽象：
+
+- 配置：`api_key_envs = ["OPENAI_API_KEY_US_PRIMARY", "OPENAI_API_KEY_US_2", ...]`
+- 选择策略（按场景）：
+  - `round_robin`：均匀摊分 QPS
+  - `random`：实现简单
+  - `least_errors`：对单 key 的封禁/失效更鲁棒（需要错误计数）
+- 失败回退：遇到 `401/403/429` 时按策略切换 key 并进行短期熔断（避免打爆同一个 key）
+
+MVP 可以先实现“一个 instance 一个 key”；key pool 建议作为 Phase 4+ 的增强。
+
+#### 6.5.3 分权与最小权限
+
+- 不同提供方/不同 project/不同权限域使用不同 key，不同 backend 不共用 key。
+- 将 key 的用途与操作绑定（例如某些 key 只允许 `embeddings`），通过 router 的 allowlist/requirements 限制路由范围。
+
+#### 6.5.4 性能与工程性
+
+- 不要在每次请求都做昂贵的 secret 解析（如调用外部 secret manager）；优先在进程内缓存已解析的 key。
+- 对 `get_env` 的读取可以在 adapter 初始化时完成并缓存（前提是你接受“滚动重启生效”的轮换方式）。
+
+#### 6.5.5 部署建议（Kubernetes）
+
+- 使用 K8s Secret 注入 env（`envFrom`/`valueFrom.secretKeyRef`），并限制 RBAC。
+- discovery/API 返回只暴露 `api_key_env` 名称，不暴露值。
+
+### 6.6 与 SMS Web Admin 的配合（建议）
+
+SMS Web Admin 可以支持“API key 配置组件”，但最佳实践是把它做成“secret 引用管理”，而不是直接在 UI 里录入/存储明文 key。
+
+推荐形态：
+
+- Web Admin 管理的是：
+  - backend instance 的配置（`base_url`、权重、能力、`api_key_env`/`api_key_envs` 等）
+  - secret 的引用（env var 名称或外部 secret manager 的引用 ID）
+- Web Admin 不管理的是：
+  - 明文 key 的值（不进入 SMS DB，不进入日志，不通过 API 回传）
+
+与 spearlet 的配合方式：
+
+- spearlet 进程启动时通过部署系统注入环境变量（K8s Secret/Vault Agent/systemd drop-in 等）
+- spearlet 的 backend adapter 通过 `SpearHostApi::get_env` 读取 `api_key_env` 对应的值并用于请求签名
+- SMS Web Admin 可以提供“校验/可观测”：
+  - 仅验证 key 是否“存在/可用”（例如让 spearlet 在心跳 `health_info` 上报 `HAS_ENV:OPENAI_API_KEY_US_PRIMARY=true`）
+  - 允许在 UI 上标记某个 instance 在某些 node 上缺失 key，但不展示 key 值
+
+是否这是一个好的 key 组织方式：
+
+- 是的（推荐）：UI 管理“映射与引用”，部署系统管理“secret 值”。这是最小权限、可审计、可轮换且安全边界清晰的拆分。
+- 不推荐（除非有完备安全体系）：让 Web Admin 直接存储明文 key。除非你已经具备 KMS 加密、审计日志、细粒度 RBAC、密钥轮换与泄露应急流程，否则这会把 SMS 变成高风险 secret 仓库。

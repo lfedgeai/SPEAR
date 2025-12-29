@@ -22,4 +22,4 @@
 
 - `reliability-security-observability-zh.md`：错误模型、安全边界、可观测性
 - `migration-mvp-zh.md`：与 legacy Go 的映射与分阶段落地（MVP→扩展）
-
+- `implementation-plan-zh.md`：实现细节规划（文件/函数级）

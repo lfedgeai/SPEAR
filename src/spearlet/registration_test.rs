@@ -326,6 +326,7 @@ async fn test_connect_fails_with_unreachable_sms() {
         sms_connect_timeout_ms: 15000,
         sms_connect_retry_ms: 500,
         reconnect_total_timeout_ms: 300000,
+        llm: crate::spearlet::config::LlmConfig::default(),
     };
 
     let svc = RegistrationService::new(Arc::new(cfg));

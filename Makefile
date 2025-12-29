@@ -13,6 +13,8 @@ COVERAGE_DIR := $(TARGET_DIR)/coverage
 CARGO := cargo
 RUSTC_VERSION := $(shell rustc --version 2>/dev/null || echo "unknown")
 
+NOCAPTURE ?= 1
+
 # Colors for output / 输出颜色
 RED := \033[0;31m
 GREEN := \033[0;32m
@@ -49,6 +51,7 @@ help:
 	@echo -e "$(YELLOW)Examples / 示例:$(NC)"
 	@echo "  make build                    # Build with default features / 使用默认特性构建"
 	@echo "  make test                     # Run all tests / 运行所有测试"
+	@echo "  make test NOCAPTURE=0          # Hide test output / 隐藏测试输出"
 	@echo "  make coverage-quick           # Quick coverage analysis / 快速覆盖率分析"
 	@echo "  make FEATURES=sled build      # Build with sled feature / 使用sled特性构建"
 	@echo ""
@@ -94,13 +97,18 @@ build-release:
 # Run tests / 运行测试
 test:
 	@echo -e "$(BLUE)🧪 Running tests... / 运行测试...$(NC)"
-	@if [ -n "$(FEATURES)" ]; then \
-		$(CARGO) test --features $(FEATURES); \
+	@NOCAPTURE_ARGS=""; \
+	if [ "$(NOCAPTURE)" = "1" ]; then \
+		NOCAPTURE_ARGS="-- --nocapture"; \
+	fi; \
+	if [ -n "$(FEATURES)" ]; then \
+		$(CARGO) test --features $(FEATURES) $$NOCAPTURE_ARGS; \
 	else \
-		$(CARGO) test; \
+		$(CARGO) test $$NOCAPTURE_ARGS; \
 	fi
 	@$(MAKE) test-ui || echo -e "$(YELLOW)⚠️ UI tests skipped (Node/Playwright not available) / UI测试已跳过（未安装Node/Playwright）$(NC)"
 	@echo -e "$(GREEN)✅ Tests completed / 测试完成$(NC)"
+
 
 .PHONY: test-ui
 test-ui:
@@ -214,12 +222,16 @@ samples:
 	@echo -e "$(BLUE)🔨 Building WASM samples... / 构建WASM示例...$(NC)"
 	@mkdir -p $(SAMPLES_BUILD)
 	@if command -v zig >/dev/null 2>&1; then \
-		zig cc -target wasm32-wasi -O2 -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c; \
+		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c; \
+		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c; \
 		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/hello.wasm$(NC)"; \
+		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/chat_completion.wasm$(NC)"; \
 	else \
 		if command -v clang >/dev/null 2>&1; then \
-			clang --target=wasm32-wasi -O2 -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			clang --target=wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			clang --target=wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
 			[ -f $(SAMPLES_BUILD)/hello.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/hello.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
+			[ -f $(SAMPLES_BUILD)/chat_completion.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/chat_completion.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
 		else \
 			echo -e "$(RED)❌ No suitable compiler found (zig/clang). Install zig or wasi-sdk$(NC)"; exit 1; \
 		fi; \
@@ -294,3 +306,4 @@ e2e-linux:
 	@echo -e "$(GREEN)✅ E2E tests (Linux) completed / 端到端测试（Linux）完成$(NC)"
 SAMPLES_DIR := samples/wasm-c
 SAMPLES_BUILD := samples/build
+SAMPLES_CFLAGS ?=

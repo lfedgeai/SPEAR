@@ -36,6 +36,14 @@
 
 - `GET /admin/api/tasks` → 返回任务列表，包含字段：
   - `task_id`、`name`、`description`、`status`、`priority`、`node_uuid`、`endpoint`、`version`
+
+## Secret/Key 管理建议
+
+如果后续在 Web Admin 增加“API key 配置”相关组件，建议将其设计为“secret 引用管理”，而不是在 UI 中录入与存储明文 key。
+
+- UI/控制面管理：backend instance 与 `api_key_env`（或 `api_key_envs`）的映射
+- secret 值的落地：交由部署系统注入（Kubernetes Secret / Vault Agent / systemd drop-in）
+- 可观测性：仅展示“是否存在/可用”（例如由 spearlet 心跳上报 `HAS_ENV:<ENV_NAME>=true`），不展示值
   - `execution_kind`（`short_running | long_running`）、`executable_type`、`executable_uri`、`executable_name`
   - `registered_at`、`last_heartbeat`、`metadata`、`config`
   - `result_uris`、`last_result_uri`、`last_result_status`、`last_completed_at`、`last_result_metadata`

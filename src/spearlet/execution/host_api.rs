@@ -1,3 +1,12 @@
+use crate::spearlet::execution::ai::backends::openai_compatible::OpenAICompatibleBackendAdapter;
+use crate::spearlet::execution::ai::backends::stub::StubBackendAdapter;
+use crate::spearlet::execution::ai::ir::{Operation, ResultPayload};
+use crate::spearlet::execution::ai::normalize::chat::normalize_cchat_session;
+use crate::spearlet::execution::ai::router::capabilities::Capabilities;
+use crate::spearlet::execution::ai::router::policy::SelectionPolicy;
+use crate::spearlet::execution::ai::router::registry::{BackendInstance, BackendRegistry};
+use crate::spearlet::execution::ai::router::Router;
+use crate::spearlet::execution::ai::AiEngine;
 use crate::spearlet::execution::ExecutionError;
 use serde_json::json;
 use std::collections::HashMap;
@@ -31,13 +40,18 @@ pub trait SpearHostApi: Send + Sync {
 pub struct DefaultHostApi {
     runtime_config: super::runtime::RuntimeConfig,
     chat_state: Arc<Mutex<ChatHostState>>,
+    ai_engine: Arc<AiEngine>,
 }
 
 impl DefaultHostApi {
     pub fn new(runtime_config: super::runtime::RuntimeConfig) -> Self {
+        let (registry, policy) = build_registry_from_runtime_config(&runtime_config);
+        let router = Router::new(registry, policy);
+        let ai_engine = Arc::new(AiEngine::new(router));
         Self {
             runtime_config,
             chat_state: Arc::new(Mutex::new(ChatHostState::new())),
+            ai_engine,
         }
     }
 
@@ -83,59 +97,48 @@ impl DefaultHostApi {
 
     pub fn cchat_send(&self, fd: i32, flags: i32) -> Result<i32, i32> {
         let metrics_enabled = (flags & 1) != 0;
-        let (sess, resp_fd) = {
+        let (snapshot, resp_fd) = {
             let mut st = match self.chat_state.lock() {
                 Ok(v) => v,
                 Err(_) => return Err(-5),
             };
-            let sess = st.get_session(fd)?;
+            let snapshot = st.get_session_snapshot(fd)?;
             let resp_fd = st.create_response_fd();
-            (sess, resp_fd)
+            (snapshot, resp_fd)
         };
 
-        let last_user = sess
-            .messages
-            .iter()
-            .rev()
-            .find(|(r, _)| r.eq_ignore_ascii_case("user"))
-            .map(|(_, c)| c.clone())
-            .unwrap_or_default();
-
-        let assistant_content = if last_user.is_empty() {
-            "stub chat completion".to_string()
-        } else {
-            format!("stub chat completion: {}", last_user)
+        let req = normalize_cchat_session(&snapshot);
+        let resp = match self.ai_engine.invoke(&req) {
+            Ok(r) => r,
+            Err(e) => {
+                let body = json!({"error": {"message": e.to_string()}});
+                let bytes = serde_json::to_vec(&body).map_err(|_| -5)?;
+                let mut st = match self.chat_state.lock() {
+                    Ok(v) => v,
+                    Err(_) => return Err(-5),
+                };
+                let metrics_bytes = if metrics_enabled {
+                    b"{}".to_vec()
+                } else {
+                    Vec::new()
+                };
+                st.put_response(resp_fd, bytes, metrics_bytes);
+                return Ok(resp_fd);
+            }
         };
 
-        let model = sess
-            .params
-            .get("model")
-            .and_then(|v| v.as_str())
-            .unwrap_or("stub-model")
-            .to_string();
-
-        let response_json = json!({
-            "id": format!("chatcmpl_{}", fd),
-            "object": "chat.completion",
-            "created": (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64),
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": assistant_content,
-                    },
-                    "finish_reason": "stop"
-                }
-            ]
-        });
-        let bytes = serde_json::to_vec(&response_json).map_err(|_| -5)?;
+        let bytes = match resp.result {
+            ResultPayload::Payload(v) => serde_json::to_vec(&v).map_err(|_| -5)?,
+            ResultPayload::Error(e) => {
+                let body = json!({"error": {"code": e.code, "message": e.message}});
+                serde_json::to_vec(&body).map_err(|_| -5)?
+            }
+        };
         let metrics_bytes = if metrics_enabled {
             let usage = json!({
-                "prompt_tokens": sess.messages.len() as i64,
+                "prompt_tokens": snapshot.messages.len() as i64,
                 "completion_tokens": 1,
-                "total_tokens": (sess.messages.len() as i64) + 1,
+                "total_tokens": (snapshot.messages.len() as i64) + 1,
             });
             serde_json::to_vec(&usage).unwrap_or_else(|_| b"{}".to_vec())
         } else {
@@ -167,11 +170,108 @@ impl DefaultHostApi {
     }
 }
 
+fn build_registry_from_runtime_config(
+    runtime_config: &super::runtime::RuntimeConfig,
+) -> (BackendRegistry, SelectionPolicy) {
+    let mut policy = SelectionPolicy::WeightedRandom;
+    let mut instances: Vec<BackendInstance> = Vec::new();
+
+    if let Some(cfg) = runtime_config.spearlet_config.as_ref() {
+        if let Some(p) = cfg.llm.default_policy.as_ref() {
+            policy = match p.as_str() {
+                "weighted_random" => SelectionPolicy::WeightedRandom,
+                _ => SelectionPolicy::WeightedRandom,
+            };
+        }
+
+        for b in cfg.llm.backends.iter() {
+            let ops = b
+                .ops
+                .iter()
+                .filter_map(|s| parse_operation(s))
+                .collect::<Vec<_>>();
+            if ops.is_empty() {
+                continue;
+            }
+
+            if let Some(env_name) = b.api_key_env.as_ref() {
+                if !runtime_config.global_environment.contains_key(env_name) {
+                    continue;
+                }
+            }
+
+            let adapter: Arc<dyn crate::spearlet::execution::ai::backends::BackendAdapter> =
+                match b.kind.as_str() {
+                    "openai_compatible" => Arc::new(OpenAICompatibleBackendAdapter::new(
+                        b.name.clone(),
+                        b.base_url.clone(),
+                        b.api_key_env.clone(),
+                        runtime_config.global_environment.clone(),
+                    )),
+                    _ => continue,
+                };
+
+            instances.push(BackendInstance {
+                name: b.name.clone(),
+                weight: b.weight,
+                priority: b.priority,
+                capabilities: Capabilities {
+                    ops,
+                    features: b.features.clone(),
+                    transports: b.transports.clone(),
+                },
+                adapter,
+            });
+        }
+    }
+
+    if instances.is_empty() {
+        let stub = Arc::new(StubBackendAdapter::new("stub"));
+        instances.push(BackendInstance {
+            name: "stub".to_string(),
+            weight: 100,
+            priority: 0,
+            capabilities: Capabilities {
+                ops: vec![Operation::ChatCompletions],
+                features: vec![
+                    "supports_tools".to_string(),
+                    "supports_json_schema".to_string(),
+                    "supports_stream".to_string(),
+                ],
+                transports: vec!["in_process".to_string()],
+            },
+            adapter: stub,
+        });
+    }
+
+    (BackendRegistry::new(instances), policy)
+}
+
+fn parse_operation(s: &str) -> Option<Operation> {
+    match s {
+        "chat_completions" => Some(Operation::ChatCompletions),
+        "embeddings" => Some(Operation::Embeddings),
+        "image_generation" => Some(Operation::ImageGeneration),
+        "speech_to_text" => Some(Operation::SpeechToText),
+        "text_to_speech" => Some(Operation::TextToSpeech),
+        "realtime_voice" => Some(Operation::RealtimeVoice),
+        _ => None,
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 struct ChatSession {
     messages: Vec<(String, String)>,
     tools: Vec<(i32, String)>,
     params: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChatSessionSnapshot {
+    pub fd: i32,
+    pub messages: Vec<(String, String)>,
+    pub tools: Vec<(i32, String)>,
+    pub params: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -211,6 +311,16 @@ impl ChatHostState {
 
     fn get_session(&self, fd: i32) -> Result<ChatSession, i32> {
         self.sessions.get(&fd).cloned().ok_or(-1)
+    }
+
+    fn get_session_snapshot(&self, fd: i32) -> Result<ChatSessionSnapshot, i32> {
+        let sess = self.sessions.get(&fd).cloned().ok_or(-1)?;
+        Ok(ChatSessionSnapshot {
+            fd,
+            messages: sess.messages,
+            tools: sess.tools,
+            params: sess.params,
+        })
     }
 
     fn write_msg(&mut self, fd: i32, role: String, content: String) -> i32 {
@@ -489,5 +599,71 @@ impl SpearHostApi for DefaultHostApi {
             Ok::<String, ExecutionError>(id)
         })?;
         Ok(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeType};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_cchat_send_pipeline_stub_backend() {
+        let api = DefaultHostApi::new(RuntimeConfig {
+            runtime_type: RuntimeType::Wasm,
+            settings: HashMap::new(),
+            global_environment: HashMap::new(),
+            spearlet_config: None,
+            resource_pool: ResourcePoolConfig::default(),
+        });
+
+        let fd = api.cchat_create();
+        assert!(fd > 0);
+        assert_eq!(
+            api.cchat_write_msg(fd, "user".to_string(), "hello".to_string()),
+            0
+        );
+        let resp_fd = api.cchat_send(fd, 0).unwrap();
+        let bytes = api.cchat_recv(resp_fd).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let content = v["choices"][0]["message"]["content"].as_str().unwrap_or("");
+        assert!(content.contains("hello"));
+    }
+
+    #[test]
+    fn test_configured_openai_backend_missing_key_is_filtered() {
+        let mut cfg = crate::spearlet::config::SpearletConfig::default();
+        cfg.llm
+            .backends
+            .push(crate::spearlet::config::LlmBackendConfig {
+                name: "openai-us".to_string(),
+                kind: "openai_compatible".to_string(),
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key_env: Some("OPENAI_API_KEY".to_string()),
+                weight: 100,
+                priority: 0,
+                ops: vec!["chat_completions".to_string()],
+                features: vec![],
+                transports: vec!["http".to_string()],
+            });
+
+        let api = DefaultHostApi::new(RuntimeConfig {
+            runtime_type: RuntimeType::Wasm,
+            settings: HashMap::new(),
+            global_environment: HashMap::new(),
+            spearlet_config: Some(cfg),
+            resource_pool: ResourcePoolConfig::default(),
+        });
+
+        let fd = api.cchat_create();
+        assert_eq!(
+            api.cchat_write_msg(fd, "user".to_string(), "hello".to_string()),
+            0
+        );
+        let resp_fd = api.cchat_send(fd, 0).unwrap();
+        let bytes = api.cchat_recv(resp_fd).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(v.get("choices").is_some());
     }
 }

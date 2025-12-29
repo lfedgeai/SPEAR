@@ -27,9 +27,9 @@ async fn test_function_service_stats() {
     let stats = service.get_stats().await;
 
     // Verify stats structure / 验证统计结构
-    assert!(stats.task_count >= 0);
-    assert!(stats.execution_count >= 0);
-    assert!(stats.running_executions >= 0);
+    assert_eq!(stats.task_count, 0);
+    assert_eq!(stats.execution_count, 0);
+    assert_eq!(stats.running_executions, 0);
 }
 
 // TODO: Add integration tests when proto types are generated

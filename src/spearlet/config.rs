@@ -354,6 +354,44 @@ pub struct SpearletConfig {
     pub sms_connect_retry_ms: u64,
     /// Total reconnect timeout after disconnection / 断线后的总重连超时（毫秒）
     pub reconnect_total_timeout_ms: u64,
+    pub llm: LlmConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct LlmConfig {
+    pub default_policy: Option<String>,
+    pub backends: Vec<LlmBackendConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LlmBackendConfig {
+    pub name: String,
+    pub kind: String,
+    pub base_url: String,
+    pub api_key_env: Option<String>,
+    pub weight: u32,
+    pub priority: i32,
+    pub ops: Vec<String>,
+    pub features: Vec<String>,
+    pub transports: Vec<String>,
+}
+
+impl Default for LlmBackendConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            kind: String::new(),
+            base_url: String::new(),
+            api_key_env: None,
+            weight: 100,
+            priority: 0,
+            ops: Vec::new(),
+            features: Vec::new(),
+            transports: Vec::new(),
+        }
+    }
 }
 
 /// gRPC server configuration / gRPC服务器配置
@@ -416,6 +454,7 @@ impl Default for SpearletConfig {
             sms_connect_timeout_ms: 15000,
             sms_connect_retry_ms: 500,
             reconnect_total_timeout_ms: 300_000,
+            llm: LlmConfig::default(),
         }
     }
 }

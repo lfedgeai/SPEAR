@@ -33,6 +33,7 @@
 //! - **Resource Management**: Automatic scaling and lifecycle management
 //! - **资源管理**: 自动扩缩容和生命周期管理
 
+pub mod ai;
 pub mod artifact;
 pub mod artifact_fetch;
 pub mod communication;

@@ -344,10 +344,10 @@ gRPC服务提供以下方法：
 
 ### Documentation / 文档
 
-- API Usage Guide: `ai-docs/api-usage-guide-en.md`, `ai-docs/api-usage-guide-zh.md`
-- Task API Refactor (CN): `ai-docs/task-api-refactor-zh.md`
-- WASM Runtime Usage: `ai-docs/wasm-runtime-usage-en.md`, `ai-docs/wasm-runtime-usage-zh.md`
-- Samples Build Guide: `ai-docs/samples-build-guide-en.md`, `ai-docs/samples-build-guide-zh.md`
+- API Usage Guide: `docs/api-usage-guide-en.md`, `docs/api-usage-guide-zh.md`
+- Task API Refactor (CN): `docs/task-api-refactor-zh.md`
+- WASM Runtime Usage: `docs/wasm-runtime-usage-en.md`, `docs/wasm-runtime-usage-zh.md`
+- Samples Build Guide: `docs/samples-build-guide-en.md`, `docs/samples-build-guide-zh.md`
 - `GetNode`: Get specific node / 获取特定节点
 
 #### Architecture / 架构
@@ -409,7 +409,7 @@ cargo test spearlet_reconnect_tests -- --nocapture
   - 选择本地 SMS 文件：点击 `Choose Local` 弹窗，`Use` 将 URI 与名称带回表单
   - 时区：所有时间采用 Settings 页所选时区显示
 
-文档：`ai-docs/web-admin-overview-zh.md`、`ai-docs/web-admin-ui-guide-zh.md`
+文档：`docs/web-admin-overview-zh.md`、`docs/web-admin-ui-guide-zh.md`
 
 ### UI Tests / 前端测试
 
@@ -423,7 +423,7 @@ cargo test spearlet_reconnect_tests -- --nocapture
   - 文件上传、删除及列表刷新
 - 配置：`playwright.config.ts`
 
-文档：`ai-docs/ui-tests-guide-zh.md`
+文档：`docs/ui-tests-guide-zh.md`
 
 ### E2E Testing / 端到端测试
 
@@ -449,8 +449,8 @@ make e2e-linux
 ```
 
 Documentation / 文档：
-- `ai-docs/e2e-testing-en.md`
-- `ai-docs/e2e-testing-zh.md`
+- `docs/e2e-testing-en.md`
+- `docs/e2e-testing-zh.md`
 
 CLI-gated SMS connect / 通过CLI控制的SMS连接：
 - 指定 `--sms-addr` 时，SPEARlet 启动时将立即尝试连接到该 SMS 地址；如果连接失败，将退出进程
@@ -483,7 +483,7 @@ let subscriber = TaskEventSubscriber::new(config.clone());
 subscriber.start().await; // 后台运行
 ```
 
-Docs / 文档：`ai-docs/task-events-subscriber-en.md`、`ai-docs/task-events-subscriber-zh.md`
+Docs / 文档：`docs/task-events-subscriber-en.md`、`docs/task-events-subscriber-zh.md`
 
 #### Docker Support / Docker支持
 
@@ -563,7 +563,7 @@ let store = create_kv_store_from_env().await?;
 ##### Examples and Documentation / 示例和文档
 
 - **Examples**: See `examples/kv_factory_usage.rs` for complete usage examples / 查看`examples/kv_factory_usage.rs`获取完整使用示例
-- **Documentation**: See `ai-docs/kv-factory-pattern-en.md` and `ai-docs/kv-factory-pattern-zh.md` for detailed documentation / 查看`ai-docs/kv-factory-pattern-en.md`和`ai-docs/kv-factory-pattern-zh.md`获取详细文档
+- **Documentation**: See `docs/kv-factory-pattern-en.md` and `docs/kv-factory-pattern-zh.md` for detailed documentation / 查看`docs/kv-factory-pattern-en.md`和`docs/kv-factory-pattern-zh.md`获取详细文档
 
 ##### Running Examples / 运行示例
 

@@ -1,0 +1,38 @@
+use std::sync::Arc;
+
+use crate::spearlet::execution::ai::backends::BackendAdapter;
+use crate::spearlet::execution::ai::ir::CanonicalRequestEnvelope;
+use crate::spearlet::execution::ai::router::capabilities::Capabilities;
+
+#[derive(Clone)]
+pub struct BackendInstance {
+    pub name: String,
+    pub weight: u32,
+    pub priority: i32,
+    pub capabilities: Capabilities,
+    pub adapter: Arc<dyn BackendAdapter>,
+}
+
+#[derive(Clone)]
+pub struct BackendRegistry {
+    instances: Vec<BackendInstance>,
+}
+
+impl BackendRegistry {
+    pub fn new(instances: Vec<BackendInstance>) -> Self {
+        Self { instances }
+    }
+
+    pub fn candidates<'a>(&'a self, req: &CanonicalRequestEnvelope) -> Vec<&'a BackendInstance> {
+        self.instances
+            .iter()
+            .filter(|inst| inst.capabilities.supports_operation(&req.operation))
+            .filter(|inst| {
+                req.requirements
+                    .required_features
+                    .iter()
+                    .all(|f| inst.capabilities.has_feature(f))
+            })
+            .collect()
+    }
+}

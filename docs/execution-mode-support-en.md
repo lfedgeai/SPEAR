@@ -107,6 +107,14 @@ async fn invoke_function(&self, request: Request<InvokeFunctionRequest>)
 - Supports real-time data stream transmission
 - Returns error message in `invoke_function` suggesting correct method
 
+### Mode Comparison
+
+| Mode | Response Timing | Result Retrieval | Use Case |
+|------|----------------|------------------|----------|
+| Sync | After completion | Directly in response | Quick functions |
+| Async | Immediate return | Poll via status endpoint | Long-running |
+| Stream | Use dedicated RPC | Real-time streaming | Stream processing |
+
 ## Response Structure Differences
 
 ### Sync Mode Response
@@ -139,19 +147,45 @@ InvokeFunctionResponse {
 }
 ```
 
+## Error Handling Strategy
+
+1. **Unknown execution mode**: Return a clear error message
+2. **Stream mode misuse**: Guide the client to use the correct RPC method
+3. **Runtime errors**: Use unified error codes and a consistent message format
+
 ## Future Work
 
-1. **Runtime Implementation**: Current `handle_sync_execution` and `handle_async_execution` methods need integration with actual runtime systems
-2. **Status Query Endpoint**: Need to implement HTTP endpoint or gRPC method for status queries
-3. **Async Task Management**: Need to implement async task scheduling and status tracking
-4. **Error Handling**: Improve handling logic for various error scenarios
+### Immediate Needs
+1. Integrate `handle_sync_execution` and `handle_async_execution` with real runtimes
+2. Implement status query endpoints (HTTP or gRPC)
+3. Add async task scheduling and status tracking
 
-## Testing Recommendations
+### Medium-term Goals
+1. Add execution timeout mechanisms
+2. Implement task priority
+3. Add execution monitoring and metrics
 
-1. Test request handling for different execution modes
-2. Verify correctness of response structures
-3. Test error scenario handling
-4. Performance testing (especially async mode)
+### Long-term Planning
+1. Support task dependencies
+2. Implement distributed execution
+3. Add resource quota management
+
+## Testing Strategy
+
+### Unit Tests
+1. Validate response structures for each execution mode
+2. Test error scenario handling
+3. Test convenience constructors
+
+### Integration Tests
+1. End-to-end execution flow tests
+2. Compatibility tests across different runtimes
+3. Performance benchmark tests
+
+### Stress Tests
+1. High-concurrency sync execution
+2. Large-scale async task management
+3. Resource usage monitoring
 
 ## Compatibility Notes
 

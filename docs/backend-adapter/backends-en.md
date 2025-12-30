@@ -1,0 +1,178 @@
+# Backend Feature Pruning, Registry/Discovery, and Configuration
+
+This document focuses on how “compiled and enabled” backends are discovered and participate in routing.
+
+## 1. Compile-time pruning (Cargo features)
+
+Use one Cargo feature per backend and mark heavy dependencies as `optional`:
+
+- `backend-openai` (OpenAI-compatible HTTP)
+- `backend-azure-openai`
+- `backend-vllm`
+- `backend-openai-realtime` (WebSocket)
+- `backend-stub`
+
+The registry builder registers backends behind `#[cfg(feature = "backend-xxx")]`; disabled backends do not compile/link.
+
+## 2. BackendKind vs BackendInstance
+
+Split into two layers:
+
+- `BackendKind`: implementation type (openai_compatible/azure/vllm/realtime...)
+- `BackendInstance`: concrete endpoint (base_url, region, weight, priority, capabilities, limits)
+
+The router selects instances.
+
+## 3. Registry and CapabilityIndex
+
+- `BackendRegistry`: holds enabled instances, their capabilities, weights, and health handles
+- `CapabilityIndex`: derived index (e.g., `Operation -> candidates[]`)
+
+Legacy alignment: `GetAPIEndpointInfo` filters endpoints by env keys (`legacy/spearlet/core/models.go`); the new design centralizes this in registry construction and discovery.
+
+## 4. Discovery surfaces
+
+“Discovery” here means exposing an observable view of the in-process registry. It does not mean backends must discover each other via network calls.
+
+- In-process: router/adapters read `BackendRegistry` via normal function calls (default path; no HTTP/gRPC required).
+- External: optionally expose HTTP/gRPC endpoints for ops/debug/UI/automation to inspect “compiled + configured + currently healthy” backends and capabilities.
+
+Two recommended surfaces:
+
+1) Control-plane (HTTP/gRPC)
+- `GET /api/v1/backends`
+- `GET /api/v1/capabilities`
+
+2) Task-side adaptation (optional)
+- a hostcall control command like `GET_CAPABILITIES` returning JSON
+
+## 5. Configuration model (example)
+
+TOML pseudocode:
+
+```toml
+[llm]
+default_policy = "weighted_round_robin"
+
+[[llm.backends]]
+name = "openai-us"
+kind = "openai_compatible"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+weight = 80
+priority = 10
+ops = ["chat_completions", "text_to_speech"]
+features = ["supports_stream", "supports_tools", "supports_json_schema"]
+transports = ["http"]
+
+[[llm.backends]]
+name = "openai-realtime"
+kind = "openai_realtime"
+base_url = "https://api.openai.com"
+api_key_env = "OPENAI_API_KEY"
+weight = 100
+priority = 20
+ops = ["realtime_voice"]
+features = ["supports_bidi_stream", "supports_audio_input", "supports_audio_output"]
+transports = ["websocket"]
+```
+
+## 6. Secrets and network policy
+
+- `api_key_env` and `base_url` must be host-configured; WASM cannot inject them.
+- Host-config allowlist/denylist is authoritative; request-side hints can only restrict further.
+
+### 6.1 API key storage (recommended)
+
+Store only the “environment variable name” in config; do not store plaintext keys in config files.
+
+- In `[[llm.backends]]`, set `api_key_env = "OPENAI_API_KEY"`
+- Inject `OPENAI_API_KEY=...` into the spearlet process environment at startup
+
+Benefits:
+
+- prevents keys from entering the repo, config distribution, or logs
+- enables per-instance/per-node keys and straightforward rotation
+
+### 6.2 Reading and using the key (host-side)
+
+When an adapter sends a request:
+
+- read the value via the configured `api_key_env`
+- attach it as an HTTP header (e.g., `Authorization: Bearer <key>`)
+- never log or return the key (including in error messages and `raw` payloads)
+
+In the current Rust codebase, the host can read env values via `SpearHostApi::get_env` (currently backed by `RuntimeConfig.global_environment`; see `src/spearlet/execution/host_api.rs:309-311`).
+
+### 6.3 Missing key behavior (recommended)
+
+- If `api_key_env` is missing or the env var is not set:
+  - treat the backend instance as unavailable (filter from candidates), or return a `BackendNotEnabled/InvalidConfiguration` style error on invoke
+- For external discovery:
+  - only expose `api_key_env` name, never the value
+
+### 6.4 Rotation and multiple keys
+
+- Rotation: update the process env and do a rolling restart (MVP); add hot reload later if needed.
+- Multiple keys: allow different `api_key_env` per backend instance.
+
+### 6.5 Best practices for organizing multiple API keys
+
+#### 6.5.1 Naming and mapping
+
+- Name env vars by provider/region/purpose/instance to avoid accidental reuse:
+  - e.g., `OPENAI_API_KEY_US_PRIMARY`, `OPENAI_API_KEY_US_FALLBACK`, `AZURE_OPENAI_KEY_EASTUS`, `VLLM_TOKEN_CLUSTER_A`
+- Config references env var names only: bind one `api_key_env` per `BackendInstance` for traceability, rotation, and auditing.
+
+#### 6.5.2 Multiple keys for the same backend instance (key pool)
+
+If a single endpoint needs multiple keys (quota split, rate-limit sharding, gradual rollout/AB), introduce a “key pool”:
+
+- Config: `api_key_envs = ["OPENAI_API_KEY_US_PRIMARY", "OPENAI_API_KEY_US_2", ...]`
+- Selection policies:
+  - `round_robin`: spread QPS evenly
+  - `random`: simplest
+  - `least_errors`: more robust against bans/invalid keys (requires error counters)
+- Failure fallback: on `401/403/429`, switch keys and apply short-term backoff/circuiting per key.
+
+MVP can start with “one instance one key”; key pools are a Phase 4+ enhancement.
+
+#### 6.5.3 Separation of duties and least privilege
+
+- Do not share keys across providers/projects/permission domains; different backends should not reuse the same key.
+- Bind key usage to operations where possible (e.g., a key only for `embeddings`) and restrict routing accordingly.
+
+#### 6.5.4 Performance and operability
+
+- Avoid expensive secret resolution per request (e.g., calling an external secret manager); cache resolved keys in-process.
+- Optionally read and cache keys at adapter initialization time (if you accept “rotation requires restart”).
+
+#### 6.5.5 Deployment notes (Kubernetes)
+
+- Inject env vars via Kubernetes Secrets (`envFrom` / `valueFrom.secretKeyRef`) and constrain RBAC.
+- External discovery/APIs must only expose `api_key_env` names, never values.
+
+### 6.6 Working with SMS Web Admin (recommended)
+
+SMS Web Admin can support an “API key configuration” UI, but best practice is to make it “secret reference management”, not plaintext key entry/storage.
+
+Recommended split:
+
+- Web Admin manages:
+  - backend instance configuration (`base_url`, weights, capabilities, `api_key_env`/`api_key_envs`, etc.)
+  - secret references (env var names or external secret-manager reference IDs)
+- Web Admin does not manage:
+  - plaintext key values (never stored in SMS DB, never logged, never returned via APIs)
+
+How it works with spearlet:
+
+- Inject env vars at spearlet startup via your deployment system (K8s Secrets, Vault Agent, systemd drop-in, etc.)
+- Backend adapters read values via `SpearHostApi::get_env` and sign requests
+- SMS Web Admin can provide validation/observability:
+  - only report “present/usable” (e.g., spearlet heartbeat `health_info` reports `HAS_ENV:OPENAI_API_KEY_US_PRIMARY=true`)
+  - UI can flag missing secrets on certain nodes without revealing values
+
+Is this a good organization pattern:
+
+- Yes (recommended): UI manages “mapping/references”, deployment manages “secret values”. This keeps clear security boundaries and supports auditing/rotation.
+- Not recommended (unless you have a full security program): storing plaintext keys in Web Admin/SMS. Without KMS encryption, auditing, fine-grained RBAC, rotation, and incident response, SMS becomes a high-risk secret vault.

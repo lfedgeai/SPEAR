@@ -188,13 +188,14 @@ async fn test_function_invocation_basic() {
         force_new_instance: false,
         invocation_metadata: HashMap::new(),
         wait: true,
+        execution_id: None,
     });
 
     let response = client.invoke_function(request).await;
 
     // For now, we expect this to fail gracefully since we don't have a real runtime
     // 目前，我们期望这会优雅地失败，因为我们没有真正的运行时
-    assert!(response.is_err() || response.unwrap().into_inner().success == false);
+    assert!(response.is_err() || !response.unwrap().into_inner().success);
 }
 
 #[tokio::test]

@@ -72,26 +72,10 @@ impl Default for TaskExecutionManagerConfig {
 }
 
 /// Execution request / 执行请求
-/// Execution request queue entry / 执行请求队列条目
-#[derive(Debug, Clone)]
-pub struct ExecutionRequestQueueEntry {
-    /// Request ID / 请求 ID
-    pub request_id: String,
-    /// Artifact specification / Artifact 规范
-    pub artifact_spec: ProtoArtifactSpec,
-    /// Execution context / 执行上下文
-    pub execution_context: ExecutionContext,
-    /// Desired task ID from request (if any) / 来自请求的期望任务ID（如有）
-    pub desired_task_id: Option<String>,
-    /// Request timestamp / 请求时间戳
-    pub timestamp: SystemTime,
-}
-
-/// Execution request / 执行请求
 #[derive(Debug)]
 pub struct ExecutionRequest {
-    /// Request ID / 请求 ID
-    pub request_id: String,
+    /// Execution ID / 执行 ID
+    pub execution_id: String,
     /// Artifact specification / Artifact 规范
     pub artifact_spec: ProtoArtifactSpec,
     /// Execution context / 执行上下文
@@ -171,8 +155,8 @@ pub struct TaskExecutionManager {
     tasks: Arc<DashMap<TaskId, Arc<Task>>>,
     /// Instances storage / 实例存储
     instances: Arc<DashMap<InstanceId, Arc<TaskInstance>>>,
-    /// Execution request queue / 执行请求队列
-    request_queue: Arc<DashMap<String, ExecutionRequestQueueEntry>>,
+    /// Execution status storage / 执行状态存储
+    executions: Arc<DashMap<String, super::ExecutionResponse>>,
     /// Execution semaphore / 执行信号量
     execution_semaphore: Arc<Semaphore>,
     /// Statistics / 统计信息
@@ -206,7 +190,7 @@ impl TaskExecutionManager {
             artifacts: Arc::new(DashMap::new()),
             tasks: Arc::new(DashMap::new()),
             instances: Arc::new(DashMap::new()),
-            request_queue: Arc::new(DashMap::new()),
+            executions: Arc::new(DashMap::new()),
             execution_semaphore,
             statistics: Arc::new(RwLock::new(ExecutionStatistics::default())),
             request_counter: AtomicU64::new(0),
@@ -250,10 +234,16 @@ impl TaskExecutionManager {
         &self,
         request: InvokeFunctionRequest,
     ) -> ExecutionResult<super::ExecutionResponse> {
-        let request_id = format!(
-            "req-{}",
-            self.request_counter.fetch_add(1, Ordering::SeqCst)
-        );
+        let execution_id = request
+            .execution_id
+            .clone()
+            .filter(|id| !id.is_empty())
+            .unwrap_or_else(|| {
+                format!(
+                    "req-{}",
+                    self.request_counter.fetch_add(1, Ordering::SeqCst)
+                )
+            });
 
         let artifact_spec =
             request
@@ -263,7 +253,7 @@ impl TaskExecutionManager {
                 })?;
 
         let execution_context = ExecutionContext {
-            execution_id: request_id.clone(),
+            execution_id: execution_id.clone(),
             payload: Vec::new(), // TODO: Extract payload from request
             headers: std::collections::HashMap::new(), // TODO: Extract headers from request
             timeout_ms: 30000,   // TODO: Extract timeout from request context
@@ -281,20 +271,29 @@ impl TaskExecutionManager {
             Some(request.task_id.clone())
         };
 
-        // Create queue entry / 创建队列条目
-        let queue_entry = ExecutionRequestQueueEntry {
-            request_id: request_id.clone(),
-            artifact_spec: artifact_spec.clone(),
-            execution_context: execution_context.clone(),
-            desired_task_id: desired_task_id.clone(),
-            timestamp,
-        };
+        let mut meta = std::collections::HashMap::new();
+        if let Some(task_id) = desired_task_id.clone() {
+            if !task_id.is_empty() {
+                meta.insert("task_id".to_string(), task_id);
+            }
+        }
+        meta.insert("artifact_id".to_string(), artifact_spec.artifact_id.clone());
 
-        // Add to queue / 添加到队列
-        self.request_queue.insert(request_id.clone(), queue_entry);
+        self.executions.insert(
+            execution_id.clone(),
+            super::ExecutionResponse {
+                execution_id: execution_id.clone(),
+                output_data: Vec::new(),
+                status: "pending".to_string(),
+                error_message: None,
+                execution_time_ms: 0,
+                metadata: meta,
+                timestamp: SystemTime::now(),
+            },
+        );
 
         let execution_request = ExecutionRequest {
-            request_id: request_id.clone(),
+            execution_id: execution_id.clone(),
             artifact_spec,
             execution_context,
             desired_task_id,
@@ -308,12 +307,6 @@ impl TaskExecutionManager {
             .map_err(|_| ExecutionError::RuntimeError {
                 message: "Failed to submit execution request".to_string(),
             })?;
-
-        // Update statistics / 更新统计信息
-        {
-            let mut stats = self.statistics.write();
-            stats.queue_size += 1;
-        }
 
         // Wait for response / 等待响应
         response_receiver
@@ -355,19 +348,33 @@ impl TaskExecutionManager {
 
     /// Get execution statistics / 获取执行统计信息
     pub fn get_statistics(&self) -> ExecutionStatistics {
-        self.statistics.read().clone()
+        let mut stats = self.statistics.read().clone();
+
+        let mut pending = 0u64;
+        let mut running = 0u64;
+        for entry in self.executions.iter() {
+            match entry.value().status.as_str() {
+                "pending" => pending += 1,
+                "running" => running += 1,
+                _ => {}
+            }
+        }
+
+        stats.queue_size = pending;
+        stats.pending_executions = pending;
+        stats.running_executions = running;
+        stats
     }
 
     /// Get execution status by execution ID / 根据执行ID获取执行状态
     pub async fn get_execution_status(
         &self,
-        _execution_id: &str,
+        execution_id: &str,
     ) -> ExecutionResult<Option<super::ExecutionResponse>> {
-        // TODO: Implement proper execution status tracking
-        // For now, return None to indicate execution not found
-        // 待办：实现适当的执行状态跟踪
-        // 目前返回 None 表示未找到执行
-        Ok(None)
+        Ok(self
+            .executions
+            .get(execution_id)
+            .map(|entry| entry.value().clone()))
     }
 
     /// Shutdown the manager / 关闭管理器
@@ -413,19 +420,31 @@ impl TaskExecutionManager {
     /// Handle execution request / 处理执行请求
     async fn handle_execution_request(&self, request: ExecutionRequest) {
         let start_time = Instant::now();
-        let request_id = request.request_id.clone();
-        debug!(request_id = %request_id, "Execution request received");
-
-        // Remove from queue / 从队列中移除
-        self.request_queue.remove(&request_id);
-        debug!(request_id = %request_id, "Execution request dequeued");
+        let execution_id = request.execution_id.clone();
+        debug!(execution_id = %execution_id, "Execution request received");
 
         // Update statistics / 更新统计信息
         {
             let mut stats = self.statistics.write();
-            stats.queue_size = stats.queue_size.saturating_sub(1);
             stats.total_executions += 1;
+            stats.running_executions += 1;
         }
+
+        self.executions
+            .entry(execution_id.clone())
+            .and_modify(|e| {
+                e.status = "running".to_string();
+                e.timestamp = SystemTime::now();
+            })
+            .or_insert_with(|| super::ExecutionResponse {
+                execution_id: execution_id.clone(),
+                output_data: Vec::new(),
+                status: "running".to_string(),
+                error_message: None,
+                execution_time_ms: 0,
+                metadata: std::collections::HashMap::new(),
+                timestamp: SystemTime::now(),
+            });
 
         // Acquire execution permit / 获取执行许可
         let _permit = match self.execution_semaphore.acquire().await {
@@ -436,12 +455,12 @@ impl TaskExecutionManager {
                     .send(Err(ExecutionError::RuntimeError {
                         message: "Failed to acquire execution permit".to_string(),
                     }));
-                warn!(request_id = %request_id, "Failed to acquire execution permit");
+                warn!(execution_id = %execution_id, "Failed to acquire execution permit");
                 return;
             }
         };
         let artifact_id = request.artifact_spec.artifact_id.clone();
-        debug!(request_id = %request_id, artifact_id = %artifact_id, "Starting execution");
+        debug!(execution_id = %execution_id, artifact_id = %artifact_id, "Starting execution");
         let result = self
             .execute_request(
                 request.artifact_spec,
@@ -454,10 +473,10 @@ impl TaskExecutionManager {
         let execution_time_ms = execution_time.as_millis() as u64;
         match &result {
             Ok(resp) => {
-                debug!(request_id = %request_id, status = %resp.status, duration_ms = execution_time_ms, "Execution finished");
+                debug!(execution_id = %execution_id, status = %resp.status, duration_ms = execution_time_ms, "Execution finished");
             }
             Err(e) => {
-                warn!(request_id = %request_id, error = %e.to_string(), duration_ms = execution_time_ms, "Execution failed");
+                warn!(execution_id = %execution_id, error = %e.to_string(), duration_ms = execution_time_ms, "Execution failed");
             }
         }
 
@@ -468,35 +487,89 @@ impl TaskExecutionManager {
             stats.average_execution_time_ms =
                 stats.total_execution_time_ms as f64 / stats.total_executions as f64;
 
+            stats.running_executions = stats.running_executions.saturating_sub(1);
+            stats.completed_executions += 1;
+
             match &result {
-                Ok(_) => stats.successful_executions += 1,
+                Ok(resp) if resp.is_completed() && resp.is_successful() => {
+                    stats.successful_executions += 1
+                }
+                Ok(resp) if resp.is_completed() && !resp.is_successful() => {
+                    stats.failed_executions += 1
+                }
                 Err(_) => stats.failed_executions += 1,
+                _ => {}
+            }
+        }
+
+        match &result {
+            Ok(resp) => {
+                self.executions.insert(execution_id.clone(), resp.clone());
+            }
+            Err(e) => {
+                self.executions.insert(
+                    execution_id.clone(),
+                    super::ExecutionResponse {
+                        execution_id: execution_id.clone(),
+                        output_data: Vec::new(),
+                        status: "failed".to_string(),
+                        error_message: Some(e.to_string()),
+                        execution_time_ms: execution_time_ms,
+                        metadata: std::collections::HashMap::new(),
+                        timestamp: SystemTime::now(),
+                    },
+                );
             }
         }
 
         // Publish task result to SMS / 将任务结果回写到SMS
-        if let Ok(resp) = &result {
-            let result_status = resp.status.clone();
-            let completed_at = chrono::Utc::now().timestamp();
-            let mut meta = resp.metadata.clone();
-            meta.insert(
-                "execution_time_ms".to_string(),
-                resp.execution_time_ms.to_string(),
-            );
-            if let Some(err) = &resp.error_message {
-                meta.insert("error_message".to_string(), err.clone());
+        match &result {
+            Ok(resp) if resp.is_completed() => {
+                let result_status = resp.status.clone();
+                let completed_at = chrono::Utc::now().timestamp();
+                let mut meta = resp.metadata.clone();
+                meta.insert(
+                    "execution_time_ms".to_string(),
+                    resp.execution_time_ms.to_string(),
+                );
+                meta.insert("execution_id".to_string(), resp.execution_id.clone());
+                if let Some(err) = &resp.error_message {
+                    meta.insert("error_message".to_string(), err.clone());
+                }
+                let task_id = request.desired_task_id.clone().unwrap_or_default();
+                if !task_id.is_empty() {
+                    self.publish_task_result(
+                        &task_id,
+                        "".to_string(),
+                        result_status,
+                        completed_at,
+                        meta,
+                    )
+                    .await;
+                }
             }
-            let task_id = request.desired_task_id.unwrap_or_default();
-            if !task_id.is_empty() {
-                self.publish_task_result(
-                    &task_id,
-                    "".to_string(),
-                    result_status,
-                    completed_at,
-                    meta,
-                )
-                .await;
+            Err(e) => {
+                let completed_at = chrono::Utc::now().timestamp();
+                let mut meta = std::collections::HashMap::new();
+                meta.insert(
+                    "execution_time_ms".to_string(),
+                    execution_time_ms.to_string(),
+                );
+                meta.insert("execution_id".to_string(), execution_id.clone());
+                meta.insert("error_message".to_string(), e.to_string());
+                let task_id = request.desired_task_id.clone().unwrap_or_default();
+                if !task_id.is_empty() {
+                    self.publish_task_result(
+                        &task_id,
+                        "".to_string(),
+                        "failed".to_string(),
+                        completed_at,
+                        meta,
+                    )
+                    .await;
+                }
             }
+            _ => {}
         }
 
         // Send response / 发送响应
@@ -512,14 +585,6 @@ impl TaskExecutionManager {
     ) -> ExecutionResult<super::ExecutionResponse> {
         let task = if let Some(id) = &desired_task_id {
             if let Some(t) = self.tasks.get(id) {
-                if matches!(
-                    t.spec.execution_kind,
-                    super::task::ExecutionKind::LongRunning
-                ) {
-                    return Err(ExecutionError::NotSupported {
-                        operation: "existing_task_invocation_for_long_running".to_string(),
-                    });
-                }
                 t.clone()
             } else {
                 return Err(ExecutionError::TaskNotFound { id: id.clone() });
@@ -559,7 +624,7 @@ impl TaskExecutionManager {
         let data = runtime_response.data;
 
         Ok(super::ExecutionResponse {
-            request_id: execution_id,
+            execution_id,
             output_data: data,
             status: if is_successful {
                 "completed".to_string()
@@ -977,7 +1042,7 @@ impl TaskExecutionManager {
         loop {
             interval.tick().await;
 
-            let _now = SystemTime::now();
+            let now = SystemTime::now();
 
             // Cleanup idle instances / 清理空闲实例
             let mut instances_to_remove = Vec::new();
@@ -1057,6 +1122,23 @@ impl TaskExecutionManager {
                 if let Some((_, _artifact)) = self.artifacts.remove(&artifact_id) {
                     info!("Cleaned up idle artifact: {}", artifact_id);
                 }
+            }
+
+            let completed_execution_ttl = Duration::from_millis(self.config.task_idle_timeout_ms);
+            let mut executions_to_remove = Vec::new();
+            for entry in self.executions.iter() {
+                let e = entry.value();
+                if !e.is_completed() {
+                    continue;
+                }
+                if let Ok(age) = now.duration_since(e.timestamp) {
+                    if age > completed_execution_ttl {
+                        executions_to_remove.push(entry.key().clone());
+                    }
+                }
+            }
+            for execution_id in executions_to_remove {
+                self.executions.remove(&execution_id);
             }
 
             // Update statistics / 更新统计信息
@@ -1192,7 +1274,7 @@ impl Clone for TaskExecutionManager {
             artifacts: self.artifacts.clone(),
             tasks: self.tasks.clone(),
             instances: self.instances.clone(),
-            request_queue: self.request_queue.clone(),
+            executions: self.executions.clone(),
             execution_semaphore: self.execution_semaphore.clone(),
             statistics: self.statistics.clone(),
             request_counter: AtomicU64::new(self.request_counter.load(Ordering::SeqCst)),
@@ -1212,6 +1294,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use std::collections::HashMap as StdHashMap;
+    use tokio::time::sleep;
 
     struct DummyRuntime {
         ty: RuntimeType,
@@ -1249,6 +1332,86 @@ mod tests {
             _context: runtime::ExecutionContext,
         ) -> super::ExecutionResult<runtime::RuntimeExecutionResponse> {
             Ok(runtime::RuntimeExecutionResponse::default())
+        }
+        async fn health_check(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<bool> {
+            Ok(true)
+        }
+        async fn get_metrics(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<StdHashMap<String, serde_json::Value>> {
+            Ok(StdHashMap::new())
+        }
+        async fn scale_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+            _new_limits: &instance::InstanceResourceLimits,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn cleanup_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        fn validate_config(
+            &self,
+            _config: &instance::InstanceConfig,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        fn get_capabilities(&self) -> RuntimeCapabilities {
+            RuntimeCapabilities::default()
+        }
+    }
+
+    struct DelayedRuntime {
+        ty: RuntimeType,
+        delay_ms: u64,
+        payload: Vec<u8>,
+    }
+
+    #[async_trait]
+    impl Runtime for DelayedRuntime {
+        fn runtime_type(&self) -> RuntimeType {
+            self.ty
+        }
+        async fn create_instance(
+            &self,
+            config: &instance::InstanceConfig,
+        ) -> super::ExecutionResult<Arc<instance::TaskInstance>> {
+            Ok(Arc::new(instance::TaskInstance::new(
+                config.task_id.clone(),
+                config.clone(),
+            )))
+        }
+        async fn start_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn stop_instance(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+        ) -> super::ExecutionResult<()> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _instance: &Arc<instance::TaskInstance>,
+            context: runtime::ExecutionContext,
+        ) -> super::ExecutionResult<runtime::RuntimeExecutionResponse> {
+            sleep(Duration::from_millis(self.delay_ms)).await;
+            Ok(runtime::RuntimeExecutionResponse::new_sync(
+                context.execution_id,
+                self.payload.clone(),
+                self.delay_ms,
+            ))
         }
         async fn health_check(
             &self,
@@ -1328,6 +1491,107 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_long_running_execution_status_tracking() {
+        let mut rm = RuntimeManager::new();
+        rm.register_runtime(
+            RuntimeType::Process,
+            Box::new(DelayedRuntime {
+                ty: RuntimeType::Process,
+                delay_ms: 200,
+                payload: b"ok".to_vec(),
+            }),
+        )
+        .unwrap();
+        let rm = Arc::new(rm);
+
+        let cfg = TaskExecutionManagerConfig {
+            max_concurrent_executions: 1,
+            ..Default::default()
+        };
+        let manager = TaskExecutionManager::new(
+            cfg,
+            rm,
+            Arc::new(crate::spearlet::config::SpearletConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let proto = crate::proto::spearlet::ArtifactSpec {
+            artifact_id: "artifact-long".to_string(),
+            artifact_type: "process".to_string(),
+            location: "".to_string(),
+            version: "1.0.0".to_string(),
+            checksum: "".to_string(),
+            metadata: StdHashMap::new(),
+        };
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto.clone());
+        let artifact = manager
+            .ensure_artifact_with_id("artifact-long".to_string(), spec_local)
+            .unwrap();
+
+        use crate::spearlet::execution::task::{
+            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+        };
+        let task_spec = TaskSpec {
+            name: "task-long".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: artifact.spec.runtime_type,
+            entry_point: "main".to_string(),
+            handler_config: StdHashMap::new(),
+            environment: artifact.spec.environment.clone(),
+            invocation_type: artifact.spec.invocation_type.clone(),
+            min_instances: 1,
+            max_instances: 10,
+            target_concurrency: 100,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+            execution_kind: ExecutionKind::LongRunning,
+        };
+        manager
+            .ensure_task_with_id("task-long".to_string(), &artifact, task_spec)
+            .unwrap();
+
+        let req = InvokeFunctionRequest {
+            invocation_type: crate::proto::spearlet::InvocationType::ExistingTask as i32,
+            task_id: "task-long".to_string(),
+            artifact_spec: Some(proto),
+            execution_mode: crate::proto::spearlet::ExecutionMode::Async as i32,
+            wait: false,
+            execution_id: Some("exec-long-1".to_string()),
+            ..Default::default()
+        };
+
+        let mgr2 = manager.clone();
+        let h = tokio::spawn(async move { mgr2.submit_execution(req).await });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(Some(s)) = manager.get_execution_status("exec-long-1").await {
+                    if s.status == "pending" || s.status == "running" {
+                        break;
+                    }
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let final_resp = h.await.unwrap().unwrap();
+        assert_eq!(final_resp.execution_id, "exec-long-1");
+        assert_eq!(final_resp.status, "completed");
+        assert_eq!(final_resp.output_data, b"ok".to_vec());
+
+        let stored = manager
+            .get_execution_status("exec-long-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.status, "completed");
+    }
+
+    #[tokio::test]
     async fn test_stop_instance_removes_from_task_and_manager() {
         let mut rm = RuntimeManager::new();
         rm.register_runtime(
@@ -1367,7 +1631,7 @@ mod tests {
         let task_spec = TaskSpec {
             name: "task-test".to_string(),
             task_type: TaskType::HttpHandler,
-            runtime_type: artifact.spec.runtime_type.clone(),
+            runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
@@ -1407,9 +1671,11 @@ mod tests {
         .unwrap();
         let rm = Arc::new(rm);
 
-        let mut cfg = TaskExecutionManagerConfig::default();
-        cfg.cleanup_interval_ms = 10;
-        cfg.task_idle_timeout_ms = 1;
+        let cfg = TaskExecutionManagerConfig {
+            cleanup_interval_ms: 10,
+            task_idle_timeout_ms: 1,
+            ..Default::default()
+        };
 
         let manager = TaskExecutionManager::new(
             cfg,
@@ -1438,7 +1704,7 @@ mod tests {
         let task_spec = TaskSpec {
             name: "task-cleanup".to_string(),
             task_type: TaskType::HttpHandler,
-            runtime_type: artifact.spec.runtime_type.clone(),
+            runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
@@ -1508,7 +1774,7 @@ mod tests {
         let task_spec = TaskSpec {
             name: desired.clone(),
             task_type: TaskType::HttpHandler,
-            runtime_type: artifact.spec.runtime_type.clone(),
+            runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
@@ -1624,8 +1890,10 @@ mod tests {
         .unwrap();
         let rm = Arc::new(rm);
 
-        let mut cfg = TaskExecutionManagerConfig::default();
-        cfg.health_check_interval_ms = 10;
+        let cfg = TaskExecutionManagerConfig {
+            health_check_interval_ms: 10,
+            ..Default::default()
+        };
 
         let manager = TaskExecutionManager::new(
             cfg,
@@ -1654,7 +1922,7 @@ mod tests {
         let task_spec = TaskSpec {
             name: "task-hc".to_string(),
             task_type: TaskType::HttpHandler,
-            runtime_type: artifact.spec.runtime_type.clone(),
+            runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),

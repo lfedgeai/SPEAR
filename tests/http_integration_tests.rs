@@ -5,7 +5,6 @@
 //! 这些测试验证HTTP REST API的端到端功能
 
 use axum_test::TestServer;
-use serde_json;
 use serde_json::json;
 use spear_next::sms::gateway::create_gateway_router;
 use spear_next::sms::gateway::GatewayState;
@@ -27,8 +26,10 @@ mod http_test_utils {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
-        let mut storage_config = spear_next::config::base::StorageConfig::default();
-        storage_config.backend = "memory".to_string();
+        let storage_config = spear_next::config::base::StorageConfig {
+            backend: "memory".to_string(),
+            ..Default::default()
+        };
         let service =
             spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
 
@@ -324,7 +325,7 @@ async fn test_http_resource_management() {
 
     let request = axum::http::Request::builder()
         .method("GET")
-        .uri(&format!("/api/v1/resources?node_uuids={}", created_uuid))
+        .uri(format!("/api/v1/resources?node_uuids={}", created_uuid))
         .body(axum::body::Body::empty())
         .unwrap();
 

@@ -153,7 +153,6 @@ async fn test_gateway_router_service_conversion() {
     let _service = router.into_make_service();
 
     // Service conversion should succeed / 服务转换应该成功
-    assert!(true);
 }
 
 #[tokio::test]
@@ -199,7 +198,6 @@ async fn test_gateway_state_field_access() {
     let _task_client = &state.task_client;
 
     // Fields should be accessible / 字段应该可访问
-    assert!(true);
 }
 
 #[tokio::test]

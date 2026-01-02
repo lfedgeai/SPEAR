@@ -3,12 +3,11 @@
 
 use clap::Parser;
 use spear_next::config::init_tracing;
-use spear_next::spearlet::config::{CliArgs, SpearletConfig};
+use spear_next::spearlet::config::CliArgs;
 use spear_next::spearlet::grpc_server::GrpcServer;
 use spear_next::spearlet::http_gateway::HttpGateway;
 use spear_next::spearlet::registration::RegistrationService;
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -84,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let registration_service = RegistrationService::new(config.clone());
         if let Err(e) = registration_service.start().await {
             tracing::error!("Registration service start failed: {}", e);
-            return Err(Box::<dyn std::error::Error + Send + Sync>::from(e));
+            return Err(e);
         }
         tracing::info!(
             "Registration service started (heartbeat every {}s)",

@@ -5,7 +5,6 @@
 //! 这些测试验证任务管理REST API的端到端功能
 
 use axum_test::TestServer;
-use serde_json;
 use serde_json::json;
 use spear_next::sms::gateway::create_gateway_router;
 use spear_next::sms::gateway::GatewayState;
@@ -42,8 +41,10 @@ mod task_test_utils {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
-        let mut storage_config = spear_next::config::base::StorageConfig::default();
-        storage_config.backend = "memory".to_string();
+        let storage_config = spear_next::config::base::StorageConfig {
+            backend: "memory".to_string(),
+            ..Default::default()
+        };
         let sms_service =
             spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
 
@@ -158,7 +159,7 @@ async fn test_task_lifecycle() {
     let tasks_list: serde_json::Value = response.json();
     assert!(tasks_list["tasks"].is_array());
     let tasks = tasks_list["tasks"].as_array().unwrap();
-    assert!(tasks.len() > 0);
+    assert!(!tasks.is_empty());
 
     // Verify our task is in the list / 验证我们的任务在列表中
     let found_task = tasks.iter().find(|t| t["task_id"] == task_id);

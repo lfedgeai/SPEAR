@@ -98,6 +98,7 @@ message InvokeFunctionRequest {
   bool force_new_instance = 11;     // Force creation of new instance / 强制创建新实例
   map<string, string> invocation_metadata = 12; // Invocation metadata / 调用元数据
   bool wait = 13;                    // Whether to wait for result (sync) / 是否等待结果（同步）
+  optional string execution_id = 14; // Optional execution identifier / 可选的执行标识符
 }
 
 // Invoke function response / 调用函数响应

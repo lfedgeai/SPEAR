@@ -124,7 +124,7 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
         )
         .with_env_var("RUST_LOG", "info")
         .with_env_var("SPEARLET_AUTO_REGISTER", "true")
-        .with_env_var("SPEARLET_SMS_ADDR", &format!("{}:{}", sms_name, 50051))
+        .with_env_var("SPEARLET_SMS_ADDR", format!("{}:{}", sms_name, 50051))
         .with_entrypoint("/usr/local/bin/spearlet");
 
     let _spear_container = match std::panic::catch_unwind(|| {

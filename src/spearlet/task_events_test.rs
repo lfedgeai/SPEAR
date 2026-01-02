@@ -6,7 +6,7 @@ mod tests {
     use crate::spearlet::task_events::TaskEventSubscriber;
     use crate::spearlet::execution::runtime::RuntimeManager;
     use crate::spearlet::execution::manager::{TaskExecutionManager, TaskExecutionManagerConfig};
-    use crate::proto::sms::{Task, TaskExecutable, TaskEvent, TaskEventKind};
+    use crate::proto::sms::{Task, TaskExecutable, TaskEvent, TaskEventKind, TaskExecutionKind};
 
     fn tmp_cfg() -> Arc<SpearletConfig> {
         let dir = tempdir().unwrap();
@@ -85,7 +85,15 @@ mod tests {
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr.clone());
 
-        let ev = TaskEvent { event_id: 1, ts: 0, node_uuid: cfg.node_name.clone(), task_id: "t1".to_string(), kind: TaskEventKind::Update as i32 };
+        let ev = TaskEvent {
+            event_id: 1,
+            ts: 0,
+            node_uuid: cfg.node_name.clone(),
+            task_id: "t1".to_string(),
+            kind: TaskEventKind::Update as i32,
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+            execution_id: None,
+        };
         let task = make_task(&cfg.node_name, "t1");
         sub.handle_event_for_test(ev, Some(task)).await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -104,7 +112,15 @@ mod tests {
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr.clone());
 
-        let ev = TaskEvent { event_id: 1, ts: 0, node_uuid: cfg.node_name.clone(), task_id: "t2".to_string(), kind: TaskEventKind::Cancel as i32 };
+        let ev = TaskEvent {
+            event_id: 1,
+            ts: 0,
+            node_uuid: cfg.node_name.clone(),
+            task_id: "t2".to_string(),
+            kind: TaskEventKind::Cancel as i32,
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+            execution_id: None,
+        };
         let task = make_task(&cfg.node_name, "t2");
         sub.handle_event_for_test(ev, Some(task)).await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -123,7 +139,15 @@ mod tests {
             .unwrap();
         let sub = TaskEventSubscriber::new(cfg.clone(), mgr.clone());
 
-        let ev = TaskEvent { event_id: 1, ts: 0, node_uuid: cfg.node_name.clone(), task_id: "t3".to_string(), kind: TaskEventKind::Create as i32 };
+        let ev = TaskEvent {
+            event_id: 1,
+            ts: 0,
+            node_uuid: cfg.node_name.clone(),
+            task_id: "t3".to_string(),
+            kind: TaskEventKind::Create as i32,
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
+            execution_id: None,
+        };
         let task = make_task(&cfg.node_name, "t3");
         sub.handle_event_for_test(ev, Some(task)).await;
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;

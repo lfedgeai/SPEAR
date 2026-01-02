@@ -136,6 +136,11 @@ impl TaskEventSubscriber {
             return;
         }
         if ev.kind == TaskEventKind::Create as i32 {
+            let execution_id = ev
+                .execution_id
+                .clone()
+                .filter(|id| !id.is_empty())
+                .or_else(|| Some(format!("task-event-{}-{}", ev.node_uuid, ev.event_id)));
             debug!(task_id = %ev.task_id, "Fetching task details");
             let task = match client
                 .get_task(GetTaskRequest {
@@ -146,13 +151,18 @@ impl TaskEventSubscriber {
                 Ok(resp) => resp.into_inner().task,
                 Err(_) => None,
             };
-            Self::execute_task(mgr, ev.task_id, task);
+            Self::execute_task(mgr, ev.task_id, task, execution_id);
         } else {
             debug!(event_id = ev.event_id, kind = ev.kind, task_id = %ev.task_id, "Unhandled TaskEvent kind, ignoring");
         }
     }
 
-    fn execute_task(mgr: &Arc<TaskExecutionManager>, _task_id: String, task: Option<Task>) {
+    fn execute_task(
+        mgr: &Arc<TaskExecutionManager>,
+        task_id: String,
+        task: Option<Task>,
+        execution_id: Option<String>,
+    ) {
         if let Some(t) = task {
             let artifact_type = if let Some(exec) = &t.executable {
                 match exec.r#type {
@@ -193,10 +203,13 @@ impl TaskEventSubscriber {
                 metadata: t.metadata.clone(),
             };
 
-            let mut req = InvokeFunctionRequest::default();
-            req.invocation_type = crate::proto::spearlet::InvocationType::ExistingTask as i32;
-            req.task_id = t.task_id.clone();
-            req.artifact_spec = Some(spec);
+            let mut req = InvokeFunctionRequest {
+                invocation_type: crate::proto::spearlet::InvocationType::ExistingTask as i32,
+                task_id: t.task_id.clone(),
+                artifact_spec: Some(spec),
+                execution_id: execution_id.clone(),
+                ..Default::default()
+            };
             let is_long = t.execution_kind == TaskExecutionKind::LongRunning as i32;
             if is_long {
                 req.execution_mode = crate::proto::spearlet::ExecutionMode::Async as i32;
@@ -214,7 +227,7 @@ impl TaskEventSubscriber {
                 let _ = mgr_cloned.submit_execution(req).await;
             });
         } else {
-            debug!(task_id = %_task_id, "Task details unavailable");
+            debug!(task_id = %task_id, "Task details unavailable");
         }
     }
 
@@ -224,7 +237,12 @@ impl TaskEventSubscriber {
             return;
         }
         if ev.kind == TaskEventKind::Create as i32 {
-            Self::execute_task(&self.execution_manager, ev.task_id, task);
+            let execution_id = ev
+                .execution_id
+                .clone()
+                .filter(|id| !id.is_empty())
+                .or_else(|| Some(format!("task-event-{}-{}", ev.node_uuid, ev.event_id)));
+            Self::execute_task(&self.execution_manager, ev.task_id, task, execution_id);
         } else {
             tracing::debug!(event_id = ev.event_id, kind = ev.kind, task_id = %ev.task_id, "Unhandled TaskEvent kind in test");
         }
@@ -382,6 +400,7 @@ mod tests {
             task_id: "task-x".to_string(),
             kind: TaskEventKind::Create as i32,
             execution_kind: TaskExecutionKind::ShortRunning as i32,
+            execution_id: None,
         };
         sub.handle_event_for_test(ev, Some(sms_task)).await;
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -451,6 +470,7 @@ mod tests {
             task_id: "task-y".to_string(),
             kind: TaskEventKind::Create as i32,
             execution_kind: TaskExecutionKind::ShortRunning as i32,
+            execution_id: None,
         };
         sub.handle_event_for_test(ev, Some(sms_task)).await;
         tokio::time::sleep(Duration::from_millis(50)).await;

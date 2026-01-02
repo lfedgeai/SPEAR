@@ -17,6 +17,8 @@ struct StoredEvent {
     task_id: String,
     kind: i32,
     execution_kind: i32,
+    #[serde(default)]
+    execution_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +81,7 @@ impl TaskEventBus {
                             task_id: se.task_id,
                             kind: se.kind,
                             execution_kind: se.execution_kind,
+                            execution_id: se.execution_id,
                         };
                         events.push(ev);
                     }
@@ -117,6 +120,12 @@ impl TaskEventBus {
         } else {
             crate::proto::sms::TaskExecutionKind::ShortRunning as i32
         };
+        let execution_id = if kind == TaskEventKind::Create {
+            Some(format!("task-event-{}-{}", node_uuid, id))
+        } else {
+            None
+        };
+
         let ev = TaskEvent {
             event_id: id,
             ts: chrono::Utc::now().timestamp(),
@@ -124,6 +133,7 @@ impl TaskEventBus {
             task_id: task.task_id.clone(),
             kind: kind as i32,
             execution_kind: ek_val,
+            execution_id,
         };
         let key = format!("{}{}:{}", OUTBOX_PREFIX, node_uuid, id);
         let se = StoredEvent {
@@ -133,6 +143,7 @@ impl TaskEventBus {
             task_id: ev.task_id.clone(),
             kind: ev.kind,
             execution_kind: ek_val,
+            execution_id: ev.execution_id.clone(),
         };
         let val = serialization::serialize(&se)?;
         self.kv.put(&key, &val).await?;

@@ -37,7 +37,6 @@ async fn test_routes_creation() {
     // Verify the router was created successfully by checking its type / 通过检查类型验证路由器创建成功
     let _service = app.into_make_service();
     // If we reach here, the router was created successfully / 如果到达这里，说明路由器创建成功
-    assert!(true);
 }
 
 #[tokio::test]
@@ -534,6 +533,5 @@ mod integration_tests {
 
         // If we reach here without panicking, memory usage is acceptable
         // 如果我们到达这里而没有panic，内存使用是可接受的
-        assert!(true);
     }
 }

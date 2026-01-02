@@ -2,15 +2,13 @@
 //! SMS (SPEAR元数据服务器) 主入口点
 
 use clap::Parser;
-use spear_next::config::base::{LogConfig, ServerConfig};
 use spear_next::config::init_tracing;
-use spear_next::sms::config::{CliArgs, DatabaseConfig, SmsConfig};
+use spear_next::sms::config::{CliArgs, SmsConfig};
 use spear_next::sms::grpc_server::GrpcServer;
 use spear_next::sms::http_gateway::HttpGateway;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::sms::services::{NodeService, ResourceService, TaskService};
 use spear_next::sms::web_admin::WebAdminServer;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -121,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let new_status = if stale { "offline" } else { "online" };
                 if n.status != new_status {
                     n.status = new_status.to_string();
-                    let _ = ns.update_node(n);
+                    let _ = ns.update_node(n).await;
                     changed += 1;
                 }
             }

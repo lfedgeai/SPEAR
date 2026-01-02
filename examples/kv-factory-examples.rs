@@ -74,15 +74,22 @@ async fn basic_factory_usage() -> Result<(), Box<dyn std::error::Error>> {
 // Example 2: Configuration-driven selection / 示例2：配置驱动选择
 async fn config_driven_selection() -> Result<(), Box<dyn std::error::Error>> {
     // Simulate loading configuration from file or database / 模拟从文件或数据库加载配置
-    let configs = vec![
+    #[cfg(feature = "sled")]
+    let configs = [
         KvStoreConfig::memory()
             .with_param("cache_size", "1000")
             .with_param("timeout", "30"),
-        #[cfg(feature = "sled")]
         KvStoreConfig::sled("/tmp/config_driven_db")
             .with_param("cache_capacity", "10000")
             .with_param("flush_every_ms", "1000"),
-    ];
+    ]
+    .to_vec();
+
+    #[cfg(not(feature = "sled"))]
+    let configs = [KvStoreConfig::memory()
+        .with_param("cache_size", "1000")
+        .with_param("timeout", "30")]
+    .to_vec();
 
     for (i, config) in configs.iter().enumerate() {
         println!(

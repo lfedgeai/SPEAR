@@ -144,8 +144,6 @@ impl FunctionServiceImpl {
     async fn handle_sync_execution(
         &self,
         request: &InvokeFunctionRequest,
-        _execution_id: &str,
-        _task_id: &str,
     ) -> Result<ExecutionResult, Status> {
         // 使用 TaskExecutionManager 执行同步任务 / Use TaskExecutionManager for sync execution
         match self
@@ -202,12 +200,9 @@ impl FunctionServiceImpl {
     }
 
     /// Handle asynchronous execution / 处理异步执行
-    async fn handle_async_execution(
-        &self,
-        request: &InvokeFunctionRequest,
-        execution_id: &str,
-        _task_id: &str,
-    ) -> (String, i64) {
+    async fn handle_async_execution(&self, request: &InvokeFunctionRequest) -> (String, i64) {
+        let execution_id = request.execution_id.as_deref().unwrap_or_default();
+
         // 启动异步任务 / Start async task
         let execution_manager = self.execution_manager.clone();
         let request_clone = request.clone();
@@ -374,23 +369,26 @@ impl FunctionService for FunctionServiceImpl {
         &self,
         request: Request<InvokeFunctionRequest>,
     ) -> Result<Response<InvokeFunctionResponse>, Status> {
-        let req = request.into_inner();
+        let mut req = request.into_inner();
         debug!(
             "收到函数调用请求 / Received function invocation request: {:?}",
             req
         );
 
         // 生成执行 ID / Generate execution ID
-        let execution_id = self.generate_execution_id();
+        let execution_id = req
+            .execution_id
+            .clone()
+            .filter(|id| !id.is_empty())
+            .unwrap_or_else(|| self.generate_execution_id());
+        req.execution_id = Some(execution_id.clone());
         let task_id = self.generate_task_id();
 
         // 根据执行模式处理请求 / Handle request based on execution mode
         match req.execution_mode() {
             crate::proto::spearlet::ExecutionMode::Sync => {
                 // 同步执行：等待完成后返回完整结果 / Sync execution: wait for completion and return complete result
-                let result = self
-                    .handle_sync_execution(&req, &execution_id, &task_id)
-                    .await;
+                let result = self.handle_sync_execution(&req).await;
 
                 let response = InvokeFunctionResponse {
                     success: result.is_ok(),
@@ -414,9 +412,7 @@ impl FunctionService for FunctionServiceImpl {
             }
             crate::proto::spearlet::ExecutionMode::Async => {
                 // 异步执行：立即返回执行ID和状态端点 / Async execution: immediately return execution ID and status endpoint
-                let (status_endpoint, estimated_ms) = self
-                    .handle_async_execution(&req, &execution_id, &task_id)
-                    .await;
+                let (status_endpoint, estimated_ms) = self.handle_async_execution(&req).await;
 
                 let result = ExecutionResult {
                     status: ExecutionStatus::Pending as i32,

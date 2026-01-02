@@ -284,7 +284,7 @@ impl HttpAdapter {
         );
         headers.insert(
             "X-Execution-ID".to_string(),
-            execution_response.request_id.clone(),
+            execution_response.execution_id.clone(),
         );
         headers.insert("X-Execution-Mode".to_string(), "sync".to_string());
         headers.insert(
@@ -298,7 +298,7 @@ impl HttpAdapter {
             serde_json::to_vec(&HttpErrorResponse {
                 error_code: "EXECUTION_FAILED".to_string(),
                 error_message: execution_response.error_message.clone().unwrap_or_default(),
-                execution_id: execution_response.request_id.clone(),
+                execution_id: execution_response.execution_id.clone(),
                 details: HashMap::new(),
             })
             .unwrap_or_default()

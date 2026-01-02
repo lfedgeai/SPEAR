@@ -104,6 +104,7 @@ message TaskEvent {
   string task_id = 4;           // Task ID / 任务ID
   TaskEventKind kind = 5;       // Event kind / 事件类型
   TaskExecutionKind execution_kind = 6;    // Execution kind / 执行类型
+  optional string execution_id = 7;         // Optional execution identifier / 可选的执行标识符
 }
 
 // Subscribe request with optional resume position / 订阅请求（可带断点续传位置）

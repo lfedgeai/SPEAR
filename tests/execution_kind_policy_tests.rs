@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 #[tokio::test]
-async fn test_long_running_existing_task_invocation_rejected() {
+async fn test_long_running_existing_task_invocation_allowed() {
     use async_trait::async_trait;
     use spear_next::spearlet::execution::instance;
     use spear_next::spearlet::execution::manager::{
@@ -136,11 +136,9 @@ async fn test_long_running_existing_task_invocation_rejected() {
     req2.task_id = "task-long-1".to_string();
     req2.invocation_type = spear_next::proto::spearlet::InvocationType::ExistingTask as i32;
     req2.artifact_spec = Some(artifact_spec.clone());
-    let err = mgr.submit_execution(req2).await.err().unwrap();
-    match err {
-        spear_next::spearlet::execution::ExecutionError::NotSupported { .. } => {}
-        _ => panic!("expected NotSupported"),
-    }
+    req2.execution_id = Some("exec-long-1".to_string());
+    let resp = mgr.submit_execution(req2).await.unwrap();
+    assert_eq!(resp.execution_id, "exec-long-1");
 }
 
 #[tokio::test]

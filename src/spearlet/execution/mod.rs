@@ -79,8 +79,8 @@ pub struct ExecutionContext {
 // Execution response / 执行响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionResponse {
-    /// Request ID / 请求 ID
-    pub request_id: String,
+    /// Execution ID / 执行 ID
+    pub execution_id: String,
     /// Output data / 输出数据
     pub output_data: Vec<u8>,
     /// Execution status / 执行状态

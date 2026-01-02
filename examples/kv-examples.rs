@@ -5,10 +5,7 @@
 //! in different scenarios within the spear-next project.
 //! 此文件包含在spear-next项目中不同场景下如何使用KV抽象层的实际示例。
 
-use chrono;
-use spear_next::sms::error::SmsError;
-use spear_next::storage::{KvPair, KvStore, RangeOptions};
-use uuid;
+use spear_next::storage::{KvPair, RangeOptions};
 
 // Note: These examples are for documentation purposes and may not compile
 // without proper imports and dependencies in a real project.
@@ -459,23 +456,6 @@ async fn example_error_handling() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
-}
-
-// Helper function to demonstrate custom error handling
-// 辅助函数演示自定义错误处理
-async fn safe_get_and_deserialize<T>(store: &dyn KvStore, key: &str) -> Result<Option<T>, SmsError>
-where
-    T: for<'de> serde::Deserialize<'de>,
-{
-    use spear_next::storage::serialization;
-
-    match store.get(&key.to_string()).await? {
-        Some(data) => {
-            let deserialized = serialization::deserialize(&data)?;
-            Ok(Some(deserialized))
-        }
-        None => Ok(None),
-    }
 }
 
 /// Main function to run all examples

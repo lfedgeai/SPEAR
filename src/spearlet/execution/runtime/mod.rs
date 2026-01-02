@@ -750,7 +750,7 @@ mod tests {
 
     #[test]
     fn test_runtime_manager() {
-        let mut manager = RuntimeManager::new();
+        let manager = RuntimeManager::new();
         assert!(manager.list_runtime_types().is_empty());
         assert!(manager.get_runtime(&RuntimeType::Process).is_none());
     }

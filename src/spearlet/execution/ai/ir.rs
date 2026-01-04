@@ -23,7 +23,7 @@ pub struct CanonicalError {
     pub operation: Option<Operation>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct RoutingHints {
     pub backend: Option<String>,
@@ -33,29 +33,14 @@ pub struct RoutingHints {
     pub denylist: Vec<String>,
 }
 
-impl Default for RoutingHints {
-    fn default() -> Self {
-        Self {
-            backend: None,
-            allowlist: Vec::new(),
-            denylist: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct Requirements {
     #[serde(default)]
     pub required_features: Vec<String>,
-}
 
-impl Default for Requirements {
-    fn default() -> Self {
-        Self {
-            required_features: Vec::new(),
-        }
-    }
+    #[serde(default)]
+    pub required_transports: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,15 +70,15 @@ impl CanonicalRequestEnvelope {
                 operation: Some(self.operation.clone()),
             });
         }
-        let ok = match (&self.operation, &self.payload) {
-            (Operation::ChatCompletions, Payload::ChatCompletions(_)) => true,
-            (Operation::Embeddings, Payload::Embeddings(_)) => true,
-            (Operation::ImageGeneration, Payload::ImageGeneration(_)) => true,
-            (Operation::SpeechToText, Payload::SpeechToText(_)) => true,
-            (Operation::TextToSpeech, Payload::TextToSpeech(_)) => true,
-            (Operation::RealtimeVoice, Payload::RealtimeVoice(_)) => true,
-            _ => false,
-        };
+        let ok = matches!(
+            (&self.operation, &self.payload),
+            (Operation::ChatCompletions, Payload::ChatCompletions(_))
+                | (Operation::Embeddings, Payload::Embeddings(_))
+                | (Operation::ImageGeneration, Payload::ImageGeneration(_))
+                | (Operation::SpeechToText, Payload::SpeechToText(_))
+                | (Operation::TextToSpeech, Payload::TextToSpeech(_))
+                | (Operation::RealtimeVoice, Payload::RealtimeVoice(_))
+        );
         if !ok {
             return Err(CanonicalError {
                 code: "payload_mismatch".to_string(),

@@ -95,6 +95,10 @@ rand = "0.8"
 futures = "0.3"
 wasmedge-sdk = { version = "0.14", optional = true, features = ["standalone"] }
 
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+url = "2"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+
 [dev-dependencies]
 # Testing utilities / 测试工具
 tempfile = "3.0"

@@ -4,7 +4,6 @@
 //! This module provides Kubernetes-based execution runtime using Jobs and Pods.
 //! 该模块提供基于 Kubernetes Jobs 和 Pods 的执行运行时。
 
-use super::ResourcePoolConfig;
 use super::{
     ExecutionContext, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeExecutionResponse,
     RuntimeType,
@@ -731,6 +730,7 @@ mod tests {
     use crate::spearlet::execution::instance::{
         InstanceConfig, InstanceResourceLimits, NetworkConfig,
     };
+    use crate::spearlet::execution::runtime::ResourcePoolConfig;
 
     #[test]
     fn test_kubernetes_config_default() {

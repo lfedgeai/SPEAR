@@ -5,7 +5,7 @@
 //! 该模块使用 Wasmtime 提供基于 WebAssembly 的执行运行时。
 
 #[cfg(feature = "wasmedge")]
-use super::wasm_hostcalls::{build_spear_import, build_spear_import_with_api};
+use super::wasm_hostcalls::build_spear_import_with_api;
 use super::{
     ExecutionContext, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeExecutionResponse,
     RuntimeType,
@@ -25,7 +25,7 @@ use tracing::debug;
 #[cfg(feature = "wasmedge")]
 use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
 #[cfg(feature = "wasmedge")]
-use wasmedge_sdk::{params, vm::SyncInst, wasi::WasiModule, wat2wasm, Module, Vm};
+use wasmedge_sdk::{params, vm::SyncInst, wasi::WasiModule, Module, Vm};
 
 // Note: In a real implementation, you would use wasmedge crate
 // 注意：在真实实现中，您会使用 wasmedge crate
@@ -352,27 +352,19 @@ impl WasmRuntime {
                 let module = Module::from_bytes(None, &bytes).unwrap();
                 vm.register_module(Some(&handle_module_name), module)
                     .unwrap();
-                loop {
-                    match req_rx.recv() {
-                        Ok(r) => {
-                            if r.function_name == "__stop__" {
-                                let _ = r.reply_tx.send(Ok(Vec::new()));
-                                break;
-                            }
-                            let res = match vm.run_func(
-                                Some(&handle_module_name),
-                                &r.function_name,
-                                params!(),
-                            ) {
-                                Ok(values) => Ok(format!("{:?}", values).into_bytes()),
-                                Err(e) => Err(ExecutionError::RuntimeError {
-                                    message: format!("wasmedge exec error: {}", e),
-                                }),
-                            };
-                            let _ = r.reply_tx.send(res);
-                        }
-                        Err(_) => break,
+                while let Ok(r) = req_rx.recv() {
+                    if r.function_name == "__stop__" {
+                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                        break;
                     }
+                    let res =
+                        match vm.run_func(Some(&handle_module_name), &r.function_name, params!()) {
+                            Ok(values) => Ok(format!("{:?}", values).into_bytes()),
+                            Err(e) => Err(ExecutionError::RuntimeError {
+                                message: format!("wasmedge exec error: {}", e),
+                            }),
+                        };
+                    let _ = r.reply_tx.send(res);
                 }
             });
         }
@@ -396,7 +388,7 @@ impl WasmRuntime {
         &self,
         instance_handle: &WasmInstanceHandle,
         function_name: &str,
-        input_data: &[u8],
+        _input_data: &[u8],
     ) -> ExecutionResult<Vec<u8>> {
         let start_time = Instant::now();
 
@@ -567,8 +559,7 @@ impl Runtime for WasmRuntime {
 
         let module_bytes_vec: Vec<u8> = if let Some(snapshot) = &config.artifact {
             if let Some(uri) = &snapshot.location {
-                if uri.starts_with("sms+file://") {
-                    let rest = &uri[11..];
+                if let Some(rest) = uri.strip_prefix("sms+file://") {
                     let (override_host_port, id_part) = match rest.find('/') {
                         Some(pos) => (Some(rest[..pos].to_string()), rest[pos + 1..].to_string()),
                         None => (None, rest.to_string()),
@@ -1054,8 +1045,9 @@ mod wasm_runtime_thread_tests {
 
     #[cfg(feature = "wasmedge")]
     fn link_wat(wat: &str) {
+        use super::super::wasm_hostcalls::build_spear_import;
         use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
-        use wasmedge_sdk::{Store, Vm};
+        use wasmedge_sdk::{wat2wasm, Store, Vm};
 
         let bytes = wat2wasm(wat.as_bytes()).unwrap();
         let c = ConfigBuilder::new(CommonConfigOptions::default())
@@ -1141,6 +1133,50 @@ mod wasm_runtime_thread_tests {
             (import "spear" "cchat_send" (func $cchat_send (type $send_t)))
             (import "spear" "cchat_recv" (func $cchat_recv (type $recv_t)))
             (import "spear" "cchat_close" (func $cchat_close (type $close_t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_rtasr_mic_hostcalls() {
+        let wat = r#"(module
+            (type $create_t (func (result i32)))
+            (type $ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $write_t (func (param i32 i32 i32) (result i32)))
+            (type $read_t (func (param i32 i32 i32) (result i32)))
+            (type $close_t (func (param i32) (result i32)))
+            (import "spear" "rtasr_create" (func $rtasr_create (type $create_t)))
+            (import "spear" "rtasr_ctl" (func $rtasr_ctl (type $ctl_t)))
+            (import "spear" "rtasr_write" (func $rtasr_write (type $write_t)))
+            (import "spear" "rtasr_read" (func $rtasr_read (type $read_t)))
+            (import "spear" "rtasr_close" (func $rtasr_close (type $close_t)))
+            (import "spear" "mic_create" (func $mic_create (type $create_t)))
+            (import "spear" "mic_ctl" (func $mic_ctl (type $ctl_t)))
+            (import "spear" "mic_read" (func $mic_read (type $read_t)))
+            (import "spear" "mic_close" (func $mic_close (type $close_t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_fd_epoll_fullname_hostcalls() {
+        let wat = r#"(module
+            (type $ep_create_t (func (result i32)))
+            (type $ep_ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $ep_wait_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $ep_close_t (func (param i32) (result i32)))
+            (type $fd_ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (import "spear" "spear_epoll_create" (func $ep_create (type $ep_create_t)))
+            (import "spear" "spear_epoll_ctl" (func $ep_ctl (type $ep_ctl_t)))
+            (import "spear" "spear_epoll_wait" (func $ep_wait (type $ep_wait_t)))
+            (import "spear" "spear_epoll_close" (func $ep_close (type $ep_close_t)))
+            (import "spear" "spear_fd_ctl" (func $fd_ctl (type $fd_ctl_t)))
             (func $dummy (result i32) i32.const 0)
             (export "dummy" (func $dummy))
         )"#;

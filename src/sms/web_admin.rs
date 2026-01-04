@@ -5,7 +5,7 @@ use axum::middleware;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     response::{Html, Json},
     routing::{delete, get, post},
     Router,
@@ -212,23 +212,20 @@ async fn list_nodes(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
         })
         .collect::<Vec<_>>();
     if let Some(q) = q.q.as_ref().map(|s| s.to_lowercase()) {
-        list = list
-            .into_iter()
-            .filter(|item| {
-                let uuid = item["uuid"].as_str().unwrap_or("").to_lowercase();
-                let ip = item["ip_address"].as_str().unwrap_or("").to_lowercase();
-                let meta = item["metadata"].as_object();
-                let meta_hit = meta
-                    .map(|m| {
-                        m.iter().any(|(k, v)| {
-                            k.to_lowercase().contains(&q)
-                                || v.as_str().unwrap_or("").to_lowercase().contains(&q)
-                        })
+        list.retain(|item| {
+            let uuid = item["uuid"].as_str().unwrap_or("").to_lowercase();
+            let ip = item["ip_address"].as_str().unwrap_or("").to_lowercase();
+            let meta = item["metadata"].as_object();
+            let meta_hit = meta
+                .map(|m| {
+                    m.iter().any(|(k, v)| {
+                        k.to_lowercase().contains(&q)
+                            || v.as_str().unwrap_or("").to_lowercase().contains(&q)
                     })
-                    .unwrap_or(false);
-                uuid.contains(&q) || ip.contains(&q) || meta_hit
-            })
-            .collect();
+                })
+                .unwrap_or(false);
+            uuid.contains(&q) || ip.contains(&q) || meta_hit
+        });
     }
     let (field, asc) = if let Some(sort) = &q.sort {
         let mut parts = sort.split(':');
@@ -349,29 +346,26 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
         })
         .collect::<Vec<_>>();
     if let Some(qs) = q.q.as_ref().map(|s| s.to_lowercase()) {
-        list = list
-            .into_iter()
-            .filter(|item| {
-                let id = item["task_id"].as_str().unwrap_or("").to_lowercase();
-                let name = item["name"].as_str().unwrap_or("").to_lowercase();
-                let node = item["node_uuid"].as_str().unwrap_or("").to_lowercase();
-                let endpoint = item["endpoint"].as_str().unwrap_or("").to_lowercase();
-                let meta = item["metadata"].as_object();
-                let meta_hit = meta
-                    .map(|m| {
-                        m.iter().any(|(k, v)| {
-                            k.to_lowercase().contains(&qs)
-                                || v.as_str().unwrap_or("").to_lowercase().contains(&qs)
-                        })
+        list.retain(|item| {
+            let id = item["task_id"].as_str().unwrap_or("").to_lowercase();
+            let name = item["name"].as_str().unwrap_or("").to_lowercase();
+            let node = item["node_uuid"].as_str().unwrap_or("").to_lowercase();
+            let endpoint = item["endpoint"].as_str().unwrap_or("").to_lowercase();
+            let meta = item["metadata"].as_object();
+            let meta_hit = meta
+                .map(|m| {
+                    m.iter().any(|(k, v)| {
+                        k.to_lowercase().contains(&qs)
+                            || v.as_str().unwrap_or("").to_lowercase().contains(&qs)
                     })
-                    .unwrap_or(false);
-                id.contains(&qs)
-                    || name.contains(&qs)
-                    || node.contains(&qs)
-                    || endpoint.contains(&qs)
-                    || meta_hit
-            })
-            .collect();
+                })
+                .unwrap_or(false);
+            id.contains(&qs)
+                || name.contains(&qs)
+                || node.contains(&qs)
+                || endpoint.contains(&qs)
+                || meta_hit
+        });
     }
     let (field, asc) = if let Some(sort) = &q.sort {
         let mut parts = sort.split(':');

@@ -21,11 +21,12 @@ use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{debug, info};
 
 /// Scheduling policy / 调度策略
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SchedulingPolicy {
     /// Round robin scheduling / 轮询调度
     RoundRobin,
     /// Least connections scheduling / 最少连接调度
+    #[default]
     LeastConnections,
     /// Least response time scheduling / 最短响应时间调度
     LeastResponseTime,
@@ -35,12 +36,6 @@ pub enum SchedulingPolicy {
     ResourceBased,
     /// Random scheduling / 随机调度
     Random,
-}
-
-impl Default for SchedulingPolicy {
-    fn default() -> Self {
-        Self::LeastConnections
-    }
 }
 
 /// Scheduling decision / 调度决策

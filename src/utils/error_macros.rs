@@ -1,5 +1,5 @@
-/// Error handling macros for reducing boilerplate code
-/// 错误处理宏，用于减少样板代码
+//! Error handling macros for reducing boilerplate code
+//! 错误处理宏，用于减少样板代码
 
 /// Macro for handling UUID parsing errors
 /// 处理 UUID 解析错误的宏
@@ -7,7 +7,7 @@
 macro_rules! parse_uuid {
     ($uuid_str:expr, $context:expr) => {
         uuid::Uuid::parse_str($uuid_str).map_err(|e| {
-            crate::sms::services::error::SmsError::Serialization(format!(
+            $crate::sms::services::error::SmsError::Serialization(format!(
                 "Invalid UUID in {}: {}",
                 $context, e
             ))
@@ -21,7 +21,7 @@ macro_rules! parse_uuid {
 macro_rules! handle_task_join {
     ($task:expr) => {
         $task.map_err(|e| {
-            crate::sms::services::error::SmsError::Serialization(format!("Task join error: {}", e))
+            $crate::sms::services::error::SmsError::Serialization(format!("Task join error: {}", e))
         })
     };
 }
@@ -32,7 +32,7 @@ macro_rules! handle_task_join {
 macro_rules! spawn_blocking_task {
     ($task:expr) => {
         tokio::task::spawn_blocking($task).await.map_err(|e| {
-            crate::sms::services::error::SmsError::Serialization(format!("Task join error: {}", e))
+            $crate::sms::services::error::SmsError::Serialization(format!("Task join error: {}", e))
         })?
     };
 }
@@ -43,7 +43,7 @@ macro_rules! spawn_blocking_task {
 macro_rules! handle_sled_error {
     ($operation:expr, $op_name:expr) => {
         $operation.map_err(|e| {
-            crate::sms::services::error::SmsError::Serialization(format!(
+            $crate::sms::services::error::SmsError::Serialization(format!(
                 "Sled {} error: {}",
                 $op_name, e
             ))
@@ -57,7 +57,7 @@ macro_rules! handle_sled_error {
 macro_rules! handle_rocksdb_error {
     ($operation:expr, $op_name:expr) => {
         $operation.map_err(|e| {
-            crate::sms::services::error::SmsError::Serialization(format!(
+            $crate::sms::services::error::SmsError::Serialization(format!(
                 "RocksDB {} error: {}",
                 $op_name, e
             ))
@@ -71,7 +71,7 @@ macro_rules! handle_rocksdb_error {
 macro_rules! handle_utf8_error {
     ($operation:expr) => {
         $operation.map_err(|e| {
-            crate::sms::services::error::SmsError::Serialization(format!(
+            $crate::sms::services::error::SmsError::Serialization(format!(
                 "Invalid UTF-8 key: {}",
                 e
             ))

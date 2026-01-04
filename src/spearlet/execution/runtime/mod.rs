@@ -121,7 +121,7 @@ pub struct ExecutionContext {
 }
 
 /// Runtime listening configuration / 运行时监听配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeListeningConfig {
     /// Whether to enable listening mode / 是否启用监听模式
     pub enabled: bool,
@@ -170,17 +170,6 @@ pub struct MessageHandlingConfig {
     pub queue_size_limit: usize,
 }
 
-impl Default for RuntimeListeningConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            connection_config: ConnectionManagerConfig::default(),
-            auth_config: AuthConfig::default(),
-            message_config: MessageHandlingConfig::default(),
-        }
-    }
-}
-
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
@@ -204,9 +193,10 @@ impl Default for MessageHandlingConfig {
 }
 
 /// Function execution mode / 函数执行模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum ExecutionMode {
     /// Unknown mode / 未知模式
+    #[default]
     Unknown = 0,
     /// Synchronous execution / 同步执行
     Sync = 1,
@@ -216,16 +206,11 @@ pub enum ExecutionMode {
     Stream = 3,
 }
 
-impl Default for ExecutionMode {
-    fn default() -> Self {
-        ExecutionMode::Unknown
-    }
-}
-
 /// Function execution status / 函数执行状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum ExecutionStatus {
     /// Unknown status / 未知状态
+    #[default]
     Unknown = 0,
     /// Pending execution / 等待执行
     Pending = 1,
@@ -241,16 +226,10 @@ pub enum ExecutionStatus {
     Timeout = 6,
 }
 
-impl Default for ExecutionStatus {
-    fn default() -> Self {
-        ExecutionStatus::Unknown
-    }
-}
-
 /// Runtime execution result / 运行时执行结果
 /// This represents the pure execution result from a runtime, without any transport-layer concerns
 /// 这表示来自运行时的纯执行结果，不涉及任何传输层关注点
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RuntimeExecutionResponse {
     /// Execution result data / 执行结果数据
     pub data: Vec<u8>,
@@ -304,23 +283,6 @@ pub enum RuntimeExecutionError {
         operation: String,
         runtime_type: String,
     },
-}
-
-impl Default for RuntimeExecutionResponse {
-    fn default() -> Self {
-        Self {
-            data: Vec::new(),
-            duration_ms: 0,
-            metadata: HashMap::new(),
-            execution_mode: ExecutionMode::default(),
-            execution_status: ExecutionStatus::default(),
-            execution_id: String::new(),
-            task_id: None,
-            status_endpoint: None,
-            estimated_completion_ms: None,
-            error: None,
-        }
-    }
 }
 
 impl RuntimeExecutionResponse {

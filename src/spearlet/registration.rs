@@ -133,12 +133,7 @@ impl RegistrationService {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "unknown error",
-            ))
-        }))
+        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::other("unknown error"))))
     }
 
     // kept for clarity: start() already calls connect_to_sms() / start()已调用connect_to_sms()
@@ -339,12 +334,7 @@ impl RegistrationService {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "reconnect failed",
-            ))
-        }))
+        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::other("reconnect failed"))))
     }
 
     /// Get current registration state / 获取当前注册状态

@@ -24,6 +24,34 @@ API 支持自动工具调用：当响应包含 tool_calls 时，host 可以根�
 - `-4`：`cchat_ctl` 的 `cmd` 不支持
 - `-5`：内部错误
 
+### 版本与破坏性变更说明
+
+为对齐通用 fd/epoll 子系统（支持 `-errno`、通用 `spear_fd_ctl`、以及 response fd 的可 poll 能力），允许对 `cchat_*` 做破坏性变更。
+
+工程化规范见：
+
+- [fd-epoll-subsystem-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-zh.md)
+
+推荐的演进方向：
+
+1. **错误码统一为 `-errno`**
+   - `-1..-5` 固定码可废弃或仅保留兼容层
+2. **通用控制入口**
+   - 将 nonblock/flags/status/metrics 等通用能力收敛到 `spear_fd_ctl`
+3. **更强的异步语义（可选）**
+   - `cchat_send` 可变为异步：立即返回 response_fd，后台生成响应；当 response 可读时通过 epoll 的 `EPOLLIN` 通知
+
+破坏性变更的同步更新要求（必须）：
+
+- 文档：本文件与 `chat-completion-en.md`
+- C SDK 与样例：
+  - `sdk/c/include/spear.h`
+  - `samples/wasm-c/chat_completion.c`
+- Rust 测试：
+  - `src/spearlet/execution/runtime/wasm.rs`（WAT 导入符号测试）
+  - `src/spearlet/execution/host_api.rs`（cchat pipeline 单测）
+  - `tests/wasm_openai_e2e_tests.rs`（如依赖具体语义）
+
 ### 1. cchat_create() -> i32
 - **描述**：创建新的 chat completion 会话，返回 fd。
 - **参数**：无。

@@ -6,16 +6,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #define SPEAR_IMPORT(name) __attribute__((import_module("spear"), import_name(name)))
 
 enum {
     SPEAR_CCHAT_OK = 0,
-    SPEAR_CCHAT_ERR_INVALID_FD = -1,
-    SPEAR_CCHAT_ERR_INVALID_PTR = -2,
-    SPEAR_CCHAT_ERR_BUFFER_TOO_SMALL = -3,
-    SPEAR_CCHAT_ERR_INVALID_CMD = -4,
-    SPEAR_CCHAT_ERR_INTERNAL = -5,
+    SPEAR_CCHAT_ERR_INVALID_FD = -EBADF,
+    SPEAR_CCHAT_ERR_INVALID_PTR = -EFAULT,
+    SPEAR_CCHAT_ERR_BUFFER_TOO_SMALL = -ENOSPC,
+    SPEAR_CCHAT_ERR_INVALID_CMD = -EINVAL,
+    SPEAR_CCHAT_ERR_INTERNAL = -EIO,
 };
 
 enum {
@@ -44,6 +45,62 @@ int32_t sp_cchat_recv(int32_t response_fd, int32_t out_ptr, int32_t out_len_ptr)
 
 SPEAR_IMPORT("cchat_close")
 int32_t sp_cchat_close(int32_t fd);
+
+enum {
+    SPEAR_EPOLL_CTL_ADD = 1,
+    SPEAR_EPOLL_CTL_MOD = 2,
+    SPEAR_EPOLL_CTL_DEL = 3,
+};
+
+#define SPEAR_EP_CTL_ADD SPEAR_EPOLL_CTL_ADD
+#define SPEAR_EP_CTL_MOD SPEAR_EPOLL_CTL_MOD
+#define SPEAR_EP_CTL_DEL SPEAR_EPOLL_CTL_DEL
+
+enum {
+    SPEAR_EPOLLIN = 0x001,
+    SPEAR_EPOLLOUT = 0x004,
+    SPEAR_EPOLLERR = 0x008,
+    SPEAR_EPOLLHUP = 0x010,
+};
+
+enum {
+    SPEAR_FD_CTL_SET_FLAGS = 1,
+    SPEAR_FD_CTL_GET_FLAGS = 2,
+    SPEAR_FD_CTL_GET_KIND = 3,
+    SPEAR_FD_CTL_GET_STATUS = 4,
+    SPEAR_FD_CTL_GET_METRICS = 5,
+};
+
+SPEAR_IMPORT("spear_epoll_create")
+int32_t sp_epoll_create(void);
+
+SPEAR_IMPORT("spear_epoll_ctl")
+int32_t sp_epoll_ctl(int32_t epfd, int32_t op, int32_t fd, int32_t events);
+
+SPEAR_IMPORT("spear_epoll_wait")
+int32_t sp_epoll_wait(int32_t epfd, int32_t out_ptr, int32_t out_len_ptr, int32_t timeout_ms);
+
+SPEAR_IMPORT("spear_epoll_close")
+int32_t sp_epoll_close(int32_t epfd);
+
+static inline int32_t sp_ep_create(void) {
+    return sp_epoll_create();
+}
+
+static inline int32_t sp_ep_ctl(int32_t epfd, int32_t op, int32_t fd, int32_t events) {
+    return sp_epoll_ctl(epfd, op, fd, events);
+}
+
+static inline int32_t sp_ep_wait(int32_t epfd, int32_t out_ptr, int32_t out_len_ptr, int32_t timeout_ms) {
+    return sp_epoll_wait(epfd, out_ptr, out_len_ptr, timeout_ms);
+}
+
+static inline int32_t sp_ep_close(int32_t epfd) {
+    return sp_epoll_close(epfd);
+}
+
+SPEAR_IMPORT("spear_fd_ctl")
+int32_t sp_fd_ctl(int32_t fd, int32_t cmd, int32_t arg_ptr, int32_t arg_len_ptr);
 
 static inline int32_t sp_cchat_write_msg_str(int32_t fd, const char *role, const char *content) {
     return sp_cchat_write_msg(fd, (int32_t)(uintptr_t)role, (int32_t)strlen(role),
@@ -88,7 +145,7 @@ static inline uint8_t *sp_cchat_recv_alloc(int32_t resp_fd, uint32_t *out_len) {
             *out_len = len;
             return buf;
         }
-        if (rc != SPEAR_CCHAT_ERR_BUFFER_TOO_SMALL) {
+        if (rc != -ENOSPC) {
             free(buf);
             return NULL;
         }

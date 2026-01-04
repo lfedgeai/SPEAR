@@ -11,7 +11,7 @@ use super::{
     instance::{InstanceId, InstanceStatus, TaskInstance},
     runtime::{ExecutionContext, RuntimeManager},
     scheduler::{InstanceScheduler, SchedulingPolicy},
-    task::{Task, TaskId, TaskType},
+    task::{Task, TaskId},
     ExecutionError, ExecutionResult,
 };
 use crate::proto::spearlet::{ArtifactSpec as ProtoArtifactSpec, InvokeFunctionRequest};
@@ -514,7 +514,7 @@ impl TaskExecutionManager {
                         output_data: Vec::new(),
                         status: "failed".to_string(),
                         error_message: Some(e.to_string()),
-                        execution_time_ms: execution_time_ms,
+                        execution_time_ms,
                         metadata: std::collections::HashMap::new(),
                         timestamp: SystemTime::now(),
                     },
@@ -579,7 +579,7 @@ impl TaskExecutionManager {
     /// Execute request / 执行请求
     async fn execute_request(
         &self,
-        artifact_spec: ProtoArtifactSpec,
+        _artifact_spec: ProtoArtifactSpec,
         execution_context: ExecutionContext,
         desired_task_id: Option<String>,
     ) -> ExecutionResult<super::ExecutionResponse> {
@@ -614,7 +614,7 @@ impl TaskExecutionManager {
         let error_message = runtime_response
             .error
             .as_ref()
-            .map(|e| Self::extract_error_message(e));
+            .map(Self::extract_error_message);
         let duration_ms = runtime_response.duration_ms;
         let metadata = runtime_response
             .metadata
@@ -797,7 +797,7 @@ impl TaskExecutionManager {
         } else {
             std::collections::HashMap::new()
         };
-        let runtime_type = artifact.spec.runtime_type.clone();
+        let runtime_type = artifact.spec.runtime_type;
         let task_spec = TaskSpec {
             name: sms_task.name.clone(),
             task_type: super::task::TaskType::HttpHandler,

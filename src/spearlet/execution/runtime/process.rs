@@ -431,7 +431,7 @@ impl Runtime for ProcessRuntime {
         let instance = Arc::new(TaskInstance::new(config.task_id.clone(), config.clone()));
 
         // Generate and store secret for this instance / 为此实例生成并存储密钥
-        let secret = self.generate_instance_secret(&instance.id());
+        let secret = self.generate_instance_secret(instance.id());
         instance.set_secret(secret);
 
         let mut command = self.build_process_command(config);
@@ -832,7 +832,7 @@ impl Runtime for ProcessRuntime {
             "original_type": format!("{:?}", message.message_type)
         });
         let payload_bytes =
-            serde_json::to_vec(&response_payload).map_err(|e| ExecutionError::Serialization(e))?;
+            serde_json::to_vec(&response_payload).map_err(ExecutionError::Serialization)?;
 
         let response_message = SpearMessage {
             message_type: MessageType::ExecuteResponse,

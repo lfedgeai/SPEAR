@@ -3,7 +3,6 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::config;
 use crate::config::base::{LogConfig, ServerConfig};
 
 /// SPEARlet command line arguments / SPEARlet命令行参数
@@ -108,7 +107,7 @@ pub struct CliArgs {
 }
 
 /// Spearlet application configuration / Spearlet应用配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// SPEARlet service configuration / SPEARlet服务配置
     pub spearlet: SpearletConfig,
@@ -318,14 +317,6 @@ impl AppConfig {
     }
 }
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            spearlet: SpearletConfig::default(),
-        }
-    }
-}
-
 /// SPEARlet service configuration / SPEARlet服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -394,7 +385,7 @@ impl Default for LlmBackendConfig {
     }
 }
 
-/// gRPC server configuration / gRPC服务器配置
+// gRPC server configuration / gRPC服务器配置
 // gRPC uses base ServerConfig / gRPC使用基础ServerConfig
 
 /// HTTP gateway configuration / HTTP网关配置

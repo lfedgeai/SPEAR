@@ -29,7 +29,7 @@
 
 ## 3. 安全边界
 
-- secret（API key）必须由 host 管理：`api_key_env` 读取，禁止 WASM 传入
+- secret（API key）必须由 host 管理：通过 `credential_ref` 解析到 `credentials[].api_key_env` 并读取，禁止 WASM 传入
 - base_url 与网络策略由 host 配置，禁止 WASM 注入任意 URL
 - allowlist/denylist 由 host 定义，请求侧只能进一步收缩
 - 记录审计日志时不得输出 secret
@@ -50,4 +50,3 @@
 - mirror 的采样率
 
 建议在每次路由决策上保留结构化解释信息（可采样）：选择原因、候选集、剔除原因。
-

@@ -6,6 +6,7 @@ use crate::spearlet::execution::host_api::DefaultHostApi;
 use crate::spearlet::execution::hostcall::types::{
     FdEntry, FdFlags, FdInner, FdKind, MicConfig, MicState, PollEvents,
 };
+use base64::{engine::general_purpose, Engine as _};
 use libc::{EAGAIN, EBADF, EINVAL, EIO};
 use std::collections::HashSet;
 
@@ -59,6 +60,11 @@ impl DefaultHostApi {
                     .and_then(|x| x.as_str())
                     .map(|s| s.to_string());
 
+                let stub_pcm16 = v
+                    .get("stub_pcm16_base64")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string());
+
                 let cfg = MicConfig {
                     sample_rate_hz,
                     channels,
@@ -76,6 +82,16 @@ impl DefaultHostApi {
                         return Err(-EBADF);
                     };
                     st.config = Some(cfg.clone());
+                    if let Some(s) = stub_pcm16.as_ref() {
+                        let bytes = general_purpose::STANDARD
+                            .decode(s.trim())
+                            .map_err(|_| -EINVAL)?;
+                        if bytes.len() > 10 * 1024 * 1024 {
+                            return Err(-EINVAL);
+                        }
+                        st.stub_pcm16 = Some(bytes);
+                        st.stub_pcm16_offset = 0;
+                    }
                     if !st.running {
                         st.running = true;
                         spawn = true;

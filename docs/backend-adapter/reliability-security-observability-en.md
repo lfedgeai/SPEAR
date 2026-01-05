@@ -29,7 +29,7 @@ Errors should include:
 
 ## 3. Security boundaries
 
-- Secrets (API keys) are host-managed via `api_key_env`; WASM must not provide them
+- Secrets (API keys) are host-managed via `credential_ref` resolved to `credentials[].api_key_env`; WASM must not provide them
 - Base URLs and network policy are host-configured; WASM must not inject arbitrary URLs
 - Host allowlist/denylist is authoritative; request hints can only further restrict
 - Audit logs must not contain secrets
@@ -50,4 +50,3 @@ Policy-related metrics:
 - mirror sampling rate
 
 The router should retain structured decision explanations (sampled): selection reason, candidates, rejection reasons.
-

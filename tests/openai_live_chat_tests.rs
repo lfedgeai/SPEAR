@@ -1,37 +1,30 @@
-use spear_next::spearlet::execution::ai::backends::openai_compatible::OpenAICompatibleBackendAdapter;
+use spear_next::spearlet::execution::ai::backends::openai_chat_completion::OpenAIChatCompletionBackendAdapter;
 use spear_next::spearlet::execution::ai::backends::BackendAdapter;
 use spear_next::spearlet::execution::ai::ir::{
     CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload, RoutingHints,
 };
 use std::collections::HashMap;
 
+mod common;
+
 #[test]
 fn test_openai_live_chat_completion() {
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            eprintln!("skipped: missing OPENAI_API_KEY");
-            return;
-        }
-    };
-    let base_url = match std::env::var("OPENAI_API_BASE") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            eprintln!("skipped: missing OPENAI_API_BASE");
+    let resolved = match common::resolve_live_chat_backend() {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "skipped: missing llm backend config/env for live chat (need chat_completions + http)"
+            );
             return;
         }
     };
 
     let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
 
-    let mut env = HashMap::new();
-    env.insert("OPENAI_API_KEY".to_string(), api_key);
-
-    let adapter = OpenAICompatibleBackendAdapter::new(
+    let adapter = OpenAIChatCompletionBackendAdapter::new(
         "openai-live",
-        base_url,
-        Some("OPENAI_API_KEY".to_string()),
-        env,
+        resolved.base_url,
+        resolved.api_key,
     );
 
     let req = CanonicalRequestEnvelope {

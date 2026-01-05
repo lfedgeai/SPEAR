@@ -614,4 +614,32 @@ addr = "127.0.0.1:9100"
         // Note: The actual parsing logic depends on implementation
         // 注意：实际解析逻辑取决于实现
     }
+
+    #[test]
+    fn test_llm_credentials_config_parses() {
+        let s = r#"
+[spearlet]
+
+[spearlet.llm]
+default_policy = "weighted_random"
+
+[[spearlet.llm.credentials]]
+name = "openai_chat"
+kind = "env"
+api_key_env = "OPENAI_CHAT_API_KEY"
+
+[[spearlet.llm.backends]]
+name = "openai-chat"
+kind = "openai_chat_completion"
+base_url = "https://api.openai.com/v1"
+credential_ref = "openai_chat"
+ops = ["chat_completions"]
+transports = ["http"]
+"#;
+
+        let cfg: AppConfig = toml::from_str(s).unwrap();
+        assert_eq!(cfg.spearlet.llm.credentials.len(), 1);
+        assert_eq!(cfg.spearlet.llm.backends.len(), 1);
+        assert_eq!(cfg.spearlet.llm.backends[0].credential_ref.as_deref(), Some("openai_chat"));
+    }
 }

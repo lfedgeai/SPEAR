@@ -259,6 +259,8 @@ pub struct MicState {
     pub dropped_frames: u64,
     pub last_error: Option<String>,
     pub running: bool,
+    pub stub_pcm16: Option<Vec<u8>>,
+    pub stub_pcm16_offset: usize,
 }
 
 impl Default for MicState {
@@ -271,6 +273,8 @@ impl Default for MicState {
             dropped_frames: 0,
             last_error: None,
             running: false,
+            stub_pcm16: None,
+            stub_pcm16_offset: 0,
         }
     }
 }

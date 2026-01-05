@@ -370,7 +370,7 @@ rtasr 会话参数建议采用“扁平 key + JSON value”的方式，避免 AB
 
 推荐额外 key（第一版可选，但建议预留）：
 
-- `backend = "openai_compatible" | ...`（仅选择后端名称，不传 URL/secret）
+- `backend = "openai_chat_completion" | "openai_realtime_ws" | ...`（仅选择后端名称，不传 URL/secret）
 - `model = "gpt-4o-mini-transcribe" | ...`（等价于 `input_audio_transcription.model` 的便捷写法）
 - `connect_timeout_ms = 10000`
 - `idle_timeout_ms = 60000`（无数据时的空闲超时策略）

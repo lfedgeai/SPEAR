@@ -10,19 +10,19 @@ use url::Url;
 pub struct OpenAIRealtimeWsBackendAdapter {
     name: String,
     base_url: String,
-    api_key_env: Option<String>,
+    api_key_env: String,
 }
 
 impl OpenAIRealtimeWsBackendAdapter {
     pub fn new(
         name: impl Into<String>,
         base_url: impl Into<String>,
-        api_key_env: Option<String>,
+        api_key_env: impl Into<String>,
     ) -> Self {
         Self {
             name: name.into(),
             base_url: base_url.into(),
-            api_key_env,
+            api_key_env: api_key_env.into(),
         }
     }
 }
@@ -60,6 +60,16 @@ impl BackendAdapter for OpenAIRealtimeWsBackendAdapter {
             });
         }
 
+        let api_key_env = self.api_key_env.trim();
+        if api_key_env.is_empty() {
+            return Err(CanonicalError {
+                code: "invalid_configuration".to_string(),
+                message: "missing credential_ref".to_string(),
+                retryable: false,
+                operation: None,
+            });
+        }
+
         let model = match &req.payload {
             crate::spearlet::execution::ai::ir::Payload::SpeechToText(p) => p
                 .model
@@ -76,10 +86,7 @@ impl BackendAdapter for OpenAIRealtimeWsBackendAdapter {
                 headers: vec![
                     (
                         "authorization".to_string(),
-                        format!(
-                            "Bearer ${{env:{}}}",
-                            self.api_key_env.as_deref().unwrap_or("OPENAI_API_KEY")
-                        ),
+                        format!("Bearer ${{env:{}}}", api_key_env),
                     ),
                     ("OpenAI-Beta".to_string(), "realtime=v1".to_string()),
                 ],

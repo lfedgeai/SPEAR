@@ -18,6 +18,7 @@
 - WASM hostcalls glue（当前已有 cchat + spear_epoll_* + spear_fd_ctl）：`src/spearlet/execution/runtime/wasm_hostcalls.rs`
 - legacy Go Realtime ASR（实现参考）：`legacy/spearlet/stream/rt_asr.go`
 - Mic 采集实现文档（mic_fd）：`docs/implementation/mic-fd-implementation-zh.md`
+- LLM 凭据与 credential_ref：`docs/implementation/llm-credentials-implementation-zh.md`
 
 ## 1. 总目标与边界
 

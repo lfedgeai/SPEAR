@@ -1,21 +1,18 @@
-use spear_next::spearlet::config::{LlmBackendConfig, SpearletConfig};
+use spear_next::spearlet::config::{LlmBackendConfig, LlmCredentialConfig, SpearletConfig};
 use spear_next::spearlet::execution::host_api::DefaultHostApi;
 use spear_next::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeType};
 use std::collections::HashMap;
 
+mod common;
+
 #[test]
 fn test_openai_realtime_asr_websocket_connect() {
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            eprintln!("skipped: missing OPENAI_API_KEY");
-            return;
-        }
-    };
-    let base_url = match std::env::var("OPENAI_API_BASE") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            eprintln!("skipped: missing OPENAI_API_BASE");
+    let resolved = match common::resolve_realtime_asr_backend() {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "skipped: missing llm backend config/env for realtime asr (need speech_to_text + websocket)"
+            );
             return;
         }
     };
@@ -26,12 +23,16 @@ fn test_openai_realtime_asr_websocket_connect() {
         .unwrap_or_else(|| "gpt-4o-mini-transcribe".to_string());
 
     let mut cfg = SpearletConfig::default();
-    let base_url_for_cfg = base_url.clone();
+    cfg.llm.credentials.push(LlmCredentialConfig {
+        name: "openai_default".to_string(),
+        kind: "env".to_string(),
+        api_key_env: resolved.api_key_env.clone(),
+    });
     cfg.llm.backends.push(LlmBackendConfig {
-        name: "openai-realtime".to_string(),
+        name: resolved.name.clone(),
         kind: "openai_realtime_ws".to_string(),
-        base_url: base_url_for_cfg,
-        api_key_env: Some("OPENAI_API_KEY".to_string()),
+        base_url: resolved.base_url.clone(),
+        credential_ref: Some("openai_default".to_string()),
         weight: 100,
         priority: 0,
         ops: vec!["speech_to_text".to_string()],
@@ -40,7 +41,7 @@ fn test_openai_realtime_asr_websocket_connect() {
     });
 
     let mut global_env = HashMap::new();
-    global_env.insert("OPENAI_API_KEY".to_string(), api_key.clone());
+    global_env.insert(resolved.api_key_env.clone(), resolved.api_key.clone());
 
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
@@ -61,7 +62,7 @@ fn test_openai_realtime_asr_websocket_connect() {
     api.rtasr_ctl(fd, 7, Some(&autoflush_bytes)).unwrap();
 
     let transport_param = serde_json::json!({"key": "transport", "value": "websocket"});
-    let backend_param = serde_json::json!({"key": "backend", "value": "openai-realtime"});
+    let backend_param = serde_json::json!({"key": "backend", "value": resolved.name});
     let model_param = serde_json::json!({"key": "model", "value": model});
     api.rtasr_ctl(fd, 1, Some(transport_param.to_string().as_bytes()))
         .unwrap();
@@ -84,8 +85,8 @@ fn test_openai_realtime_asr_websocket_connect() {
 
     let audio_pcm = {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let url = format!("{}/audio/speech", base_url.trim_end_matches('/'));
-        let api_key = api_key.clone();
+        let url = format!("{}/audio/speech", resolved.base_url.trim_end_matches('/'));
+        let api_key = resolved.api_key.clone();
         rt.block_on(async move {
             let client = reqwest::Client::new();
             let resp = client

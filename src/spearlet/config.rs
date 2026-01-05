@@ -349,19 +349,38 @@ pub struct SpearletConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LlmConfig {
     pub default_policy: Option<String>,
+    pub credentials: Vec<LlmCredentialConfig>,
     pub backends: Vec<LlmBackendConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
+pub struct LlmCredentialConfig {
+    pub name: String,
+    pub kind: String,
+    pub api_key_env: String,
+}
+
+impl Default for LlmCredentialConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            kind: "env".to_string(),
+            api_key_env: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct LlmBackendConfig {
     pub name: String,
     pub kind: String,
     pub base_url: String,
-    pub api_key_env: Option<String>,
+    pub credential_ref: Option<String>,
     pub weight: u32,
     pub priority: i32,
     pub ops: Vec<String>,
@@ -375,7 +394,7 @@ impl Default for LlmBackendConfig {
             name: String::new(),
             kind: String::new(),
             base_url: String::new(),
-            api_key_env: None,
+            credential_ref: None,
             weight: 100,
             priority: 0,
             ops: Vec::new(),

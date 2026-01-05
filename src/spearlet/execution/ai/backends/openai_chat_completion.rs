@@ -8,46 +8,19 @@ use crate::spearlet::execution::ai::ir::{
     ResultPayload,
 };
 
-pub struct OpenAICompatibleBackendAdapter {
+pub struct OpenAIChatCompletionBackendAdapter {
     name: String,
     base_url: String,
-    api_key_env: Option<String>,
-    global_environment: HashMap<String, String>,
+    api_key: String,
 }
 
-impl OpenAICompatibleBackendAdapter {
-    pub fn new(
-        name: impl Into<String>,
-        base_url: impl Into<String>,
-        api_key_env: Option<String>,
-        global_environment: HashMap<String, String>,
-    ) -> Self {
+impl OpenAIChatCompletionBackendAdapter {
+    pub fn new(name: impl Into<String>, base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             base_url: base_url.into(),
-            api_key_env,
-            global_environment,
+            api_key: api_key.into(),
         }
-    }
-
-    fn get_api_key(&self) -> Result<String, CanonicalError> {
-        let Some(env) = self.api_key_env.as_ref() else {
-            return Err(CanonicalError {
-                code: "invalid_configuration".to_string(),
-                message: "missing api_key_env".to_string(),
-                retryable: false,
-                operation: None,
-            });
-        };
-        self.global_environment
-            .get(env)
-            .cloned()
-            .ok_or_else(|| CanonicalError {
-                code: "invalid_configuration".to_string(),
-                message: format!("missing env var: {}", env),
-                retryable: false,
-                operation: None,
-            })
     }
 
     fn build_chat_completions_body(
@@ -143,7 +116,7 @@ impl OpenAICompatibleBackendAdapter {
     }
 }
 
-impl BackendAdapter for OpenAICompatibleBackendAdapter {
+impl BackendAdapter for OpenAIChatCompletionBackendAdapter {
     fn name(&self) -> &str {
         &self.name
     }
@@ -155,13 +128,22 @@ impl BackendAdapter for OpenAICompatibleBackendAdapter {
         if req.operation != Operation::ChatCompletions {
             return Err(CanonicalError {
                 code: "unsupported_operation".to_string(),
-                message: "openai_compatible only supports chat_completions".to_string(),
+                message: "backend supports chat_completions only".to_string(),
                 retryable: false,
                 operation: Some(req.operation.clone()),
             });
         }
 
-        let api_key = self.get_api_key()?;
+        let api_key = self.api_key.trim();
+        if api_key.is_empty() {
+            return Err(CanonicalError {
+                code: "invalid_configuration".to_string(),
+                message: "missing api key".to_string(),
+                retryable: false,
+                operation: Some(req.operation.clone()),
+            });
+        }
+
         let body_json = self.build_chat_completions_body(req)?;
         let body_bytes = serde_json::to_vec(&body_json).map_err(|e| CanonicalError {
             code: "serialization".to_string(),
@@ -255,12 +237,11 @@ mod tests {
     use crate::spearlet::execution::ai::ir::{ChatCompletionsPayload, ChatMessage, RoutingHints};
 
     #[test]
-    fn test_missing_api_key_env_is_error() {
-        let adapter = OpenAICompatibleBackendAdapter::new(
+    fn test_missing_api_key_is_error() {
+        let adapter = OpenAIChatCompletionBackendAdapter::new(
             "openai",
             "https://api.openai.com/v1",
-            Some("OPENAI_API_KEY".to_string()),
-            HashMap::new(),
+            "",
         );
         let req = CanonicalRequestEnvelope {
             version: 1,
@@ -287,11 +268,10 @@ mod tests {
 
     #[test]
     fn test_join_url() {
-        let adapter = OpenAICompatibleBackendAdapter::new(
+        let adapter = OpenAIChatCompletionBackendAdapter::new(
             "openai",
             "https://api.openai.com/v1/",
-            None,
-            HashMap::new(),
+            "k",
         );
         assert_eq!(
             adapter.join_url("chat/completions"),
@@ -301,11 +281,10 @@ mod tests {
 
     #[test]
     fn test_params_cannot_override_messages_or_tools() {
-        let adapter = OpenAICompatibleBackendAdapter::new(
+        let adapter = OpenAIChatCompletionBackendAdapter::new(
             "openai",
             "https://api.openai.com/v1/",
-            None,
-            HashMap::new(),
+            "k",
         );
 
         let mut params = HashMap::new();
@@ -346,3 +325,4 @@ mod tests {
         assert_eq!(body.get("tools").unwrap()[0]["function"]["name"], "y");
     }
 }
+

@@ -1,4 +1,4 @@
-pub mod openai_compatible;
+pub mod openai_chat_completion;
 pub mod openai_realtime_ws;
 pub mod stub;
 

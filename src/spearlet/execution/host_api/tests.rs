@@ -1,8 +1,51 @@
 use super::*;
 use crate::spearlet::execution::hostcall::fd_table::EP_CTL_ADD;
 use crate::spearlet::execution::hostcall::types::PollEvents;
+use crate::spearlet::execution::ai::ir::{
+    CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload, RoutingHints,
+    SpeechToTextPayload,
+};
+use crate::spearlet::execution::ai::streaming::StreamingPlan;
 use crate::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeType};
 use std::collections::HashMap;
+
+fn chat_req() -> CanonicalRequestEnvelope {
+    CanonicalRequestEnvelope {
+        version: 1,
+        request_id: "r1".to_string(),
+        operation: Operation::ChatCompletions,
+        meta: HashMap::new(),
+        routing: RoutingHints::default(),
+        requirements: Default::default(),
+        timeout_ms: None,
+        payload: Payload::ChatCompletions(ChatCompletionsPayload {
+            model: "gpt-test".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            tools: vec![],
+            params: HashMap::new(),
+        }),
+        extra: HashMap::new(),
+    }
+}
+
+fn stt_req() -> CanonicalRequestEnvelope {
+    CanonicalRequestEnvelope {
+        version: 1,
+        request_id: "r1".to_string(),
+        operation: Operation::SpeechToText,
+        meta: HashMap::new(),
+        routing: RoutingHints::default(),
+        requirements: Default::default(),
+        timeout_ms: None,
+        payload: Payload::SpeechToText(SpeechToTextPayload {
+            model: Some("gpt-test".to_string()),
+        }),
+        extra: HashMap::new(),
+    }
+}
 
 #[test]
 fn test_cchat_send_pipeline_stub_backend() {
@@ -31,12 +74,19 @@ fn test_cchat_send_pipeline_stub_backend() {
 fn test_configured_openai_backend_missing_key_is_filtered() {
     let mut cfg = crate::spearlet::config::SpearletConfig::default();
     cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_default".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_API_KEY".to_string(),
+        });
+    cfg.llm
         .backends
         .push(crate::spearlet::config::LlmBackendConfig {
             name: "openai-us".to_string(),
-            kind: "openai_compatible".to_string(),
+            kind: "openai_chat_completion".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
-            api_key_env: Some("OPENAI_API_KEY".to_string()),
+            credential_ref: Some("openai_default".to_string()),
             weight: 100,
             priority: 0,
             ops: vec!["chat_completions".to_string()],
@@ -61,6 +111,165 @@ fn test_configured_openai_backend_missing_key_is_filtered() {
     let bytes = api.cchat_recv(resp_fd).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(v.get("choices").is_some());
+}
+
+#[test]
+fn test_registry_credential_ref_missing_env_filters_backend() {
+    let mut cfg = crate::spearlet::config::SpearletConfig::default();
+    cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_chat".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_CHAT_API_KEY".to_string(),
+        });
+    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
+        name: "openai-chat".to_string(),
+        kind: "openai_chat_completion".to_string(),
+        base_url: "https://api.openai.com/v1".to_string(),
+        credential_ref: Some("openai_chat".to_string()),
+        weight: 100,
+        priority: 0,
+        ops: vec!["chat_completions".to_string()],
+        features: vec![],
+        transports: vec!["http".to_string()],
+    });
+
+    let runtime_config = RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: Some(cfg),
+        resource_pool: ResourcePoolConfig::default(),
+    };
+
+    let (reg, _policy) = super::registry::build_registry_from_runtime_config(&runtime_config);
+    let candidates = reg.candidates(&chat_req());
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].name, "stub");
+}
+
+#[test]
+fn test_registry_credential_ref_with_env_registers_backend() {
+    let mut cfg = crate::spearlet::config::SpearletConfig::default();
+    cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_chat".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_CHAT_API_KEY".to_string(),
+        });
+    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
+        name: "openai-chat".to_string(),
+        kind: "openai_chat_completion".to_string(),
+        base_url: "https://api.openai.com/v1".to_string(),
+        credential_ref: Some("openai_chat".to_string()),
+        weight: 100,
+        priority: 0,
+        ops: vec!["chat_completions".to_string()],
+        features: vec![],
+        transports: vec!["http".to_string()],
+    });
+
+    let mut env = HashMap::new();
+    env.insert("OPENAI_CHAT_API_KEY".to_string(), "dummy".to_string());
+    let runtime_config = RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: env,
+        spearlet_config: Some(cfg),
+        resource_pool: ResourcePoolConfig::default(),
+    };
+
+    let (reg, _policy) = super::registry::build_registry_from_runtime_config(&runtime_config);
+    let candidates = reg.candidates(&chat_req());
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].name, "openai-chat");
+}
+
+#[test]
+fn test_registry_openai_chat_completion_kind_alias_registers_backend() {
+    let mut cfg = crate::spearlet::config::SpearletConfig::default();
+    cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_chat".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_CHAT_API_KEY".to_string(),
+        });
+    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
+        name: "openai-chat".to_string(),
+        kind: "openai_chat_completion".to_string(),
+        base_url: "https://api.openai.com/v1".to_string(),
+        credential_ref: Some("openai_chat".to_string()),
+        weight: 100,
+        priority: 0,
+        ops: vec!["chat_completions".to_string()],
+        features: vec![],
+        transports: vec!["http".to_string()],
+    });
+
+    let mut env = HashMap::new();
+    env.insert("OPENAI_CHAT_API_KEY".to_string(), "dummy".to_string());
+    let runtime_config = RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: env,
+        spearlet_config: Some(cfg),
+        resource_pool: ResourcePoolConfig::default(),
+    };
+
+    let (reg, _policy) = super::registry::build_registry_from_runtime_config(&runtime_config);
+    let candidates = reg.candidates(&chat_req());
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].name, "openai-chat");
+}
+
+#[test]
+fn test_realtime_ws_plan_uses_resolved_env_template() {
+    let mut cfg = crate::spearlet::config::SpearletConfig::default();
+    cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_realtime".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_REALTIME_API_KEY".to_string(),
+        });
+    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
+        name: "rt-ws".to_string(),
+        kind: "openai_realtime_ws".to_string(),
+        base_url: "https://api.openai.com/v1".to_string(),
+        credential_ref: Some("openai_realtime".to_string()),
+        weight: 100,
+        priority: 0,
+        ops: vec!["speech_to_text".to_string()],
+        features: vec![],
+        transports: vec!["websocket".to_string()],
+    });
+
+    let mut env = HashMap::new();
+    env.insert("OPENAI_REALTIME_API_KEY".to_string(), "dummy".to_string());
+    let runtime_config = RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: env,
+        spearlet_config: Some(cfg),
+        resource_pool: ResourcePoolConfig::default(),
+    };
+
+    let (reg, _policy) = super::registry::build_registry_from_runtime_config(&runtime_config);
+    let candidates = reg.candidates(&stt_req());
+    assert_eq!(candidates.len(), 1);
+    let plan = candidates[0].adapter.streaming_plan(&stt_req()).unwrap();
+    let StreamingPlan::Websocket(ws) = plan;
+    let auth = ws
+        .websocket
+        .headers
+        .iter()
+        .find(|(k, _)| k == "authorization")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    assert_eq!(auth, "Bearer ${env:OPENAI_REALTIME_API_KEY}");
 }
 
 #[test]
@@ -244,12 +453,19 @@ async fn test_rtasr_websocket_transport_receives_events() {
 
     let mut cfg = crate::spearlet::config::SpearletConfig::default();
     cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_realtime".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_REALTIME_API_KEY".to_string(),
+        });
+    cfg.llm
         .backends
         .push(crate::spearlet::config::LlmBackendConfig {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
-            api_key_env: None,
+            credential_ref: Some("openai_realtime".to_string()),
             weight: 100,
             priority: 0,
             ops: vec!["speech_to_text".to_string()],
@@ -257,10 +473,12 @@ async fn test_rtasr_websocket_transport_receives_events() {
             transports: vec!["websocket".to_string()],
         });
 
+    let mut env = HashMap::new();
+    env.insert("OPENAI_REALTIME_API_KEY".to_string(), "dummy".to_string());
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
         settings: HashMap::new(),
-        global_environment: HashMap::new(),
+        global_environment: env,
         spearlet_config: Some(cfg),
         resource_pool: ResourcePoolConfig::default(),
     });
@@ -453,12 +671,19 @@ async fn test_rtasr_websocket_flush_sends_commit() {
 
     let mut cfg = crate::spearlet::config::SpearletConfig::default();
     cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_realtime".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_REALTIME_API_KEY".to_string(),
+        });
+    cfg.llm
         .backends
         .push(crate::spearlet::config::LlmBackendConfig {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
-            api_key_env: None,
+            credential_ref: Some("openai_realtime".to_string()),
             weight: 100,
             priority: 0,
             ops: vec!["speech_to_text".to_string()],
@@ -466,10 +691,12 @@ async fn test_rtasr_websocket_flush_sends_commit() {
             transports: vec!["websocket".to_string()],
         });
 
+    let mut env = HashMap::new();
+    env.insert("OPENAI_REALTIME_API_KEY".to_string(), "dummy".to_string());
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
         settings: HashMap::new(),
-        global_environment: HashMap::new(),
+        global_environment: env,
         spearlet_config: Some(cfg),
         resource_pool: ResourcePoolConfig::default(),
     });
@@ -556,12 +783,19 @@ async fn test_rtasr_websocket_autoflush_bytes_sends_commit() {
 
     let mut cfg = crate::spearlet::config::SpearletConfig::default();
     cfg.llm
+        .credentials
+        .push(crate::spearlet::config::LlmCredentialConfig {
+            name: "openai_realtime".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "OPENAI_REALTIME_API_KEY".to_string(),
+        });
+    cfg.llm
         .backends
         .push(crate::spearlet::config::LlmBackendConfig {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
-            api_key_env: None,
+            credential_ref: Some("openai_realtime".to_string()),
             weight: 100,
             priority: 0,
             ops: vec!["speech_to_text".to_string()],
@@ -569,10 +803,12 @@ async fn test_rtasr_websocket_autoflush_bytes_sends_commit() {
             transports: vec!["websocket".to_string()],
         });
 
+    let mut env = HashMap::new();
+    env.insert("OPENAI_REALTIME_API_KEY".to_string(), "dummy".to_string());
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
         settings: HashMap::new(),
-        global_environment: HashMap::new(),
+        global_environment: env,
         spearlet_config: Some(cfg),
         resource_pool: ResourcePoolConfig::default(),
     });
@@ -697,4 +933,77 @@ async fn test_mic_read_epollin_and_close_hup() {
     assert!(ready2
         .iter()
         .any(|(rfd, ev)| *rfd == mic_fd && ((*ev as u32) & PollEvents::HUP.bits()) != 0));
+}
+
+#[tokio::test]
+async fn test_mic_stub_pcm16_base64_loops() {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let api = DefaultHostApi::new(RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: None,
+        resource_pool: ResourcePoolConfig::default(),
+    });
+
+    let epfd = api.spear_ep_create();
+    let mic_fd = api.mic_create();
+    assert_eq!(
+        api.spear_ep_ctl(epfd, EP_CTL_ADD, mic_fd, PollEvents::IN.bits() as i32),
+        0
+    );
+
+    let pattern: Vec<u8> = vec![1, 0, 2, 0, 3, 0, 4, 0];
+    let b64 = general_purpose::STANDARD.encode(&pattern);
+
+    let cfg = serde_json::to_vec(&serde_json::json!({
+        "sample_rate_hz": 1000,
+        "channels": 1,
+        "format": "pcm16",
+        "frame_ms": 10,
+        "source": "stub",
+        "stub_pcm16_base64": b64,
+    }))
+    .unwrap();
+    let _ = api.mic_ctl(mic_fd, 1, Some(&cfg)).unwrap();
+
+    let build_expected = |offset: usize| {
+        let bytes_len = 20;
+        let mut out: Vec<u8> = Vec::with_capacity(bytes_len);
+        let mut idx = offset % pattern.len();
+        while out.len() < bytes_len {
+            let remain = bytes_len - out.len();
+            let chunk = std::cmp::min(remain, pattern.len() - idx);
+            out.extend_from_slice(&pattern[idx..idx + chunk]);
+            idx = (idx + chunk) % pattern.len();
+        }
+        out
+    };
+
+    let api2 = api.clone();
+    let ready = tokio::task::spawn_blocking(move || api2.spear_ep_wait_ready(epfd, 500))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready
+        .iter()
+        .any(|(rfd, ev)| *rfd == mic_fd && ((*ev as u32) & PollEvents::IN.bits()) != 0));
+
+    let bytes1 = api.mic_read(mic_fd).unwrap();
+    assert_eq!(bytes1, build_expected(0));
+
+    let api3 = api.clone();
+    let ready2 = tokio::task::spawn_blocking(move || api3.spear_ep_wait_ready(epfd, 500))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready2
+        .iter()
+        .any(|(rfd, ev)| *rfd == mic_fd && ((*ev as u32) & PollEvents::IN.bits()) != 0));
+
+    let bytes2 = api.mic_read(mic_fd).unwrap();
+    assert_eq!(bytes2, build_expected(4));
+
+    assert_eq!(api.mic_close(mic_fd), 0);
 }

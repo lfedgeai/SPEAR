@@ -41,7 +41,7 @@ This document summarizes the new Web Admin in `spear-next`.
 
 If you add an “API key configuration” component to Web Admin, design it as “secret reference management”, not plaintext key entry/storage.
 
-- UI/control-plane manages: mapping between backend instances and `api_key_env` (or `api_key_envs`)
+- UI/control-plane manages: mapping between backend instances and `credential_ref` (or `credential_refs`)
 - Secret values are provisioned by: the deployment system (Kubernetes Secrets / Vault Agent / systemd drop-in)
 - Observability: show only “present/usable” (e.g., spearlet heartbeat reports `HAS_ENV:<ENV_NAME>=true`), never the value
   - `execution_kind` (`short_running | long_running`), `executable_type`, `executable_uri`, `executable_name`

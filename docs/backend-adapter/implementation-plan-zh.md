@@ -84,7 +84,7 @@ sequenceDiagram
   participant O as OpenAI-compatible HTTP
 
   OS-->>H: OPENAI_API_KEY=...
-  C-->>A: api_key_env = "OPENAI_API_KEY"
+  C-->>A: credential_ref = "openai_default"
   A->>H: get_env("OPENAI_API_KEY")
   H-->>A: api_key
   A->>O: HTTP request + Authorization: Bearer api_key
@@ -133,7 +133,7 @@ src/spearlet/execution/
     backends/
       mod.rs
       stub.rs
-      openai_compatible.rs
+      openai_chat_completion.rs
 ```
 
 并在 `src/spearlet/execution/mod.rs` 增加 `pub mod ai;`。
@@ -255,15 +255,14 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
 - 文件：`Cargo.toml`
   - 新增 feature：`backend-openai`（以及后续 `backend-azure-openai` 等）
 - 文件：`src/spearlet/execution/ai/backends/mod.rs`
-  - `#[cfg(feature = "backend-openai")] pub mod openai_compatible;`
-
+  - `#[cfg(feature = "backend-openai")] pub mod openai_chat_completion;`
 ### 5.2 OpenAI backend adapter
 
-- 文件：`src/spearlet/execution/ai/backends/openai_compatible.rs`
-  - `struct OpenAICompatibleBackendAdapter { name, base_url, api_key_env, client }`
-  - `fn invoke_chat_completions(&self, req: &CanonicalRequestEnvelope) -> Result<CanonicalResponseEnvelope, CanonicalError>`
+- 文件：`src/spearlet/execution/ai/backends/openai_chat_completion.rs`
+  - `struct OpenAIChatCompletionBackendAdapter { name, base_url, api_key }`
+  - `fn invoke(&self, req: &CanonicalRequestEnvelope) -> Result<CanonicalResponseEnvelope, CanonicalError>`
     - 将 payload 映射到 OpenAI `POST {base_url}/chat/completions`
-    - API key 从 `SpearHostApi::get_env(api_key_env)` 读取（当前实现从 `RuntimeConfig.global_environment` 获取，见 `src/spearlet/execution/host_api.rs:309-311`）
+    - API key 由 registry 在构建实例时从 `RuntimeConfig.global_environment` 解析得到并传入 adapter
     - 缺失 key 时返回结构化错误（例如 `InvalidConfiguration`），并确保不会在任何日志/错误中输出 key
     - 返回 body 作为 `raw`，并提取必要字段到 canonical response（MVP 可以先直接透传）
 
@@ -272,7 +271,7 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
 - 文件：`src/spearlet/config.rs`
   - 为 `SpearletConfig` 增加 `llm: LlmConfig`（`#[serde(default)]`）
   - `struct LlmConfig { backends: Vec<BackendConfig>, default_policy_by_operation: ... }`
-  - `struct BackendConfig { name, kind, base_url, api_key_env, weight, priority, ops, features, transports }`
+  - `struct BackendConfig { name, kind, base_url, credential_ref, weight, priority, ops, features, transports }`
 - 文件：`src/spearlet/execution/runtime/mod.rs`
   - `RuntimeConfig.spearlet_config` 已包含全量配置快照，可由 `DefaultHostApi::new` 注入到 ai_engine 初始化
 
@@ -286,17 +285,17 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
     - `GET /api/v1/capabilities`：按 operation 聚合输出
   - 需要在 `AppState` 增加 `ai_registry_view: ...`（只读快照）
 
-## 7. Phase 6：SMS Web Admin Backend/Secret Reference + `HAS_ENV:*` 可观测
+## 7. Phase 6：SMS Web Admin Backend/Credential Reference + `HAS_ENV:*` 可观测
 
 目标：
 
-- 在 SMS Web Admin 增加“Backend/Secret Reference”页面与 `/admin/api/...` 管理接口，用于维护 backend instance 与 `api_key_env`/`api_key_envs` 的映射（不保存明文 key）。
+- 在 SMS Web Admin 增加“Backend/Credential Reference”页面与 `/admin/api/...` 管理接口，用于维护 backend instance 与 `credential_ref`/`credential_refs` 的映射（不保存明文 key）。
 - 让 spearlet 心跳上报 `HAS_ENV:*`，以便 Web Admin 能展示“某个节点是否具备某个 secret 引用”。
 
 ### 7.1 SMS：数据模型与存储（不落明文 key）
 
 - 新增文件：`src/sms/admin/llm_config.rs`
-  - `struct BackendInstanceConfig { name, kind, base_url, api_key_env, weight, priority, ops, features, transports, extra }`
+  - `struct BackendInstanceConfig { name, kind, base_url, credential_ref, weight, priority, ops, features, transports, extra }`
   - `struct SecretRef { name, description, tags }`（可选；MVP 可从 backends 去重生成）
 - 新增文件：`src/sms/admin/store.rs`
   - `struct AdminConfigStore { kv: Arc<dyn KvStore> }`
@@ -306,13 +305,13 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
     - `admin:llm:backends`（整体 JSON）或 `admin:llm:backend:<name>`（单条 JSON）
   - 校验：
     - 禁止出现 `api_key`/`secret_value` 等字段
-    - 限制 `api_key_env` 只能是 env 名称（例如 `[A-Z0-9_]+`）
+    - 限制 `credential_ref` 只能是引用名称（例如 `[a-zA-Z0-9_-]+`）
 
 ### 7.2 SMS：Web Admin API（/admin/api/llm/*）
 
 - 文件：`src/sms/web_admin.rs`
   - 扩展 `create_admin_router(...)` 新增路由：
-    - `GET /admin/api/llm/backends`：返回 backend instance 列表（含 `api_key_env` 名称，不含值）
+    - `GET /admin/api/llm/backends`：返回 backend instance 列表（含 `credential_ref`，不含值）
     - `PUT /admin/api/llm/backends`：整体替换（便于前端一次性保存）
     - `POST /admin/api/llm/backends`：新增/更新单条（可选）
     - `DELETE /admin/api/llm/backends/{name}`：删除单条（可选）
@@ -339,8 +338,8 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
 - 修改 `assets/admin/react-app.js`：
   - 增加导航入口（例如 `Settings` 下新增 `Backends`）
   - 新增页面组件：
-    - `BackendsPage`：表格编辑 backend instance（`name/kind/base_url/weight/priority/ops/features/transports/api_key_env`）
-    - `SecretRefsPage`：展示所有 `api_key_env` 引用及“节点具备情况”
+    - `BackendsPage`：表格编辑 backend instance（`name/kind/base_url/weight/priority/ops/features/transports/credential_ref`）
+    - `CredentialsPage`：展示所有 credential（及其 env var 名称）引用与“节点具备情况”
   - 数据获取：
     - 从 `GET /admin/api/llm/backends` 拉配置
     - 保存时调用 `PUT /admin/api/llm/backends`
@@ -352,7 +351,7 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
 
 - 文件：`src/spearlet/registration.rs`
   - 修改 `send_heartbeat(...)`（`registration.rs:~281+`）填充 `HeartbeatRequest.health_info`：
-    - 从 `SpearletConfig` 的 LLM backend 配置收集所有 `api_key_env`（或 `api_key_envs`）
+    - 从 `SpearletConfig` 收集被 `credential_ref` 引用到的 `credentials[].api_key_env`
     - 对每个 env 名称：
       - `health_info.insert(format!("HAS_ENV:{}", env), "true"/"false")`
 

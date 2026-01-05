@@ -1,4 +1,4 @@
-use spear_next::spearlet::config::{LlmBackendConfig, SpearletConfig};
+use spear_next::spearlet::config::{LlmBackendConfig, LlmCredentialConfig, SpearletConfig};
 use spear_next::spearlet::execution::runtime::wasm_hostcalls::build_spear_import_with_api;
 use spear_next::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeType};
 use std::collections::HashMap;
@@ -7,19 +7,16 @@ use wasmedge_sdk::vm::SyncInst;
 use wasmedge_sdk::wasi::WasiModule;
 use wasmedge_sdk::{params, Module, Store, Vm};
 
+mod common;
+
 #[test]
 fn test_wasm_to_openai_chat_completion_e2e() {
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            eprintln!("skipped: missing OPENAI_API_KEY");
-            return;
-        }
-    };
-    let base_url = match std::env::var("OPENAI_API_BASE") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            eprintln!("skipped: missing OPENAI_API_BASE");
+    let resolved = match common::resolve_live_chat_backend() {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "skipped: missing llm backend config/env for wasm e2e (need chat_completions + http)"
+            );
             return;
         }
     };
@@ -30,11 +27,16 @@ fn test_wasm_to_openai_chat_completion_e2e() {
     let model_param_len = model_param_json.as_bytes().len();
 
     let mut cfg = SpearletConfig::default();
+    cfg.llm.credentials.push(LlmCredentialConfig {
+        name: "openai_default".to_string(),
+        kind: "env".to_string(),
+        api_key_env: resolved.api_key_env.clone(),
+    });
     cfg.llm.backends.push(LlmBackendConfig {
         name: "openai".to_string(),
-        kind: "openai_compatible".to_string(),
-        base_url,
-        api_key_env: Some("OPENAI_API_KEY".to_string()),
+        kind: "openai_chat_completion".to_string(),
+        base_url: resolved.base_url,
+        credential_ref: Some("openai_default".to_string()),
         weight: 100,
         priority: 0,
         ops: vec!["chat_completions".to_string()],
@@ -47,7 +49,7 @@ fn test_wasm_to_openai_chat_completion_e2e() {
     });
 
     let mut global_env = HashMap::new();
-    global_env.insert("OPENAI_API_KEY".to_string(), api_key);
+    global_env.insert(resolved.api_key_env, resolved.api_key);
 
     let runtime_config = RuntimeConfig {
         runtime_type: RuntimeType::Wasm,

@@ -79,14 +79,13 @@ flowchart TD
 sequenceDiagram
   participant OS as process env
   participant C as spearlet config
-  participant A as OpenAICompatibleBackendAdapter
-  participant H as SpearHostApi::get_env
+  participant R as BackendRegistry builder
+  participant A as OpenAIChatCompletionBackendAdapter
   participant O as OpenAI-compatible HTTP
 
-  OS-->>H: OPENAI_API_KEY=...
-  C-->>A: credential_ref = "openai_default"
-  A->>H: get_env("OPENAI_API_KEY")
-  H-->>A: api_key
+  OS-->>R: OPENAI_API_KEY=...
+  C-->>R: credential_ref = "openai_default"
+  R-->>A: api_key (resolved)
   A->>O: HTTP request + Authorization: Bearer api_key
   O-->>A: response
 ```

@@ -13,7 +13,7 @@
 
 ### 0.2 现有代码入口（已存在）
 
-- `mic_*` host API：`src/spearlet/execution/host_api.rs`
+- `mic_*` host API（当前实现）：`src/spearlet/execution/host_api/mic/mod.rs`
 - `MicState/MicConfig`：`src/spearlet/execution/hostcall/types.rs`
 - fd table 与 epoll：`src/spearlet/execution/hostcall/fd_table.rs`
 - WASM hostcalls glue：`src/spearlet/execution/runtime/wasm_hostcalls.rs`
@@ -92,6 +92,7 @@ v1 暂不新增更多 cmd；如未来需要列设备等，可扩展：
 
 ```json
 {
+  "stub_pcm16_base64": "...",
   "source": "device",
   "device": {
     "name": "MacBook Pro Microphone"
@@ -119,6 +120,7 @@ v1 暂不新增更多 cmd；如未来需要列设备等，可扩展：
 - `max_queue_bytes`: 覆盖 `MicState.max_queue_bytes`
 - `drop_policy`: 队列满时策略（v1 固定 `drop_oldest`，保留字段便于演进）
 - `fallback.to_stub`: 设备不可用/无权限时是否自动降级到 stub（默认 true 以保证可用性）
+- `stub_pcm16_base64`: 仅对 `source = "stub"` 生效，base64 编码的原始 PCM16 bytes；stub 将循环回放这些 bytes 产出每帧数据
 
 返回值：
 
@@ -309,4 +311,3 @@ pub trait MicSource: Send {
 - `rtasr_fd IN`：读事件 JSON
 
 在 `server_vad` 分段策略下，guest 通常不需要主动 flush。
-

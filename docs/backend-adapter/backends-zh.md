@@ -111,13 +111,13 @@ transports = ["websocket"]
 
 ### 6.2 API key 的读取与使用（host-side）
 
-后端 adapter 发送请求时：
+在当前 Rust 代码中：
 
-- 根据 `credential_ref` 解析出 `api_key_env`，读取对应环境变量的值
-- 组装到 HTTP Header（例如 `Authorization: Bearer <key>`）
+- 根据 `credential_ref` 解析出 `api_key_env`
+- 在 spearlet 进程启动环境中注入该 env，并在运行时加载到 `RuntimeConfig.global_environment`
+- registry 使用解析到的 key 构造 backend adapter
+- adapter 将其组装到 HTTP Header（例如 `Authorization: Bearer <key>`）
 - 禁止打印/回传 key（包括错误日志与 `raw` 字段）
-
-在当前 Rust 代码中，host 侧可通过 `SpearHostApi::get_env` 读取环境变量（实现从 `RuntimeConfig.global_environment` 获取，见 [iface.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/iface.rs)）。
 
 ### 6.3 缺失 key 的行为（建议）
 
@@ -160,7 +160,7 @@ MVP 可以先实现“一个 instance 一个 key”；key pool 建议作为 Phas
 #### 6.5.4 性能与工程性
 
 - 不要在每次请求都做昂贵的 secret 解析（如调用外部 secret manager）；优先在进程内缓存已解析的 key。
-- 对 `get_env` 的读取可以在 adapter 初始化时完成并缓存（前提是你接受“滚动重启生效”的轮换方式）。
+- 建议在初始化阶段完成 key 解析并缓存（前提是你接受“滚动重启生效”的轮换方式）。
 
 #### 6.5.5 部署建议（Kubernetes）
 
@@ -182,7 +182,7 @@ SMS Web Admin 可以支持“API key 配置组件”，但最佳实践是把它�
 与 spearlet 的配合方式：
 
 - spearlet 进程启动时通过部署系统注入环境变量（K8s Secret/Vault Agent/systemd drop-in 等）
-- spearlet 的 backend adapter 通过 `SpearHostApi::get_env` 读取 credential 解析到的 env var 值并用于请求签名
+- spearlet 进程启动时加载 env 并构建 registry，用解析到的 key 进行请求签名
 - SMS Web Admin 可以提供“校验/可观测”：
   - 仅验证 key 是否“存在/可用”（例如让 spearlet 在心跳 `health_info` 上报 `HAS_ENV:OPENAI_API_KEY_US_PRIMARY=true`）
   - 允许在 UI 上标记某个 instance 在某些 node 上缺失 key，但不展示 key 值

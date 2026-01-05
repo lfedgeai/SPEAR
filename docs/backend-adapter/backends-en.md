@@ -111,13 +111,13 @@ Benefits:
 
 ### 6.2 Reading and using the key (host-side)
 
-When an adapter sends a request:
+In the current Rust codebase:
 
-- resolve `api_key_env` via `credential_ref`, then read the env var value
-- attach it as an HTTP header (e.g., `Authorization: Bearer <key>`)
+- resolve `api_key_env` via `credential_ref`
+- read the env var value from the host process environment into `RuntimeConfig.global_environment`
+- the registry uses that value to construct backend adapters
+- adapters attach it as an HTTP header (e.g., `Authorization: Bearer <key>`)
 - never log or return the key (including in error messages and `raw` payloads)
-
-In the current Rust codebase, the host can read env values via `SpearHostApi::get_env` (backed by `RuntimeConfig.global_environment`; see [iface.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/iface.rs)).
 
 ### 6.3 Missing key behavior (recommended)
 
@@ -182,7 +182,7 @@ Recommended split:
 How it works with spearlet:
 
 - Inject env vars at spearlet startup via your deployment system (K8s Secrets, Vault Agent, systemd drop-in, etc.)
-- Backend adapters read values via `SpearHostApi::get_env` and sign requests
+- Spearlet reads env vars at startup, builds a registry, and uses resolved keys to sign requests
 - SMS Web Admin can provide validation/observability:
   - only report “present/usable” (e.g., spearlet heartbeat `health_info` reports `HAS_ENV:OPENAI_API_KEY_US_PRIMARY=true`)
   - UI can flag missing secrets on certain nodes without revealing values

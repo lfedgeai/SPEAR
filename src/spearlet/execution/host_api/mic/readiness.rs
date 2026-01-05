@@ -20,4 +20,3 @@ impl DefaultHostApi {
         e.poll_mask = mask;
     }
 }
-

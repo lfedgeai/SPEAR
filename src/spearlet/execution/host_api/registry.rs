@@ -50,31 +50,33 @@ pub(super) fn build_registry_from_runtime_config(
                 String::new()
             };
 
-            let adapter: Arc<dyn crate::spearlet::execution::ai::backends::BackendAdapter> =
-                match b.kind.as_str() {
-                    "openai_chat_completion" => {
-                        let api_key = runtime_config
-                            .global_environment
-                            .get(&api_key_env)
-                            .cloned()
-                            .unwrap_or_default();
-                        if api_key.trim().is_empty() {
-                            tracing::warn!(backend = %b.name, kind = %b.kind, env = %api_key_env, "missing required env var");
-                            continue;
-                        }
-                        Arc::new(OpenAIChatCompletionBackendAdapter::new(
-                            b.name.clone(),
-                            b.base_url.clone(),
-                            api_key,
-                        ))
+            let adapter: Arc<dyn crate::spearlet::execution::ai::backends::BackendAdapter> = match b
+                .kind
+                .as_str()
+            {
+                "openai_chat_completion" => {
+                    let api_key = runtime_config
+                        .global_environment
+                        .get(&api_key_env)
+                        .cloned()
+                        .unwrap_or_default();
+                    if api_key.trim().is_empty() {
+                        tracing::warn!(backend = %b.name, kind = %b.kind, env = %api_key_env, "missing required env var");
+                        continue;
                     }
-                    "openai_realtime_ws" => Arc::new(OpenAIRealtimeWsBackendAdapter::new(
+                    Arc::new(OpenAIChatCompletionBackendAdapter::new(
                         b.name.clone(),
                         b.base_url.clone(),
-                        api_key_env.clone(),
-                    )),
-                    _ => continue,
-                };
+                        api_key,
+                    ))
+                }
+                "openai_realtime_ws" => Arc::new(OpenAIRealtimeWsBackendAdapter::new(
+                    b.name.clone(),
+                    b.base_url.clone(),
+                    api_key_env.clone(),
+                )),
+                _ => continue,
+            };
 
             instances.push(BackendInstance {
                 name: b.name.clone(),
@@ -156,10 +158,7 @@ fn resolve_backend_api_key_env(
 }
 
 fn backend_requires_api_key(kind: &str) -> bool {
-    matches!(
-        kind,
-        "openai_chat_completion" | "openai_realtime_ws"
-    )
+    matches!(kind, "openai_chat_completion" | "openai_realtime_ws")
 }
 
 fn parse_operation(s: &str) -> Option<Operation> {

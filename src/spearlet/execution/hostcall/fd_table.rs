@@ -52,6 +52,14 @@ impl FdTable {
             }
             e.closed = true;
             e.poll_mask.insert(PollEvents::HUP);
+
+            if e.kind == FdKind::Mic {
+                if let FdInner::Mic(st) = &mut e.inner {
+                    st.running = false;
+                    st.generation = st.generation.wrapping_add(1);
+                }
+            }
+
             let watchers = e.watchers.iter().copied().collect::<Vec<_>>();
             let epoll_state = match &e.inner {
                 FdInner::Epoll(st) => Some(st.clone()),

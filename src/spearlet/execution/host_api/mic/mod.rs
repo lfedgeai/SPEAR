@@ -50,15 +50,22 @@ impl DefaultHostApi {
                     .unwrap_or("pcm16")
                     .to_string();
 
-                let source = v
-                    .get("source")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("stub");
+                let source = v.get("source").and_then(|x| x.as_str()).unwrap_or("device");
                 let device_name = v
                     .get("device")
                     .and_then(|x| x.get("name"))
                     .and_then(|x| x.as_str())
                     .map(|s| s.to_string());
+
+                let max_queue_bytes = v
+                    .get("max_queue_bytes")
+                    .and_then(|x| x.as_u64())
+                    .map(|n| n as usize);
+                let fallback_to_stub = v
+                    .get("fallback")
+                    .and_then(|x| x.get("to_stub"))
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(true);
 
                 let stub_pcm16 = v
                     .get("stub_pcm16_base64")
@@ -72,8 +79,7 @@ impl DefaultHostApi {
                     format,
                 };
 
-                let mut spawn = false;
-                let notify = {
+                let (notify, generation) = {
                     let mut e = entry.lock().map_err(|_| -EIO)?;
                     if e.closed {
                         return Err(-EBADF);
@@ -81,7 +87,19 @@ impl DefaultHostApi {
                     let FdInner::Mic(st) = &mut e.inner else {
                         return Err(-EBADF);
                     };
+
+                    st.running = false;
+                    st.queue.clear();
+                    st.queue_bytes = 0;
+                    st.last_error = None;
+
+                    st.generation = st.generation.wrapping_add(1);
+                    let generation = st.generation;
+
                     st.config = Some(cfg.clone());
+                    if let Some(mq) = max_queue_bytes {
+                        st.max_queue_bytes = mq;
+                    }
                     if let Some(s) = stub_pcm16.as_ref() {
                         let bytes = general_purpose::STANDARD
                             .decode(s.trim())
@@ -92,33 +110,80 @@ impl DefaultHostApi {
                         st.stub_pcm16 = Some(bytes);
                         st.stub_pcm16_offset = 0;
                     }
-                    if !st.running {
-                        st.running = true;
-                        spawn = true;
-                    }
+
+                    st.running = true;
+
                     let old = e.poll_mask;
                     self.recompute_mic_readiness_locked(&mut e);
-                    e.poll_mask.bits() != old.bits()
+                    (e.poll_mask.bits() != old.bits(), generation)
                 };
                 if notify {
                     self.fd_table.notify_watchers(fd);
                 }
-                if spawn {
-                    if source == "device" {
-                        let req = source_device::DeviceMicStartRequest {
-                            fd,
-                            config: cfg,
-                            device_name,
-                        };
-                        match self.spawn_mic_device_task(req) {
-                            Ok(()) => {}
-                            Err(source_device::DeviceMicStartError::NotImplemented) => {
-                                self.spawn_mic_stub_task(fd);
+                if source == "device" {
+                    let req = source_device::DeviceMicStartRequest {
+                        fd,
+                        config: cfg,
+                        device_name,
+                        generation,
+                    };
+                    match self.spawn_mic_device_task(req) {
+                        Ok(()) => {}
+                        Err(source_device::DeviceMicStartError::NotImplemented) => {
+                            if fallback_to_stub {
+                                self.spawn_mic_stub_task(fd, generation);
+                            } else {
+                                let msg =
+                                    "device mic not enabled (build without feature mic-device)";
+                                let notify_err = {
+                                    let mut e = entry.lock().map_err(|_| -EIO)?;
+                                    if e.closed {
+                                        return Err(-EBADF);
+                                    }
+                                    let FdInner::Mic(st) = &mut e.inner else {
+                                        return Err(-EBADF);
+                                    };
+                                    st.running = false;
+                                    st.generation = st.generation.wrapping_add(1);
+                                    st.last_error = Some(msg.to_string());
+                                    let old = e.poll_mask;
+                                    self.recompute_mic_readiness_locked(&mut e);
+                                    e.poll_mask.bits() != old.bits()
+                                };
+                                if notify_err {
+                                    self.fd_table.notify_watchers(fd);
+                                }
+                                return Err(-EIO);
                             }
                         }
-                    } else {
-                        self.spawn_mic_stub_task(fd);
+                        Err(source_device::DeviceMicStartError::Failed(msg)) => {
+                            if fallback_to_stub {
+                                self.spawn_mic_stub_task(fd, generation);
+                            } else {
+                                let notify_err = {
+                                    let mut e = entry.lock().map_err(|_| -EIO)?;
+                                    if e.closed {
+                                        return Err(-EBADF);
+                                    }
+                                    let FdInner::Mic(st) = &mut e.inner else {
+                                        return Err(-EBADF);
+                                    };
+                                    st.running = false;
+                                    st.generation = st.generation.wrapping_add(1);
+                                    st.last_error = Some(msg);
+                                    let old = e.poll_mask;
+                                    self.recompute_mic_readiness_locked(&mut e);
+                                    e.poll_mask.bits() != old.bits()
+                                };
+                                if notify_err {
+                                    self.fd_table.notify_watchers(fd);
+                                }
+                                return Err(-EIO);
+                            }
+                        }
                     }
+                } else {
+                    self.spawn_mic_stub_task(fd, generation);
                 }
                 Ok(None)
             }

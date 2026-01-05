@@ -28,4 +28,3 @@ impl DefaultHostApi {
         self.fd_table.fd_ctl(fd, cmd, payload)
     }
 }
-

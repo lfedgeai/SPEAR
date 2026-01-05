@@ -13,5 +13,3 @@ mod tests;
 pub use cchat::ChatSessionSnapshot;
 pub use core::DefaultHostApi;
 pub use iface::{HttpCallResult, SpearHostApi};
-
- 

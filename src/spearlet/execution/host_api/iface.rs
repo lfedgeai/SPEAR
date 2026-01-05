@@ -24,4 +24,3 @@ pub trait SpearHostApi: Send + Sync {
     fn get_object(&self, id: &str) -> Result<Vec<u8>, ExecutionError>;
     fn put_object(&self, name: &str, bytes: Vec<u8>) -> Result<String, ExecutionError>;
 }
-

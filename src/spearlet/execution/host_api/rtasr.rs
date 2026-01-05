@@ -9,8 +9,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-mod segmentation;
 mod readiness;
+mod segmentation;
 mod stub;
 mod websocket;
 
@@ -132,11 +132,7 @@ impl DefaultHostApi {
                         if let Some(s) = st.params.get("ws_url").and_then(|x| x.as_str()) {
                             ws_url_override = Some(s.to_string());
                         }
-                        if let Some(s) = st
-                            .params
-                            .get("client_secret")
-                            .and_then(|x| x.as_str())
-                        {
+                        if let Some(s) = st.params.get("client_secret").and_then(|x| x.as_str()) {
                             client_secret_override = Some(s.to_string());
                         }
                         if let Some(s) = st.params.get("model").and_then(|x| x.as_str()) {
@@ -144,30 +140,32 @@ impl DefaultHostApi {
                         }
 
                         if transport == "websocket" {
-                            let req = crate::spearlet::execution::ai::ir::CanonicalRequestEnvelope {
-                                version: 1,
-                                request_id: "rtasr_connect".to_string(),
-                                operation: Operation::SpeechToText,
-                                meta: HashMap::new(),
-                                routing: RoutingHints {
-                                    backend: st
-                                        .params
-                                        .get("backend")
-                                        .and_then(|x| x.as_str())
-                                        .map(|s| s.to_string()),
-                                    allowlist: vec![],
-                                    denylist: vec![],
-                                },
-                                requirements: crate::spearlet::execution::ai::ir::Requirements {
-                                    required_features: vec![],
-                                    required_transports: vec!["websocket".to_string()],
-                                },
-                                timeout_ms: None,
-                                payload: Payload::SpeechToText(SpeechToTextPayload {
-                                    model: model_override.clone(),
-                                }),
-                                extra: HashMap::new(),
-                            };
+                            let req =
+                                crate::spearlet::execution::ai::ir::CanonicalRequestEnvelope {
+                                    version: 1,
+                                    request_id: "rtasr_connect".to_string(),
+                                    operation: Operation::SpeechToText,
+                                    meta: HashMap::new(),
+                                    routing: RoutingHints {
+                                        backend: st
+                                            .params
+                                            .get("backend")
+                                            .and_then(|x| x.as_str())
+                                            .map(|s| s.to_string()),
+                                        allowlist: vec![],
+                                        denylist: vec![],
+                                    },
+                                    requirements:
+                                        crate::spearlet::execution::ai::ir::Requirements {
+                                            required_features: vec![],
+                                            required_transports: vec!["websocket".to_string()],
+                                        },
+                                    timeout_ms: None,
+                                    payload: Payload::SpeechToText(SpeechToTextPayload {
+                                        model: model_override.clone(),
+                                    }),
+                                    extra: HashMap::new(),
+                                };
 
                             if let Ok(inv) = self.ai_engine.invoke_streaming(&req) {
                                 match inv.plan {
@@ -199,7 +197,12 @@ impl DefaultHostApi {
                 }
                 if spawn_ws {
                     let plan = ws_plan.ok_or(-EIO)?;
-                    self.spawn_rtasr_websocket_tasks(fd, plan, ws_url_override, client_secret_override);
+                    self.spawn_rtasr_websocket_tasks(
+                        fd,
+                        plan,
+                        ws_url_override,
+                        client_secret_override,
+                    );
                 } else if spawn_stub {
                     self.spawn_rtasr_stub_tasks(fd);
                 }
@@ -473,5 +476,4 @@ impl DefaultHostApi {
         }
         self.fd_table.close(fd)
     }
-
 }

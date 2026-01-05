@@ -32,7 +32,8 @@ impl DefaultHostApi {
                         };
 
                         if let Some(item) = st.send_queue.pop_front() {
-                            st.send_queue_bytes = st.send_queue_bytes.saturating_sub(item.byte_len());
+                            st.send_queue_bytes =
+                                st.send_queue_bytes.saturating_sub(item.byte_len());
                         }
 
                         let interval_ms = st
@@ -111,4 +112,3 @@ impl DefaultHostApi {
         });
     }
 }
-

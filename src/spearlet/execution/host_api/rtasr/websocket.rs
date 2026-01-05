@@ -6,10 +6,10 @@ use crate::spearlet::execution::hostcall::types::{
 };
 use std::collections::HashMap;
 
-use super::segmentation::maybe_enqueue_autoflush_locked;
 use super::super::util::{
     build_ws_request_with_headers, expand_json_templates, expand_template, extract_json_path,
 };
+use super::segmentation::maybe_enqueue_autoflush_locked;
 
 fn set_rtasr_error(table: &FdTable, fd: i32, msg: String) {
     if let Some(entry) = table.get(fd) {
@@ -109,10 +109,8 @@ impl DefaultHostApi {
                         StreamingPrepareStep::HttpJson(p) => {
                             let url = expand_template(&p.url, &vars, &global_env);
                             let body = expand_json_templates(p.body.clone(), &vars, &global_env);
-                            let mut req = reqwest::Client::new().request(
-                                p.method.parse().unwrap_or(reqwest::Method::POST),
-                                url,
-                            );
+                            let mut req = reqwest::Client::new()
+                                .request(p.method.parse().unwrap_or(reqwest::Method::POST), url);
                             for (k, v) in p.headers.iter() {
                                 let hv = expand_template(v, &vars, &global_env);
                                 req = req.header(k, hv);
@@ -387,7 +385,9 @@ impl DefaultHostApi {
                                 .next()
                                 .await
                                 .ok_or_else(|| "websocket closed".to_string())
-                                .and_then(|r| r.map_err(|e| format!("websocket read failed: {e}")))?;
+                                .and_then(|r| {
+                                    r.map_err(|e| format!("websocket read failed: {e}"))
+                                })?;
 
                             let payload: Option<Vec<u8>> = match msg {
                                 tokio_tungstenite::tungstenite::Message::Text(s) => {
@@ -432,4 +432,3 @@ impl DefaultHostApi {
         });
     }
 }
-

@@ -22,7 +22,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e
+.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e test-mic-device mac-build mac-build-release
 .DEFAULT_GOAL := build
 
 # Default target / 默认目标
@@ -108,6 +108,16 @@ test:
 	fi
 	@$(MAKE) test-ui || echo -e "$(YELLOW)⚠️ UI tests skipped (Node/Playwright not available) / UI测试已跳过（未安装Node/Playwright）$(NC)"
 	@echo -e "$(GREEN)✅ Tests completed / 测试完成$(NC)"
+
+test-mic-device:
+	@echo -e "$(BLUE)🧪 Running mic-device capture test... / 运行mic-device采集测试...$(NC)"
+	$(CARGO) test --features mic-device test_mic_device_returns_pcm16_frames -- --nocapture --test-threads=1
+
+mac-build:
+	@$(MAKE) build FEATURES="$(FEATURES) mic-device"
+
+mac-build-release:
+	@$(MAKE) build-release FEATURES="$(FEATURES) mic-device"
 
 
 .PHONY: test-ui

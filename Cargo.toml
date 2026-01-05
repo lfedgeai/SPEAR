@@ -98,6 +98,7 @@ wasmedge-sdk = { version = "0.14", optional = true, features = ["standalone"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 url = "2"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+cpal = { version = "0.15", optional = true }
 
 [dev-dependencies]
 # Testing utilities / 测试工具
@@ -131,3 +132,4 @@ sled = ["dep:sled"]
 rocksdb = ["dep:rocksdb"]
 evmap = ["dep:evmap"]
 wasmedge = ["dep:wasmedge-sdk"]
+mic-device = ["dep:cpal"]

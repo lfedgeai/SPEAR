@@ -4,7 +4,9 @@ use crate::spearlet::execution::hostcall::types::{
 };
 use libc::EINVAL;
 
-pub(super) fn parse_segmentation_config(v: &serde_json::Value) -> Result<RtAsrSegmentationConfig, i32> {
+pub(super) fn parse_segmentation_config(
+    v: &serde_json::Value,
+) -> Result<RtAsrSegmentationConfig, i32> {
     let obj = v.as_object().ok_or(-EINVAL)?;
 
     let flush_on_close = obj
@@ -111,8 +113,16 @@ pub(super) fn parse_segmentation_config(v: &serde_json::Value) -> Result<RtAsrSe
 
     let cc = RtAsrClientCommitConfig {
         mode: RtAsrClientCommitMode::Hybrid,
-        flush_interval_ms: if mode_s == "bytes" { None } else { flush_interval_ms },
-        max_buffer_bytes: if mode_s == "time" { None } else { max_buffer_bytes },
+        flush_interval_ms: if mode_s == "bytes" {
+            None
+        } else {
+            flush_interval_ms
+        },
+        max_buffer_bytes: if mode_s == "time" {
+            None
+        } else {
+            max_buffer_bytes
+        },
         silence_ms: if mode_s == "bytes" || mode_s == "time" {
             None
         } else {
@@ -251,4 +261,3 @@ pub(super) fn apply_turn_detection_to_client_events(
         session.insert("turn_detection".to_string(), turn_detection.clone());
     }
 }
-

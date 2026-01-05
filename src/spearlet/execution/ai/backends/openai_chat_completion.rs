@@ -15,7 +15,11 @@ pub struct OpenAIChatCompletionBackendAdapter {
 }
 
 impl OpenAIChatCompletionBackendAdapter {
-    pub fn new(name: impl Into<String>, base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             base_url: base_url.into(),
@@ -238,11 +242,8 @@ mod tests {
 
     #[test]
     fn test_missing_api_key_is_error() {
-        let adapter = OpenAIChatCompletionBackendAdapter::new(
-            "openai",
-            "https://api.openai.com/v1",
-            "",
-        );
+        let adapter =
+            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1", "");
         let req = CanonicalRequestEnvelope {
             version: 1,
             request_id: "r1".to_string(),
@@ -268,11 +269,8 @@ mod tests {
 
     #[test]
     fn test_join_url() {
-        let adapter = OpenAIChatCompletionBackendAdapter::new(
-            "openai",
-            "https://api.openai.com/v1/",
-            "k",
-        );
+        let adapter =
+            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1/", "k");
         assert_eq!(
             adapter.join_url("chat/completions"),
             "https://api.openai.com/v1/chat/completions"
@@ -281,11 +279,8 @@ mod tests {
 
     #[test]
     fn test_params_cannot_override_messages_or_tools() {
-        let adapter = OpenAIChatCompletionBackendAdapter::new(
-            "openai",
-            "https://api.openai.com/v1/",
-            "k",
-        );
+        let adapter =
+            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1/", "k");
 
         let mut params = HashMap::new();
         params.insert(
@@ -325,4 +320,3 @@ mod tests {
         assert_eq!(body.get("tools").unwrap()[0]["function"]["name"], "y");
     }
 }
-

@@ -17,7 +17,8 @@ pub struct DefaultHostApi {
 
 impl DefaultHostApi {
     pub fn new(runtime_config: super::super::runtime::RuntimeConfig) -> Self {
-        let (registry, policy) = super::registry::build_registry_from_runtime_config(&runtime_config);
+        let (registry, policy) =
+            super::registry::build_registry_from_runtime_config(&runtime_config);
         let router = Router::new(registry, policy);
         let ai_engine = Arc::new(AiEngine::new(router));
         Self {
@@ -96,4 +97,3 @@ impl SpearHostApi for DefaultHostApi {
         })
     }
 }
-

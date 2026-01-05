@@ -2,7 +2,7 @@ use crate::spearlet::execution::host_api::DefaultHostApi;
 use crate::spearlet::execution::hostcall::types::{FdInner, PollEvents};
 
 impl DefaultHostApi {
-    pub(super) fn spawn_mic_stub_task(&self, fd: i32) {
+    pub(super) fn spawn_mic_stub_task(&self, fd: i32, generation: u64) {
         let table = self.fd_table.clone();
         self.spawn_background(async move {
             loop {
@@ -20,6 +20,9 @@ impl DefaultHostApi {
                     let FdInner::Mic(st) = &e.inner else {
                         return;
                     };
+                    if !st.running || st.generation != generation {
+                        return;
+                    }
                     st.config.as_ref().map(|c| c.frame_ms).unwrap_or(20)
                 };
 
@@ -45,7 +48,7 @@ impl DefaultHostApi {
                         let FdInner::Mic(st) = &mut e.inner else {
                             return;
                         };
-                        if !st.running {
+                        if !st.running || st.generation != generation {
                             return;
                         }
 

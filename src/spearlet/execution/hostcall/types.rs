@@ -250,7 +250,6 @@ pub struct MicConfig {
     pub format: String,
 }
 
-#[derive(Clone, Debug)]
 pub struct MicState {
     pub config: Option<MicConfig>,
     pub queue: VecDeque<Vec<u8>>,
@@ -259,8 +258,26 @@ pub struct MicState {
     pub dropped_frames: u64,
     pub last_error: Option<String>,
     pub running: bool,
+    pub generation: u64,
     pub stub_pcm16: Option<Vec<u8>>,
     pub stub_pcm16_offset: usize,
+}
+
+impl std::fmt::Debug for MicState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MicState")
+            .field("config", &self.config)
+            .field("queue_len", &self.queue.len())
+            .field("queue_bytes", &self.queue_bytes)
+            .field("max_queue_bytes", &self.max_queue_bytes)
+            .field("dropped_frames", &self.dropped_frames)
+            .field("last_error", &self.last_error)
+            .field("running", &self.running)
+            .field("generation", &self.generation)
+            .field("stub_pcm16_len", &self.stub_pcm16.as_ref().map(|v| v.len()))
+            .field("stub_pcm16_offset", &self.stub_pcm16_offset)
+            .finish()
+    }
 }
 
 impl Default for MicState {
@@ -273,6 +290,7 @@ impl Default for MicState {
             dropped_frames: 0,
             last_error: None,
             running: false,
+            generation: 0,
             stub_pcm16: None,
             stub_pcm16_offset: 0,
         }

@@ -121,7 +121,11 @@ impl DefaultHostApi {
             Err(e) => {
                 let body = json!({"error": {"message": e.to_string()}});
                 let bytes = serde_json::to_vec(&body).map_err(|_| -EIO)?;
-                let metrics_bytes = if metrics_enabled { b"{}".to_vec() } else { Vec::new() };
+                let metrics_bytes = if metrics_enabled {
+                    b"{}".to_vec()
+                } else {
+                    Vec::new()
+                };
                 self.cchat_put_response(resp_fd, bytes, metrics_bytes)?;
                 return Ok(resp_fd);
             }

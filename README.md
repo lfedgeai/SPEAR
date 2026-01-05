@@ -32,7 +32,19 @@ make build-release
 
 # 指定 Rust features（例如 sled / rocksdb） / build with Rust features (e.g. sled / rocksdb)
 make FEATURES=sled build
+
+# 启用本机麦克风采集（mic_fd device source）/ enable local microphone capture (mic_fd device source)
+make FEATURES=mic-device build
+
+# macOS 便捷入口（等价于 FEATURES+=mic-device）/ macOS shortcut (equivalent to FEATURES+=mic-device)
+make mac-build
 ```
+
+说明 / Notes:
+
+- `mic-device` 默认不启用；不启用时不会编译本机麦克风采集实现（仅保留 mic hostcall 的框架与 stub/fallback 逻辑）。
+- `mic-device` is disabled by default; without it, the real device capture implementation is not compiled (only the mic hostcall + stub/fallback path remains).
+- 详情 / More details: `docs/mic-device-feature-zh.md`, `docs/mic-device-feature-en.md`
 
 ### 2) 运行 SMS / Run SMS
 
@@ -129,6 +141,16 @@ UI 测试（Playwright）/ UI tests (Playwright):
 
 ```bash
 make test-ui
+```
+
+mic-device 采集验证 / mic-device capture validation:
+
+```bash
+# 只跑 mic-device 采集测试（会输出默认输入设备与读帧信息）
+SPEAR_TEST_REQUIRE_MIC_DEVICE=1 make test-mic-device
+
+# 或运行探测示例（列出输入设备并读一帧）
+cargo run --features mic-device --example mic_device_probe
 ```
 
 WASM 示例（C → WASM）/ WASM samples (C → WASM):

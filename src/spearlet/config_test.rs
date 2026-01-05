@@ -640,6 +640,9 @@ transports = ["http"]
         let cfg: AppConfig = toml::from_str(s).unwrap();
         assert_eq!(cfg.spearlet.llm.credentials.len(), 1);
         assert_eq!(cfg.spearlet.llm.backends.len(), 1);
-        assert_eq!(cfg.spearlet.llm.backends[0].credential_ref.as_deref(), Some("openai_chat"));
+        assert_eq!(
+            cfg.spearlet.llm.backends[0].credential_ref.as_deref(),
+            Some("openai_chat")
+        );
     }
 }

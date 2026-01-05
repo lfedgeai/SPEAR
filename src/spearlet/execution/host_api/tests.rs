@@ -1,11 +1,11 @@
 use super::*;
-use crate::spearlet::execution::hostcall::fd_table::EP_CTL_ADD;
-use crate::spearlet::execution::hostcall::types::PollEvents;
 use crate::spearlet::execution::ai::ir::{
-    CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload, RoutingHints,
-    SpeechToTextPayload,
+    CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload,
+    RoutingHints, SpeechToTextPayload,
 };
 use crate::spearlet::execution::ai::streaming::StreamingPlan;
+use crate::spearlet::execution::hostcall::fd_table::EP_CTL_ADD;
+use crate::spearlet::execution::hostcall::types::PollEvents;
 use crate::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeType};
 use std::collections::HashMap;
 
@@ -123,17 +123,19 @@ fn test_registry_credential_ref_missing_env_filters_backend() {
             kind: "env".to_string(),
             api_key_env: "OPENAI_CHAT_API_KEY".to_string(),
         });
-    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
-        name: "openai-chat".to_string(),
-        kind: "openai_chat_completion".to_string(),
-        base_url: "https://api.openai.com/v1".to_string(),
-        credential_ref: Some("openai_chat".to_string()),
-        weight: 100,
-        priority: 0,
-        ops: vec!["chat_completions".to_string()],
-        features: vec![],
-        transports: vec!["http".to_string()],
-    });
+    cfg.llm
+        .backends
+        .push(crate::spearlet::config::LlmBackendConfig {
+            name: "openai-chat".to_string(),
+            kind: "openai_chat_completion".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            credential_ref: Some("openai_chat".to_string()),
+            weight: 100,
+            priority: 0,
+            ops: vec!["chat_completions".to_string()],
+            features: vec![],
+            transports: vec!["http".to_string()],
+        });
 
     let runtime_config = RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
@@ -159,17 +161,19 @@ fn test_registry_credential_ref_with_env_registers_backend() {
             kind: "env".to_string(),
             api_key_env: "OPENAI_CHAT_API_KEY".to_string(),
         });
-    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
-        name: "openai-chat".to_string(),
-        kind: "openai_chat_completion".to_string(),
-        base_url: "https://api.openai.com/v1".to_string(),
-        credential_ref: Some("openai_chat".to_string()),
-        weight: 100,
-        priority: 0,
-        ops: vec!["chat_completions".to_string()],
-        features: vec![],
-        transports: vec!["http".to_string()],
-    });
+    cfg.llm
+        .backends
+        .push(crate::spearlet::config::LlmBackendConfig {
+            name: "openai-chat".to_string(),
+            kind: "openai_chat_completion".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            credential_ref: Some("openai_chat".to_string()),
+            weight: 100,
+            priority: 0,
+            ops: vec!["chat_completions".to_string()],
+            features: vec![],
+            transports: vec!["http".to_string()],
+        });
 
     let mut env = HashMap::new();
     env.insert("OPENAI_CHAT_API_KEY".to_string(), "dummy".to_string());
@@ -197,17 +201,19 @@ fn test_registry_openai_chat_completion_kind_alias_registers_backend() {
             kind: "env".to_string(),
             api_key_env: "OPENAI_CHAT_API_KEY".to_string(),
         });
-    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
-        name: "openai-chat".to_string(),
-        kind: "openai_chat_completion".to_string(),
-        base_url: "https://api.openai.com/v1".to_string(),
-        credential_ref: Some("openai_chat".to_string()),
-        weight: 100,
-        priority: 0,
-        ops: vec!["chat_completions".to_string()],
-        features: vec![],
-        transports: vec!["http".to_string()],
-    });
+    cfg.llm
+        .backends
+        .push(crate::spearlet::config::LlmBackendConfig {
+            name: "openai-chat".to_string(),
+            kind: "openai_chat_completion".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            credential_ref: Some("openai_chat".to_string()),
+            weight: 100,
+            priority: 0,
+            ops: vec!["chat_completions".to_string()],
+            features: vec![],
+            transports: vec!["http".to_string()],
+        });
 
     let mut env = HashMap::new();
     env.insert("OPENAI_CHAT_API_KEY".to_string(), "dummy".to_string());
@@ -235,17 +241,19 @@ fn test_realtime_ws_plan_uses_resolved_env_template() {
             kind: "env".to_string(),
             api_key_env: "OPENAI_REALTIME_API_KEY".to_string(),
         });
-    cfg.llm.backends.push(crate::spearlet::config::LlmBackendConfig {
-        name: "rt-ws".to_string(),
-        kind: "openai_realtime_ws".to_string(),
-        base_url: "https://api.openai.com/v1".to_string(),
-        credential_ref: Some("openai_realtime".to_string()),
-        weight: 100,
-        priority: 0,
-        ops: vec!["speech_to_text".to_string()],
-        features: vec![],
-        transports: vec!["websocket".to_string()],
-    });
+    cfg.llm
+        .backends
+        .push(crate::spearlet::config::LlmBackendConfig {
+            name: "rt-ws".to_string(),
+            kind: "openai_realtime_ws".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            credential_ref: Some("openai_realtime".to_string()),
+            weight: 100,
+            priority: 0,
+            ops: vec!["speech_to_text".to_string()],
+            features: vec![],
+            transports: vec!["websocket".to_string()],
+        });
 
     let mut env = HashMap::new();
     env.insert("OPENAI_REALTIME_API_KEY".to_string(), "dummy".to_string());
@@ -348,8 +356,7 @@ fn test_rtasr_write_backpressure_and_epollout() {
     let fd = api.rtasr_create();
 
     let cfg =
-        serde_json::to_vec(&serde_json::json!({"key":"max_send_queue_bytes","value":16}))
-            .unwrap();
+        serde_json::to_vec(&serde_json::json!({"key":"max_send_queue_bytes","value":16})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&cfg)).unwrap();
 
     assert_eq!(
@@ -395,9 +402,8 @@ async fn test_rtasr_read_epollin_and_eagain() {
         0
     );
 
-    let cfg =
-        serde_json::to_vec(&serde_json::json!({"key":"stub_event_interval_ms","value":20}))
-            .unwrap();
+    let cfg = serde_json::to_vec(&serde_json::json!({"key":"stub_event_interval_ms","value":20}))
+        .unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&cfg)).unwrap();
     let _ = api.rtasr_ctl(fd, 2, None).unwrap();
 
@@ -493,14 +499,14 @@ async fn test_rtasr_websocket_transport_receives_events() {
     let ws_url = format!("ws://{}/v1/realtime?intent=transcription", addr);
 
     let p1 =
-        serde_json::to_vec(&serde_json::json!({"key":"transport","value":"websocket"}))
-            .unwrap();
+        serde_json::to_vec(&serde_json::json!({"key":"transport","value":"websocket"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p1)).unwrap();
     let p2 = serde_json::to_vec(&serde_json::json!({"key":"backend","value":"rt-ws"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p2)).unwrap();
     let p3 = serde_json::to_vec(&serde_json::json!({"key":"ws_url","value":ws_url})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p3)).unwrap();
-    let p4 = serde_json::to_vec(&serde_json::json!({"key":"client_secret","value":"dummy"})).unwrap();
+    let p4 =
+        serde_json::to_vec(&serde_json::json!({"key":"client_secret","value":"dummy"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p4)).unwrap();
 
     let _ = api.rtasr_ctl(fd, 2, None).unwrap();
@@ -613,7 +619,10 @@ fn test_rtasr_default_segmentation_is_server_vad() {
     let fd = api.rtasr_create();
     let got = api.rtasr_ctl(fd, 8, None).unwrap().unwrap();
     let v: serde_json::Value = serde_json::from_slice(&got).unwrap();
-    assert_eq!(v.get("strategy").and_then(|x| x.as_str()), Some("server_vad"));
+    assert_eq!(
+        v.get("strategy").and_then(|x| x.as_str()),
+        Some("server_vad")
+    );
     assert_eq!(
         v.get("vad")
             .and_then(|x| x.get("silence_ms"))
@@ -710,14 +719,14 @@ async fn test_rtasr_websocket_flush_sends_commit() {
 
     let ws_url = format!("ws://{}/v1/realtime?model=gpt-realtime", addr);
     let p1 =
-        serde_json::to_vec(&serde_json::json!({"key":"transport","value":"websocket"}))
-            .unwrap();
+        serde_json::to_vec(&serde_json::json!({"key":"transport","value":"websocket"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p1)).unwrap();
     let p2 = serde_json::to_vec(&serde_json::json!({"key":"backend","value":"rt-ws"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p2)).unwrap();
     let p3 = serde_json::to_vec(&serde_json::json!({"key":"ws_url","value":ws_url})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p3)).unwrap();
-    let p4 = serde_json::to_vec(&serde_json::json!({"key":"client_secret","value":"dummy"})).unwrap();
+    let p4 =
+        serde_json::to_vec(&serde_json::json!({"key":"client_secret","value":"dummy"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p4)).unwrap();
 
     let _ = api.rtasr_ctl(fd, 2, None).unwrap();
@@ -831,14 +840,14 @@ async fn test_rtasr_websocket_autoflush_bytes_sends_commit() {
 
     let ws_url = format!("ws://{}/v1/realtime?model=gpt-realtime", addr);
     let p1 =
-        serde_json::to_vec(&serde_json::json!({"key":"transport","value":"websocket"}))
-            .unwrap();
+        serde_json::to_vec(&serde_json::json!({"key":"transport","value":"websocket"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p1)).unwrap();
     let p2 = serde_json::to_vec(&serde_json::json!({"key":"backend","value":"rt-ws"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p2)).unwrap();
     let p3 = serde_json::to_vec(&serde_json::json!({"key":"ws_url","value":ws_url})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p3)).unwrap();
-    let p4 = serde_json::to_vec(&serde_json::json!({"key":"client_secret","value":"dummy"})).unwrap();
+    let p4 =
+        serde_json::to_vec(&serde_json::json!({"key":"client_secret","value":"dummy"})).unwrap();
     let _ = api.rtasr_ctl(fd, 1, Some(&p4)).unwrap();
 
     let _ = api.rtasr_ctl(fd, 2, None).unwrap();
@@ -870,7 +879,10 @@ async fn test_rtasr_websocket_autoflush_bytes_sends_commit() {
         .and_then(|x| x.get("turn_detection"))
         .cloned()
         .unwrap_or(serde_json::Value::Null);
-    assert_eq!(turn.get("type").and_then(|x| x.as_str()), Some("server_vad"));
+    assert_eq!(
+        turn.get("type").and_then(|x| x.as_str()),
+        Some("server_vad")
+    );
     assert_eq!(
         turn.get("silence_duration_ms").and_then(|x| x.as_u64()),
         Some(321)
@@ -907,7 +919,8 @@ async fn test_mic_read_epollin_and_close_hup() {
         "sample_rate_hz": 24000,
         "channels": 1,
         "format": "pcm16",
-        "frame_ms": 20
+        "frame_ms": 20,
+        "source": "stub"
     }))
     .unwrap();
     let _ = api.mic_ctl(mic_fd, 1, Some(&mic_cfg)).unwrap();
@@ -1004,6 +1017,130 @@ async fn test_mic_stub_pcm16_base64_loops() {
 
     let bytes2 = api.mic_read(mic_fd).unwrap();
     assert_eq!(bytes2, build_expected(4));
+
+    assert_eq!(api.mic_close(mic_fd), 0);
+}
+
+#[cfg(feature = "mic-device")]
+#[tokio::test]
+async fn test_mic_device_returns_pcm16_frames() {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    if std::env::var("SPEAR_TEST_SKIP_MIC_DEVICE").ok().as_deref() == Some("1") {
+        return;
+    }
+
+    let require = std::env::var("SPEAR_TEST_REQUIRE_MIC_DEVICE")
+        .ok()
+        .as_deref()
+        == Some("1");
+
+    let host = cpal::default_host();
+    let default_dev = host.default_input_device();
+    if default_dev.is_none() {
+        if require {
+            panic!("no default input device");
+        }
+        return;
+    }
+
+    if require {
+        let default_name = default_dev
+            .as_ref()
+            .and_then(|d| d.name().ok())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let mut names: Vec<String> = Vec::new();
+        if let Ok(devs) = host.input_devices() {
+            for d in devs {
+                let name = d.name().unwrap_or_else(|_| "<unknown>".to_string());
+                names.push(name);
+            }
+        }
+        println!("mic-device test: default_input_device={}", default_name);
+        println!("mic-device test: input_devices={:?}", names);
+    }
+
+    let api = DefaultHostApi::new(RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: None,
+        resource_pool: ResourcePoolConfig::default(),
+    });
+
+    let epfd = api.spear_ep_create();
+    let mic_fd = api.mic_create();
+    assert_eq!(
+        api.spear_ep_ctl(epfd, EP_CTL_ADD, mic_fd, PollEvents::IN.bits() as i32),
+        0
+    );
+
+    let mic_cfg = serde_json::to_vec(&serde_json::json!({
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "format": "pcm16",
+        "frame_ms": 20,
+        "source": "device",
+        "fallback": {"to_stub": false}
+    }))
+    .unwrap();
+
+    if let Err(e) = api.mic_ctl(mic_fd, 1, Some(&mic_cfg)) {
+        if require {
+            let default_name = default_dev
+                .as_ref()
+                .and_then(|d| d.name().ok())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            let mut names: Vec<String> = Vec::new();
+            if let Ok(devs) = host.input_devices() {
+                for d in devs {
+                    let name = d.name().unwrap_or_else(|_| "<unknown>".to_string());
+                    names.push(name);
+                }
+            }
+            panic!(
+                "mic_ctl failed: {} (default_input_device: {}; input_devices: {:?})",
+                e, default_name, names
+            );
+        }
+        return;
+    }
+
+    if require {
+        println!("mic-device test: mic_ctl ok");
+    }
+
+    let api2 = api.clone();
+    let ready = tokio::task::spawn_blocking(move || api2.spear_ep_wait_ready(epfd, 2000))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready
+        .iter()
+        .any(|(rfd, ev)| *rfd == mic_fd && ((*ev as u32) & PollEvents::IN.bits()) != 0));
+
+    if require {
+        println!("mic-device test: epoll ready events={:?}", ready);
+    }
+
+    let bytes = api.mic_read(mic_fd).unwrap();
+    assert_eq!(bytes.len(), 24000usize * 20 / 1000 * 2);
+
+    if require {
+        let mut sum_sq = 0f64;
+        let mut n = 0u64;
+        for chunk in bytes.chunks_exact(2) {
+            let v = i16::from_le_bytes([chunk[0], chunk[1]]) as f64;
+            sum_sq += v * v;
+            n += 1;
+        }
+        let rms = (sum_sq / (n.max(1) as f64)).sqrt();
+        println!(
+            "mic-device test: mic_read bytes={} rms={:.2}",
+            bytes.len(),
+            rms
+        );
+    }
 
     assert_eq!(api.mic_close(mic_fd), 0);
 }

@@ -24,6 +24,22 @@ enum {
     SPEAR_CCHAT_CTL_GET_METRICS = 2,
 };
 
+enum {
+    SPEAR_RTA_CTL_SET_PARAM = 1,
+    SPEAR_RTA_CTL_CONNECT = 2,
+    SPEAR_RTA_CTL_GET_STATUS = 3,
+    SPEAR_RTA_CTL_SEND_EVENT = 4,
+    SPEAR_RTA_CTL_FLUSH = 5,
+    SPEAR_RTA_CTL_CLEAR = 6,
+    SPEAR_RTA_CTL_SET_AUTOFLUSH = 7,
+    SPEAR_RTA_CTL_GET_AUTOFLUSH = 8,
+};
+
+enum {
+    SPEAR_MIC_CTL_SET_PARAM = 1,
+    SPEAR_MIC_CTL_GET_STATUS = 2,
+};
+
 SPEAR_IMPORT("time_now_ms")
 int64_t sp_time_now_ms(void);
 
@@ -45,6 +61,33 @@ int32_t sp_cchat_recv(int32_t response_fd, int32_t out_ptr, int32_t out_len_ptr)
 
 SPEAR_IMPORT("cchat_close")
 int32_t sp_cchat_close(int32_t fd);
+
+SPEAR_IMPORT("rtasr_create")
+int32_t sp_rtasr_create(void);
+
+SPEAR_IMPORT("rtasr_ctl")
+int32_t sp_rtasr_ctl(int32_t fd, int32_t cmd, int32_t arg_ptr, int32_t arg_len_ptr);
+
+SPEAR_IMPORT("rtasr_write")
+int32_t sp_rtasr_write(int32_t fd, int32_t buf_ptr, int32_t buf_len);
+
+SPEAR_IMPORT("rtasr_read")
+int32_t sp_rtasr_read(int32_t fd, int32_t out_ptr, int32_t out_len_ptr);
+
+SPEAR_IMPORT("rtasr_close")
+int32_t sp_rtasr_close(int32_t fd);
+
+SPEAR_IMPORT("mic_create")
+int32_t sp_mic_create(void);
+
+SPEAR_IMPORT("mic_ctl")
+int32_t sp_mic_ctl(int32_t fd, int32_t cmd, int32_t arg_ptr, int32_t arg_len_ptr);
+
+SPEAR_IMPORT("mic_read")
+int32_t sp_mic_read(int32_t fd, int32_t out_ptr, int32_t out_len_ptr);
+
+SPEAR_IMPORT("mic_close")
+int32_t sp_mic_close(int32_t fd);
 
 enum {
     SPEAR_EPOLL_CTL_ADD = 1,
@@ -151,6 +194,138 @@ static inline uint8_t *sp_cchat_recv_alloc(int32_t resp_fd, uint32_t *out_len) {
         }
         cap = len;
         uint8_t *b2 = (uint8_t *)realloc(buf, cap + 1);
+        if (!b2) {
+            free(buf);
+            return NULL;
+        }
+        buf = b2;
+    }
+    free(buf);
+    return NULL;
+}
+
+static inline int32_t sp_rtasr_set_param_json(int32_t fd, const char *json, uint32_t json_len) {
+    uint32_t len = json_len;
+    return sp_rtasr_ctl(fd, SPEAR_RTA_CTL_SET_PARAM, (int32_t)(uintptr_t)json, (int32_t)(uintptr_t)&len);
+}
+
+static inline int32_t sp_rtasr_set_param_string(int32_t fd, const char *key, const char *value) {
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf), "{\"key\":\"%s\",\"value\":\"%s\"}", key, value);
+    if (n <= 0 || (size_t)n >= sizeof(buf)) {
+        return SPEAR_CCHAT_ERR_INTERNAL;
+    }
+    return sp_rtasr_set_param_json(fd, buf, (uint32_t)n);
+}
+
+static inline int32_t sp_rtasr_set_param_u32(int32_t fd, const char *key, uint32_t value) {
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf), "{\"key\":\"%s\",\"value\":%u}", key, value);
+    if (n <= 0 || (size_t)n >= sizeof(buf)) {
+        return SPEAR_CCHAT_ERR_INTERNAL;
+    }
+    return sp_rtasr_set_param_json(fd, buf, (uint32_t)n);
+}
+
+static inline int32_t sp_rtasr_connect(int32_t fd) {
+    uint32_t len = 0;
+    return sp_rtasr_ctl(fd, SPEAR_RTA_CTL_CONNECT, 0, (int32_t)(uintptr_t)&len);
+}
+
+static inline int32_t sp_rtasr_flush(int32_t fd) {
+    uint32_t len = 0;
+    return sp_rtasr_ctl(fd, SPEAR_RTA_CTL_FLUSH, 0, (int32_t)(uintptr_t)&len);
+}
+
+static inline int32_t sp_rtasr_set_autoflush_json(int32_t fd, const char *json, uint32_t json_len) {
+    uint32_t len = json_len;
+    return sp_rtasr_ctl(fd, SPEAR_RTA_CTL_SET_AUTOFLUSH, (int32_t)(uintptr_t)json, (int32_t)(uintptr_t)&len);
+}
+
+static inline uint8_t *sp_rtasr_read_alloc(int32_t fd, uint32_t *out_len) {
+    uint32_t cap = 64 * 1024;
+    uint8_t *buf = (uint8_t *)malloc(cap + 1);
+    if (!buf) {
+        return NULL;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+        uint32_t len = cap;
+        int32_t rc = sp_rtasr_read(fd, (int32_t)(uintptr_t)buf, (int32_t)(uintptr_t)&len);
+        if (rc >= 0) {
+            buf[len] = 0;
+            *out_len = len;
+            return buf;
+        }
+        if (rc != -ENOSPC) {
+            free(buf);
+            return NULL;
+        }
+        cap = len;
+        uint8_t *b2 = (uint8_t *)realloc(buf, cap + 1);
+        if (!b2) {
+            free(buf);
+            return NULL;
+        }
+        buf = b2;
+    }
+    free(buf);
+    return NULL;
+}
+
+static inline int32_t sp_mic_set_param_json(int32_t fd, const char *json, uint32_t json_len) {
+    uint32_t len = json_len;
+    return sp_mic_ctl(fd, SPEAR_MIC_CTL_SET_PARAM, (int32_t)(uintptr_t)json, (int32_t)(uintptr_t)&len);
+}
+
+static inline uint8_t *sp_mic_get_status_alloc(int32_t fd, uint32_t *out_len) {
+    uint32_t cap = 8 * 1024;
+    uint8_t *buf = (uint8_t *)malloc(cap + 1);
+    if (!buf) {
+        return NULL;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+        uint32_t len = cap;
+        int32_t rc = sp_mic_ctl(fd, SPEAR_MIC_CTL_GET_STATUS, (int32_t)(uintptr_t)buf, (int32_t)(uintptr_t)&len);
+        if (rc >= 0) {
+            buf[len] = 0;
+            *out_len = len;
+            return buf;
+        }
+        if (rc != -ENOSPC) {
+            free(buf);
+            return NULL;
+        }
+        cap = len;
+        uint8_t *b2 = (uint8_t *)realloc(buf, cap + 1);
+        if (!b2) {
+            free(buf);
+            return NULL;
+        }
+        buf = b2;
+    }
+    free(buf);
+    return NULL;
+}
+
+static inline uint8_t *sp_mic_read_alloc(int32_t fd, uint32_t *out_len) {
+    uint32_t cap = 64 * 1024;
+    uint8_t *buf = (uint8_t *)malloc(cap);
+    if (!buf) {
+        return NULL;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+        uint32_t len = cap;
+        int32_t rc = sp_mic_read(fd, (int32_t)(uintptr_t)buf, (int32_t)(uintptr_t)&len);
+        if (rc >= 0) {
+            *out_len = len;
+            return buf;
+        }
+        if (rc != -ENOSPC) {
+            free(buf);
+            return NULL;
+        }
+        cap = len;
+        uint8_t *b2 = (uint8_t *)realloc(buf, cap);
         if (!b2) {
             free(buf);
             return NULL;

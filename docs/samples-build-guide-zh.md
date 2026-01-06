@@ -2,7 +2,23 @@
 
 ## 目录结构
 - 源码：`samples/wasm-c/hello.c`
+- 源码：`samples/wasm-c/mic_rtasr.c`（实时麦克风→实时ASR示例）
 - 产物：`samples/build/hello.wasm`
+
+## mic_rtasr 示例运行前提
+
+- 需要宿主二进制启用 `mic-device`（否则 `source=device` 会失败）
+- 需要宿主配置可用的 realtime ASR backend（例如 `openai_realtime_ws`）以及对应 API Key
+- 默认使用 backend 名称 `openai-realtime-asr`，可在构建时通过 `-DSP_RTASR_BACKEND=\"...\"` 覆盖
+
+说明：`mic_rtasr` 示例默认使用 `server_vad` 做分段（按静音切分）。
+
+建议配置方式：
+
+- Spearlet 配置示例：`config/spearlet/config.toml`（包含 `openai_realtime_ws` 的 backend 示例）
+- 运行前设置环境变量：`OPENAI_REALTIME_API_KEY`
+
+运行方式：构建 `samples/build/mic_rtasr.wasm` 后，将其作为 WASM 可执行文件上传并创建任务运行（具体上传/创建任务流程见 `docs/api-usage-guide-zh.md`）。
 
 ## 构建命令
 - 运行：`make samples`

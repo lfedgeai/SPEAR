@@ -29,6 +29,7 @@ impl DefaultHostApi {
         payload: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, i32> {
         const MIC_CTL_SET_PARAM: i32 = 1;
+        const MIC_CTL_GET_STATUS: i32 = 2;
 
         let Some(entry) = self.fd_table.get(fd) else {
             return Err(-EBADF);
@@ -186,6 +187,31 @@ impl DefaultHostApi {
                     self.spawn_mic_stub_task(fd, generation);
                 }
                 Ok(None)
+            }
+            MIC_CTL_GET_STATUS => {
+                let e = entry.lock().map_err(|_| -EIO)?;
+                if e.closed {
+                    return Err(-EBADF);
+                }
+                let FdInner::Mic(st) = &e.inner else {
+                    return Err(-EBADF);
+                };
+                let body = serde_json::json!({
+                    "running": st.running,
+                    "last_error": st.last_error,
+                    "queue_bytes": st.queue_bytes,
+                    "max_queue_bytes": st.max_queue_bytes,
+                    "dropped_frames": st.dropped_frames,
+                    "generation": st.generation,
+                    "config": st.config.as_ref().map(|c| serde_json::json!({
+                        "sample_rate_hz": c.sample_rate_hz,
+                        "channels": c.channels,
+                        "frame_ms": c.frame_ms,
+                        "format": c.format,
+                    })),
+                });
+                let bytes = serde_json::to_vec(&body).map_err(|_| -EIO)?;
+                Ok(Some(bytes))
             }
             _ => Err(-EINVAL),
         }

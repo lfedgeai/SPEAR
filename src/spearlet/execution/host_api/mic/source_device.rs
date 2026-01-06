@@ -375,10 +375,13 @@ impl DefaultHostApi {
             drop(stream);
         });
 
-        match rx.recv_timeout(Duration::from_secs(2)) {
+        match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(DeviceMicStartError::Failed(e)),
-            Err(_) => Err(DeviceMicStartError::Failed("device init timeout".into())),
+            Err(_) => Err(DeviceMicStartError::Failed(
+                "device init timeout (check microphone permission for the process running spearlet)"
+                    .into(),
+            )),
         }
     }
 }

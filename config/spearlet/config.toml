@@ -60,12 +60,12 @@ name = "openai_chat"
 # v1: env only / v1 仅支持 env
 kind = "env"
 # Environment variable name that holds the API key / 存放 API key 的环境变量名
-api_key_env = "OPENAI_CHAT_API_KEY"
+api_key_env = "OPENAI_API_KEY"
 
 [[spearlet.llm.credentials]]
 name = "openai_realtime"
 kind = "env"
-api_key_env = "OPENAI_REALTIME_API_KEY"
+api_key_env = "OPENAI_API_KEY"
 
 [[spearlet.llm.backends]]
 name = "openai-chat"

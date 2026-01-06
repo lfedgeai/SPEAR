@@ -1,5 +1,20 @@
 # SMS (SPEAR Metadata Server) Configuration / SMS（SPEAR元数据服务器）配置
 
+# Enable Swagger UI / 启用Swagger UI
+enable_swagger = true
+
+# Enable Web Admin / 启用Web管理页面
+enable_web_admin = true
+
+# Heartbeat timeout / 心跳超时
+heartbeat_timeout = 90
+
+# Cleanup interval / 清理间隔
+cleanup_interval = 30
+
+# Max upload size / 最大上传字节数
+max_upload_bytes = 67108864
+
 [grpc]
 # gRPC bind address / gRPC绑定地址
 addr = "127.0.0.1:50051"
@@ -11,21 +26,6 @@ enable_tls = false
 addr = "127.0.0.1:8080"
 # Enable TLS / 启用TLS
 enable_tls = false
-
-# Enable Swagger UI / 启用Swagger UI
-enable_swagger = true
-
-# Enable Web Admin / 启用Web管理页面
-enable_web_admin = false
-
-# Heartbeat timeout / 心跳超时
-heartbeat_timeout = 90
-
-# Cleanup interval / 清理间隔
-cleanup_interval = 30
-
-# Max upload size / 最大上传字节数
-max_upload_bytes = 67108864
 
 [web_admin]
 # Web Admin bind address / Web管理页面绑定地址

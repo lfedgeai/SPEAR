@@ -234,16 +234,20 @@ samples:
 	@if command -v zig >/dev/null 2>&1; then \
 		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c; \
 		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c; \
+		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/mic_rtasr.wasm $(SAMPLES_DIR)/mic_rtasr.c; \
 		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/hello.wasm$(NC)"; \
 		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/chat_completion.wasm$(NC)"; \
+		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/mic_rtasr.wasm$(NC)"; \
 	else \
-		if command -v clang >/dev/null 2>&1; then \
-			clang --target=wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
-			clang --target=wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+		if command -v clang >/dev/null 2>&1 && [ -n "$(WASI_SYSROOT)" ]; then \
+			clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/mic_rtasr.wasm $(SAMPLES_DIR)/mic_rtasr.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
 			[ -f $(SAMPLES_BUILD)/hello.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/hello.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
 			[ -f $(SAMPLES_BUILD)/chat_completion.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/chat_completion.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
+			[ -f $(SAMPLES_BUILD)/mic_rtasr.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/mic_rtasr.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
 		else \
-			echo -e "$(RED)❌ No suitable compiler found (zig/clang). Install zig or wasi-sdk$(NC)"; exit 1; \
+			echo -e "$(RED)❌ No suitable compiler found (zig, or clang+WASI_SYSROOT). Install zig or set WASI_SYSROOT$(NC)"; exit 1; \
 		fi; \
 	fi
 

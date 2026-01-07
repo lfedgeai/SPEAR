@@ -33,6 +33,12 @@ impl BackendRegistry {
                     .iter()
                     .all(|f| inst.capabilities.has_feature(f))
             })
+            .filter(|inst| {
+                req.requirements
+                    .required_transports
+                    .iter()
+                    .all(|t| inst.capabilities.transports.iter().any(|x| x == t))
+            })
             .collect()
     }
 }

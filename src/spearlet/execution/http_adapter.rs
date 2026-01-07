@@ -372,6 +372,12 @@ impl HttpAdapter {
     }
 }
 
+impl Default for HttpAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Default for HttpResponse {
     fn default() -> Self {
         Self {

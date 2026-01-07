@@ -161,6 +161,7 @@ impl SmsServiceImpl {
     }
 
     /// Convert proto NodeResource to internal NodeResourceInfo / 将proto NodeResource转换为内部NodeResourceInfo
+    #[allow(clippy::result_large_err)]
     fn proto_resource_to_resource_info(
         proto_resource: &crate::proto::sms::NodeResource,
     ) -> Result<crate::sms::services::resource_service::NodeResourceInfo, Status> {
@@ -169,7 +170,7 @@ impl SmsServiceImpl {
 
         let updated_at = if proto_resource.updated_at > 0 {
             chrono::DateTime::from_timestamp(proto_resource.updated_at, 0)
-                .unwrap_or_else(|| chrono::Utc::now())
+                .unwrap_or_else(chrono::Utc::now)
         } else {
             chrono::Utc::now()
         };
@@ -259,7 +260,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<RegisterNodeRequest>,
     ) -> Result<Response<RegisterNodeResponse>, Status> {
         let req = request.into_inner();
-        let mut node = req
+        let node = req
             .node
             .ok_or_else(|| Status::invalid_argument("Node is required"))?;
 
@@ -293,7 +294,7 @@ impl NodeServiceTrait for SmsServiceImpl {
         request: Request<UpdateNodeRequest>,
     ) -> Result<Response<UpdateNodeResponse>, Status> {
         let req = request.into_inner();
-        let mut node = req
+        let node = req
             .node
             .ok_or_else(|| Status::invalid_argument("Node is required"))?;
 
@@ -490,7 +491,7 @@ impl NodeServiceTrait for SmsServiceImpl {
             Ok(resource_list) => {
                 let proto_resources: Vec<_> = resource_list
                     .iter()
-                    .map(|resource| Self::resource_info_to_proto_resource(resource))
+                    .map(Self::resource_info_to_proto_resource)
                     .collect();
 
                 let response = ListNodeResourcesResponse {
@@ -568,7 +569,7 @@ impl TaskServiceTrait for SmsServiceImpl {
             name: req.name,
             description: req.description,
             status: crate::proto::sms::TaskStatus::Registered as i32,
-            priority: req.priority as i32,
+            priority: req.priority,
             node_uuid: req.node_uuid,
             endpoint: req.endpoint,
             version: req.version,
@@ -757,7 +758,7 @@ impl TaskServiceTrait for SmsServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Replay failed: {}", e)))?;
         debug!(node_uuid = %node_uuid, last_event_id = last, replay_count = replay.len(), "Subscribe: prepared replay events");
-        let replay_stream = tokio_stream::iter(replay.into_iter().map(|ev| Ok(ev)));
+        let replay_stream = tokio_stream::iter(replay.into_iter().map(Ok));
         // Live broadcast
         let rx = self.events.subscribe(&node_uuid).await;
         debug!(node_uuid = %node_uuid, "Subscribe: live broadcast receiver created");
@@ -791,7 +792,7 @@ impl TaskServiceTrait for SmsServiceImpl {
             Ok(Some(mut task)) => {
                 // Apply status update / 应用状态更新
                 let old_status = task.status;
-                task.status = req.status as i32;
+                task.status = req.status;
                 if req.updated_at > 0 {
                     task.last_heartbeat = req.updated_at;
                 } else {

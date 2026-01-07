@@ -1,7 +1,7 @@
 //! Function service implementation for spearlet
 //! spearlet的函数服务实现
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,6 +54,50 @@ use crate::spearlet::execution::{
 };
 use crate::spearlet::SpearletConfig;
 
+fn collect_llm_global_environment(cfg: &SpearletConfig) -> HashMap<String, String> {
+    let mut cred_env: HashMap<String, String> = HashMap::new();
+    for c in cfg.llm.credentials.iter() {
+        if c.kind.as_str() != "env" {
+            continue;
+        }
+        if c.name.trim().is_empty() {
+            continue;
+        }
+        if c.api_key_env.trim().is_empty() {
+            continue;
+        }
+        cred_env.insert(c.name.clone(), c.api_key_env.clone());
+    }
+
+    let mut required: HashSet<String> = HashSet::new();
+    for b in cfg.llm.backends.iter() {
+        if !backend_requires_api_key(&b.kind) {
+            continue;
+        }
+        let Some(r) = b.credential_ref.as_ref() else {
+            continue;
+        };
+        let Some(env) = cred_env.get(r) else {
+            continue;
+        };
+        required.insert(env.clone());
+    }
+
+    let mut out: HashMap<String, String> = HashMap::new();
+    for env_name in required.into_iter() {
+        if let Ok(v) = std::env::var(&env_name) {
+            if !v.is_empty() {
+                out.insert(env_name, v);
+            }
+        }
+    }
+    out
+}
+
+fn backend_requires_api_key(kind: &str) -> bool {
+    matches!(kind, "openai_chat_completion" | "openai_realtime_ws")
+}
+
 /// Function service statistics / 函数服务统计信息
 #[derive(Debug, Clone)]
 pub struct FunctionServiceStats {
@@ -83,12 +127,13 @@ impl FunctionServiceImpl {
     /// Create new function service / 创建新的函数服务
     pub async fn new(config: Arc<SpearletConfig>) -> Result<Self, ExecutionError> {
         let mut rm = RuntimeManager::new();
+        let global_environment = collect_llm_global_environment(&config);
         let default_configs: Vec<RuntimeConfig> = RuntimeFactory::available_runtimes()
             .into_iter()
             .map(|rt| RuntimeConfig {
                 runtime_type: rt,
                 settings: HashMap::new(),
-                global_environment: HashMap::new(),
+                global_environment: global_environment.clone(),
                 spearlet_config: Some((*config).clone()),
                 resource_pool: ResourcePoolConfig::default(),
             })

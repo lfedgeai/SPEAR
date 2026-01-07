@@ -259,10 +259,11 @@ impl ObjectServiceImpl {
                 for pair in pairs {
                     if let Ok(stored_obj) = serialization::deserialize::<StoredObject>(&pair.value)
                     {
-                        if stored_obj.ref_count <= 0 && !stored_obj.pinned {
-                            if let Ok(_) = self.kv_store.delete(&pair.key).await {
-                                cleaned_count += 1;
-                            }
+                        if stored_obj.ref_count <= 0
+                            && !stored_obj.pinned
+                            && self.kv_store.delete(&pair.key).await.is_ok()
+                        {
+                            cleaned_count += 1;
                         }
                     }
                 }

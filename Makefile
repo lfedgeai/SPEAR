@@ -22,7 +22,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e
+.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e test-mic-device mac-build mac-build-release
 .DEFAULT_GOAL := build
 
 # Default target / 默认目标
@@ -108,6 +108,16 @@ test:
 	fi
 	@$(MAKE) test-ui || echo -e "$(YELLOW)⚠️ UI tests skipped (Node/Playwright not available) / UI测试已跳过（未安装Node/Playwright）$(NC)"
 	@echo -e "$(GREEN)✅ Tests completed / 测试完成$(NC)"
+
+test-mic-device:
+	@echo -e "$(BLUE)🧪 Running mic-device capture test... / 运行mic-device采集测试...$(NC)"
+	$(CARGO) test --features mic-device test_mic_device_returns_pcm16_frames -- --nocapture --test-threads=1
+
+mac-build:
+	@$(MAKE) build FEATURES="$(FEATURES) mic-device"
+
+mac-build-release:
+	@$(MAKE) build-release FEATURES="$(FEATURES) mic-device"
 
 
 .PHONY: test-ui
@@ -224,16 +234,20 @@ samples:
 	@if command -v zig >/dev/null 2>&1; then \
 		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c; \
 		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c; \
+		zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/mic_rtasr.wasm $(SAMPLES_DIR)/mic_rtasr.c; \
 		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/hello.wasm$(NC)"; \
 		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/chat_completion.wasm$(NC)"; \
+		echo -e "$(GREEN)✅ Built with zig: $(SAMPLES_BUILD)/mic_rtasr.wasm$(NC)"; \
 	else \
-		if command -v clang >/dev/null 2>&1; then \
-			clang --target=wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
-			clang --target=wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+		if command -v clang >/dev/null 2>&1 && [ -n "$(WASI_SYSROOT)" ]; then \
+			clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/hello.wasm $(SAMPLES_DIR)/hello.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-memory -o $(SAMPLES_BUILD)/chat_completion.wasm $(SAMPLES_DIR)/chat_completion.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
+			clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -o $(SAMPLES_BUILD)/mic_rtasr.wasm $(SAMPLES_DIR)/mic_rtasr.c || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
 			[ -f $(SAMPLES_BUILD)/hello.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/hello.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
 			[ -f $(SAMPLES_BUILD)/chat_completion.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/chat_completion.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
+			[ -f $(SAMPLES_BUILD)/mic_rtasr.wasm ] && echo -e "$(GREEN)✅ Built with clang: $(SAMPLES_BUILD)/mic_rtasr.wasm$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
 		else \
-			echo -e "$(RED)❌ No suitable compiler found (zig/clang). Install zig or wasi-sdk$(NC)"; exit 1; \
+			echo -e "$(RED)❌ No suitable compiler found (zig, or clang+WASI_SYSROOT). Install zig or set WASI_SYSROOT$(NC)"; exit 1; \
 		fi; \
 	fi
 

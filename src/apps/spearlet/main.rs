@@ -74,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     // CLI/env-gated SMS registration & heartbeat / 通过CLI或环境变量控制注册与心跳
-    let connect_requested = args.sms_grpc_addr.is_some()
+    let connect_requested = config.auto_register
+        || args.sms_grpc_addr.is_some()
         || std::env::var("SPEARLET_SMS_GRPC_ADDR")
             .ok()
             .map(|v| !v.is_empty())
@@ -107,5 +108,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _ = grpc_handle.await;
     let _ = http_handle.await;
 
+    tracing::info!("SPEARlet shutdown complete");
     Ok(())
 }

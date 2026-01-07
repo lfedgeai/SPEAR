@@ -5,15 +5,17 @@ use crate::spearlet::execution::communication::protocol::*;
 use crate::spearlet::execution::manager::TaskExecutionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener as TokioTcpListener, TcpStream as TokioTcpStream};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
-use tokio::time::{interval, timeout};
+use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+type ConnectionsMap = Arc<RwLock<HashMap<String, Arc<RwLock<ConnectionState>>>>>;
 
 /// 连接状态 / Connection state
 /// 表示单个连接的状态信息 / Represents state information for a single connection
@@ -227,6 +229,7 @@ struct ConnectionHandler {
     /// 事件发送器 / Event sender
     event_sender: mpsc::UnboundedSender<ConnectionEvent>,
     /// 消息发送器 / Message sender
+    #[allow(dead_code)]
     message_sender: mpsc::UnboundedSender<SpearMessage>,
     /// 消息接收器 / Message receiver
     message_receiver: Arc<TokioMutex<mpsc::UnboundedReceiver<SpearMessage>>>,
@@ -867,7 +870,7 @@ impl ConnectionManager {
     async fn handle_auth_request_static(
         connection_id: &str,
         message: &SpearMessage,
-        connections: &Arc<RwLock<HashMap<String, Arc<RwLock<ConnectionState>>>>>,
+        connections: &ConnectionsMap,
         instance_connections: &Arc<RwLock<HashMap<String, String>>>,
         secret_validator: &Option<SecretValidator>,
         execution_manager: &Option<Arc<TaskExecutionManager>>,

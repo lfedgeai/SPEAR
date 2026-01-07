@@ -19,6 +19,34 @@ All functions are `extern "C"` and WASM-friendly (e.g., `i32`, `*const u8`). Err
 - `-4`: Invalid `cmd` in `cchat_ctl`
 - `-5`: Internal error
 
+### Versioning and breaking changes
+
+To align with the general fd/epoll subsystem (shared `-errno` conventions, generic `spear_fd_ctl`, and making response fds pollable), breaking changes to `cchat_*` are acceptable.
+
+Engineering spec:
+
+- [fd-epoll-subsystem-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-en.md)
+
+Recommended evolution:
+
+1. **Unify errors under `-errno`**
+   - deprecate fixed `-1..-5` or keep only as a compatibility shim
+2. **Generic control entrypoint**
+   - converge generic controls (nonblock/flags/status/metrics) to `spear_fd_ctl`
+3. **Stronger async semantics (optional)**
+   - allow `cchat_send` to return a response fd immediately and produce output in background; use epoll `EPOLLIN` when readable
+
+Breaking-change update requirements (must):
+
+- Docs: this file and `chat-completion-zh.md`
+- C SDK and sample:
+  - `sdk/c/include/spear.h`
+  - `samples/wasm-c/chat_completion.c`
+- Rust tests:
+  - `src/spearlet/execution/runtime/wasm.rs` (WAT import symbol tests)
+  - `src/spearlet/execution/host_api.rs` (cchat pipeline unit tests)
+  - `tests/wasm_openai_e2e_tests.rs` (if relying on specific semantics)
+
 ### 1. `cchat_create() -> i32`
 - **Description**: Create a new chat completion session and return its fd.
 - **Args**: None.

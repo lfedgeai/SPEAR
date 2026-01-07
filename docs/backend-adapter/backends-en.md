@@ -18,7 +18,7 @@ The registry builder registers backends behind `#[cfg(feature = "backend-xxx")]`
 
 Split into two layers:
 
-- `BackendKind`: implementation type (openai_compatible/azure/vllm/realtime...)
+- `BackendKind`: implementation type (openai_chat_completion/azure/vllm/realtime...)
 - `BackendInstance`: concrete endpoint (base_url, region, weight, priority, capabilities, limits)
 
 The router selects instances.
@@ -52,13 +52,23 @@ TOML pseudocode:
 
 ```toml
 [llm]
-default_policy = "weighted_round_robin"
+default_policy = "weighted_random"
+
+[[llm.credentials]]
+name = "openai_chat"
+kind = "env"
+api_key_env = "OPENAI_CHAT_API_KEY"
+
+[[llm.credentials]]
+name = "openai_realtime"
+kind = "env"
+api_key_env = "OPENAI_REALTIME_API_KEY"
 
 [[llm.backends]]
 name = "openai-us"
-kind = "openai_compatible"
+kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
-api_key_env = "OPENAI_API_KEY"
+credential_ref = "openai_chat"
 weight = 80
 priority = 10
 ops = ["chat_completions", "text_to_speech"]
@@ -67,26 +77,31 @@ transports = ["http"]
 
 [[llm.backends]]
 name = "openai-realtime"
-kind = "openai_realtime"
-base_url = "https://api.openai.com"
-api_key_env = "OPENAI_API_KEY"
+kind = "openai_realtime_ws"
+base_url = "https://api.openai.com/v1"
+credential_ref = "openai_realtime"
 weight = 100
 priority = 20
-ops = ["realtime_voice"]
+ops = ["speech_to_text"]
 features = ["supports_bidi_stream", "supports_audio_input", "supports_audio_output"]
 transports = ["websocket"]
 ```
 
+Recommended: manage API keys centrally in `llm.credentials[]` and reference them from backends via `credential_ref`.
+
+Detailed design and implementation notes: [llm-credentials-implementation-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/implementation/llm-credentials-implementation-en.md)
+
 ## 6. Secrets and network policy
 
-- `api_key_env` and `base_url` must be host-configured; WASM cannot inject them.
+- `llm.credentials[].api_key_env`, `llm.backends[].credential_ref`, and `base_url` must be host-configured; WASM cannot inject them.
 - Host-config allowlist/denylist is authoritative; request-side hints can only restrict further.
 
 ### 6.1 API key storage (recommended)
 
 Store only the “environment variable name” in config; do not store plaintext keys in config files.
 
-- In `[[llm.backends]]`, set `api_key_env = "OPENAI_API_KEY"`
+- In `[[llm.credentials]]`, set `api_key_env = "OPENAI_API_KEY"`
+- In `[[llm.backends]]`, set `credential_ref = "<credential_name>"`
 - Inject `OPENAI_API_KEY=...` into the spearlet process environment at startup
 
 Benefits:
@@ -96,25 +111,25 @@ Benefits:
 
 ### 6.2 Reading and using the key (host-side)
 
-When an adapter sends a request:
+In the current Rust codebase:
 
-- read the value via the configured `api_key_env`
-- attach it as an HTTP header (e.g., `Authorization: Bearer <key>`)
+- resolve `api_key_env` via `credential_ref`
+- read the env var value from the host process environment into `RuntimeConfig.global_environment`
+- the registry uses that value to construct backend adapters
+- adapters attach it as an HTTP header (e.g., `Authorization: Bearer <key>`)
 - never log or return the key (including in error messages and `raw` payloads)
-
-In the current Rust codebase, the host can read env values via `SpearHostApi::get_env` (currently backed by `RuntimeConfig.global_environment`; see `src/spearlet/execution/host_api.rs:309-311`).
 
 ### 6.3 Missing key behavior (recommended)
 
-- If `api_key_env` is missing or the env var is not set:
+- If `credential_ref` is missing, the credential cannot be found, or the env var is not set:
   - treat the backend instance as unavailable (filter from candidates), or return a `BackendNotEnabled/InvalidConfiguration` style error on invoke
 - For external discovery:
-  - only expose `api_key_env` name, never the value
+  - only expose `credential_ref` (and optionally the env var name), never the value
 
 ### 6.4 Rotation and multiple keys
 
 - Rotation: update the process env and do a rolling restart (MVP); add hot reload later if needed.
-- Multiple keys: allow different `api_key_env` per backend instance.
+- Multiple keys: allow different `credential_ref` per backend instance.
 
 ### 6.5 Best practices for organizing multiple API keys
 
@@ -122,13 +137,13 @@ In the current Rust codebase, the host can read env values via `SpearHostApi::ge
 
 - Name env vars by provider/region/purpose/instance to avoid accidental reuse:
   - e.g., `OPENAI_API_KEY_US_PRIMARY`, `OPENAI_API_KEY_US_FALLBACK`, `AZURE_OPENAI_KEY_EASTUS`, `VLLM_TOKEN_CLUSTER_A`
-- Config references env var names only: bind one `api_key_env` per `BackendInstance` for traceability, rotation, and auditing.
+- Config references env var names only: bind one `credential_ref` per `BackendInstance` for traceability, rotation, and auditing.
 
 #### 6.5.2 Multiple keys for the same backend instance (key pool)
 
 If a single endpoint needs multiple keys (quota split, rate-limit sharding, gradual rollout/AB), introduce a “key pool”:
 
-- Config: `api_key_envs = ["OPENAI_API_KEY_US_PRIMARY", "OPENAI_API_KEY_US_2", ...]`
+- Config (suggested): `credential_refs = ["openai_key_us_primary", "openai_key_us_2", ...]`
 - Selection policies:
   - `round_robin`: spread QPS evenly
   - `random`: simplest
@@ -150,7 +165,7 @@ MVP can start with “one instance one key”; key pools are a Phase 4+ enhancem
 #### 6.5.5 Deployment notes (Kubernetes)
 
 - Inject env vars via Kubernetes Secrets (`envFrom` / `valueFrom.secretKeyRef`) and constrain RBAC.
-- External discovery/APIs must only expose `api_key_env` names, never values.
+- External discovery/APIs must only expose `credential_ref` (or env var names), never values.
 
 ### 6.6 Working with SMS Web Admin (recommended)
 
@@ -159,15 +174,15 @@ SMS Web Admin can support an “API key configuration” UI, but best practice i
 Recommended split:
 
 - Web Admin manages:
-  - backend instance configuration (`base_url`, weights, capabilities, `api_key_env`/`api_key_envs`, etc.)
-  - secret references (env var names or external secret-manager reference IDs)
+  - backend instance configuration (`base_url`, weights, capabilities, `credential_ref`, etc.)
+  - secret references (credential names + env var names, or external secret-manager reference IDs)
 - Web Admin does not manage:
   - plaintext key values (never stored in SMS DB, never logged, never returned via APIs)
 
 How it works with spearlet:
 
 - Inject env vars at spearlet startup via your deployment system (K8s Secrets, Vault Agent, systemd drop-in, etc.)
-- Backend adapters read values via `SpearHostApi::get_env` and sign requests
+- Spearlet reads env vars at startup, builds a registry, and uses resolved keys to sign requests
 - SMS Web Admin can provide validation/observability:
   - only report “present/usable” (e.g., spearlet heartbeat `health_info` reports `HAS_ENV:OPENAI_API_KEY_US_PRIMARY=true`)
   - UI can flag missing secrets on certain nodes without revealing values

@@ -79,14 +79,13 @@ flowchart TD
 sequenceDiagram
   participant OS as process env
   participant C as spearlet config
-  participant A as OpenAICompatibleBackendAdapter
-  participant H as SpearHostApi::get_env
+  participant R as BackendRegistry builder
+  participant A as OpenAIChatCompletionBackendAdapter
   participant O as OpenAI-compatible HTTP
 
-  OS-->>H: OPENAI_API_KEY=...
-  C-->>A: api_key_env = "OPENAI_API_KEY"
-  A->>H: get_env("OPENAI_API_KEY")
-  H-->>A: api_key
+  OS-->>R: OPENAI_API_KEY=...
+  C-->>R: credential_ref = "openai_default"
+  R-->>A: api_key (resolved)
   A->>O: HTTP request + Authorization: Bearer api_key
   O-->>A: response
 ```
@@ -133,7 +132,7 @@ src/spearlet/execution/
     backends/
       mod.rs
       stub.rs
-      openai_compatible.rs
+      openai_chat_completion.rs
 ```
 
 And add `pub mod ai;` to `src/spearlet/execution/mod.rs`.
@@ -253,15 +252,14 @@ For MVP, keep the router as a field in `DefaultHostApi` (e.g., `ai_engine: Arc<A
 - File: `Cargo.toml`
   - add feature `backend-openai` (and later `backend-azure-openai`, etc.)
 - File: `src/spearlet/execution/ai/backends/mod.rs`
-  - `#[cfg(feature = "backend-openai")] pub mod openai_compatible;`
-
+  - `#[cfg(feature = "backend-openai")] pub mod openai_chat_completion;`
 ### 5.2 OpenAI adapter implementation
 
-- File: `src/spearlet/execution/ai/backends/openai_compatible.rs`
-  - `struct OpenAICompatibleBackendAdapter { name, base_url, api_key_env, client }`
-  - `fn invoke_chat_completions(&self, req: &CanonicalRequestEnvelope) -> Result<CanonicalResponseEnvelope, CanonicalError>`
+- File: `src/spearlet/execution/ai/backends/openai_chat_completion.rs`
+  - `struct OpenAIChatCompletionBackendAdapter { name, base_url, api_key }`
+  - `fn invoke(&self, req: &CanonicalRequestEnvelope) -> Result<CanonicalResponseEnvelope, CanonicalError>`
     - map payload to OpenAI `POST {base_url}/chat/completions`
-    - load API key via `SpearHostApi::get_env(api_key_env)` (currently backed by `RuntimeConfig.global_environment`; see `src/spearlet/execution/host_api.rs:309-311`)
+    - the registry resolves `credential_ref` to env name and reads the key from `RuntimeConfig.global_environment`, then passes `api_key` into the adapter
     - if missing, return a structured error (e.g., `InvalidConfiguration`) and ensure the key is never logged or returned
     - return body as `raw` and optionally extract canonical fields (MVP can pass-through)
 
@@ -270,7 +268,7 @@ For MVP, keep the router as a field in `DefaultHostApi` (e.g., `ai_engine: Arc<A
 - File: `src/spearlet/config.rs`
   - add `llm: LlmConfig` to `SpearletConfig` (`#[serde(default)]`)
   - `struct LlmConfig { backends: Vec<BackendConfig>, default_policy_by_operation: ... }`
-  - `struct BackendConfig { name, kind, base_url, api_key_env, weight, priority, ops, features, transports }`
+  - `struct BackendConfig { name, kind, base_url, credential_ref, weight, priority, ops, features, transports }`
 - File: `src/spearlet/execution/runtime/mod.rs`
   - `RuntimeConfig.spearlet_config` already holds a full config snapshot; use it to init the AI engine in `DefaultHostApi::new`.
 
@@ -284,17 +282,17 @@ By default, router reads the in-process `BackendRegistry`. If external inspectio
     - `GET /api/v1/capabilities`
   - extend `AppState` with a read-only registry view
 
-## 7. Phase 6: SMS Web Admin Backend/Secret Reference + `HAS_ENV:*` telemetry
+## 7. Phase 6: SMS Web Admin Backend/Credential Reference + `HAS_ENV:*` telemetry
 
 Goals:
 
-- Add a “Backend/Secret Reference” page and `/admin/api/...` endpoints in SMS Web Admin to manage backend instances and `api_key_env`/`api_key_envs` mappings (no plaintext key storage).
+- Add a “Backend/Credential Reference” page and `/admin/api/...` endpoints in SMS Web Admin to manage backend instances and `credential_ref`/`credential_refs` mappings (no plaintext key storage).
 - Make spearlet heartbeat report `HAS_ENV:*` so Web Admin can show which nodes have which secret references.
 
 ### 7.1 SMS: data model and storage (no plaintext keys)
 
 - New file: `src/sms/admin/llm_config.rs`
-  - `struct BackendInstanceConfig { name, kind, base_url, api_key_env, weight, priority, ops, features, transports, extra }`
+  - `struct BackendInstanceConfig { name, kind, base_url, credential_ref, weight, priority, ops, features, transports, extra }`
   - `struct SecretRef { name, description, tags }` (optional; MVP can derive by de-duplicating from backends)
 - New file: `src/sms/admin/store.rs`
   - `struct AdminConfigStore { kv: Arc<dyn KvStore> }`
@@ -304,7 +302,7 @@ Goals:
     - `admin:llm:backends` (single JSON) or `admin:llm:backend:<name>` (per-backend JSON)
   - validation:
     - reject any `api_key`/`secret_value` fields
-    - restrict `api_key_env` to an env-var name format (e.g., `[A-Z0-9_]+`)
+    - restrict `credential_ref` to a reference name format (e.g., `[a-zA-Z0-9_-]+`)
 
 ### 7.2 SMS: Web Admin APIs (`/admin/api/llm/*`)
 
@@ -337,8 +335,8 @@ MVP implementation:
 - Update `assets/admin/react-app.js`:
   - add a navigation entry (e.g., `Settings` → `Backends`)
   - implement pages:
-    - `BackendsPage`: editable table for backend instances (`name/kind/base_url/weight/priority/ops/features/transports/api_key_env`)
-    - `SecretRefsPage`: list `api_key_env` references and show per-node presence
+    - `BackendsPage`: editable table for backend instances (`name/kind/base_url/weight/priority/ops/features/transports/credential_ref`)
+    - `CredentialsPage`: list credentials (and their env-var names) and show per-node presence
   - data flow:
     - load from `GET /admin/api/llm/backends`
     - save via `PUT /admin/api/llm/backends`
@@ -350,7 +348,7 @@ Engineering note (non-MVP): move UI source into a dedicated directory (e.g., `we
 
 - File: `src/spearlet/registration.rs`
   - update `send_heartbeat(...)` (`registration.rs:~281+`) to populate `HeartbeatRequest.health_info`:
-    - collect all `api_key_env` (or `api_key_envs`) from the LLM backend config in `SpearletConfig`
+    - collect `credentials[].api_key_env` that are referenced by backends via `credential_ref`
     - for each env name:
       - `health_info.insert(format!("HAS_ENV:{}", env), "true"/"false")`
 

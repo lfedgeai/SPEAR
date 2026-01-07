@@ -2,7 +2,23 @@
 
 ## Layout
 - Source: `samples/wasm-c/hello.c`
+- Source: `samples/wasm-c/mic_rtasr.c` (realtime mic → realtime ASR)
 - Output: `samples/build/hello.wasm`
+
+## mic_rtasr prerequisites
+
+- Host binaries must enable `mic-device` (otherwise `source=device` fails)
+- Host must configure a realtime ASR backend (e.g. `openai_realtime_ws`) plus its API key
+- Default backend name is `openai-realtime-asr` (override at build time via `-DSP_RTASR_BACKEND=\"...\"`)
+
+Note: the `mic_rtasr` sample uses `server_vad` segmentation by default (silence-based).
+
+Suggested setup:
+
+- Spearlet config example: `config/spearlet/config.toml` (includes an `openai_realtime_ws` backend)
+- Set env before running: `OPENAI_REALTIME_API_KEY`
+
+How to run: after building `samples/build/mic_rtasr.wasm`, upload it as a WASM executable and run it as a task (see `docs/api-usage-guide-en.md` for the upload/task workflow).
 
 ## Build
 - Run: `make samples`

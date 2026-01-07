@@ -1,9 +1,9 @@
-#![cfg(feature = "wasmedge")]
 use crate::spearlet::execution::host_api::{DefaultHostApi, SpearHostApi};
 use crate::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig};
 use crate::spearlet::execution::ExecutionError;
 use crate::spearlet::execution::RuntimeType;
-use std::time::{SystemTime, UNIX_EPOCH};
+use libc::{EFAULT, EINVAL, EIO, ENOSPC};
+use std::time::SystemTime;
 use wasmedge_sdk::{
     error::CoreError, AsInstance, CallingFrame, ImportObject, ImportObjectBuilder, Instance,
     WasmValue,
@@ -12,12 +12,12 @@ use wasmedge_sdk::{
 // Helper function to extract DefaultHostApi from host data
 fn _unused() {}
 
-const CCHAT_OK: i32 = 0;
-const CCHAT_ERR_INVALID_FD: i32 = -1;
-const CCHAT_ERR_INVALID_PTR: i32 = -2;
-const CCHAT_ERR_BUFFER_TOO_SMALL: i32 = -3;
-const CCHAT_ERR_INVALID_CMD: i32 = -4;
-const CCHAT_ERR_INTERNAL: i32 = -5;
+const SPEAR_OK: i32 = 0;
+const SPEAR_ERR_INVALID_FD: i32 = -libc::EBADF;
+const SPEAR_ERR_INVALID_PTR: i32 = -EFAULT;
+const SPEAR_ERR_BUFFER_TOO_SMALL: i32 = -ENOSPC;
+const SPEAR_ERR_INVALID_CMD: i32 = -EINVAL;
+const SPEAR_ERR_INTERNAL: i32 = -EIO;
 
 const CTL_SET_PARAM: i32 = 1;
 const CTL_GET_METRICS: i32 = 2;
@@ -28,24 +28,24 @@ fn get_i32_arg(input: &[WasmValue], idx: usize) -> Option<i32> {
 
 fn mem_read(instance: &mut Instance, ptr: i32, len: i32) -> Result<Vec<u8>, i32> {
     if ptr < 0 || len < 0 {
-        return Err(CCHAT_ERR_INVALID_PTR);
+        return Err(SPEAR_ERR_INVALID_PTR);
     }
     let mem = instance
         .get_memory_ref("memory")
-        .map_err(|_| CCHAT_ERR_INVALID_PTR)?;
+        .map_err(|_| SPEAR_ERR_INVALID_PTR)?;
     mem.get_data(ptr as u32, len as u32)
-        .map_err(|_| CCHAT_ERR_INVALID_PTR)
+        .map_err(|_| SPEAR_ERR_INVALID_PTR)
 }
 
 fn mem_write(instance: &mut Instance, ptr: i32, data: &[u8]) -> Result<(), i32> {
     if ptr < 0 {
-        return Err(CCHAT_ERR_INVALID_PTR);
+        return Err(SPEAR_ERR_INVALID_PTR);
     }
     let mut mem = instance
         .get_memory_mut("memory")
-        .map_err(|_| CCHAT_ERR_INVALID_PTR)?;
+        .map_err(|_| SPEAR_ERR_INVALID_PTR)?;
     mem.set_data(data, ptr as u32)
-        .map_err(|_| CCHAT_ERR_INVALID_PTR)
+        .map_err(|_| SPEAR_ERR_INVALID_PTR)
 }
 
 fn mem_read_u32(instance: &mut Instance, ptr: i32) -> Result<u32, i32> {
@@ -70,13 +70,13 @@ fn mem_write_with_len(
     let need = payload.len();
     if max_len < need {
         let _ = mem_write_u32(instance, out_len_ptr, need as u32);
-        return CCHAT_ERR_BUFFER_TOO_SMALL;
+        return SPEAR_ERR_BUFFER_TOO_SMALL;
     }
     if mem_write(instance, out_ptr, payload).is_err() {
-        return CCHAT_ERR_INVALID_PTR;
+        return SPEAR_ERR_INVALID_PTR;
     }
     if mem_write_u32(instance, out_len_ptr, need as u32).is_err() {
-        return CCHAT_ERR_INVALID_PTR;
+        return SPEAR_ERR_INVALID_PTR;
     }
     need as i32
 }
@@ -88,7 +88,7 @@ pub fn cchat_create(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if !input.is_empty() {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
     Ok(vec![WasmValue::from_i32(host_data.cchat_create())])
 }
@@ -100,10 +100,10 @@ pub fn cchat_write_msg(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if input.len() != 5 {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
 
-    let fd = get_i32_arg(&input, 0).unwrap_or(CCHAT_ERR_INVALID_FD);
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
     let role_ptr = get_i32_arg(&input, 1).unwrap_or(-1);
     let role_len = get_i32_arg(&input, 2).unwrap_or(-1);
     let content_ptr = get_i32_arg(&input, 3).unwrap_or(-1);
@@ -129,10 +129,10 @@ pub fn cchat_write_fn(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if input.len() != 4 {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
 
-    let fd = get_i32_arg(&input, 0).unwrap_or(CCHAT_ERR_INVALID_FD);
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
     let fn_offset = get_i32_arg(&input, 1).unwrap_or(-1);
     let fn_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
     let fn_len = get_i32_arg(&input, 3).unwrap_or(-1);
@@ -153,11 +153,11 @@ pub fn cchat_ctl(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if input.len() != 4 {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
 
-    let fd = get_i32_arg(&input, 0).unwrap_or(CCHAT_ERR_INVALID_FD);
-    let cmd = get_i32_arg(&input, 1).unwrap_or(CCHAT_ERR_INVALID_CMD);
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let cmd = get_i32_arg(&input, 1).unwrap_or(SPEAR_ERR_INVALID_CMD);
     let arg_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
     let arg_len_ptr = get_i32_arg(&input, 3).unwrap_or(-1);
 
@@ -173,12 +173,12 @@ pub fn cchat_ctl(
             };
             let v: serde_json::Value = match serde_json::from_slice(&bytes) {
                 Ok(v) => v,
-                Err(_) => return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]),
+                Err(_) => return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]),
             };
             let key = v.get("key").and_then(|x| x.as_str()).unwrap_or("");
             let value = v.get("value").cloned().unwrap_or(serde_json::Value::Null);
             if key.is_empty() {
-                return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+                return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
             }
             let rc = host_data.cchat_ctl_set_param(fd, key.to_string(), value);
             Ok(vec![WasmValue::from_i32(rc)])
@@ -191,7 +191,7 @@ pub fn cchat_ctl(
             let wrote = mem_write_with_len(instance, arg_ptr, arg_len_ptr, &payload);
             Ok(vec![WasmValue::from_i32(wrote)])
         }
-        _ => Ok(vec![WasmValue::from_i32(CCHAT_ERR_INVALID_CMD)]),
+        _ => Ok(vec![WasmValue::from_i32(SPEAR_ERR_INVALID_CMD)]),
     }
 }
 
@@ -202,10 +202,10 @@ pub fn cchat_send(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if input.len() != 2 {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
 
-    let fd = get_i32_arg(&input, 0).unwrap_or(CCHAT_ERR_INVALID_FD);
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
     let flags = get_i32_arg(&input, 1).unwrap_or(0);
     match host_data.cchat_send(fd, flags) {
         Ok(resp_fd) => Ok(vec![WasmValue::from_i32(resp_fd)]),
@@ -220,10 +220,10 @@ pub fn cchat_recv(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if input.len() != 3 {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
 
-    let response_fd = get_i32_arg(&input, 0).unwrap_or(CCHAT_ERR_INVALID_FD);
+    let response_fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
     let out_ptr = get_i32_arg(&input, 1).unwrap_or(-1);
     let out_len_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
 
@@ -242,10 +242,350 @@ pub fn cchat_close(
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
     if input.len() != 1 {
-        return Ok(vec![WasmValue::from_i32(CCHAT_ERR_INTERNAL)]);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
     }
-    let fd = get_i32_arg(&input, 0).unwrap_or(CCHAT_ERR_INVALID_FD);
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
     Ok(vec![WasmValue::from_i32(host_data.cchat_close(fd))])
+}
+
+pub fn rtasr_create(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if !input.is_empty() {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    Ok(vec![WasmValue::from_i32(host_data.rtasr_create())])
+}
+
+pub fn rtasr_ctl(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 4 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let cmd = get_i32_arg(&input, 1).unwrap_or(SPEAR_ERR_INVALID_CMD);
+    let arg_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
+    let arg_len_ptr = get_i32_arg(&input, 3).unwrap_or(-1);
+
+    let arg_len = match mem_read_u32(instance, arg_len_ptr) {
+        Ok(v) => v as i32,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+
+    let payload_bytes = if arg_len > 0 {
+        match mem_read(instance, arg_ptr, arg_len) {
+            Ok(b) => Some(b),
+            Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+        }
+    } else {
+        None
+    };
+
+    let out = match payload_bytes {
+        Some(b) => host_data.rtasr_ctl(fd, cmd, Some(&b)),
+        None => host_data.rtasr_ctl(fd, cmd, None),
+    };
+
+    match out {
+        Ok(Some(resp)) => {
+            let wrote = mem_write_with_len(instance, arg_ptr, arg_len_ptr, &resp);
+            Ok(vec![WasmValue::from_i32(wrote)])
+        }
+        Ok(None) => Ok(vec![WasmValue::from_i32(SPEAR_OK)]),
+        Err(e) => Ok(vec![WasmValue::from_i32(e)]),
+    }
+}
+
+pub fn rtasr_write(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 3 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let buf_ptr = get_i32_arg(&input, 1).unwrap_or(-1);
+    let buf_len = get_i32_arg(&input, 2).unwrap_or(-1);
+
+    let bytes = match mem_read(instance, buf_ptr, buf_len) {
+        Ok(b) => b,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    let rc = host_data.rtasr_write(fd, &bytes);
+    Ok(vec![WasmValue::from_i32(rc)])
+}
+
+pub fn rtasr_read(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 3 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let out_ptr = get_i32_arg(&input, 1).unwrap_or(-1);
+    let out_len_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
+
+    let payload = match host_data.rtasr_read(fd) {
+        Ok(b) => b,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    let wrote = mem_write_with_len(instance, out_ptr, out_len_ptr, &payload);
+    Ok(vec![WasmValue::from_i32(wrote)])
+}
+
+pub fn rtasr_close(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 1 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    Ok(vec![WasmValue::from_i32(host_data.rtasr_close(fd))])
+}
+
+pub fn mic_create(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if !input.is_empty() {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    Ok(vec![WasmValue::from_i32(host_data.mic_create())])
+}
+
+pub fn mic_ctl(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 4 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let cmd = get_i32_arg(&input, 1).unwrap_or(SPEAR_ERR_INVALID_CMD);
+    let arg_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
+    let arg_len_ptr = get_i32_arg(&input, 3).unwrap_or(-1);
+
+    let arg_len = match mem_read_u32(instance, arg_len_ptr) {
+        Ok(v) => v as i32,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    let payload_bytes = if arg_len > 0 {
+        match mem_read(instance, arg_ptr, arg_len) {
+            Ok(b) => Some(b),
+            Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+        }
+    } else {
+        None
+    };
+
+    let out = match payload_bytes {
+        Some(b) => host_data.mic_ctl(fd, cmd, Some(&b)),
+        None => host_data.mic_ctl(fd, cmd, None),
+    };
+
+    match out {
+        Ok(Some(resp)) => {
+            let wrote = mem_write_with_len(instance, arg_ptr, arg_len_ptr, &resp);
+            Ok(vec![WasmValue::from_i32(wrote)])
+        }
+        Ok(None) => Ok(vec![WasmValue::from_i32(SPEAR_OK)]),
+        Err(e) => Ok(vec![WasmValue::from_i32(e)]),
+    }
+}
+
+pub fn mic_read(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 3 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let out_ptr = get_i32_arg(&input, 1).unwrap_or(-1);
+    let out_len_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
+
+    let payload = match host_data.mic_read(fd) {
+        Ok(b) => b,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    let wrote = mem_write_with_len(instance, out_ptr, out_len_ptr, &payload);
+    Ok(vec![WasmValue::from_i32(wrote)])
+}
+
+pub fn mic_close(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 1 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    Ok(vec![WasmValue::from_i32(host_data.mic_close(fd))])
+}
+
+pub fn spear_ep_create(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if !input.is_empty() {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    Ok(vec![WasmValue::from_i32(host_data.spear_ep_create())])
+}
+
+pub fn spear_ep_ctl(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 4 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let epfd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let op = get_i32_arg(&input, 1).unwrap_or(SPEAR_ERR_INVALID_CMD);
+    let fd = get_i32_arg(&input, 2).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let events = get_i32_arg(&input, 3).unwrap_or(0);
+    Ok(vec![WasmValue::from_i32(
+        host_data.spear_ep_ctl(epfd, op, fd, events),
+    )])
+}
+
+pub fn spear_ep_wait(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 4 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+
+    let epfd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let out_ptr = get_i32_arg(&input, 1).unwrap_or(-1);
+    let out_len_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
+    let timeout_ms = get_i32_arg(&input, 3).unwrap_or(0);
+
+    let cap = match mem_read_u32(instance, out_len_ptr) {
+        Ok(v) => v as usize,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    let max_records = cap / 8;
+    if max_records == 0 {
+        let _ = mem_write_u32(instance, out_len_ptr, 8);
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_BUFFER_TOO_SMALL)]);
+    }
+
+    let ready = match host_data.spear_ep_wait_ready(epfd, timeout_ms) {
+        Ok(v) => v,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    if ready.is_empty() {
+        let _ = mem_write_u32(instance, out_len_ptr, 0);
+        return Ok(vec![WasmValue::from_i32(0)]);
+    }
+
+    let n = std::cmp::min(ready.len(), max_records);
+    let mut payload = Vec::with_capacity(n * 8);
+    for (fd, events) in ready.into_iter().take(n) {
+        payload.extend_from_slice(&fd.to_le_bytes());
+        payload.extend_from_slice(&events.to_le_bytes());
+    }
+
+    if mem_write(instance, out_ptr, &payload).is_err() {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INVALID_PTR)]);
+    }
+    let _ = mem_write_u32(instance, out_len_ptr, payload.len() as u32);
+    Ok(vec![WasmValue::from_i32(n as i32)])
+}
+
+pub fn spear_ep_close(
+    host_data: &mut DefaultHostApi,
+    _instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 1 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    let epfd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    Ok(vec![WasmValue::from_i32(host_data.spear_ep_close(epfd))])
+}
+
+pub fn spear_fd_ctl(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 4 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
+    let cmd = get_i32_arg(&input, 1).unwrap_or(SPEAR_ERR_INVALID_CMD);
+    let arg_ptr = get_i32_arg(&input, 2).unwrap_or(-1);
+    let arg_len_ptr = get_i32_arg(&input, 3).unwrap_or(-1);
+
+    match cmd {
+        crate::spearlet::execution::hostcall::fd_table::FD_CTL_SET_FLAGS => {
+            let arg_len = match mem_read_u32(instance, arg_len_ptr) {
+                Ok(v) => v as i32,
+                Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+            };
+            let bytes = match mem_read(instance, arg_ptr, arg_len) {
+                Ok(b) => b,
+                Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+            };
+            match host_data.spear_fd_ctl(fd, cmd, Some(&bytes)) {
+                Ok(_) => Ok(vec![WasmValue::from_i32(SPEAR_OK)]),
+                Err(e) => Ok(vec![WasmValue::from_i32(e)]),
+            }
+        }
+        crate::spearlet::execution::hostcall::fd_table::FD_CTL_GET_FLAGS
+        | crate::spearlet::execution::hostcall::fd_table::FD_CTL_GET_KIND
+        | crate::spearlet::execution::hostcall::fd_table::FD_CTL_GET_STATUS
+        | crate::spearlet::execution::hostcall::fd_table::FD_CTL_GET_METRICS => {
+            let payload = match host_data.spear_fd_ctl(fd, cmd, None) {
+                Ok(Some(b)) => b,
+                Ok(None) => b"{}".to_vec(),
+                Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+            };
+            let wrote = mem_write_with_len(instance, arg_ptr, arg_len_ptr, &payload);
+            Ok(vec![WasmValue::from_i32(wrote)])
+        }
+        _ => Ok(vec![WasmValue::from_i32(SPEAR_ERR_INVALID_CMD)]),
+    }
 }
 
 pub fn spear_time_now_ms(
@@ -367,6 +707,79 @@ pub fn build_spear_import() -> Result<ImportObject<DefaultHostApi>, ExecutionErr
             message: format!("add cchat_close function error: {}", e),
         })?;
 
+    builder
+        .with_func::<(), i32>("rtasr_create", rtasr_create)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_create function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("rtasr_ctl", rtasr_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_ctl function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("rtasr_write", rtasr_write)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_write function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("rtasr_read", rtasr_read)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_read function error: {}", e),
+        })?;
+    builder
+        .with_func::<i32, i32>("rtasr_close", rtasr_close)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_close function error: {}", e),
+        })?;
+
+    builder
+        .with_func::<(), i32>("mic_create", mic_create)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_create function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("mic_ctl", mic_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_ctl function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("mic_read", mic_read)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_read function error: {}", e),
+        })?;
+    builder
+        .with_func::<i32, i32>("mic_close", mic_close)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_close function error: {}", e),
+        })?;
+
+    builder
+        .with_func::<(), i32>("spear_epoll_create", spear_ep_create)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_create function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("spear_epoll_ctl", spear_ep_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_ctl function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("spear_epoll_wait", spear_ep_wait)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_wait function error: {}", e),
+        })?;
+    builder
+        .with_func::<i32, i32>("spear_epoll_close", spear_ep_close)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_close function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("spear_fd_ctl", spear_fd_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_fd_ctl function error: {}", e),
+        })?;
+
     let import = builder.build();
     Ok(import)
 }
@@ -435,6 +848,79 @@ pub fn build_spear_import_with_api(
         .with_func::<i32, i32>("cchat_close", cchat_close)
         .map_err(|e| ExecutionError::RuntimeError {
             message: format!("add cchat_close function error: {}", e),
+        })?;
+
+    builder
+        .with_func::<(), i32>("rtasr_create", rtasr_create)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_create function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("rtasr_ctl", rtasr_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_ctl function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("rtasr_write", rtasr_write)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_write function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("rtasr_read", rtasr_read)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_read function error: {}", e),
+        })?;
+    builder
+        .with_func::<i32, i32>("rtasr_close", rtasr_close)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add rtasr_close function error: {}", e),
+        })?;
+
+    builder
+        .with_func::<(), i32>("mic_create", mic_create)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_create function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("mic_ctl", mic_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_ctl function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("mic_read", mic_read)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_read function error: {}", e),
+        })?;
+    builder
+        .with_func::<i32, i32>("mic_close", mic_close)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add mic_close function error: {}", e),
+        })?;
+
+    builder
+        .with_func::<(), i32>("spear_epoll_create", spear_ep_create)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_create function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("spear_epoll_ctl", spear_ep_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_ctl function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("spear_epoll_wait", spear_ep_wait)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_wait function error: {}", e),
+        })?;
+    builder
+        .with_func::<i32, i32>("spear_epoll_close", spear_ep_close)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_epoll_close function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32, i32), i32>("spear_fd_ctl", spear_fd_ctl)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add spear_fd_ctl function error: {}", e),
         })?;
 
     let import = builder.build();

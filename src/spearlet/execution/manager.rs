@@ -11,7 +11,7 @@ use super::{
     instance::{InstanceId, InstanceStatus, TaskInstance},
     runtime::{ExecutionContext, RuntimeManager},
     scheduler::{InstanceScheduler, SchedulingPolicy},
-    task::{Task, TaskId, TaskType},
+    task::{Task, TaskId},
     ExecutionError, ExecutionResult,
 };
 use crate::proto::spearlet::{ArtifactSpec as ProtoArtifactSpec, InvokeFunctionRequest};
@@ -245,9 +245,30 @@ impl TaskExecutionManager {
                 )
             });
 
+        let (execution_mode, wait) = {
+            let m = request.execution_mode();
+            let wait = request.wait;
+            let m2 = match m {
+                crate::proto::spearlet::ExecutionMode::Sync => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Sync
+                }
+                crate::proto::spearlet::ExecutionMode::Async => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Async
+                }
+                crate::proto::spearlet::ExecutionMode::Stream => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Stream
+                }
+                crate::proto::spearlet::ExecutionMode::Unknown => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Unknown
+                }
+            };
+            (m2, wait)
+        };
+
         let artifact_spec =
             request
                 .artifact_spec
+                .clone()
                 .ok_or_else(|| ExecutionError::InvalidRequest {
                     message: "Missing artifact specification".to_string(),
                 })?;
@@ -257,6 +278,8 @@ impl TaskExecutionManager {
             payload: Vec::new(), // TODO: Extract payload from request
             headers: std::collections::HashMap::new(), // TODO: Extract headers from request
             timeout_ms: 30000,   // TODO: Extract timeout from request context
+            execution_mode,
+            wait,
             context_data: std::collections::HashMap::new(), // TODO: Extract context data from request
         };
 
@@ -514,7 +537,7 @@ impl TaskExecutionManager {
                         output_data: Vec::new(),
                         status: "failed".to_string(),
                         error_message: Some(e.to_string()),
-                        execution_time_ms: execution_time_ms,
+                        execution_time_ms,
                         metadata: std::collections::HashMap::new(),
                         timestamp: SystemTime::now(),
                     },
@@ -579,7 +602,7 @@ impl TaskExecutionManager {
     /// Execute request / 执行请求
     async fn execute_request(
         &self,
-        artifact_spec: ProtoArtifactSpec,
+        _artifact_spec: ProtoArtifactSpec,
         execution_context: ExecutionContext,
         desired_task_id: Option<String>,
     ) -> ExecutionResult<super::ExecutionResponse> {
@@ -611,10 +634,14 @@ impl TaskExecutionManager {
         // Convert RuntimeExecutionResponse to ExecutionResponse / 转换运行时响应到执行响应
         let is_successful = runtime_response.is_successful();
         let has_failed = runtime_response.has_failed();
+        let is_running = matches!(
+            runtime_response.execution_status,
+            crate::spearlet::execution::runtime::ExecutionStatus::Running
+        );
         let error_message = runtime_response
             .error
             .as_ref()
-            .map(|e| Self::extract_error_message(e));
+            .map(Self::extract_error_message);
         let duration_ms = runtime_response.duration_ms;
         let metadata = runtime_response
             .metadata
@@ -630,6 +657,8 @@ impl TaskExecutionManager {
                 "completed".to_string()
             } else if has_failed {
                 "failed".to_string()
+            } else if is_running {
+                "running".to_string()
             } else {
                 "pending".to_string()
             },
@@ -797,7 +826,7 @@ impl TaskExecutionManager {
         } else {
             std::collections::HashMap::new()
         };
-        let runtime_type = artifact.spec.runtime_type.clone();
+        let runtime_type = artifact.spec.runtime_type;
         let task_spec = TaskSpec {
             name: sms_task.name.clone(),
             task_type: super::task::TaskType::HttpHandler,

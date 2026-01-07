@@ -200,7 +200,7 @@ pub async fn get_node_with_resource(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut client = state.node_client.clone();
 
-    let grpc_req = GetNodeWithResourceRequest { uuid: uuid };
+    let grpc_req = GetNodeWithResourceRequest { uuid };
 
     match client.get_node_with_resource(grpc_req).await {
         Ok(response) => {

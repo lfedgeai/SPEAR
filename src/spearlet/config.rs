@@ -3,7 +3,6 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::config;
 use crate::config::base::{LogConfig, ServerConfig};
 
 /// SPEARlet command line arguments / SPEARlet命令行参数
@@ -108,7 +107,7 @@ pub struct CliArgs {
 }
 
 /// Spearlet application configuration / Spearlet应用配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// SPEARlet service configuration / SPEARlet服务配置
     pub spearlet: SpearletConfig,
@@ -318,14 +317,6 @@ impl AppConfig {
     }
 }
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            spearlet: SpearletConfig::default(),
-        }
-    }
-}
-
 /// SPEARlet service configuration / SPEARlet服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -358,19 +349,38 @@ pub struct SpearletConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LlmConfig {
     pub default_policy: Option<String>,
+    pub credentials: Vec<LlmCredentialConfig>,
     pub backends: Vec<LlmBackendConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
+pub struct LlmCredentialConfig {
+    pub name: String,
+    pub kind: String,
+    pub api_key_env: String,
+}
+
+impl Default for LlmCredentialConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            kind: "env".to_string(),
+            api_key_env: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct LlmBackendConfig {
     pub name: String,
     pub kind: String,
     pub base_url: String,
-    pub api_key_env: Option<String>,
+    pub credential_ref: Option<String>,
     pub weight: u32,
     pub priority: i32,
     pub ops: Vec<String>,
@@ -384,7 +394,7 @@ impl Default for LlmBackendConfig {
             name: String::new(),
             kind: String::new(),
             base_url: String::new(),
-            api_key_env: None,
+            credential_ref: None,
             weight: 100,
             priority: 0,
             ops: Vec::new(),
@@ -394,7 +404,7 @@ impl Default for LlmBackendConfig {
     }
 }
 
-/// gRPC server configuration / gRPC服务器配置
+// gRPC server configuration / gRPC服务器配置
 // gRPC uses base ServerConfig / gRPC使用基础ServerConfig
 
 /// HTTP gateway configuration / HTTP网关配置

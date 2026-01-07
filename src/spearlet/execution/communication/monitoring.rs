@@ -2,13 +2,11 @@
 //! 运行时通信的监控和诊断模块
 
 use crate::spearlet::execution::communication::protocol::ConnectionStatus;
-use crate::spearlet::execution::communication::{
-    ConnectionEvent, ConnectionState, MessageType, SpearMessage,
-};
+use crate::spearlet::execution::communication::{ConnectionEvent, MessageType, SpearMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use tokio::sync::{mpsc, RwLock};
 
 /// Monitoring configuration / 监控配置

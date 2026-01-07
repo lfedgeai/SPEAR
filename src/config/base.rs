@@ -68,7 +68,7 @@ impl LogConfig {
             level: self.level.clone(),
             format: self.format.clone(),
             file_enabled: self.file.is_some(),
-            file_path: self.file.as_ref().map(|p| std::path::PathBuf::from(p)),
+            file_path: self.file.as_ref().map(std::path::PathBuf::from),
         }
     }
 }

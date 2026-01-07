@@ -111,15 +111,12 @@ impl TaskEventBus {
     async fn publish(&self, task: &Task, kind: TaskEventKind) -> Result<TaskEvent, SmsError> {
         let node_uuid = task.node_uuid.clone();
         let id = self.next_id(&node_uuid).await;
-        let ek_val = if task.execution_kind
-            == crate::proto::sms::TaskExecutionKind::LongRunning as i32
-        {
-            crate::proto::sms::TaskExecutionKind::LongRunning as i32
-        } else if task.execution_kind == crate::proto::sms::TaskExecutionKind::ShortRunning as i32 {
-            crate::proto::sms::TaskExecutionKind::ShortRunning as i32
-        } else {
-            crate::proto::sms::TaskExecutionKind::ShortRunning as i32
-        };
+        let ek_val =
+            if task.execution_kind == crate::proto::sms::TaskExecutionKind::LongRunning as i32 {
+                crate::proto::sms::TaskExecutionKind::LongRunning as i32
+            } else {
+                crate::proto::sms::TaskExecutionKind::ShortRunning as i32
+            };
         let execution_id = if kind == TaskEventKind::Create {
             Some(format!("task-event-{}-{}", node_uuid, id))
         } else {

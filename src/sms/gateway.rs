@@ -14,6 +14,7 @@ use crate::proto::sms::{
 /// Embedded static files for Swagger UI / Swagger UI的嵌入式静态文件
 #[derive(RustEmbed)]
 #[folder = "static/"]
+#[allow(dead_code)]
 struct StaticFiles;
 
 /// HTTP gateway state / HTTP网关状态

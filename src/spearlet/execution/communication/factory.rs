@@ -6,12 +6,10 @@
 //!
 //! 此模块提供用于创建通信通道和管理运行时特定通信策略的工厂模式。
 
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::channel::{GrpcChannel, TcpChannel, UnixSocketChannel};
-use super::transport::{TransportConfig, TransportFactory};
 use super::{
     ChannelConfig, CommunicationChannel, CommunicationError, CommunicationResult, RuntimeInstanceId,
 };
@@ -78,6 +76,7 @@ pub struct CommunicationFactory {
     /// Channel pool configuration
     /// 通道池配置
     pool_enabled: bool,
+    #[allow(dead_code)]
     max_channels_per_instance: usize,
 }
 
@@ -304,15 +303,15 @@ impl CommunicationFactory {
         match channel_type {
             "unix" => {
                 let channel = UnixSocketChannel::new(instance_id, config)?;
-                Ok(Box::new(channel))
+                Ok(Box::new(channel) as Box<dyn CommunicationChannel>)
             }
             "tcp" => {
                 let channel = TcpChannel::new(instance_id, config)?;
-                Ok(Box::new(channel))
+                Ok(Box::new(channel) as Box<dyn CommunicationChannel>)
             }
             "grpc" => {
                 let channel = GrpcChannel::new(instance_id, config)?;
-                Ok(Box::new(channel))
+                Ok(Box::new(channel) as Box<dyn CommunicationChannel>)
             }
             "memory" => {
                 // For WASM runtime, we might use a different in-memory channel

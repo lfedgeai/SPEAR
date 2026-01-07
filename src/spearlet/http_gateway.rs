@@ -36,6 +36,7 @@ pub struct HttpGateway {
 #[derive(Clone)]
 struct AppState {
     object_client: ObjectServiceClient<Channel>,
+    #[allow(dead_code)]
     function_client: FunctionServiceClient<Channel>,
     health_service: Arc<HealthService>,
     config: Arc<SpearletConfig>,

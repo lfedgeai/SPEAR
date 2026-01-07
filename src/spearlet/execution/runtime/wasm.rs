@@ -5,7 +5,7 @@
 //! 该模块使用 Wasmtime 提供基于 WebAssembly 的执行运行时。
 
 #[cfg(feature = "wasmedge")]
-use super::wasm_hostcalls::{build_spear_import, build_spear_import_with_api};
+use super::wasm_hostcalls::build_spear_import_with_api;
 use super::{
     ExecutionContext, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeExecutionResponse,
     RuntimeType,
@@ -25,7 +25,7 @@ use tracing::debug;
 #[cfg(feature = "wasmedge")]
 use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
 #[cfg(feature = "wasmedge")]
-use wasmedge_sdk::{params, vm::SyncInst, wasi::WasiModule, wat2wasm, Module, Vm};
+use wasmedge_sdk::{params, vm::SyncInst, wasi::WasiModule, Module, Vm};
 
 // Note: In a real implementation, you would use wasmedge crate
 // 注意：在真实实现中，您会使用 wasmedge crate
@@ -169,6 +169,7 @@ pub struct WasmInstanceHandle {
 #[derive(Debug)]
 pub struct ExecRequest {
     function_name: String,
+    timeout_ms: Option<u64>,
     reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
 }
 
@@ -352,27 +353,38 @@ impl WasmRuntime {
                 let module = Module::from_bytes(None, &bytes).unwrap();
                 vm.register_module(Some(&handle_module_name), module)
                     .unwrap();
-                loop {
-                    match req_rx.recv() {
-                        Ok(r) => {
-                            if r.function_name == "__stop__" {
-                                let _ = r.reply_tx.send(Ok(Vec::new()));
-                                break;
-                            }
-                            let res = match vm.run_func(
-                                Some(&handle_module_name),
-                                &r.function_name,
-                                params!(),
-                            ) {
-                                Ok(values) => Ok(format!("{:?}", values).into_bytes()),
-                                Err(e) => Err(ExecutionError::RuntimeError {
-                                    message: format!("wasmedge exec error: {}", e),
-                                }),
-                            };
-                            let _ = r.reply_tx.send(res);
-                        }
-                        Err(_) => break,
+                while let Ok(r) = req_rx.recv() {
+                    if r.function_name == "__stop__" {
+                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                        break;
                     }
+                    let res = {
+                        let out = if let Some(_timeout_ms) = r.timeout_ms {
+                            #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+                            {
+                                vm.run_func_with_timeout(
+                                    Some(&handle_module_name),
+                                    &r.function_name,
+                                    params!(),
+                                    std::time::Duration::from_millis(_timeout_ms),
+                                )
+                            }
+                            #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
+                            {
+                                vm.run_func(Some(&handle_module_name), &r.function_name, params!())
+                            }
+                        } else {
+                            vm.run_func(Some(&handle_module_name), &r.function_name, params!())
+                        };
+
+                        match out {
+                            Ok(values) => Ok(format!("{:?}", values).into_bytes()),
+                            Err(e) => Err(ExecutionError::RuntimeError {
+                                message: format!("wasmedge exec error: {}", e),
+                            }),
+                        }
+                    };
+                    let _ = r.reply_tx.send(res);
                 }
             });
         }
@@ -396,7 +408,8 @@ impl WasmRuntime {
         &self,
         instance_handle: &WasmInstanceHandle,
         function_name: &str,
-        input_data: &[u8],
+        timeout_ms: Option<u64>,
+        _input_data: &[u8],
     ) -> ExecutionResult<Vec<u8>> {
         let start_time = Instant::now();
 
@@ -419,6 +432,7 @@ impl WasmRuntime {
             let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
             let req = ExecRequest {
                 function_name: function_name.to_string(),
+                timeout_ms,
                 reply_tx: tx,
             };
             let send_res = instance_handle.req_tx.send(req);
@@ -427,11 +441,19 @@ impl WasmRuntime {
                     message: "wasm instance thread unavailable".to_string(),
                 });
             }
-            let recv_res = tokio::task::spawn_blocking(move || rx.recv())
-                .await
-                .map_err(|e| ExecutionError::RuntimeError {
-                    message: e.to_string(),
-                })?;
+            let join = tokio::task::spawn_blocking(move || rx.recv());
+            let recv_res = match timeout_ms {
+                None => join.await,
+                Some(timeout_ms) => {
+                    match tokio::time::timeout(Duration::from_millis(timeout_ms), join).await {
+                        Ok(v) => v,
+                        Err(_) => return Err(ExecutionError::ExecutionTimeout { timeout_ms }),
+                    }
+                }
+            };
+            let recv_res = recv_res.map_err(|e| ExecutionError::RuntimeError {
+                message: e.to_string(),
+            })?;
             let bytes: Vec<u8> = match recv_res {
                 Ok(Ok(b)) => b,
                 Ok(Err(e)) => return Err(e),
@@ -567,8 +589,7 @@ impl Runtime for WasmRuntime {
 
         let module_bytes_vec: Vec<u8> = if let Some(snapshot) = &config.artifact {
             if let Some(uri) = &snapshot.location {
-                if uri.starts_with("sms+file://") {
-                    let rest = &uri[11..];
+                if let Some(rest) = uri.strip_prefix("sms+file://") {
                     let (override_host_port, id_part) = match rest.find('/') {
                         Some(pos) => (Some(rest[..pos].to_string()), rest[pos + 1..].to_string()),
                         None => (None, rest.to_string()),
@@ -665,6 +686,7 @@ impl Runtime for WasmRuntime {
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
         let req = ExecRequest {
             function_name: "__stop__".to_string(),
+            timeout_ms: None,
             reply_tx: tx,
         };
         wasm_handle
@@ -717,17 +739,74 @@ impl Runtime for WasmRuntime {
             }
         };
 
-        let result = tokio::time::timeout(
-            Duration::from_millis(context.timeout_ms),
-            self.execute_wasm_function(&wasm_handle, function_name, &context.payload),
-        )
-        .await;
+        let no_wait = !context.wait
+            || matches!(
+                context.execution_mode,
+                crate::spearlet::execution::runtime::ExecutionMode::Async
+            );
+
+        if no_wait {
+            {
+                let state = wasm_handle.state.lock().await;
+                if state.is_running {
+                    return Err(ExecutionError::InvalidRequest {
+                        message: "another execution already in progress".to_string(),
+                    });
+                }
+            }
+
+            {
+                let mut state = wasm_handle.state.lock().await;
+                state.last_execution_time = Some(std::time::SystemTime::now());
+                state.is_running = true;
+                state.current_function = Some(function_name.to_string());
+            }
+
+            let (tx, _rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
+            let req = ExecRequest {
+                function_name: function_name.to_string(),
+                timeout_ms: None,
+                reply_tx: tx,
+            };
+            wasm_handle
+                .req_tx
+                .send(req)
+                .map_err(|e| ExecutionError::RuntimeError {
+                    message: e.to_string(),
+                })?;
+
+            let duration = start_time.elapsed();
+            let duration_ms = duration.as_millis() as u64;
+            instance.record_request_completion(true, duration_ms as f64);
+
+            return Ok(RuntimeExecutionResponse {
+                data: Vec::new(),
+                duration_ms,
+                metadata: std::collections::HashMap::new(),
+                execution_mode: crate::spearlet::execution::runtime::ExecutionMode::Async,
+                execution_status: crate::spearlet::execution::runtime::ExecutionStatus::Running,
+                execution_id: context.execution_id,
+                task_id: Some(instance.task_id.clone()),
+                status_endpoint: None,
+                estimated_completion_ms: None,
+                error: None,
+            });
+        }
+
+        let result = self
+            .execute_wasm_function(
+                &wasm_handle,
+                function_name,
+                Some(context.timeout_ms),
+                &context.payload,
+            )
+            .await;
 
         let duration = start_time.elapsed();
         let duration_ms = duration.as_millis() as u64;
 
         match result {
-            Ok(Ok(output)) => {
+            Ok(output) => {
                 instance.record_request_completion(true, duration_ms as f64);
                 debug!(
                     instance_id = %instance.id(),
@@ -742,7 +821,7 @@ impl Runtime for WasmRuntime {
                     duration_ms,
                 ))
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 instance.record_request_completion(false, duration_ms as f64);
                 debug!(
                     instance_id = %instance.id(),
@@ -752,19 +831,6 @@ impl Runtime for WasmRuntime {
                     "WASM execution failed"
                 );
                 Err(e)
-            }
-            Err(_) => {
-                instance.record_request_completion(false, duration_ms as f64);
-                debug!(
-                    instance_id = %instance.id(),
-                    execution_id = %context.execution_id,
-                    duration_ms = duration_ms,
-                    timeout_ms = context.timeout_ms,
-                    "WASM execution timed out"
-                );
-                Err(ExecutionError::ExecutionTimeout {
-                    timeout_ms: context.timeout_ms,
-                })
             }
         }
     }
@@ -1054,8 +1120,9 @@ mod wasm_runtime_thread_tests {
 
     #[cfg(feature = "wasmedge")]
     fn link_wat(wat: &str) {
+        use super::super::wasm_hostcalls::build_spear_import;
         use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
-        use wasmedge_sdk::{Store, Vm};
+        use wasmedge_sdk::{wat2wasm, Store, Vm};
 
         let bytes = wat2wasm(wat.as_bytes()).unwrap();
         let c = ConfigBuilder::new(CommonConfigOptions::default())
@@ -1146,6 +1213,50 @@ mod wasm_runtime_thread_tests {
         )"#;
         link_wat(wat);
     }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_rtasr_mic_hostcalls() {
+        let wat = r#"(module
+            (type $create_t (func (result i32)))
+            (type $ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $write_t (func (param i32 i32 i32) (result i32)))
+            (type $read_t (func (param i32 i32 i32) (result i32)))
+            (type $close_t (func (param i32) (result i32)))
+            (import "spear" "rtasr_create" (func $rtasr_create (type $create_t)))
+            (import "spear" "rtasr_ctl" (func $rtasr_ctl (type $ctl_t)))
+            (import "spear" "rtasr_write" (func $rtasr_write (type $write_t)))
+            (import "spear" "rtasr_read" (func $rtasr_read (type $read_t)))
+            (import "spear" "rtasr_close" (func $rtasr_close (type $close_t)))
+            (import "spear" "mic_create" (func $mic_create (type $create_t)))
+            (import "spear" "mic_ctl" (func $mic_ctl (type $ctl_t)))
+            (import "spear" "mic_read" (func $mic_read (type $read_t)))
+            (import "spear" "mic_close" (func $mic_close (type $close_t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_link_fd_epoll_fullname_hostcalls() {
+        let wat = r#"(module
+            (type $ep_create_t (func (result i32)))
+            (type $ep_ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $ep_wait_t (func (param i32 i32 i32 i32) (result i32)))
+            (type $ep_close_t (func (param i32) (result i32)))
+            (type $fd_ctl_t (func (param i32 i32 i32 i32) (result i32)))
+            (import "spear" "spear_epoll_create" (func $ep_create (type $ep_create_t)))
+            (import "spear" "spear_epoll_ctl" (func $ep_ctl (type $ep_ctl_t)))
+            (import "spear" "spear_epoll_wait" (func $ep_wait (type $ep_wait_t)))
+            (import "spear" "spear_epoll_close" (func $ep_close (type $ep_close_t)))
+            (import "spear" "spear_fd_ctl" (func $fd_ctl (type $fd_ctl_t)))
+            (func $dummy (result i32) i32.const 0)
+            (export "dummy" (func $dummy))
+        )"#;
+        link_wat(wat);
+    }
 }
 
 #[cfg(test)]
@@ -1230,7 +1341,7 @@ mod wasm_runtime_tests {
         };
 
         let out = rt
-            .execute_wasm_function(&handle, "main", &[])
+            .execute_wasm_function(&handle, "main", Some(30_000), &[])
             .await
             .unwrap();
         assert_eq!(out, b"[]");
@@ -1291,7 +1402,9 @@ mod wasm_runtime_tests {
 
         let _hold = handle.exec_lock.lock().await;
         // Attempt an execution while lock is held; should fail fast
-        let h2 = rt.execute_wasm_function(&handle, "main", &[]).await;
+        let h2 = rt
+            .execute_wasm_function(&handle, "main", Some(30_000), &[])
+            .await;
         assert!(h2.is_err());
         if let Err(ExecutionError::InvalidRequest { message }) = h2 {
             assert!(message.contains("already in progress"));

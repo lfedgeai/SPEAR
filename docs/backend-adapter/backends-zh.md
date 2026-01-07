@@ -18,7 +18,7 @@
 
 建议区分两层：
 
-- `BackendKind`：实现类型（openai_compatible/azure/vllm/realtime...）
+- `BackendKind`：实现类型（openai_chat_completion/azure/vllm/realtime...）
 - `BackendInstance`：具体实例（base_url、region、权重、优先级、capabilities、limits）
 
 路由选择对象是 instance。
@@ -54,11 +54,21 @@ legacy 对齐：`GetAPIEndpointInfo` 通过 env key 是否存在过滤 endpoint�
 [llm]
 default_policy = "weighted_round_robin"
 
+[[llm.credentials]]
+name = "openai_chat"
+kind = "env"
+api_key_env = "OPENAI_CHAT_API_KEY"
+
+[[llm.credentials]]
+name = "openai_realtime"
+kind = "env"
+api_key_env = "OPENAI_REALTIME_API_KEY"
+
 [[llm.backends]]
 name = "openai-us"
-kind = "openai_compatible"
+kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
-api_key_env = "OPENAI_API_KEY"
+credential_ref = "openai_chat"
 weight = 80
 priority = 10
 ops = ["chat_completions", "text_to_speech"]
@@ -67,9 +77,9 @@ transports = ["http"]
 
 [[llm.backends]]
 name = "openai-realtime"
-kind = "openai_realtime"
+kind = "openai_realtime_ws"
 base_url = "https://api.openai.com"
-api_key_env = "OPENAI_API_KEY"
+credential_ref = "openai_realtime"
 weight = 100
 priority = 20
 ops = ["realtime_voice"]
@@ -77,16 +87,21 @@ features = ["supports_bidi_stream", "supports_audio_input", "supports_audio_outp
 transports = ["websocket"]
 ```
 
+建议通过 `llm.credentials[]` 集中管理 API key，并让 `llm.backends[].credential_ref` 引用凭据，以支持不同 backend 使用不同 key。
+
+详细设计与落地方案见：[llm-credentials-implementation-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/implementation/llm-credentials-implementation-zh.md)
+
 ## 6. Secret 与网络策略
 
-- `api_key_env` 与 base_url 必须由 host 配置提供；WASM 不可注入。
+- `llm.credentials[].api_key_env`、`llm.backends[].credential_ref` 与 base_url 必须由 host 配置提供；WASM 不可注入。
 - backend allowlist/denylist 由 host 配置控制，请求侧只能收缩。
 
 ### 6.1 API key 的存储方式（建议）
 
 建议只在配置里保存“环境变量名”，不在配置文件中保存明文 key。
 
-- 在 `[[llm.backends]]` 中使用 `api_key_env = "OPENAI_API_KEY"`
+- 在 `[[llm.credentials]]` 中使用 `api_key_env = "OPENAI_API_KEY"`
+- 在 `[[llm.backends]]` 中使用 `credential_ref = "<credential_name>"`
 - 在 spearlet 进程启动环境中注入 `OPENAI_API_KEY=...`
 
 这样可以：
@@ -96,25 +111,25 @@ transports = ["websocket"]
 
 ### 6.2 API key 的读取与使用（host-side）
 
-后端 adapter 发送请求时：
+在当前 Rust 代码中：
 
-- 根据 `api_key_env` 读取对应环境变量的值
-- 组装到 HTTP Header（例如 `Authorization: Bearer <key>`）
+- 根据 `credential_ref` 解析出 `api_key_env`
+- 在 spearlet 进程启动环境中注入该 env，并在运行时加载到 `RuntimeConfig.global_environment`
+- registry 使用解析到的 key 构造 backend adapter
+- adapter 将其组装到 HTTP Header（例如 `Authorization: Bearer <key>`）
 - 禁止打印/回传 key（包括错误日志与 `raw` 字段）
-
-在当前 Rust 代码中，host 侧可通过 `SpearHostApi::get_env` 读取环境变量（实现目前从 `RuntimeConfig.global_environment` 获取，见 `src/spearlet/execution/host_api.rs:309-311`）。
 
 ### 6.3 缺失 key 的行为（建议）
 
-- 若 `api_key_env` 未配置或对应环境变量不存在：
+- 若 `credential_ref` 未配置 / credential 不存在 / 对应环境变量不存在：
   - 视为该 backend instance 不可用（从 candidates 里过滤），或在调用时返回 `BackendNotEnabled/InvalidConfiguration` 类错误
 - discovery 对外输出时：
-  - 可以仅输出 `api_key_env` 名称，不输出值
+  - 可以仅输出 `credential_ref`（以及其解析到的 env var 名称），不输出值
 
 ### 6.4 轮换与多 key
 
 - 轮换：通过更新 spearlet 进程环境变量并滚动重启实现（MVP）；后续可加入热更新机制。
-- 多 key：允许为不同 backend instance 配置不同 `api_key_env`。
+- 多 key：允许为不同 backend instance 配置不同 `credential_ref`（从而使用不同 env var）。
 
 ### 6.5 多 API key 的组织最佳实践
 
@@ -122,13 +137,13 @@ transports = ["websocket"]
 
 - 按“提供方/区域/用途/实例”命名环境变量，避免复用同一个 key 覆盖多个实例：
   - 例如：`OPENAI_API_KEY_US_PRIMARY`、`OPENAI_API_KEY_US_FALLBACK`、`AZURE_OPENAI_KEY_EASTUS`、`VLLM_TOKEN_CLUSTER_A`
-- 配置里只引用 env 名称：每个 `BackendInstance` 绑定一个 `api_key_env`，做到可追踪、可轮换、可审计。
+- 配置里只引用 env 名称：每个 `BackendInstance` 绑定一个 `credential_ref`，做到可追踪、可轮换、可审计。
 
 #### 6.5.2 多 key 用于同一个 backend instance（key pool）
 
-当同一个 endpoint 需要多个 key（配额拆分、限流分摊、灰度/AB）时，建议引入 “key pool” 的抽象：
+当同一个 endpoint 需要多个 key（配额拆分、限流分摊、灰度/AB）时，建议引入 “key pool” 的抽象（后续增强）：
 
-- 配置：`api_key_envs = ["OPENAI_API_KEY_US_PRIMARY", "OPENAI_API_KEY_US_2", ...]`
+- 配置（建议）：`credential_refs = ["openai_key_us_primary", "openai_key_us_2", ...]`
 - 选择策略（按场景）：
   - `round_robin`：均匀摊分 QPS
   - `random`：实现简单
@@ -145,12 +160,12 @@ MVP 可以先实现“一个 instance 一个 key”；key pool 建议作为 Phas
 #### 6.5.4 性能与工程性
 
 - 不要在每次请求都做昂贵的 secret 解析（如调用外部 secret manager）；优先在进程内缓存已解析的 key。
-- 对 `get_env` 的读取可以在 adapter 初始化时完成并缓存（前提是你接受“滚动重启生效”的轮换方式）。
+- 建议在初始化阶段完成 key 解析并缓存（前提是你接受“滚动重启生效”的轮换方式）。
 
 #### 6.5.5 部署建议（Kubernetes）
 
 - 使用 K8s Secret 注入 env（`envFrom`/`valueFrom.secretKeyRef`），并限制 RBAC。
-- discovery/API 返回只暴露 `api_key_env` 名称，不暴露值。
+- discovery/API 返回只暴露 `credential_ref`（或 env var 名称），不暴露值。
 
 ### 6.6 与 SMS Web Admin 的配合（建议）
 
@@ -159,15 +174,15 @@ SMS Web Admin 可以支持“API key 配置组件”，但最佳实践是把它�
 推荐形态：
 
 - Web Admin 管理的是：
-  - backend instance 的配置（`base_url`、权重、能力、`api_key_env`/`api_key_envs` 等）
-  - secret 的引用（env var 名称或外部 secret manager 的引用 ID）
+  - backend instance 的配置（`base_url`、权重、能力、`credential_ref` 等）
+  - secret 的引用（`credentials[]` 名称与其 env var 名称，或外部 secret manager 的引用 ID）
 - Web Admin 不管理的是：
   - 明文 key 的值（不进入 SMS DB，不进入日志，不通过 API 回传）
 
 与 spearlet 的配合方式：
 
 - spearlet 进程启动时通过部署系统注入环境变量（K8s Secret/Vault Agent/systemd drop-in 等）
-- spearlet 的 backend adapter 通过 `SpearHostApi::get_env` 读取 `api_key_env` 对应的值并用于请求签名
+- spearlet 进程启动时加载 env 并构建 registry，用解析到的 key 进行请求签名
 - SMS Web Admin 可以提供“校验/可观测”：
   - 仅验证 key 是否“存在/可用”（例如让 spearlet 在心跳 `health_info` 上报 `HAS_ENV:OPENAI_API_KEY_US_PRIMARY=true`）
   - 允许在 UI 上标记某个 instance 在某些 node 上缺失 key，但不展示 key 值

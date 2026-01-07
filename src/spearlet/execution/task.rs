@@ -55,16 +55,11 @@ pub enum TaskStatus {
     Error(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExecutionKind {
     LongRunning,
+    #[default]
     ShortRunning,
-}
-
-impl Default for ExecutionKind {
-    fn default() -> Self {
-        ExecutionKind::ShortRunning
-    }
 }
 
 /// Task specification / Task 规格
@@ -379,7 +374,7 @@ impl Task {
         InstanceConfig {
             task_id: self.id.clone(),
             artifact_id: self.artifact_id.clone(),
-            runtime_type: self.spec.runtime_type.clone(),
+            runtime_type: self.spec.runtime_type,
             runtime_config: HashMap::new(),
             artifact: None,
             environment: env,

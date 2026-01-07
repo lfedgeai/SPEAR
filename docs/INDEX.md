@@ -43,6 +43,7 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Spear Hostcall Chat Completion | [api/spear-hostcall/chat-completion-en.md](./api/spear-hostcall/chat-completion-en.md) | [api/spear-hostcall/chat-completion-zh.md](./api/spear-hostcall/chat-completion-zh.md) | WASM hostcall 的 Chat Completion 设计 |
+| Mic Device Capture (mic-device feature) | [mic-device-feature-en.md](./mic-device-feature-en.md) | [mic-device-feature-zh.md](./mic-device-feature-zh.md) | mic_fd 使用本机麦克风采集的可选编译特性 |
 
 ### 🌐 HTTP Layer / HTTP层
 

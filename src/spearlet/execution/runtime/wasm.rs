@@ -169,6 +169,7 @@ pub struct WasmInstanceHandle {
 #[derive(Debug)]
 pub struct ExecRequest {
     function_name: String,
+    timeout_ms: Option<u64>,
     reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
 }
 
@@ -357,13 +358,32 @@ impl WasmRuntime {
                         let _ = r.reply_tx.send(Ok(Vec::new()));
                         break;
                     }
-                    let res =
-                        match vm.run_func(Some(&handle_module_name), &r.function_name, params!()) {
+                    let res = {
+                        let out = if let Some(_timeout_ms) = r.timeout_ms {
+                            #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+                            {
+                                vm.run_func_with_timeout(
+                                    Some(&handle_module_name),
+                                    &r.function_name,
+                                    params!(),
+                                    std::time::Duration::from_millis(_timeout_ms),
+                                )
+                            }
+                            #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
+                            {
+                                vm.run_func(Some(&handle_module_name), &r.function_name, params!())
+                            }
+                        } else {
+                            vm.run_func(Some(&handle_module_name), &r.function_name, params!())
+                        };
+
+                        match out {
                             Ok(values) => Ok(format!("{:?}", values).into_bytes()),
                             Err(e) => Err(ExecutionError::RuntimeError {
                                 message: format!("wasmedge exec error: {}", e),
                             }),
-                        };
+                        }
+                    };
                     let _ = r.reply_tx.send(res);
                 }
             });
@@ -388,6 +408,7 @@ impl WasmRuntime {
         &self,
         instance_handle: &WasmInstanceHandle,
         function_name: &str,
+        timeout_ms: Option<u64>,
         _input_data: &[u8],
     ) -> ExecutionResult<Vec<u8>> {
         let start_time = Instant::now();
@@ -411,6 +432,7 @@ impl WasmRuntime {
             let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
             let req = ExecRequest {
                 function_name: function_name.to_string(),
+                timeout_ms,
                 reply_tx: tx,
             };
             let send_res = instance_handle.req_tx.send(req);
@@ -419,11 +441,19 @@ impl WasmRuntime {
                     message: "wasm instance thread unavailable".to_string(),
                 });
             }
-            let recv_res = tokio::task::spawn_blocking(move || rx.recv())
-                .await
-                .map_err(|e| ExecutionError::RuntimeError {
-                    message: e.to_string(),
-                })?;
+            let join = tokio::task::spawn_blocking(move || rx.recv());
+            let recv_res = match timeout_ms {
+                None => join.await,
+                Some(timeout_ms) => {
+                    match tokio::time::timeout(Duration::from_millis(timeout_ms), join).await {
+                        Ok(v) => v,
+                        Err(_) => return Err(ExecutionError::ExecutionTimeout { timeout_ms }),
+                    }
+                }
+            };
+            let recv_res = recv_res.map_err(|e| ExecutionError::RuntimeError {
+                message: e.to_string(),
+            })?;
             let bytes: Vec<u8> = match recv_res {
                 Ok(Ok(b)) => b,
                 Ok(Err(e)) => return Err(e),
@@ -656,6 +686,7 @@ impl Runtime for WasmRuntime {
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
         let req = ExecRequest {
             function_name: "__stop__".to_string(),
+            timeout_ms: None,
             reply_tx: tx,
         };
         wasm_handle
@@ -708,17 +739,74 @@ impl Runtime for WasmRuntime {
             }
         };
 
-        let result = tokio::time::timeout(
-            Duration::from_millis(context.timeout_ms),
-            self.execute_wasm_function(&wasm_handle, function_name, &context.payload),
-        )
-        .await;
+        let no_wait = !context.wait
+            || matches!(
+                context.execution_mode,
+                crate::spearlet::execution::runtime::ExecutionMode::Async
+            );
+
+        if no_wait {
+            {
+                let state = wasm_handle.state.lock().await;
+                if state.is_running {
+                    return Err(ExecutionError::InvalidRequest {
+                        message: "another execution already in progress".to_string(),
+                    });
+                }
+            }
+
+            {
+                let mut state = wasm_handle.state.lock().await;
+                state.last_execution_time = Some(std::time::SystemTime::now());
+                state.is_running = true;
+                state.current_function = Some(function_name.to_string());
+            }
+
+            let (tx, _rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
+            let req = ExecRequest {
+                function_name: function_name.to_string(),
+                timeout_ms: None,
+                reply_tx: tx,
+            };
+            wasm_handle
+                .req_tx
+                .send(req)
+                .map_err(|e| ExecutionError::RuntimeError {
+                    message: e.to_string(),
+                })?;
+
+            let duration = start_time.elapsed();
+            let duration_ms = duration.as_millis() as u64;
+            instance.record_request_completion(true, duration_ms as f64);
+
+            return Ok(RuntimeExecutionResponse {
+                data: Vec::new(),
+                duration_ms,
+                metadata: std::collections::HashMap::new(),
+                execution_mode: crate::spearlet::execution::runtime::ExecutionMode::Async,
+                execution_status: crate::spearlet::execution::runtime::ExecutionStatus::Running,
+                execution_id: context.execution_id,
+                task_id: Some(instance.task_id.clone()),
+                status_endpoint: None,
+                estimated_completion_ms: None,
+                error: None,
+            });
+        }
+
+        let result = self
+            .execute_wasm_function(
+                &wasm_handle,
+                function_name,
+                Some(context.timeout_ms),
+                &context.payload,
+            )
+            .await;
 
         let duration = start_time.elapsed();
         let duration_ms = duration.as_millis() as u64;
 
         match result {
-            Ok(Ok(output)) => {
+            Ok(output) => {
                 instance.record_request_completion(true, duration_ms as f64);
                 debug!(
                     instance_id = %instance.id(),
@@ -733,7 +821,7 @@ impl Runtime for WasmRuntime {
                     duration_ms,
                 ))
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 instance.record_request_completion(false, duration_ms as f64);
                 debug!(
                     instance_id = %instance.id(),
@@ -743,19 +831,6 @@ impl Runtime for WasmRuntime {
                     "WASM execution failed"
                 );
                 Err(e)
-            }
-            Err(_) => {
-                instance.record_request_completion(false, duration_ms as f64);
-                debug!(
-                    instance_id = %instance.id(),
-                    execution_id = %context.execution_id,
-                    duration_ms = duration_ms,
-                    timeout_ms = context.timeout_ms,
-                    "WASM execution timed out"
-                );
-                Err(ExecutionError::ExecutionTimeout {
-                    timeout_ms: context.timeout_ms,
-                })
             }
         }
     }
@@ -1266,7 +1341,7 @@ mod wasm_runtime_tests {
         };
 
         let out = rt
-            .execute_wasm_function(&handle, "main", &[])
+            .execute_wasm_function(&handle, "main", Some(30_000), &[])
             .await
             .unwrap();
         assert_eq!(out, b"[]");
@@ -1327,7 +1402,9 @@ mod wasm_runtime_tests {
 
         let _hold = handle.exec_lock.lock().await;
         // Attempt an execution while lock is held; should fail fast
-        let h2 = rt.execute_wasm_function(&handle, "main", &[]).await;
+        let h2 = rt
+            .execute_wasm_function(&handle, "main", Some(30_000), &[])
+            .await;
         assert!(h2.is_err());
         if let Err(ExecutionError::InvalidRequest { message }) = h2 {
             assert!(message.contains("already in progress"));

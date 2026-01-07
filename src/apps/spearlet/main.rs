@@ -108,5 +108,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _ = grpc_handle.await;
     let _ = http_handle.await;
 
+    tracing::info!("SPEARlet shutdown complete");
     Ok(())
 }

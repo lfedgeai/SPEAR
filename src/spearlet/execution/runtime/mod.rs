@@ -116,6 +116,10 @@ pub struct ExecutionContext {
     pub headers: HashMap<String, String>,
     /// Execution timeout in milliseconds / 执行超时时间（毫秒）
     pub timeout_ms: u64,
+    /// Execution mode (sync/async/stream) / 执行模式（同步/异步/流式）
+    pub execution_mode: ExecutionMode,
+    /// Whether caller wants to wait for completion / 是否等待执行完成
+    pub wait: bool,
     /// Additional context data / 额外上下文数据
     pub context_data: HashMap<String, serde_json::Value>,
 }

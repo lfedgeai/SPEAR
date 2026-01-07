@@ -844,6 +844,8 @@ mod tests {
             payload: vec![],
             headers: HashMap::new(),
             timeout_ms: 30000,
+            execution_mode: crate::spearlet::execution::runtime::ExecutionMode::Sync,
+            wait: true,
             context_data: HashMap::new(),
         };
 

@@ -85,6 +85,13 @@ impl FdTable {
         0
     }
 
+    pub fn close_all(&self) {
+        let fds = self.entries.iter().map(|e| *e.key()).collect::<Vec<_>>();
+        for fd in fds {
+            let _ = self.close(fd);
+        }
+    }
+
     pub fn register_watcher(&self, fd: i32, epfd: i32) -> i32 {
         let Some(entry) = self.get(fd) else {
             return -EBADF;

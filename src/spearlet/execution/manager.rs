@@ -245,9 +245,30 @@ impl TaskExecutionManager {
                 )
             });
 
+        let (execution_mode, wait) = {
+            let m = request.execution_mode();
+            let wait = request.wait;
+            let m2 = match m {
+                crate::proto::spearlet::ExecutionMode::Sync => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Sync
+                }
+                crate::proto::spearlet::ExecutionMode::Async => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Async
+                }
+                crate::proto::spearlet::ExecutionMode::Stream => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Stream
+                }
+                crate::proto::spearlet::ExecutionMode::Unknown => {
+                    crate::spearlet::execution::runtime::ExecutionMode::Unknown
+                }
+            };
+            (m2, wait)
+        };
+
         let artifact_spec =
             request
                 .artifact_spec
+                .clone()
                 .ok_or_else(|| ExecutionError::InvalidRequest {
                     message: "Missing artifact specification".to_string(),
                 })?;
@@ -257,6 +278,8 @@ impl TaskExecutionManager {
             payload: Vec::new(), // TODO: Extract payload from request
             headers: std::collections::HashMap::new(), // TODO: Extract headers from request
             timeout_ms: 30000,   // TODO: Extract timeout from request context
+            execution_mode,
+            wait,
             context_data: std::collections::HashMap::new(), // TODO: Extract context data from request
         };
 
@@ -611,6 +634,10 @@ impl TaskExecutionManager {
         // Convert RuntimeExecutionResponse to ExecutionResponse / 转换运行时响应到执行响应
         let is_successful = runtime_response.is_successful();
         let has_failed = runtime_response.has_failed();
+        let is_running = matches!(
+            runtime_response.execution_status,
+            crate::spearlet::execution::runtime::ExecutionStatus::Running
+        );
         let error_message = runtime_response
             .error
             .as_ref()
@@ -630,6 +657,8 @@ impl TaskExecutionManager {
                 "completed".to_string()
             } else if has_failed {
                 "failed".to_string()
+            } else if is_running {
+                "running".to_string()
             } else {
                 "pending".to_string()
             },

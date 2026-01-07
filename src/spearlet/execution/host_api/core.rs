@@ -29,6 +29,14 @@ impl DefaultHostApi {
     }
 }
 
+impl Drop for DefaultHostApi {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.fd_table) == 1 {
+            self.fd_table.close_all();
+        }
+    }
+}
+
 impl SpearHostApi for DefaultHostApi {
     fn log(&self, level: &str, message: &str) {
         match level {

@@ -9,7 +9,7 @@ This document defines the general I/O substrate for Spear WASM hostcalls:
 - a reusable **fd control interface** (nonblock, status, kind, metrics)
 - engineering-grade **Rust structures / concurrency model / migration plan / test checklist**
 
-Realtime ASR is one concrete fd type (`RtAsrFd`) built on top of this subsystem. ASR-specific protocol/parameters live in [realtime-asr-epoll-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/realtime-asr-epoll-en.md).
+Realtime ASR is one concrete fd type (`RtAsrFd`) built on top of this subsystem. ASR-specific protocol/parameters live in [realtime-asr-epoll-en.md](./realtime-asr-epoll-en.md).
 
 ---
 

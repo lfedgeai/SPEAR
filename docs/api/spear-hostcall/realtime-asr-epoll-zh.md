@@ -2,7 +2,7 @@
 
 本文件聚焦 **Realtime ASR（`rtasr_*`）** 的特有设计。通用 fd/epoll 子系统的工程化实现、数据结构与迁移方案见：
 
-- [fd-epoll-subsystem-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-zh.md)
+- [fd-epoll-subsystem-zh.md](./fd-epoll-subsystem-zh.md)
 
 ## 1. 背景与问题
 
@@ -89,7 +89,7 @@ legacy Go 实现中（`legacy/spearlet/stream/rt_asr.go` + `legacy/spearlet/stre
 
 工程化细节不在本文重复，请直接阅读：
 
-- [fd-epoll-subsystem-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-zh.md)
+- [fd-epoll-subsystem-zh.md](./fd-epoll-subsystem-zh.md)
 
 ### 4.4 会话状态机（rtasr_fd）
 

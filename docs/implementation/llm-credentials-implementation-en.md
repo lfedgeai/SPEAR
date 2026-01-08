@@ -10,13 +10,13 @@ This enables:
 
 ## 0. Current state
 
-- `LlmConfig` includes `credentials` and `backends`: see [config.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/config.rs#L351-L406)
+- `LlmConfig` includes `credentials` and `backends`: see [config.rs](../../src/spearlet/config.rs#L351-L406)
 - `LlmBackendConfig` no longer supports `api_key_env`; it must use `credential_ref`
 - To fully remove the legacy path, `LlmConfig/LlmCredentialConfig/LlmBackendConfig` use `deny_unknown_fields`: a config containing `api_key_env` under `[[spearlet.llm.backends]]` fails to parse
 
 Registry behavior:
 
-- Only `credential_ref` is supported: resolve the env-var name via the referenced credential and filter the backend if the env var is missing in `RuntimeConfig.global_environment`: see [registry.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/registry.rs#L11-L105)
+- Only `credential_ref` is supported: resolve the env-var name via the referenced credential and filter the backend if the env var is missing in `RuntimeConfig.global_environment`: see [registry.rs](../../src/spearlet/execution/host_api/registry.rs#L11-L105)
 
 ## 1. Schema (TOML)
 
@@ -92,7 +92,7 @@ Implemented approach:
 - Collect only the env vars referenced by `credential_ref` (i.e., `credentials[].api_key_env` that are actually used by configured backends)
 - Read those env vars from the OS process environment and inject them into each runtime's `RuntimeConfig.global_environment`
 
-Implementation: [function_service.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/function_service.rs#L57-L92)
+Implementation: [function_service.rs](../../src/spearlet/function_service.rs#L57-L92)
 
 Security note:
 
@@ -100,7 +100,7 @@ Security note:
 
 ## 4. Backend registry logic
 
-Implementation: [registry.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/registry.rs#L11-L163)
+Implementation: [registry.rs](../../src/spearlet/execution/host_api/registry.rs#L11-L163)
 
 Behavior:
 

@@ -2,7 +2,7 @@
 
 This document focuses on Realtime ASR (`rtasr_*`) specifics. The engineering-grade design for the general fd/epoll subsystem (fd table, epoll, wakeups, concurrency, migration) is defined in:
 
-- [fd-epoll-subsystem-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-en.md)
+- [fd-epoll-subsystem-en.md](./fd-epoll-subsystem-en.md)
 
 ## 1. Background
 
@@ -89,7 +89,7 @@ As a result, the implementation will require a significant refactor to unify fd 
 
 Engineering details are not duplicated here. See:
 
-- [fd-epoll-subsystem-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-en.md)
+- [fd-epoll-subsystem-en.md](./fd-epoll-subsystem-en.md)
 
 ### 4.4 Session State Machine (`rtasr_fd`)
 

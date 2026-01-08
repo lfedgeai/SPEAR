@@ -14,19 +14,19 @@
 
 当前 `spearlet/config.rs`：
 
-- `LlmConfig` 包含 `credentials` 与 `backends`，见 [config.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/config.rs#L351-L406)
+- `LlmConfig` 包含 `credentials` 与 `backends`，见 [config.rs](../../src/spearlet/config.rs#L351-L406)
 - `LlmBackendConfig` **不再支持** `api_key_env`，只允许通过 `credential_ref` 引用凭据
 - 为了彻底清理旧方式，`LlmConfig/LlmCredentialConfig/LlmBackendConfig` 已启用 `deny_unknown_fields`，配置里出现 `api_key_env` 会导致解析失败
 
 当前 registry 构建逻辑：
 
-- 仅支持 `credential_ref`：解析出 credential 对应的 `api_key_env`，并在 `RuntimeConfig.global_environment` 缺失时过滤该 backend，见 [registry.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/registry.rs#L11-L105)
+- 仅支持 `credential_ref`：解析出 credential 对应的 `api_key_env`，并在 `RuntimeConfig.global_environment` 缺失时过滤该 backend，见 [registry.rs](../../src/spearlet/execution/host_api/registry.rs#L11-L105)
 
 ### 0.2 核心痛点
 
 - 当你有多个 OpenAI backend（例如 chat 和 realtime ASR），希望各自使用不同的 key：
   - 需要一个“集中管理、复用、校验、轮换”的抽象层，避免在每个 backend 上重复配置
-- `RuntimeConfig.global_environment` 在默认构建路径中通常是空（例如 `FunctionServiceImpl::new` 默认用 `HashMap::new()`），见 [function_service.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/function_service.rs#L85-L95)
+- `RuntimeConfig.global_environment` 在默认构建路径中通常是空（例如 `FunctionServiceImpl::new` 默认用 `HashMap::new()`），见 [function_service.rs](../../src/spearlet/function_service.rs#L85-L95)
 - 导致实际部署时常出现“配置写了 credential_ref，但 runtime 没注入 env”的断层
 
 ## 1. 目标与非目标
@@ -180,7 +180,7 @@ fn resolve_backend_api_key_env(
 
 ### 4.1 问题
 
-当前默认启动路径里 `RuntimeConfig.global_environment` 通常为空（见 [function_service.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/function_service.rs#L85-L95)），这会导致：
+当前默认启动路径里 `RuntimeConfig.global_environment` 通常为空（见 [function_service.rs](../../src/spearlet/function_service.rs#L85-L95)），这会导致：
 
 - registry 过滤掉需要 key 的 backend
 - 或者 streaming websocket header 模板无法展开 `${env:...}`
@@ -244,13 +244,13 @@ best practice（更利于运维）：
 
 ### 6.1 openai_chat_completion
 
-目前 adapter 直接持有 api_key（由 registry 从 `global_environment` 中解析得到），见 [openai_chat_completion.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/ai/backends/openai_chat_completion.rs)。
+目前 adapter 直接持有 api_key（由 registry 从 `global_environment` 中解析得到），见 [openai_chat_completion.rs](../../src/spearlet/execution/ai/backends/openai_chat_completion.rs)。
 
 改造后：registry 负责完成 env name → api_key 的解析，adapter 只消费 api_key。
 
 ### 6.2 openai_realtime_ws
 
-目前 adapter 生成 ws plan 时写入 header 模板：`Bearer ${env:...}`，见 [openai_realtime_ws.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/ai/backends/openai_realtime_ws.rs#L72-L85)。
+目前 adapter 生成 ws plan 时写入 header 模板：`Bearer ${env:...}`，见 [openai_realtime_ws.rs](../../src/spearlet/execution/ai/backends/openai_realtime_ws.rs#L72-L85)。
 
 改造后：只需把 resolved 的 env name 传进去。
 

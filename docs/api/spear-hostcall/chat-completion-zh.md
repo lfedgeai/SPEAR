@@ -30,7 +30,7 @@ API 支持自动工具调用：当响应包含 tool_calls 时，host 可以根�
 
 工程化规范见：
 
-- [fd-epoll-subsystem-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-zh.md)
+- [fd-epoll-subsystem-zh.md](./fd-epoll-subsystem-zh.md)
 
 推荐的演进方向：
 

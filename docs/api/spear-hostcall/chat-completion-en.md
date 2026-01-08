@@ -25,7 +25,7 @@ To align with the general fd/epoll subsystem (shared `-errno` conventions, gener
 
 Engineering spec:
 
-- [fd-epoll-subsystem-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-en.md)
+- [fd-epoll-subsystem-en.md](./fd-epoll-subsystem-en.md)
 
 Recommended evolution:
 

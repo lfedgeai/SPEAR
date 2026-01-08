@@ -9,7 +9,7 @@
 - 可复用的 **fd 控制接口**（nonblock、status、kind、metrics）
 - 工程化落地的 **Rust 数据结构/并发模型/迁移步骤/测试清单**
 
-Realtime ASR 只是该子系统上的一个具体 fd 类型（`RtAsrFd`）。ASR 特有协议与参数在 [realtime-asr-epoll-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/realtime-asr-epoll-zh.md) 描述。
+Realtime ASR 只是该子系统上的一个具体 fd 类型（`RtAsrFd`）。ASR 特有协议与参数在 [realtime-asr-epoll-zh.md](./realtime-asr-epoll-zh.md) 描述。
 
 ---
 

@@ -5,33 +5,33 @@
 ## 0. 关联设计文档（先读）
 
 - 通用子系统工程化设计（字段级结构/并发/测试/迁移）：
-  - [fd-epoll-subsystem-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-zh.md)
-  - [fd-epoll-subsystem-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/fd-epoll-subsystem-en.md)
+  - [fd-epoll-subsystem-zh.md](../api/spear-hostcall/fd-epoll-subsystem-zh.md)
+  - [fd-epoll-subsystem-en.md](../api/spear-hostcall/fd-epoll-subsystem-en.md)
 - Realtime ASR 特化（在通用子系统之上）：
-  - [realtime-asr-epoll-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/realtime-asr-epoll-zh.md)
-  - [realtime-asr-epoll-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/realtime-asr-epoll-en.md)
+  - [realtime-asr-epoll-zh.md](../api/spear-hostcall/realtime-asr-epoll-zh.md)
+  - [realtime-asr-epoll-en.md](../api/spear-hostcall/realtime-asr-epoll-en.md)
 - cchat hostcall 文档（已声明可破坏性变更与同步更新要求）：
-  - [chat-completion-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/chat-completion-zh.md)
-  - [chat-completion-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/chat-completion-en.md)
+  - [chat-completion-zh.md](../api/spear-hostcall/chat-completion-zh.md)
+  - [chat-completion-en.md](../api/spear-hostcall/chat-completion-en.md)
 
 ## 1. 当前仓库关键事实（context 快照）
 
 ### 1.1 现有 cchat hostcalls（Rust）
 
 - hostcall glue：
-  - [wasm_hostcalls.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm_hostcalls.rs)
+  - [wasm_hostcalls.rs](../../src/spearlet/execution/runtime/wasm_hostcalls.rs)
 - cchat 状态机在 host_api 里是私有 map（`ChatHostState.sessions/responses`），并未进入统一 fd table：
-  - [host_api.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api.rs)
+  - [host_api.rs](../../src/spearlet/execution/host_api.rs)
 - 现有错误码为固定 `-1..-5`，并且 C SDK 也写死了这些常量。
 
 ### 1.2 现有测试与样例
 
 - WAT 链接测试导入 cchat：
-  - [wasm.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs)
+  - [wasm.rs](../../src/spearlet/execution/runtime/wasm.rs)
 - C SDK header：
-  - [spear.h](file:///Users/bytedance/Documents/GitHub/bge/spear/sdk/c/include/spear.h)
+  - [spear.h](../../sdk/c/include/spear.h)
 - wasm-c chat sample：
-  - [chat_completion.c](file:///Users/bytedance/Documents/GitHub/bge/spear/samples/wasm-c/chat_completion.c)
+  - [chat_completion.c](../../samples/wasm-c/chat_completion.c)
 
 ### 1.3 破坏性变更允许范围
 
@@ -103,12 +103,12 @@
 
 改动文件：
 
-- [wasm_hostcalls.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm_hostcalls.rs)
+- [wasm_hostcalls.rs](../../src/spearlet/execution/runtime/wasm_hostcalls.rs)
   - 新增导出：`spear_epoll_create/ctl/wait/close`
   - 新增导出：`spear_fd_ctl`
   - 在 `build_spear_import*()` 中注册符号
 
-- [wasm.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs)
+- [wasm.rs](../../src/spearlet/execution/runtime/wasm.rs)
   - 新增 WAT 链接测试导入 `spear_epoll_*` 与 `spear_fd_ctl`
 
 验收标准：
@@ -146,12 +146,12 @@
 
 受影响文件：
 
-- [spear.h](file:///Users/bytedance/Documents/GitHub/bge/spear/sdk/c/include/spear.h)
+- [spear.h](../../sdk/c/include/spear.h)
   - 更新错误码：改为 `-errno`（至少要改 ENOSPC/EAGAIN/EBADF 的判断）
   - 新增 `spear_epoll_*` 与 `spear_fd_ctl` 的 import（可选，但建议补上）
   - 更新 `sp_cchat_recv_alloc`：由判断 `-3` 改为判断 `-ENOSPC`
 
-- [chat_completion.c](file:///Users/bytedance/Documents/GitHub/bge/spear/samples/wasm-c/chat_completion.c)
+- [chat_completion.c](../../samples/wasm-c/chat_completion.c)
   - 若 sample 使用了旧错误码或旧 ctl 语义，必须同步改
 
 验收标准：
@@ -164,9 +164,9 @@
 
 受影响文件：
 
-- [wasm.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs)
+- [wasm.rs](../../src/spearlet/execution/runtime/wasm.rs)
   - 更新 cchat 导入测试（如果符号/签名变了）
-- [host_api.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api.rs)
+- [host_api.rs](../../src/spearlet/execution/host_api.rs)
   - 更新现有 cchat pipeline 单测
 - `tests/wasm_openai_e2e_tests.rs`（如依赖特定语义）
 

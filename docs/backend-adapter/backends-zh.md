@@ -89,7 +89,7 @@ transports = ["websocket"]
 
 建议通过 `llm.credentials[]` 集中管理 API key，并让 `llm.backends[].credential_ref` 引用凭据，以支持不同 backend 使用不同 key。
 
-详细设计与落地方案见：[llm-credentials-implementation-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/implementation/llm-credentials-implementation-zh.md)
+详细设计与落地方案见：[llm-credentials-implementation-zh.md](../implementation/llm-credentials-implementation-zh.md)
 
 ## 6. Secret 与网络策略
 

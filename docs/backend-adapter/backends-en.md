@@ -89,7 +89,7 @@ transports = ["websocket"]
 
 Recommended: manage API keys centrally in `llm.credentials[]` and reference them from backends via `credential_ref`.
 
-Detailed design and implementation notes: [llm-credentials-implementation-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/implementation/llm-credentials-implementation-en.md)
+Detailed design and implementation notes: [llm-credentials-implementation-en.md](../implementation/llm-credentials-implementation-en.md)
 
 ## 6. Secrets and network policy
 

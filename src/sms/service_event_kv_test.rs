@@ -4,24 +4,28 @@ mod tests {
     use tokio_stream::StreamExt;
     use tonic::Request;
 
+    use crate::proto::sms::{
+        task_service_server::TaskService as TaskServiceTrait, RegisterTaskRequest,
+        SubscribeTaskEventsRequest, TaskExecutionKind, TaskPriority,
+    };
+    use crate::sms::config::SmsConfig;
     use crate::sms::service::SmsServiceImpl;
     use crate::sms::services::{node_service::NodeService, resource_service::ResourceService};
-    use crate::sms::config::SmsConfig;
     use crate::storage::kv::KvStoreConfig;
-    use crate::proto::sms::{RegisterTaskRequest, SubscribeTaskEventsRequest};
 
     fn make_request(node_uuid: &str) -> RegisterTaskRequest {
         RegisterTaskRequest {
             name: "t".to_string(),
             description: "d".to_string(),
-            priority: 1,
+            priority: TaskPriority::Normal as i32,
             node_uuid: node_uuid.to_string(),
             endpoint: "http://localhost".to_string(),
-            version: 1,
+            version: "v1".to_string(),
             capabilities: vec![],
             metadata: std::collections::HashMap::new(),
             config: std::collections::HashMap::new(),
             executable: None,
+            execution_kind: TaskExecutionKind::ShortRunning as i32,
         }
     }
 
@@ -30,13 +34,24 @@ mod tests {
             Arc::new(tokio::sync::RwLock::new(NodeService::new())),
             Arc::new(ResourceService::new()),
             Arc::new(cfg),
-        ).await;
+        )
+        .await;
         let node_uuid = uuid::Uuid::new_v4().to_string();
-        let _ = SmsServiceImpl::register_task(&svc, Request::new(make_request(&node_uuid))).await.unwrap();
-        let req = SubscribeTaskEventsRequest { node_uuid, last_event_id: 0 };
-        let mut stream = SmsServiceImpl::subscribe_task_events(&svc, Request::new(req)).await.unwrap().into_inner();
+        let _ = TaskServiceTrait::register_task(&svc, Request::new(make_request(&node_uuid)))
+            .await
+            .unwrap();
+        let req = SubscribeTaskEventsRequest {
+            node_uuid,
+            last_event_id: 0,
+        };
+        let mut stream = TaskServiceTrait::subscribe_task_events(&svc, Request::new(req))
+            .await
+            .unwrap()
+            .into_inner();
         let mut count = 0;
-        while let Some(Ok(_ev)) = stream.next().await { count += 1; break; }
+        if let Some(Ok(_ev)) = stream.next().await {
+            count += 1;
+        }
         count
     }
 
@@ -52,7 +67,10 @@ mod tests {
     #[tokio::test]
     async fn test_event_kv_unsupported_backend_fallback_to_memory() {
         let mut cfg = SmsConfig::default();
-        cfg.event_kv = Some(KvStoreConfig { backend: "unsupported".to_string(), params: std::collections::HashMap::new() });
+        cfg.event_kv = Some(KvStoreConfig {
+            backend: "unsupported".to_string(),
+            params: std::collections::HashMap::new(),
+        });
         let count = register_and_replay(cfg).await;
         assert!(count >= 1);
     }

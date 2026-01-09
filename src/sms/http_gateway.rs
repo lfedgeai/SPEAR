@@ -8,7 +8,8 @@ use tracing::{error, info};
 
 use super::gateway::{create_gateway_router, GatewayState};
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -86,11 +87,13 @@ impl HttpGateway {
             .expect("Invalid gRPC URL")
             .connect_lazy();
         let node_client = NodeServiceClient::new(channel.clone());
-        let task_client = TaskServiceClient::new(channel);
+        let task_client = TaskServiceClient::new(channel.clone());
+        let placement_client = PlacementServiceClient::new(channel);
 
         let state = GatewayState {
             node_client,
             task_client,
+            placement_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: self.max_upload_bytes,
         };

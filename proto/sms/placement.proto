@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package sms;
+
+// Placement service for two-level scheduling.
+//
+// 两层调度中的 placement 服务：根据节点状态/资源/历史反馈选择候选节点。
+
+message PlaceInvocationRequest {
+  // Client-generated request id.
+  // 客户端生成的请求 ID。
+  string request_id = 1;
+
+  // Target task id.
+  // 目标 task 的 ID。
+  string task_id = 2;
+
+  // Maximum number of candidate nodes to return.
+  // 返回的候选节点最大数量。
+  uint32 max_candidates = 3;
+
+  // Optional labels for future routing/affinity.
+  // 可选标签（用于未来的路由/亲和性扩展）。
+  map<string, string> labels = 4;
+}
+
+message NodeCandidate {
+  // Node UUID.
+  // 节点 UUID。
+  string node_uuid = 1;
+
+  // Node IP address.
+  // 节点 IP。
+  string ip_address = 2;
+
+  // Node gRPC port for Spearlet FunctionService.
+  // Spearlet FunctionService 的 gRPC 端口。
+  int32 port = 3;
+
+  // Higher is better.
+  // 分数越高越优。
+  double score = 4;
+}
+
+message PlaceInvocationResponse {
+  // Server-generated decision id for outcome reporting.
+  // 服务端生成的决策 ID，用于后续回报 outcome。
+  string decision_id = 1;
+
+  // Ordered candidates, best first.
+  // 有序候选列表（越靠前越优）。
+  repeated NodeCandidate candidates = 2;
+}
+
+enum InvocationOutcomeClass {
+  // Unknown / 未知
+  INVOCATION_OUTCOME_CLASS_UNKNOWN = 0;
+
+  // Success / 成功
+  INVOCATION_OUTCOME_CLASS_SUCCESS = 1;
+
+  // Resource exhausted, should retry elsewhere / 资源不足，可尝试 spillback
+  INVOCATION_OUTCOME_CLASS_OVERLOADED = 2;
+
+  // Node or service unavailable, should retry elsewhere / 节点不可用，可尝试 spillback
+  INVOCATION_OUTCOME_CLASS_UNAVAILABLE = 3;
+
+  // Timeout, should retry elsewhere / 超时，可尝试 spillback
+  INVOCATION_OUTCOME_CLASS_TIMEOUT = 4;
+
+  // Auth/permission rejected, non-retryable / 权限拒绝，不可重试
+  INVOCATION_OUTCOME_CLASS_REJECTED = 5;
+
+  // Bad request, non-retryable / 请求非法，不可重试
+  INVOCATION_OUTCOME_CLASS_BAD_REQUEST = 6;
+
+  // Internal error, typically retryable depending on caller policy / 内部错误，是否重试由调用方策略决定
+  INVOCATION_OUTCOME_CLASS_INTERNAL = 7;
+}
+
+message ReportInvocationOutcomeRequest {
+  // Decision id returned by PlaceInvocation.
+  // PlaceInvocation 返回的 decision_id。
+  string decision_id = 1;
+
+  // Same request_id as PlaceInvocation.
+  // 与 PlaceInvocation 相同的 request_id。
+  string request_id = 2;
+
+  // Task id.
+  // task_id。
+  string task_id = 3;
+
+  // The node that executed (or attempted) the invocation.
+  // 实际执行（或尝试执行）的节点。
+  string node_uuid = 4;
+
+  // Classified outcome used by placement feedback loop.
+  // 供 placement 反馈闭环使用的结果分类。
+  InvocationOutcomeClass outcome_class = 5;
+
+  // Optional error message for observability.
+  // 可选错误信息（用于可观测性）。
+  string error_message = 6;
+}
+
+message ReportInvocationOutcomeResponse {
+  // Whether the outcome is accepted.
+  // outcome 是否被接受。
+  bool accepted = 1;
+}
+
+service PlacementService {
+  // Return ordered candidate nodes for a task invocation.
+  // 为一次 task invocation 返回有序候选节点。
+  rpc PlaceInvocation(PlaceInvocationRequest) returns (PlaceInvocationResponse);
+
+  // Report outcome of an attempted invocation to update placement penalties.
+  // 回报一次 invocation 的执行结果，用于更新 placement 惩罚/熔断状态。
+  rpc ReportInvocationOutcome(ReportInvocationOutcomeRequest) returns (ReportInvocationOutcomeResponse);
+}

@@ -6,7 +6,8 @@ use tokio_util::sync::CancellationToken;
 #[tokio::test]
 async fn test_admin_tasks_include_execution_kind() {
     use spear_next::proto::sms::{
-        node_service_server::NodeServiceServer, task_service_server::TaskServiceServer,
+        node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
+        task_service_server::TaskServiceServer,
     };
     use spear_next::sms::service::SmsServiceImpl;
     use tokio::net::TcpListener;
@@ -21,9 +22,12 @@ async fn test_admin_tasks_include_execution_kind() {
         })
         .await;
     let handle = tokio::spawn(async move {
+        let sms_service_node = sms_service.clone();
+        let sms_service_task = sms_service.clone();
         Server::builder()
-            .add_service(NodeServiceServer::new(sms_service.clone()))
-            .add_service(TaskServiceServer::new(sms_service))
+            .add_service(NodeServiceServer::new(sms_service_node))
+            .add_service(TaskServiceServer::new(sms_service_task))
+            .add_service(PlacementServiceServer::new(sms_service))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .unwrap();
@@ -41,6 +45,10 @@ async fn test_admin_tasks_include_execution_kind() {
         task_client: spear_next::proto::sms::task_service_client::TaskServiceClient::new(
             channel.clone(),
         ),
+        placement_client:
+            spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
+                channel.clone(),
+            ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

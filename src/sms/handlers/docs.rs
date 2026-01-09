@@ -373,6 +373,59 @@ pub async fn openapi_spec() -> Json<serde_json::Value> {
                     }
                 }
             }
+            ,
+            "/api/v1/placement/invocations/place": {
+                "post": {
+                    "summary": "Place an invocation and return candidate nodes",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["request_id", "task_id"],
+                                    "properties": {
+                                        "request_id": {"type": "string"},
+                                        "task_id": {"type": "string"},
+                                        "max_candidates": {"type": "integer"},
+                                        "labels": {"type": "object"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {"description": "Placement decision and candidates"}
+                    }
+                }
+            },
+            "/api/v1/placement/invocations/report-outcome": {
+                "post": {
+                    "summary": "Report invocation outcome for placement feedback",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["decision_id", "request_id", "task_id", "node_uuid"],
+                                    "properties": {
+                                        "decision_id": {"type": "string"},
+                                        "request_id": {"type": "string"},
+                                        "task_id": {"type": "string"},
+                                        "node_uuid": {"type": "string"},
+                                        "outcome_class": {"type": "string"},
+                                        "error_message": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {"description": "Outcome accepted"}
+                    }
+                }
+            }
         }
     }))
 }

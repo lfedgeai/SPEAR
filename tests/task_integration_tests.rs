@@ -15,6 +15,7 @@ use uuid::Uuid;
 mod task_test_utils {
     use super::*;
     use spear_next::proto::sms::node_service_server::NodeServiceServer;
+    use spear_next::proto::sms::placement_service_server::PlacementServiceServer;
     use spear_next::proto::sms::task_service_server::TaskServiceServer;
     use std::net::SocketAddr;
     use std::time::Duration;
@@ -49,9 +50,12 @@ mod task_test_utils {
             spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
 
         let handle = tokio::spawn(async move {
+            let sms_service_node = sms_service.clone();
+            let sms_service_task = sms_service.clone();
             Server::builder()
-                .add_service(NodeServiceServer::new(sms_service.clone()))
-                .add_service(TaskServiceServer::new(sms_service))
+                .add_service(NodeServiceServer::new(sms_service_node))
+                .add_service(TaskServiceServer::new(sms_service_task))
+                .add_service(PlacementServiceServer::new(sms_service))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();
@@ -79,10 +83,15 @@ mod task_test_utils {
             spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel.clone());
         let task_client =
             spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
+        let placement_client =
+            spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
+                channel.clone(),
+            );
 
         let state = GatewayState {
             node_client: sms_client,
             task_client,
+            placement_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };

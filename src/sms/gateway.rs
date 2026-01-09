@@ -8,7 +8,8 @@ use tower_http::cors::CorsLayer;
 
 use super::routes::create_routes;
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 
 /// Embedded static files for Swagger UI / Swagger UI的嵌入式静态文件
@@ -22,6 +23,7 @@ struct StaticFiles;
 pub struct GatewayState {
     pub node_client: NodeServiceClient<tonic::transport::Channel>,
     pub task_client: TaskServiceClient<tonic::transport::Channel>,
+    pub placement_client: PlacementServiceClient<tonic::transport::Channel>,
     pub cancel_token: CancellationToken,
     pub max_upload_bytes: usize,
 }

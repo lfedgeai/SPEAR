@@ -1,5 +1,6 @@
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use axum::body;
@@ -12,7 +13,8 @@ async fn make_router_with_limit(limit: usize) -> Router {
     let channel = tonic::transport::Channel::from_static("http://localhost:50051").connect_lazy();
     let state = GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
-        task_client: TaskServiceClient::new(channel),
+        task_client: TaskServiceClient::new(channel.clone()),
+        placement_client: PlacementServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: limit,
     };

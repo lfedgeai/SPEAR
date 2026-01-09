@@ -15,6 +15,8 @@ use uuid::Uuid;
 mod http_test_utils {
     use super::*;
     use spear_next::proto::sms::node_service_server::NodeServiceServer;
+    use spear_next::proto::sms::placement_service_server::PlacementServiceServer;
+    use spear_next::proto::sms::task_service_server::TaskServiceServer;
     use std::net::SocketAddr;
     use std::time::Duration;
     use tokio::net::TcpListener;
@@ -34,8 +36,12 @@ mod http_test_utils {
             spear_next::sms::service::SmsServiceImpl::with_storage_config(&storage_config).await;
 
         let handle = tokio::spawn(async move {
+            let service_node = service.clone();
+            let service_task = service.clone();
             Server::builder()
-                .add_service(NodeServiceServer::new(service))
+                .add_service(NodeServiceServer::new(service_node))
+                .add_service(TaskServiceServer::new(service_task))
+                .add_service(PlacementServiceServer::new(service))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();
@@ -62,9 +68,14 @@ mod http_test_utils {
             spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel.clone());
         let task_client =
             spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
+        let placement_client =
+            spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
+                channel.clone(),
+            );
         let state = GatewayState {
             node_client: sms_client,
             task_client,
+            placement_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -209,9 +220,14 @@ async fn test_http_node_lifecycle() {
         spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter =
         spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
+    let placement_client_filter =
+        spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
+            channel_filter.clone(),
+        );
     let filter_state = GatewayState {
         node_client: sms_client_filter,
         task_client: task_client_filter,
+        placement_client: placement_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -315,9 +331,14 @@ async fn test_http_resource_management() {
         spear_next::proto::sms::node_service_client::NodeServiceClient::new(channel_filter.clone());
     let task_client_filter =
         spear_next::proto::sms::task_service_client::TaskServiceClient::new(channel_filter.clone());
+    let placement_client_filter =
+        spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
+            channel_filter.clone(),
+        );
     let state = GatewayState {
         node_client: sms_client_filter,
         task_client: task_client_filter,
+        placement_client: placement_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

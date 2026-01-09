@@ -19,11 +19,20 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio_stream::wrappers::IntervalStream;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
-use crate::proto::sms::{node_service_client::NodeServiceClient, ListNodesRequest};
+use crate::proto::sms::{
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    ListNodesRequest,
+};
 use crate::sms::gateway::GatewayState;
 use crate::sms::handlers::{
     delete_file, download_file, get_file_meta, list_files, presign_upload, upload_file,
+};
+
+use crate::proto::spearlet::{
+    function_service_client::FunctionServiceClient, ArtifactSpec, ExecutionMode, InvocationType,
+    InvokeFunctionRequest,
 };
 
 pub struct WebAdminServer {
@@ -69,10 +78,13 @@ impl WebAdminServer {
             .expect("Invalid gRPC URL")
             .connect_lazy();
         let node_client = NodeServiceClient::new(channel.clone());
-        let task_client = crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
+        let task_client =
+            crate::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
+        let placement_client = PlacementServiceClient::new(channel);
         let state = GatewayState {
             node_client,
             task_client,
+            placement_client,
             cancel_token: cancel_token.clone(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -170,6 +182,15 @@ pub fn create_admin_router(state: GatewayState) -> Router {
                 move |p: Path<String>| get_task_detail(state.clone(), p)
             }),
         )
+        .route(
+            "/admin/api/executions",
+            post({
+                let state = state.clone();
+                move |payload: axum::extract::Json<CreateExecutionBody>| {
+                    create_execution(state.clone(), payload)
+                }
+            }),
+        )
         // Embedded file storage API / 内嵌文件存储API
         .route("/admin/api/files", get(list_files))
         .route("/admin/api/files/presign-upload", post(presign_upload))
@@ -185,6 +206,193 @@ pub fn create_admin_router(state: GatewayState) -> Router {
         .route("/admin/api/files/{id}", get(download_file))
         .route("/admin/api/files/{id}", delete(delete_file))
         .route("/admin/api/files/{id}/meta", get(get_file_meta))
+}
+
+#[derive(serde::Deserialize)]
+struct CreateExecutionBody {
+    task_id: String,
+    request_id: Option<String>,
+    execution_id: Option<String>,
+    execution_mode: Option<String>,
+    max_candidates: Option<u32>,
+}
+
+fn parse_execution_mode(v: Option<&str>) -> i32 {
+    match v.map(|s| s.to_ascii_lowercase()) {
+        Some(s) if s == "async" => ExecutionMode::Async as i32,
+        Some(s) if s == "stream" => ExecutionMode::Stream as i32,
+        _ => ExecutionMode::Sync as i32,
+    }
+}
+
+async fn create_execution(
+    state: GatewayState,
+    axum::extract::Json(body): axum::extract::Json<CreateExecutionBody>,
+) -> Json<serde_json::Value> {
+    // Admin BFF: one-shot execution submission with two-level scheduling.
+    // Admin BFF：一次性提交执行请求，走“两层调度”（SMS placement → Spearlet execute）。
+    if body.task_id.is_empty() {
+        return Json(json!({ "success": false, "message": "task_id is required" }));
+    }
+    let request_id = body
+        .request_id
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let execution_id = body
+        .execution_id
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let mode = parse_execution_mode(body.execution_mode.as_deref());
+    let max_candidates = body.max_candidates.unwrap_or(3);
+
+    let mut placement = state.placement_client.clone();
+    // Step 1: ask SMS to return an ordered list of candidate nodes.
+    // 第一步：调用 SMS placement，拿到有序候选节点列表。
+    let placement_resp = placement
+        .place_invocation(crate::proto::sms::PlaceInvocationRequest {
+            request_id: request_id.clone(),
+            task_id: body.task_id.clone(),
+            max_candidates,
+            labels: std::collections::HashMap::new(),
+        })
+        .await;
+    let placement_resp = match placement_resp {
+        Ok(r) => r.into_inner(),
+        Err(e) => {
+            return Json(json!({ "success": false, "message": e.to_string() }));
+        }
+    };
+    if placement_resp.candidates.is_empty() {
+        return Json(json!({ "success": false, "message": "no candidates" }));
+    }
+
+    for c in placement_resp.candidates.iter() {
+        // Step 2: try candidates in order (spillback).
+        // 第二步：按顺序尝试候选节点（spillback）。
+        let url = format!("http://{}:{}", c.ip_address, c.port);
+        let channel = tonic::transport::Channel::from_shared(url.clone())
+            .ok()
+            .map(|ch| ch.connect_lazy());
+        let Some(channel) = channel else {
+            // Node address is invalid: treat as unavailable and spillback.
+            // 节点地址不可用：按 unavailable 处理并继续 spillback。
+            let _ = placement
+                .report_invocation_outcome(crate::proto::sms::ReportInvocationOutcomeRequest {
+                    decision_id: placement_resp.decision_id.clone(),
+                    request_id: request_id.clone(),
+                    task_id: body.task_id.clone(),
+                    node_uuid: c.node_uuid.clone(),
+                    outcome_class: crate::proto::sms::InvocationOutcomeClass::Unavailable as i32,
+                    error_message: "invalid node url".to_string(),
+                })
+                .await;
+            continue;
+        };
+        let mut fnc = FunctionServiceClient::new(channel);
+        // Use ExistingTask invocation; Spearlet may fetch task from SMS when missing.
+        // 使用 ExistingTask 调用；若节点本地缺 task，Spearlet 会从 SMS 拉取补齐后执行。
+        let req = InvokeFunctionRequest {
+            invocation_type: InvocationType::ExistingTask as i32,
+            task_id: body.task_id.clone(),
+            artifact_spec: Some(ArtifactSpec {
+                artifact_id: format!("sms:{}", body.task_id),
+                artifact_type: "sms".to_string(),
+                location: String::new(),
+                version: String::new(),
+                checksum: String::new(),
+                metadata: std::collections::HashMap::new(),
+            }),
+            execution_mode: mode,
+            wait: mode == ExecutionMode::Sync as i32,
+            execution_id: Some(execution_id.clone()),
+            ..Default::default()
+        };
+        match fnc.invoke_function(req).await {
+            Ok(resp) => {
+                let inner = resp.into_inner();
+                if inner.success {
+                    // Success: report feedback to SMS and return.
+                    // 成功：回报给 SMS 用于后续 placement，然后直接返回。
+                    let _ = placement
+                        .report_invocation_outcome(
+                            crate::proto::sms::ReportInvocationOutcomeRequest {
+                                decision_id: placement_resp.decision_id.clone(),
+                                request_id: request_id.clone(),
+                                task_id: body.task_id.clone(),
+                                node_uuid: c.node_uuid.clone(),
+                                outcome_class: crate::proto::sms::InvocationOutcomeClass::Success
+                                    as i32,
+                                error_message: String::new(),
+                            },
+                        )
+                        .await;
+                    return Json(json!({
+                        "success": true,
+                        "decision_id": placement_resp.decision_id,
+                        "node_uuid": c.node_uuid,
+                        "execution_id": inner.execution_id,
+                        "message": inner.message,
+                    }));
+                }
+                // Function-level failure is not retryable here: return immediately.
+                // Function 级失败在这里不做重试：直接返回给前端。
+                let _ = placement
+                    .report_invocation_outcome(crate::proto::sms::ReportInvocationOutcomeRequest {
+                        decision_id: placement_resp.decision_id.clone(),
+                        request_id: request_id.clone(),
+                        task_id: body.task_id.clone(),
+                        node_uuid: c.node_uuid.clone(),
+                        outcome_class: crate::proto::sms::InvocationOutcomeClass::Internal as i32,
+                        error_message: inner.message.clone(),
+                    })
+                    .await;
+                return Json(json!({ "success": false, "message": inner.message }));
+            }
+            Err(e) => {
+                // gRPC error classification decides whether to spillback.
+                // gRPC 错误分类用于决定是否继续 spillback。
+                let class = match e.code() {
+                    tonic::Code::DeadlineExceeded => {
+                        crate::proto::sms::InvocationOutcomeClass::Timeout as i32
+                    }
+                    tonic::Code::Unavailable => {
+                        crate::proto::sms::InvocationOutcomeClass::Unavailable as i32
+                    }
+                    tonic::Code::ResourceExhausted => {
+                        crate::proto::sms::InvocationOutcomeClass::Overloaded as i32
+                    }
+                    tonic::Code::InvalidArgument => {
+                        crate::proto::sms::InvocationOutcomeClass::BadRequest as i32
+                    }
+                    tonic::Code::Unauthenticated | tonic::Code::PermissionDenied => {
+                        crate::proto::sms::InvocationOutcomeClass::Rejected as i32
+                    }
+                    _ => crate::proto::sms::InvocationOutcomeClass::Internal as i32,
+                };
+                let _ = placement
+                    .report_invocation_outcome(crate::proto::sms::ReportInvocationOutcomeRequest {
+                        decision_id: placement_resp.decision_id.clone(),
+                        request_id: request_id.clone(),
+                        task_id: body.task_id.clone(),
+                        node_uuid: c.node_uuid.clone(),
+                        outcome_class: class,
+                        error_message: e.to_string(),
+                    })
+                    .await;
+                if class == crate::proto::sms::InvocationOutcomeClass::BadRequest as i32
+                    || class == crate::proto::sms::InvocationOutcomeClass::Rejected as i32
+                {
+                    // Non-retryable: stop spillback.
+                    // 不可重试：终止 spillback。
+                    return Json(json!({ "success": false, "message": e.to_string() }));
+                }
+                continue;
+            }
+        }
+    }
+    // All candidates exhausted.
+    // 所有候选均失败。
+    Json(json!({ "success": false, "message": "all candidates failed" }))
 }
 
 async fn list_nodes(state: GatewayState, Query(q): Query<ListQuery>) -> Json<serde_json::Value> {

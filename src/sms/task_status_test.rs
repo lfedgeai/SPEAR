@@ -3,7 +3,8 @@ use tonic::Request;
 
 use crate::config::base::StorageConfig;
 use crate::proto::sms::{
-    GetTaskRequest, RegisterTaskRequest, TaskPriority, TaskStatus, UpdateTaskStatusRequest,
+    task_service_server::TaskService as TaskServiceTrait, GetTaskRequest, RegisterTaskRequest,
+    TaskExecutionKind, TaskPriority, TaskStatus, UpdateTaskStatusRequest,
 };
 use crate::sms::service::SmsServiceImpl;
 use uuid::Uuid;
@@ -34,8 +35,11 @@ async fn test_update_task_status_active_then_inactive() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
+        execution_kind: TaskExecutionKind::ShortRunning as i32,
     };
-    let resp = sms_service.register_task(Request::new(req)).await.unwrap();
+    let resp = TaskServiceTrait::register_task(&sms_service, Request::new(req))
+        .await
+        .unwrap();
     let task_id = resp.get_ref().task_id.clone();
 
     let update_req = UpdateTaskStatusRequest {
@@ -46,16 +50,19 @@ async fn test_update_task_status_active_then_inactive() {
         updated_at: chrono::Utc::now().timestamp(),
         reason: "created".to_string(),
     };
-    let update_resp = sms_service
-        .update_task_status(Request::new(update_req))
+    let update_resp = TaskServiceTrait::update_task_status(&sms_service, Request::new(update_req))
         .await
         .unwrap();
     assert!(update_resp.get_ref().success);
 
-    let get_resp = sms_service
-        .get_task(Request::new(GetTaskRequest { task_id: task_id.clone() }))
-        .await
-        .unwrap();
+    let get_resp = TaskServiceTrait::get_task(
+        &sms_service,
+        Request::new(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    )
+    .await
+    .unwrap();
     let task = get_resp.get_ref().task.as_ref().unwrap();
     assert_eq!(task.status, TaskStatus::Created as i32);
 
@@ -67,16 +74,20 @@ async fn test_update_task_status_active_then_inactive() {
         updated_at: chrono::Utc::now().timestamp(),
         reason: "deactivate".to_string(),
     };
-    let update_resp2 = sms_service
-        .update_task_status(Request::new(update_req2))
-        .await
-        .unwrap();
+    let update_resp2 =
+        TaskServiceTrait::update_task_status(&sms_service, Request::new(update_req2))
+            .await
+            .unwrap();
     assert!(update_resp2.get_ref().success);
 
-    let get_resp2 = sms_service
-        .get_task(Request::new(GetTaskRequest { task_id }))
-        .await
-        .unwrap();
+    let get_resp2 = TaskServiceTrait::get_task(
+        &sms_service,
+        Request::new(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    )
+    .await
+    .unwrap();
     let task2 = get_resp2.get_ref().task.as_ref().unwrap();
     assert_eq!(task2.status, TaskStatus::Inactive as i32);
 
@@ -88,16 +99,20 @@ async fn test_update_task_status_active_then_inactive() {
         updated_at: chrono::Utc::now().timestamp(),
         reason: "activate".to_string(),
     };
-    let update_resp3 = sms_service
-        .update_task_status(Request::new(update_req3))
-        .await
-        .unwrap();
+    let update_resp3 =
+        TaskServiceTrait::update_task_status(&sms_service, Request::new(update_req3))
+            .await
+            .unwrap();
     assert!(update_resp3.get_ref().success);
 
-    let get_resp3 = sms_service
-        .get_task(Request::new(GetTaskRequest { task_id }))
-        .await
-        .unwrap();
+    let get_resp3 = TaskServiceTrait::get_task(
+        &sms_service,
+        Request::new(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    )
+    .await
+    .unwrap();
     let task3 = get_resp3.get_ref().task.as_ref().unwrap();
     assert_eq!(task3.status, TaskStatus::Active as i32);
 }
@@ -114,8 +129,7 @@ async fn test_update_task_status_nonexistent_task() {
         updated_at: chrono::Utc::now().timestamp(),
         reason: "activate".to_string(),
     };
-    let update_resp = sms_service
-        .update_task_status(Request::new(update_req))
+    let update_resp = TaskServiceTrait::update_task_status(&sms_service, Request::new(update_req))
         .await
         .unwrap();
     assert!(!update_resp.get_ref().success);
@@ -136,16 +150,23 @@ async fn test_register_task_sets_registered_status() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
+        execution_kind: TaskExecutionKind::ShortRunning as i32,
     };
-    let resp = sms_service.register_task(Request::new(req)).await.unwrap();
+    let resp = TaskServiceTrait::register_task(&sms_service, Request::new(req))
+        .await
+        .unwrap();
     let registered = resp.get_ref();
     assert!(registered.success);
     let task_id = registered.task_id.clone();
 
-    let get_resp = sms_service
-        .get_task(Request::new(GetTaskRequest { task_id }))
-        .await
-        .unwrap();
+    let get_resp = TaskServiceTrait::get_task(
+        &sms_service,
+        Request::new(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    )
+    .await
+    .unwrap();
     let task = get_resp.get_ref().task.as_ref().unwrap();
     assert_eq!(task.status, TaskStatus::Registered as i32);
 }

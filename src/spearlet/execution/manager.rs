@@ -610,7 +610,7 @@ impl TaskExecutionManager {
             if let Some(t) = self.tasks.get(id) {
                 t.clone()
             } else {
-                return Err(ExecutionError::TaskNotFound { id: id.clone() });
+                self.ensure_task_available_from_sms(id).await?
             }
         } else {
             return Err(ExecutionError::NotSupported {
@@ -805,9 +805,13 @@ impl TaskExecutionManager {
         artifact: &Arc<Artifact>,
         spec: super::task::TaskSpec,
     ) -> ExecutionResult<Arc<Task>> {
+        // Fast path: task already exists locally.
+        // 快速路径：本地已存在 task 直接返回。
         if let Some(existing) = self.get_task_by_id(&task_id) {
             return Ok(existing);
         }
+        // Slow path: create task and attach it under the artifact.
+        // 慢路径：创建 task 并挂到 artifact 下。
         self.create_task_with_id(task_id, artifact, spec)
     }
 
@@ -817,6 +821,8 @@ impl TaskExecutionManager {
         sms_task: &crate::proto::sms::Task,
         artifact: &Arc<Artifact>,
     ) -> ExecutionResult<Arc<Task>> {
+        // Convert SMS task model into Spearlet TaskSpec.
+        // 将 SMS 的 task 模型转换成 Spearlet 侧的 TaskSpec。
         use super::task::{
             ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TimeoutConfig,
         };
@@ -849,6 +855,49 @@ impl TaskExecutionManager {
             },
         };
         self.ensure_task_with_id(sms_task.task_id.clone(), artifact, task_spec)
+    }
+
+    async fn ensure_task_available_from_sms(&self, task_id: &str) -> ExecutionResult<Arc<Task>> {
+        // When an invocation lands on a node that doesn't have the task yet,
+        // fetch task metadata from SMS and materialize it locally.
+        //
+        // 当调用落到一个尚未持有该 task 的节点时，从 SMS 拉取 task 元数据并在本地补齐。
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        let url = format!("http://{}", addr);
+        let mut client = crate::proto::sms::task_service_client::TaskServiceClient::new(
+            Channel::from_shared(url)
+                .map_err(|e| ExecutionError::RuntimeError {
+                    message: e.to_string(),
+                })?
+                .connect()
+                .await
+                .map_err(|e| ExecutionError::RuntimeError {
+                    message: e.to_string(),
+                })?,
+        );
+        // Query SMS for the task definition.
+        // 向 SMS 查询 task 定义。
+        let resp = client
+            .get_task(crate::proto::sms::GetTaskRequest {
+                task_id: task_id.to_string(),
+            })
+            .await
+            .map_err(|e| ExecutionError::RuntimeError {
+                message: e.to_string(),
+            })?
+            .into_inner();
+        if !resp.found {
+            return Err(ExecutionError::TaskNotFound {
+                id: task_id.to_string(),
+            });
+        }
+        let sms_task = resp.task.ok_or_else(|| ExecutionError::TaskNotFound {
+            id: task_id.to_string(),
+        })?;
+        // Ensure artifact/task are present locally before execution.
+        // 执行前确保本地已有 artifact/task。
+        let artifact = self.ensure_artifact_from_sms(&sms_task).await?;
+        self.ensure_task_from_sms(&sms_task, &artifact).await
     }
 
     /// Get or create instance / 获取或创建实例

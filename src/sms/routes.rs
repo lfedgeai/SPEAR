@@ -13,8 +13,9 @@ use super::gateway::GatewayState;
 use super::handlers::{
     delete_file, delete_node, download_file, get_file_meta, get_node, get_node_resource,
     get_node_with_resource, get_task, health_check, heartbeat, list_files, list_node_resources,
-    list_nodes, list_tasks, openapi_spec, presign_upload, register_node, register_task, swagger_ui,
-    swagger_ui_assets, unregister_task, update_node, update_node_resource, upload_file,
+    list_nodes, list_tasks, openapi_spec, place_invocation, presign_upload, register_node,
+    register_task, report_invocation_outcome, swagger_ui, swagger_ui_assets, unregister_task,
+    update_node, update_node_resource, upload_file,
 };
 
 /// Create HTTP routes / 创建HTTP路由
@@ -40,6 +41,14 @@ pub(crate) fn create_routes(state: GatewayState) -> Router {
         .route("/api/v1/tasks", get(list_tasks))
         .route("/api/v1/tasks/{task_id}", get(get_task))
         .route("/api/v1/tasks/{task_id}", delete(unregister_task))
+        .route(
+            "/api/v1/placement/invocations/place",
+            post(place_invocation),
+        )
+        .route(
+            "/api/v1/placement/invocations/report-outcome",
+            post(report_invocation_outcome),
+        )
         // API documentation endpoints / API文档端点
         .route("/api/openapi.json", get(openapi_spec))
         .route("/swagger-ui/", get(swagger_ui))

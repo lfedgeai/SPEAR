@@ -1,5 +1,5 @@
 //! SMS Service Implementation / SMS服务实现
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, atomic::Ordering, Arc};
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
 
@@ -12,13 +12,16 @@ use crate::sms::services::{
     task_service::TaskService as TaskServiceImpl,
 };
 use crate::storage::kv::{create_kv_store_from_config, get_kv_store_factory, KvStoreConfig};
+use dashmap::DashMap;
 use futures::stream::unfold;
+use tokio::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::{debug, warn};
 
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
     node_service_server::NodeService as NodeServiceTrait,
+    placement_service_server::PlacementService as PlacementServiceTrait,
     task_service_server::TaskService as TaskServiceTrait,
     DeleteNodeRequest,
     DeleteNodeResponse,
@@ -32,18 +35,24 @@ use crate::proto::sms::{
     GetTaskResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    InvocationOutcomeClass,
     ListNodeResourcesRequest,
     ListNodeResourcesResponse,
     ListNodesRequest,
     ListNodesResponse,
     ListTasksRequest,
     ListTasksResponse,
+    NodeCandidate,
+    PlaceInvocationRequest,
+    PlaceInvocationResponse,
     // Node service messages / 节点服务消息
     RegisterNodeRequest,
     RegisterNodeResponse,
     // Task service messages / 任务服务消息
     RegisterTaskRequest,
     RegisterTaskResponse,
+    ReportInvocationOutcomeRequest,
+    ReportInvocationOutcomeResponse,
     UnregisterTaskRequest,
     UnregisterTaskResponse,
     UpdateNodeRequest,
@@ -72,6 +81,7 @@ pub struct SmsServiceImpl {
     config: Arc<SmsConfig>,
     task_service: Arc<RwLock<TaskServiceImpl>>,
     events: Arc<TaskEventBus>,
+    placement_state: Arc<PlacementState>,
 }
 
 impl SmsServiceImpl {
@@ -107,12 +117,38 @@ impl SmsServiceImpl {
         let kv: Arc<dyn crate::storage::kv::KvStore> = Arc::from(kv_box);
         let events = Arc::new(TaskEventBus::new(kv));
 
+        let cleanup_node_service = node_service.clone();
+        let cleanup_resource_service = resource_service.clone();
+        let cleanup_config = config.clone();
+        tokio::spawn(async move {
+            let mut t = tokio::time::interval(Duration::from_secs(cleanup_config.cleanup_interval));
+            loop {
+                t.tick().await;
+                let updated_nodes = {
+                    let mut svc = cleanup_node_service.write().await;
+                    svc.mark_unhealthy_nodes_offline(cleanup_config.heartbeat_timeout)
+                        .await
+                        .unwrap_or_default()
+                };
+                if !updated_nodes.is_empty() {
+                    tracing::info!(
+                        count = updated_nodes.len(),
+                        "Marked unhealthy nodes offline"
+                    );
+                }
+                let _ = cleanup_resource_service
+                    .cleanup_stale_resources(cleanup_config.heartbeat_timeout)
+                    .await;
+            }
+        });
+
         Self {
             node_service,
             resource_service,
             config,
             task_service,
             events,
+            placement_state: Arc::new(PlacementState::new()),
         }
     }
 
@@ -326,6 +362,7 @@ impl NodeServiceTrait for SmsServiceImpl {
 
         match node_service.remove_node(&node_uuid.to_string()).await {
             Ok(_) => {
+                let _ = self.resource_service.remove_resource(&node_uuid).await;
                 tracing::info!(uuid = %node_uuid, "SPEARlet unregistered");
                 let response = DeleteNodeResponse {
                     success: true,
@@ -882,5 +919,307 @@ impl TaskServiceTrait for SmsServiceImpl {
             })),
             Err(e) => Err(Status::internal(format!("Failed to get task: {}", e))),
         }
+    }
+}
+
+#[derive(Debug)]
+struct PlacementDecisionRecord {
+    // Decision tracking for debugging/observability.
+    // 用于调试与可观测性的决策记录。
+    request_id: String,
+    task_id: String,
+    candidates: Vec<String>,
+    created_at: i64,
+}
+
+#[derive(Debug, Clone)]
+struct NodePenalty {
+    // Consecutive retryable failures to drive exponential backoff.
+    // 连续可重试失败次数，用于指数退避。
+    consecutive_failures: u32,
+    // If now < blocked_until, the node is temporarily removed from candidate set.
+    // 若 now < blocked_until，则节点被临时熔断，不参与候选。
+    blocked_until: i64,
+    // Timestamp of last failure.
+    // 最近一次失败的时间戳。
+    last_failure_at: i64,
+}
+
+#[derive(Debug)]
+struct PlacementState {
+    decisions: DashMap<String, PlacementDecisionRecord>,
+    node_penalties: DashMap<String, NodePenalty>,
+    decision_ops: AtomicU64,
+    penalty_ops: AtomicU64,
+}
+
+impl PlacementState {
+    fn new() -> Self {
+        Self {
+            decisions: DashMap::new(),
+            node_penalties: DashMap::new(),
+            decision_ops: AtomicU64::new(0),
+            penalty_ops: AtomicU64::new(0),
+        }
+    }
+
+    fn maybe_prune_decisions(&self, now: i64) {
+        const MAX_DECISIONS: usize = 10_000;
+        const DECISION_TTL_SECS: i64 = 600;
+
+        let op = self.decision_ops.fetch_add(1, Ordering::Relaxed);
+        if op % 256 != 0 && self.decisions.len() <= MAX_DECISIONS {
+            return;
+        }
+
+        let mut to_remove: Vec<String> = Vec::new();
+        for item in self.decisions.iter() {
+            if now - item.value().created_at > DECISION_TTL_SECS {
+                to_remove.push(item.key().clone());
+            }
+        }
+        for k in to_remove {
+            self.decisions.remove(&k);
+        }
+
+        let extra = self.decisions.len().saturating_sub(MAX_DECISIONS);
+        if extra == 0 {
+            return;
+        }
+        let mut victims: Vec<String> = Vec::with_capacity(extra);
+        for item in self.decisions.iter().take(extra) {
+            victims.push(item.key().clone());
+        }
+        for k in victims {
+            self.decisions.remove(&k);
+        }
+    }
+
+    fn maybe_prune_node_penalties(&self, now: i64) {
+        const PENALTY_TTL_SECS: i64 = 3600;
+
+        let op = self.penalty_ops.fetch_add(1, Ordering::Relaxed);
+        if op % 256 != 0 {
+            return;
+        }
+
+        let mut to_remove: Vec<String> = Vec::new();
+        for item in self.node_penalties.iter() {
+            let p = item.value();
+            if p.blocked_until > now {
+                continue;
+            }
+            if p.last_failure_at == 0 {
+                to_remove.push(item.key().clone());
+                continue;
+            }
+            if now - p.last_failure_at > PENALTY_TTL_SECS {
+                to_remove.push(item.key().clone());
+            }
+        }
+        for k in to_remove {
+            self.node_penalties.remove(&k);
+        }
+    }
+
+    fn is_blocked(&self, node_uuid: &str, now: i64) -> bool {
+        self.node_penalties
+            .get(node_uuid)
+            .map(|p| p.blocked_until > now)
+            .unwrap_or(false)
+    }
+
+    fn penalty_score(&self, node_uuid: &str, now: i64) -> f64 {
+        self.node_penalties
+            .get(node_uuid)
+            .map(|p| {
+                if p.blocked_until > now {
+                    10.0
+                } else {
+                    (p.consecutive_failures as f64).min(10.0)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    fn record_decision(&self, decision_id: String, record: PlacementDecisionRecord) {
+        self.decisions.insert(decision_id, record);
+        let now = chrono::Utc::now().timestamp();
+        self.maybe_prune_decisions(now);
+    }
+
+    fn apply_outcome(&self, node_uuid: String, outcome_class: InvocationOutcomeClass) {
+        let now = chrono::Utc::now().timestamp();
+        match outcome_class {
+            InvocationOutcomeClass::Success => {
+                // Success clears penalty state.
+                // 成功会清空惩罚状态。
+                self.node_penalties.remove(&node_uuid);
+            }
+            InvocationOutcomeClass::Overloaded
+            | InvocationOutcomeClass::Unavailable
+            | InvocationOutcomeClass::Timeout => {
+                // Retryable failures trigger exponential backoff with a hard cap.
+                // 可重试失败触发指数退避，并设置硬上限。
+                self.node_penalties
+                    .entry(node_uuid)
+                    .and_modify(|p| {
+                        p.consecutive_failures = p.consecutive_failures.saturating_add(1);
+                        p.last_failure_at = now;
+                        let base = 10i64;
+                        let backoff = base * (1i64 << (p.consecutive_failures.min(5)));
+                        p.blocked_until = (now + backoff).min(now + 300);
+                    })
+                    .or_insert(NodePenalty {
+                        consecutive_failures: 1,
+                        blocked_until: (now + 20).min(now + 300),
+                        last_failure_at: now,
+                    });
+            }
+            _ => {}
+        }
+
+        self.maybe_prune_node_penalties(now);
+    }
+
+    #[cfg(test)]
+    fn get_node_penalty_snapshot(&self, node_uuid: &str) -> Option<(u32, i64, i64)> {
+        self.node_penalties
+            .get(node_uuid)
+            .map(|p| (p.consecutive_failures, p.blocked_until, p.last_failure_at))
+    }
+}
+
+#[tonic::async_trait]
+impl PlacementServiceTrait for SmsServiceImpl {
+    async fn place_invocation(
+        &self,
+        request: Request<PlaceInvocationRequest>,
+    ) -> Result<Response<PlaceInvocationResponse>, Status> {
+        let req = request.into_inner();
+        if req.request_id.is_empty() {
+            return Err(Status::invalid_argument("request_id is required"));
+        }
+        if req.task_id.is_empty() {
+            return Err(Status::invalid_argument("task_id is required"));
+        }
+        let max_candidates = if req.max_candidates == 0 {
+            3
+        } else {
+            req.max_candidates
+        };
+        let now = chrono::Utc::now().timestamp();
+        self.placement_state.maybe_prune_node_penalties(now);
+        let nodes = {
+            let svc = self.node_service.read().await;
+            svc.list_nodes()
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?
+        };
+        let heartbeat_timeout = self.config.heartbeat_timeout as i64;
+        let mut candidates: Vec<(NodeCandidate, f64)> = Vec::new();
+        for node in nodes {
+            // Filter nodes by liveness and heartbeat freshness.
+            // 先按存活状态与心跳新鲜度过滤。
+            if node.status.to_ascii_lowercase() != "online" {
+                continue;
+            }
+            if now - node.last_heartbeat > heartbeat_timeout {
+                continue;
+            }
+            // Skip nodes in temporary circuit-break.
+            // 熔断中的节点不参与候选。
+            if self.placement_state.is_blocked(&node.uuid, now) {
+                continue;
+            }
+
+            let uuid = uuid::Uuid::parse_str(&node.uuid).ok();
+            let resource = if let Some(u) = uuid {
+                self.resource_service.get_resource(&u).await.ok().flatten()
+            } else {
+                None
+            };
+            let (cpu, mem, disk, load) = if let Some(r) = resource {
+                (
+                    r.cpu_usage_percent,
+                    r.memory_usage_percent,
+                    r.disk_usage_percent,
+                    r.load_average_1m,
+                )
+            } else {
+                (0.0, 0.0, 0.0, 0.0)
+            };
+            let mut score = 100.0;
+            // Simple weighted scoring: lower usage/load => higher score.
+            // 简单加权评分：资源占用/负载越低，分数越高。
+            score -= cpu.min(100.0) * 0.5;
+            score -= mem.min(100.0) * 0.3;
+            score -= disk.min(100.0) * 0.1;
+            score -= (load.min(16.0) / 16.0) * 10.0;
+            // Apply penalty score derived from historical retryable failures.
+            // 基于历史可重试失败的惩罚项。
+            score -= self.placement_state.penalty_score(&node.uuid, now) * 5.0;
+            let candidate = NodeCandidate {
+                node_uuid: node.uuid.clone(),
+                ip_address: node.ip_address.clone(),
+                port: node.port,
+                score,
+            };
+            candidates.push((candidate, score));
+        }
+
+        candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+        candidates.truncate(max_candidates as usize);
+
+        let decision_id = Uuid::new_v4().to_string();
+        self.placement_state.record_decision(
+            decision_id.clone(),
+            PlacementDecisionRecord {
+                request_id: req.request_id.clone(),
+                task_id: req.task_id.clone(),
+                candidates: candidates
+                    .iter()
+                    .map(|(c, _)| c.node_uuid.clone())
+                    .collect(),
+                created_at: now,
+            },
+        );
+
+        let resp = PlaceInvocationResponse {
+            decision_id,
+            candidates: candidates.into_iter().map(|(c, _)| c).collect(),
+        };
+        Ok(Response::new(resp))
+    }
+
+    async fn report_invocation_outcome(
+        &self,
+        request: Request<ReportInvocationOutcomeRequest>,
+    ) -> Result<Response<ReportInvocationOutcomeResponse>, Status> {
+        let req = request.into_inner();
+        if req.decision_id.is_empty() || req.request_id.is_empty() || req.task_id.is_empty() {
+            return Err(Status::invalid_argument(
+                "decision_id, request_id, task_id are required",
+            ));
+        }
+        if req.node_uuid.is_empty() {
+            return Err(Status::invalid_argument("node_uuid is required"));
+        }
+        let outcome_class = InvocationOutcomeClass::try_from(req.outcome_class)
+            .unwrap_or(InvocationOutcomeClass::Unknown);
+        // Feedback loop: update penalty state to influence subsequent placements.
+        // 反馈闭环：更新惩罚状态，影响后续 placement。
+        self.placement_state
+            .apply_outcome(req.node_uuid, outcome_class);
+        Ok(Response::new(ReportInvocationOutcomeResponse {
+            accepted: true,
+        }))
+    }
+}
+
+#[cfg(test)]
+impl SmsServiceImpl {
+    pub fn test_get_node_penalty_snapshot(&self, node_uuid: &str) -> Option<(u32, i64, i64)> {
+        self.placement_state.get_node_penalty_snapshot(node_uuid)
     }
 }

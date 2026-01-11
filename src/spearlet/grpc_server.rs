@@ -7,14 +7,11 @@ use tonic::transport::Server;
 
 use tracing::{error, info};
 
+use crate::proto::spearlet::function_service_server::FunctionServiceServer;
 use crate::proto::spearlet::object_service_server::ObjectServiceServer;
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::function_service::FunctionServiceImpl;
 use crate::spearlet::object_service::ObjectServiceImpl;
-// use crate::proto::spearlet::function_service_server::FunctionService;
-// TODO: Add FunctionServiceServer import when proto is regenerated
-// TODO: 当proto重新生成时添加FunctionServiceServer导入
-// use crate::proto::spearlet::function_service_server::FunctionServiceServer;
 
 /// gRPC server for spearlet / spearlet的gRPC服务器
 pub struct GrpcServer {
@@ -55,8 +52,11 @@ impl GrpcServer {
 
     /// Start gRPC server / 启动gRPC服务器
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (addr, object_service) = self.prepare().await?;
-        let server = Server::builder().add_service(object_service).serve(addr);
+        let (addr, object_service, function_service) = self.prepare().await?;
+        let server = Server::builder()
+            .add_service(object_service)
+            .add_service(function_service)
+            .serve(addr);
 
         match server.await {
             Ok(_) => {
@@ -78,9 +78,10 @@ impl GrpcServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        let (addr, object_service) = self.prepare().await?;
+        let (addr, object_service, function_service) = self.prepare().await?;
         let server = Server::builder()
             .add_service(object_service)
+            .add_service(function_service)
             .serve_with_shutdown(addr, shutdown);
 
         match server.await {
@@ -98,7 +99,11 @@ impl GrpcServer {
     async fn prepare(
         self,
     ) -> Result<
-        (SocketAddr, ObjectServiceServer<Arc<ObjectServiceImpl>>),
+        (
+            SocketAddr,
+            ObjectServiceServer<Arc<ObjectServiceImpl>>,
+            FunctionServiceServer<Arc<FunctionServiceImpl>>,
+        ),
         Box<dyn std::error::Error + Send + Sync>,
     > {
         let addr: SocketAddr = self.config.grpc.addr;
@@ -108,7 +113,11 @@ impl GrpcServer {
             .max_decoding_message_size(self.config.storage.max_object_size as usize)
             .max_encoding_message_size(self.config.storage.max_object_size as usize);
 
-        Ok((addr, object_service))
+        let function_service = FunctionServiceServer::new(self.function_service.clone())
+            .max_decoding_message_size(self.config.storage.max_object_size as usize)
+            .max_encoding_message_size(self.config.storage.max_object_size as usize);
+
+        Ok((addr, object_service, function_service))
     }
 }
 

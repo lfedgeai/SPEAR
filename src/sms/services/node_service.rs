@@ -46,6 +46,9 @@ impl NodeService {
         let mut nodes = self.nodes.write().await;
         if let Some(node) = nodes.get_mut(uuid) {
             node.last_heartbeat = timestamp;
+            if node.status.to_ascii_lowercase() != "online" {
+                node.status = "online".to_string();
+            }
             Ok(())
         } else {
             Err(SmsError::NotFound(format!(
@@ -53,6 +56,27 @@ impl NodeService {
                 uuid
             )))
         }
+    }
+
+    pub async fn mark_unhealthy_nodes_offline(
+        &mut self,
+        timeout_seconds: u64,
+    ) -> SmsResult<Vec<String>> {
+        let mut nodes = self.nodes.write().await;
+        let current_time = chrono::Utc::now().timestamp();
+        let timeout_threshold = current_time - timeout_seconds as i64;
+
+        let mut updated = Vec::new();
+        for (uuid, node) in nodes.iter_mut() {
+            if node.last_heartbeat < timeout_threshold {
+                if node.status.to_ascii_lowercase() != "offline" {
+                    node.status = "offline".to_string();
+                }
+                updated.push(uuid.clone());
+            }
+        }
+
+        Ok(updated)
     }
 
     /// Update an existing node / 更新现有节点

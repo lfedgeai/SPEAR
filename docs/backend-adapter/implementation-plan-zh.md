@@ -329,22 +329,21 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
 当前 Web Admin UI 以静态资源形式内嵌：
 
 - `assets/admin/index.html`
-- `assets/admin/react-app.js`
-- `assets/admin/style.css`
+- `assets/admin/main.js`
+- `assets/admin/main.css`
 
 实现落地（MVP）：
 
-- 修改 `assets/admin/react-app.js`：
+- 修改前端源码（`web-admin/`）：
   - 增加导航入口（例如 `Settings` 下新增 `Backends`）
-  - 新增页面组件：
-    - `BackendsPage`：表格编辑 backend instance（`name/kind/base_url/weight/priority/ops/features/transports/credential_ref`）
-    - `CredentialsPage`：展示所有 credential（及其 env var 名称）引用与“节点具备情况”
+  - 新增 feature：
+    - `web-admin/src/features/backends/*`：表格编辑 backend instance（`name/kind/base_url/weight/priority/ops/features/transports/credential_ref`）
+    - `web-admin/src/features/credentials/*`：展示所有 credential（及其 env var 名称）引用与“节点具备情况”
   - 数据获取：
     - 从 `GET /admin/api/llm/backends` 拉配置
     - 保存时调用 `PUT /admin/api/llm/backends`
+- 构建产物：通过 `web-admin` 的构建产出覆盖 `assets/admin/*`（不直接维护 bundle 文件）。
 - 可观测联动：复用现有 `GET /admin/api/nodes` 返回的 `metadata` 字段，读取 `HAS_ENV:<ENV_NAME>` 值进行展示（无需额外 secret API）。
-
-工程化建议（非 MVP）：把前端源码迁移到独立目录（例如 `web-admin-ui/`），由构建脚本产出 `assets/admin/*`，避免直接维护 bundle。
 
 ### 7.4 Spearlet：心跳上报 `HAS_ENV:*`
 

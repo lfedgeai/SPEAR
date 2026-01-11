@@ -7,7 +7,8 @@ use tonic::transport::Server;
 use tracing::{error, info};
 
 use crate::proto::sms::{
-    node_service_server::NodeServiceServer, task_service_server::TaskServiceServer,
+    node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
+    task_service_server::TaskServiceServer,
 };
 
 use crate::sms::service::SmsServiceImpl;
@@ -28,7 +29,8 @@ impl GrpcServer {
         let (addr, sms_service) = self.prepare();
         let server = Server::builder()
             .add_service(NodeServiceServer::new(sms_service.clone()))
-            .add_service(TaskServiceServer::new(sms_service))
+            .add_service(TaskServiceServer::new(sms_service.clone()))
+            .add_service(PlacementServiceServer::new(sms_service))
             .serve(addr);
 
         info!("SMS gRPC server listening on {}", addr);
@@ -49,7 +51,8 @@ impl GrpcServer {
         let (addr, sms_service) = self.prepare();
         let server = Server::builder()
             .add_service(NodeServiceServer::new(sms_service.clone()))
-            .add_service(TaskServiceServer::new(sms_service))
+            .add_service(TaskServiceServer::new(sms_service.clone()))
+            .add_service(PlacementServiceServer::new(sms_service))
             .serve_with_shutdown(addr, shutdown);
 
         info!("SMS gRPC server listening on {}", addr);

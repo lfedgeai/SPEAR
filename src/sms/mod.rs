@@ -65,7 +65,13 @@ pub mod handlers_test;
 #[cfg(test)]
 pub mod http_gateway_test;
 #[cfg(test)]
+pub mod placement_penalty_test;
+#[cfg(test)]
 pub mod routes_test;
+#[cfg(test)]
+pub mod service_event_kv_test;
+#[cfg(test)]
+pub mod task_status_test;
 
 // Re-export commonly used types / 重新导出常用类型
 pub use grpc_server::GrpcServer;

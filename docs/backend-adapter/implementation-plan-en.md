@@ -327,22 +327,21 @@ Goals:
 Current Web Admin UI is embedded static assets:
 
 - `assets/admin/index.html`
-- `assets/admin/react-app.js`
-- `assets/admin/style.css`
+- `assets/admin/main.js`
+- `assets/admin/main.css`
 
 MVP implementation:
 
-- Update `assets/admin/react-app.js`:
+- Update UI source (`web-admin/`):
   - add a navigation entry (e.g., `Settings` → `Backends`)
-  - implement pages:
-    - `BackendsPage`: editable table for backend instances (`name/kind/base_url/weight/priority/ops/features/transports/credential_ref`)
-    - `CredentialsPage`: list credentials (and their env-var names) and show per-node presence
+  - implement features:
+    - `web-admin/src/features/backends/*`: editable table for backend instances (`name/kind/base_url/weight/priority/ops/features/transports/credential_ref`)
+    - `web-admin/src/features/credentials/*`: list credentials (and their env-var names) and show per-node presence
   - data flow:
     - load from `GET /admin/api/llm/backends`
     - save via `PUT /admin/api/llm/backends`
+- Build output: use `web-admin` build to generate/overwrite `assets/admin/*` (do not manually edit the bundle files).
 - Observability: reuse existing `GET /admin/api/nodes` response `metadata` to read `HAS_ENV:<ENV_NAME>` (no extra secret-status API needed).
-
-Engineering note (non-MVP): move UI source into a dedicated directory (e.g., `web-admin-ui/`) and generate `assets/admin/*` via a build step rather than editing the bundle.
 
 ### 7.4 Spearlet: heartbeat reports `HAS_ENV:*`
 

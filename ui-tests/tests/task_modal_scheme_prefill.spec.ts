@@ -2,15 +2,14 @@ import { test, expect } from '@playwright/test';
 
 test('scheme selection prefills URI input', async ({ page }) => {
   await page.goto('/admin');
-  await page.getByRole('menuitem', { name: 'Tasks' }).click();
-  await page.getByRole('button', { name: 'Create Task' }).click();
+  await page.getByTestId('nav-tasks').click();
+  await page.getByTestId('tasks-open-create').click();
 
-  await page.selectOption('select[aria-label="No Executable"]', { label: 'WASM' });
+  await page.getByTestId('task-executable-type').selectOption('wasm');
 
-  await page.selectOption('select[aria-label="Scheme"]', { label: 'https' });
-  const uriInput = page.getByPlaceholder('Executable URI');
-  await expect(uriInput).toHaveValue('https://');
+  await page.getByTestId('task-uri-scheme').selectOption('https');
+  await expect(page.getByTestId('task-executable-uri')).toHaveValue('https://');
 
-  await page.selectOption('select[aria-label="Scheme"]', { label: 's3' });
-  await expect(uriInput).toHaveValue('s3://');
+  await page.getByTestId('task-uri-scheme').selectOption('s3');
+  await expect(page.getByTestId('task-executable-uri')).toHaveValue('s3://');
 });

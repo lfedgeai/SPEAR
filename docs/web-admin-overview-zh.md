@@ -9,7 +9,7 @@
 - 统计卡片（总数、在线、离线、最近 60s 心跳）
 - SSE 流 `GET /admin/api/nodes/stream`
   - 测试友好：`?once=true` 返回单次快照事件后结束
-- 主题切换（暗/亮）与时区选择，时间按所选时区友好显示
+- 主题切换（暗/亮）
 - 可选鉴权：`SMS_WEB_ADMIN_TOKEN`（Bearer Token）
 
 ## 配置
@@ -20,9 +20,9 @@
 
 ## 实现说明
 
-- 前端通过内嵌静态资源提供（`index.html`、`react-app.js`、`style.css`）
-- 使用 Ant Design 5 的主题算法与 token，确保暗/亮主题正确切换
-- 顶部栏显示时区信息与 Profile 占位
+- 前端通过内嵌静态资源提供（`index.html`、`main.js`、`main.css`）
+- 前端源码位于 `web-admin/`，构建后覆盖输出到 `assets/admin/*`
+- UI 采用 Radix primitives + Tailwind（shadcn/ui 风格），以企业控制台风为主
 - SSE 通过 `CancellationToken` 支持优雅关闭
 
 ## 接口
@@ -36,6 +36,28 @@
 
 - `GET /admin/api/tasks` → 返回任务列表，包含字段：
   - `task_id`、`name`、`description`、`status`、`priority`、`node_uuid`、`endpoint`、`version`
+
+#### 创建与执行（两条链路）
+
+Web Admin 将“创建任务（注册 Task）”与“执行任务（调度 + 运行）”拆为两步：
+
+- 第一步：创建/注册任务
+  - `POST /admin/api/tasks`
+  - `node_uuid` 有两种用法：
+    - 指定节点：`node_uuid=<uuid>`
+    - 自动调度：`node_uuid=""`（空字符串）
+- 第二步：触发执行（可选）
+  - `POST /admin/api/executions`
+  - 由 SMS placement 选择候选节点，并按顺序调用 Spearlet 执行（spillback）
+
+两种模式的差异：
+
+- 指定节点（node_uuid 非空）：
+  - 表示 pinned node（任务归属/固定节点，便于观察与过滤；不等同于“本次/最近一次执行落点”）
+  - 是否执行由 `POST /admin/api/executions` 决定；UI 的 `Run after create` 会在创建成功后直接对该 node 发起执行
+- 自动调度（node_uuid 为空）：
+  - 表示“任务不固定节点”
+  - 是否执行由 `POST /admin/api/executions` 决定；UI 的 `Run after create` 会在创建成功后调用该接口，让 BFF 通过 SMS placement 选择节点并运行
 
 ## Secret/Key 管理建议
 
@@ -55,4 +77,4 @@
 ## 测试
 
 - SSE 集成测试使用 `?once=true` 避免阻塞
-- 前端测试后续可引入 E2E；当前后端已覆盖列表/统计/SSE
+- 前端已包含 Playwright UI 测试（`make test-ui`）

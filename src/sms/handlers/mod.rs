@@ -9,6 +9,7 @@ pub mod docs;
 pub mod files;
 pub mod health;
 pub mod node;
+pub mod placement;
 pub mod resource;
 pub mod task;
 
@@ -18,5 +19,6 @@ pub use docs::*;
 pub use files::*;
 pub use health::*;
 pub use node::*;
+pub use placement::*;
 pub use resource::*;
 pub use task::*;

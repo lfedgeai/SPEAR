@@ -271,7 +271,7 @@ impl ResourceService {
 
     /// Cleanup stale resource information / 清理过期的资源信息
     pub async fn cleanup_stale_resources(
-        &mut self,
+        &self,
         max_age_seconds: u64,
     ) -> Result<Vec<Uuid>, SmsError> {
         let all_resources = self.list_resources().await?;
@@ -490,7 +490,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resource_service_cleanup() {
-        let mut service = ResourceService::new();
+        let service = ResourceService::new();
 
         let uuid1 = Uuid::new_v4();
         let uuid2 = Uuid::new_v4();

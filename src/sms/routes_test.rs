@@ -9,7 +9,8 @@ use axum::{
 use tower::ServiceExt;
 
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use crate::sms::routes::create_routes;
@@ -22,7 +23,8 @@ fn create_mock_gateway_state() -> GatewayState {
 
     GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
-        task_client: TaskServiceClient::new(channel),
+        task_client: TaskServiceClient::new(channel.clone()),
+        placement_client: PlacementServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     }
@@ -201,6 +203,8 @@ async fn test_task_routes_structure() {
         (Method::GET, "/api/v1/tasks"),
         (Method::GET, "/api/v1/tasks/task-123"),
         (Method::DELETE, "/api/v1/tasks/task-123"),
+        (Method::POST, "/api/v1/placement/invocations/place"),
+        (Method::POST, "/api/v1/placement/invocations/report-outcome"),
     ];
 
     for (method, uri) in test_cases {

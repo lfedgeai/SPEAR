@@ -5,9 +5,11 @@ use tokio::sync::broadcast;
 use crate::proto::sms::{Task, TaskEvent, TaskEventKind};
 use crate::sms::services::error::SmsError;
 use crate::storage::kv::{serialization, KvPair, KvStore};
-use tracing::{debug, warn};
+use tracing::debug;
 
 const OUTBOX_PREFIX: &str = "task_events:"; // key: task_events:{node_uuid}:{event_id}
+const COUNTER_PREFIX: &str = "task_events_counter:";
+const MAX_EVENTS_PER_NODE: i64 = 10_000;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 struct StoredEvent {
@@ -39,7 +41,20 @@ impl TaskEventBus {
 
     async fn next_id(&self, node_uuid: &str) -> i64 {
         let mut map = self.counters.write().await;
-        let e = map.entry(node_uuid.to_string()).or_insert(0);
+        if !map.contains_key(node_uuid) {
+            let key = format!("{}{}", COUNTER_PREFIX, node_uuid);
+            let v = self
+                .kv
+                .get(&key)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|b| String::from_utf8(b).ok())
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0);
+            map.insert(node_uuid.to_string(), v);
+        }
+        let e = map.get_mut(node_uuid).unwrap();
         *e += 1;
         *e
     }
@@ -144,10 +159,20 @@ impl TaskEventBus {
         };
         let val = serialization::serialize(&se)?;
         self.kv.put(&key, &val).await?;
+
+        let counter_key = format!("{}{}", COUNTER_PREFIX, node_uuid);
+        let counter_val = id.to_string().into_bytes();
+        self.kv.put(&counter_key, &counter_val).await?;
+
+        if id > MAX_EVENTS_PER_NODE {
+            let old_id = id - MAX_EVENTS_PER_NODE;
+            let old_key = format!("{}{}:{}", OUTBOX_PREFIX, ev.node_uuid, old_id);
+            let _ = self.kv.delete(&old_key).await;
+        }
         debug!(node_uuid = %node_uuid, event_id = id, kind = ev.kind, task_id = %ev.task_id, "Published task event to KV and broadcasting");
         let tx = self.get_sender(&node_uuid).await;
-        if let Err(e) = tx.send(ev.clone()) {
-            warn!(error = %e, "Broadcast send failed");
+        if tx.receiver_count() > 0 {
+            let _ = tx.send(ev.clone());
         }
         Ok(ev)
     }

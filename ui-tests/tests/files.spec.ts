@@ -3,26 +3,27 @@ import { test, expect } from '@playwright/test';
 test.describe('Files page', () => {
   test('uploads small file and copies URI', async ({ page }) => {
     await page.goto('/admin');
-    await page.getByRole('menuitem', { name: 'Files' }).click();
+    await page.getByTestId('nav-files').click();
 
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.getByTestId('files-input');
     await fileInput.setInputFiles({ name: 'hello.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
-    await page.getByRole('button', { name: /Upload/i }).click();
 
-    await expect(page.getByText(/Uploaded:/)).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('files-upload').click();
 
-    const firstRow = page.locator('.ant-table-row').first();
-    const idCellText = await firstRow.locator('td').first().textContent();
-    expect(idCellText).toBeTruthy();
+    const row = page.locator('[data-testid^="files-row-"]').filter({ hasText: 'hello.txt' }).first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
 
-    const copyLink = firstRow.getByRole('link', { name: 'Copy URI' });
-    await copyLink.click();
+    const idText = await row.locator('button').locator('div').nth(1).textContent();
+    expect(idText).toBeTruthy();
+    const id = (idText || '').trim();
+
+    await row.getByRole('button', { name: 'Copy URI' }).click();
 
     // Clipboard may require a small delay
     await page.waitForTimeout(100);
     const clip = await page.evaluate(async () => {
       try { return await navigator.clipboard.readText(); } catch { return ''; }
     });
-    expect(clip).toMatch(/^sms\+file:\/\//);
+    expect(clip).toBe(`sms+file://${id}`);
   });
 });

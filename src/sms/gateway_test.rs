@@ -5,7 +5,8 @@ use axum::Router;
 use tonic::transport::Channel;
 
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, task_service_client::TaskServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use tokio_util::sync::CancellationToken;
@@ -17,7 +18,8 @@ async fn create_mock_gateway_state() -> GatewayState {
 
     GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
-        task_client: TaskServiceClient::new(channel),
+        task_client: TaskServiceClient::new(channel.clone()),
+        placement_client: PlacementServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     }
@@ -33,6 +35,7 @@ async fn test_gateway_state_creation() {
     // 我们无法在没有gRPC服务器的情况下直接测试客户端，但我们可以验证它们存在
     assert!(std::mem::size_of_val(&state.node_client) > 0);
     assert!(std::mem::size_of_val(&state.task_client) > 0);
+    assert!(std::mem::size_of_val(&state.placement_client) > 0);
 }
 
 #[tokio::test]
@@ -44,6 +47,7 @@ async fn test_gateway_state_clone() {
     // Verify cloned state has the same structure / 验证克隆状态具有相同结构
     assert!(std::mem::size_of_val(&cloned_state.node_client) > 0);
     assert!(std::mem::size_of_val(&cloned_state.task_client) > 0);
+    assert!(std::mem::size_of_val(&cloned_state.placement_client) > 0);
 }
 
 #[tokio::test]
@@ -113,6 +117,11 @@ async fn test_multiple_gateway_states() {
             "State {} task client invalid",
             i
         );
+        assert!(
+            std::mem::size_of_val(&state.placement_client) > 0,
+            "State {} placement client invalid",
+            i
+        );
     }
 }
 
@@ -129,11 +138,13 @@ async fn test_gateway_state_with_different_endpoints() {
     for endpoint in endpoints {
         let channel = Channel::from_static(endpoint).connect_lazy();
         let node_client = NodeServiceClient::new(channel.clone());
-        let task_client = TaskServiceClient::new(channel);
+        let task_client = TaskServiceClient::new(channel.clone());
+        let placement_client = PlacementServiceClient::new(channel);
 
         let state = GatewayState {
             node_client,
             task_client,
+            placement_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -196,6 +207,7 @@ async fn test_gateway_state_field_access() {
     // Should be able to access fields / 应该能够访问字段
     let _node_client = &state.node_client;
     let _task_client = &state.task_client;
+    let _placement_client = &state.placement_client;
 
     // Fields should be accessible / 字段应该可访问
 }

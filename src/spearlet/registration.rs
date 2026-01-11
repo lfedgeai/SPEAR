@@ -7,11 +7,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Instant};
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use tracing::{debug, error, info, warn};
 
 use crate::proto::sms::{
-    node_service_client::NodeServiceClient, HeartbeatRequest, Node, RegisterNodeRequest,
+    node_service_client::NodeServiceClient, HeartbeatRequest, Node, NodeResource,
+    RegisterNodeRequest, UpdateNodeResourceRequest,
 };
 use crate::spearlet::config::SpearletConfig;
 
@@ -70,6 +72,7 @@ pub struct RegistrationService {
     state: Arc<RwLock<RegistrationState>>,
     /// Disconnection start time / 断线开始时间
     disconnect_since: Arc<RwLock<Option<Instant>>>,
+    cancel_token: CancellationToken,
 }
 
 impl RegistrationService {
@@ -92,6 +95,7 @@ impl RegistrationService {
             node_client: Arc::new(RwLock::new(None)),
             state: Arc::new(RwLock::new(RegistrationState::NotRegistered)),
             disconnect_since: Arc::new(RwLock::new(None)),
+            cancel_token: CancellationToken::new(),
         }
     }
 
@@ -144,12 +148,18 @@ impl RegistrationService {
         let node_client = self.node_client.clone();
         let state = self.state.clone();
         let disconnect_since = self.disconnect_since.clone();
+        let cancel_token = self.cancel_token.clone();
 
         tokio::spawn(async move {
             let mut heartbeat_interval = interval(Duration::from_secs(config.heartbeat_interval));
 
             loop {
-                heartbeat_interval.tick().await;
+                tokio::select! {
+                    _ = cancel_token.cancelled() => {
+                        break;
+                    }
+                    _ = heartbeat_interval.tick() => {}
+                }
 
                 // Exit if reconnection exceeded total timeout / 若重连超过总超时则退出
                 if let Some(start) = *disconnect_since.read().await {
@@ -264,6 +274,10 @@ impl RegistrationService {
 
         client.register_node(request).await?;
 
+        if let Err(e) = Self::send_resource_report(client, config).await {
+            warn!("Resource report failed: {}", e);
+        }
+
         let now = Instant::now();
         *state.write().await = RegistrationState::Registered {
             registered_at: now,
@@ -299,10 +313,15 @@ impl RegistrationService {
         let server_ts = resp.get_ref().server_timestamp;
         debug!("Heartbeat ACK: uuid={}, server_ts={}", node_uuid, server_ts);
 
+        if let Err(e) = Self::send_resource_report(client, config).await {
+            warn!("Resource report failed: {}", e);
+        }
+
         // Update last heartbeat time / 更新最后心跳时间
-        if let RegistrationState::Registered { registered_at, .. } = &*state.read().await {
+        let mut st = state.write().await;
+        if let RegistrationState::Registered { registered_at, .. } = &*st {
             let registered_at = *registered_at;
-            *state.write().await = RegistrationState::Registered {
+            *st = RegistrationState::Registered {
                 registered_at,
                 last_heartbeat: Instant::now(),
             };
@@ -310,6 +329,186 @@ impl RegistrationService {
 
         debug!("Heartbeat sent successfully");
         Ok(())
+    }
+
+    async fn send_resource_report(
+        client: &mut NodeServiceClient<Channel>,
+        config: &SpearletConfig,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let node_uuid = Self::compute_node_uuid(config);
+        let resource = Self::collect_node_resource(&node_uuid);
+        let req = tonic::Request::new(UpdateNodeResourceRequest {
+            resource: Some(resource),
+        });
+        let _ = client.update_node_resource(req).await?;
+        Ok(())
+    }
+
+    fn collect_node_resource(node_uuid: &str) -> NodeResource {
+        let ts = chrono::Utc::now().timestamp();
+        let (load1, load5, load15) = Self::get_load_averages();
+        let (total_mem, avail_mem, used_mem, mem_percent) = Self::get_memory_snapshot();
+        let (total_disk, used_disk, disk_percent) = Self::get_disk_snapshot();
+        let cpu_percent = Self::estimate_cpu_percent(load1);
+
+        NodeResource {
+            node_uuid: node_uuid.to_string(),
+            cpu_usage_percent: cpu_percent,
+            memory_usage_percent: mem_percent,
+            total_memory_bytes: total_mem,
+            used_memory_bytes: used_mem,
+            available_memory_bytes: avail_mem,
+            disk_usage_percent: disk_percent,
+            total_disk_bytes: total_disk,
+            used_disk_bytes: used_disk,
+            network_rx_bytes_per_sec: 0,
+            network_tx_bytes_per_sec: 0,
+            load_average_1m: load1,
+            load_average_5m: load5,
+            load_average_15m: load15,
+            updated_at: ts,
+            resource_metadata: std::collections::HashMap::new(),
+        }
+    }
+
+    fn get_load_averages() -> (f64, f64, f64) {
+        let mut loads = [0f64; 3];
+        let n = unsafe { libc::getloadavg(loads.as_mut_ptr(), 3) };
+        if n <= 0 {
+            return (0.0, 0.0, 0.0);
+        }
+        (
+            loads.get(0).copied().unwrap_or(0.0),
+            loads.get(1).copied().unwrap_or(0.0),
+            loads.get(2).copied().unwrap_or(0.0),
+        )
+    }
+
+    fn estimate_cpu_percent(load1: f64) -> f64 {
+        let ncpu = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+        if ncpu <= 0 {
+            return 0.0;
+        }
+        ((load1 / (ncpu as f64)) * 100.0).clamp(0.0, 100.0)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_memory_snapshot() -> (i64, i64, i64, f64) {
+        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        let phys_pages = unsafe { libc::sysconf(libc::_SC_PHYS_PAGES) };
+        let avail_pages = unsafe { libc::sysconf(libc::_SC_AVPHYS_PAGES) };
+        if page_size <= 0 || phys_pages <= 0 || avail_pages < 0 {
+            return (0, 0, 0, 0.0);
+        }
+        let total = (phys_pages as i128) * (page_size as i128);
+        let avail = (avail_pages as i128) * (page_size as i128);
+        let used = (total - avail).max(0);
+        let percent = if total > 0 {
+            ((used as f64) / (total as f64) * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        (
+            total.min(i64::MAX as i128) as i64,
+            avail.min(i64::MAX as i128) as i64,
+            used.min(i64::MAX as i128) as i64,
+            percent,
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    fn get_memory_snapshot() -> (i64, i64, i64, f64) {
+        fn sysctl_u64(name: &str) -> Option<u64> {
+            let c = std::ffi::CString::new(name).ok()?;
+            let mut v: u64 = 0;
+            let mut len = std::mem::size_of::<u64>();
+            let rc = unsafe {
+                libc::sysctlbyname(
+                    c.as_ptr(),
+                    &mut v as *mut _ as *mut _,
+                    &mut len,
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
+            if rc == 0 {
+                Some(v)
+            } else {
+                None
+            }
+        }
+
+        fn sysctl_u32(name: &str) -> Option<u32> {
+            let c = std::ffi::CString::new(name).ok()?;
+            let mut v: u32 = 0;
+            let mut len = std::mem::size_of::<u32>();
+            let rc = unsafe {
+                libc::sysctlbyname(
+                    c.as_ptr(),
+                    &mut v as *mut _ as *mut _,
+                    &mut len,
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
+            if rc == 0 {
+                Some(v)
+            } else {
+                None
+            }
+        }
+
+        let total = sysctl_u64("hw.memsize").unwrap_or(0) as i128;
+        let page_size = sysctl_u64("hw.pagesize").unwrap_or(0) as i128;
+        let free_pages = sysctl_u32("vm.page_free_count").unwrap_or(0) as i128;
+        if total <= 0 || page_size <= 0 {
+            return (0, 0, 0, 0.0);
+        }
+        let avail = (free_pages * page_size).max(0);
+        let used = (total - avail).max(0);
+        let percent = ((used as f64) / (total as f64) * 100.0).clamp(0.0, 100.0);
+        (
+            total.min(i64::MAX as i128) as i64,
+            avail.min(i64::MAX as i128) as i64,
+            used.min(i64::MAX as i128) as i64,
+            percent,
+        )
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn get_memory_snapshot() -> (i64, i64, i64, f64) {
+        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        let phys_pages = unsafe { libc::sysconf(libc::_SC_PHYS_PAGES) };
+        if page_size <= 0 || phys_pages <= 0 {
+            return (0, 0, 0, 0.0);
+        }
+        let total = (phys_pages as i128) * (page_size as i128);
+        (total.min(i64::MAX as i128) as i64, 0, 0, 0.0)
+    }
+
+    fn get_disk_snapshot() -> (i64, i64, f64) {
+        let path = match std::ffi::CString::new("/") {
+            Ok(p) => p,
+            Err(_) => return (0, 0, 0.0),
+        };
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        let rc = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
+        if rc != 0 {
+            return (0, 0, 0.0);
+        }
+        let total = (stat.f_blocks as i128) * (stat.f_frsize as i128);
+        let avail = (stat.f_bavail as i128) * (stat.f_frsize as i128);
+        let used = (total - avail).max(0);
+        let percent = if total > 0 {
+            ((used as f64) / (total as f64) * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        (
+            total.min(i64::MAX as i128) as i64,
+            used.min(i64::MAX as i128) as i64,
+            percent,
+        )
     }
 
     /// Attempt to reconnect to SMS / 尝试重新连接SMS
@@ -352,5 +551,9 @@ impl RegistrationService {
         *self.node_client.write().await = None;
         *self.state.write().await = RegistrationState::NotRegistered;
         info!("Disconnected from SMS");
+    }
+
+    pub fn shutdown(&self) {
+        self.cancel_token.cancel();
     }
 }

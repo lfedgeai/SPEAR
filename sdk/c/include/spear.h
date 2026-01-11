@@ -50,6 +50,9 @@ SPEAR_IMPORT("cchat_write_msg")
 int32_t sp_cchat_write_msg(int32_t fd, int32_t role_ptr, int32_t role_len, int32_t content_ptr,
                            int32_t content_len);
 
+SPEAR_IMPORT("cchat_write_fn")
+int32_t sp_cchat_write_fn(int32_t fd, int32_t fn_offset, int32_t fn_ptr, int32_t fn_len);
+
 SPEAR_IMPORT("cchat_ctl")
 int32_t sp_cchat_ctl(int32_t fd, int32_t cmd, int32_t arg_ptr, int32_t arg_len_ptr);
 
@@ -148,6 +151,10 @@ int32_t sp_fd_ctl(int32_t fd, int32_t cmd, int32_t arg_ptr, int32_t arg_len_ptr)
 static inline int32_t sp_cchat_write_msg_str(int32_t fd, const char *role, const char *content) {
     return sp_cchat_write_msg(fd, (int32_t)(uintptr_t)role, (int32_t)strlen(role),
                               (int32_t)(uintptr_t)content, (int32_t)strlen(content));
+}
+
+static inline int32_t sp_cchat_write_fn_str(int32_t fd, int32_t fn_offset, const char *fn_json) {
+    return sp_cchat_write_fn(fd, fn_offset, (int32_t)(uintptr_t)fn_json, (int32_t)strlen(fn_json));
 }
 
 static inline int32_t sp_cchat_set_param_json(int32_t fd, const char *json, uint32_t json_len) {

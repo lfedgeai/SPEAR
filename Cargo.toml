@@ -94,6 +94,7 @@ md5 = "0.7"
 rand = "0.8"
 futures = "0.3"
 wasmedge-sdk = { version = "0.14", optional = true, features = ["standalone"] }
+wasmedge-sys = { version = "0.19", optional = true }
 
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 url = "2"
@@ -131,5 +132,5 @@ default = ["wasmedge"]
 sled = ["dep:sled"]
 rocksdb = ["dep:rocksdb"]
 evmap = ["dep:evmap"]
-wasmedge = ["dep:wasmedge-sdk"]
+wasmedge = ["dep:wasmedge-sdk", "dep:wasmedge-sys"]
 mic-device = ["dep:cpal"]

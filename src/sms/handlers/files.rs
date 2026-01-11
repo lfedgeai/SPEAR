@@ -132,7 +132,9 @@ pub struct ListFilesQuery {
     offset: Option<usize>,
 }
 
-pub async fn list_files(Query(params): Query<ListFilesQuery>) -> Result<Json<serde_json::Value>, StatusCode> {
+pub async fn list_files(
+    Query(params): Query<ListFilesQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     fs::create_dir_all(FILES_DIR)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -180,7 +182,12 @@ pub async fn list_files(Query(params): Query<ListFilesQuery>) -> Result<Json<ser
             .cmp(&a.get("modified_at").and_then(|v| v.as_u64()))
     });
 
-    if let Some(q) = params.q.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    if let Some(q) = params
+        .q
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         let needle = q.to_lowercase();
         items = items
             .into_iter()
@@ -198,7 +205,11 @@ pub async fn list_files(Query(params): Query<ListFilesQuery>) -> Result<Json<ser
     let files = if offset >= items.len() {
         Vec::new()
     } else {
-        items.into_iter().skip(offset).take(limit).collect::<Vec<_>>() 
+        items
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .collect::<Vec<_>>()
     };
 
     Ok(Json(json!({ "files": files, "total_count": total_count })))

@@ -4,10 +4,14 @@ use crate::spearlet::execution::ExecutionError;
 use crate::spearlet::execution::RuntimeType;
 use libc::{EFAULT, EINVAL, EIO, ENOSPC};
 use std::time::SystemTime;
+use tracing::debug;
 use wasmedge_sdk::{
     error::CoreError, AsInstance, CallingFrame, ImportObject, ImportObjectBuilder, Instance,
-    WasmValue,
+    ValType, WasmValue,
 };
+use wasmedge_sys::ffi;
+use wasmedge_sys::instance::function::AsFunc;
+use wasmedge_sys::{Executor, Function};
 
 // Helper function to extract DefaultHostApi from host data
 fn _unused() {}
@@ -81,6 +85,128 @@ fn mem_write_with_len(
     need as i32
 }
 
+fn choose_func_table_name(instance: &Instance) -> Option<String> {
+    let names = instance.table_names()?;
+    if names.is_empty() {
+        return None;
+    }
+    if names.iter().any(|x| x == "__indirect_function_table") {
+        return Some("__indirect_function_table".to_string());
+    }
+    if names.iter().any(|x| x == "table") {
+        return Some("table".to_string());
+    }
+    Some(names[0].clone())
+}
+
+fn debug_call_wasm_tool_by_offset(instance: &mut Instance, fn_offset: i32) {
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+
+    if fn_offset < 0 {
+        debug!(
+            fn_offset,
+            "cchat_write_fn: skip calling tool (negative offset)"
+        );
+        return;
+    }
+
+    let Some(table_name) = choose_func_table_name(instance) else {
+        debug!(fn_offset, "cchat_write_fn: no exported table found");
+        return;
+    };
+
+    let table = match instance.get_table(&table_name) {
+        Ok(t) => t,
+        Err(e) => {
+            debug!(fn_offset, table_name, err = %e, "cchat_write_fn: get_table failed");
+            return;
+        }
+    };
+
+    let idx = fn_offset as u32;
+    let v = match table.get_data(idx) {
+        Ok(v) => v,
+        Err(e) => {
+            debug!(fn_offset, table_name, err = %e, "cchat_write_fn: table.get_data failed");
+            return;
+        }
+    };
+
+    if v.is_null_ref() {
+        debug!(fn_offset, table_name, "cchat_write_fn: funcref is null");
+        return;
+    }
+
+    if v.ty() != ValType::FuncRef {
+        debug!(fn_offset, table_name, ty = ?v.ty(), "cchat_write_fn: table entry is not funcref");
+        return;
+    }
+
+    let raw_func_ctx = unsafe { ffi::WasmEdge_ValueGetFuncRef(v.as_raw()) };
+    if raw_func_ctx.is_null() {
+        debug!(
+            fn_offset,
+            table_name, "cchat_write_fn: WasmEdge_ValueGetFuncRef returned null"
+        );
+        return;
+    }
+
+    let mut func = std::mem::ManuallyDrop::new(unsafe { Function::from_raw(raw_func_ctx as _) });
+
+    let ty = func.ty();
+    debug!(fn_offset, table_name, ty = ?ty, "cchat_write_fn: resolved tool function type");
+
+    let Some(ty) = ty else {
+        debug!(
+            fn_offset,
+            table_name, "cchat_write_fn: tool function type unavailable"
+        );
+        return;
+    };
+
+    let param_len = ty.args_len();
+    let ret_len = ty.returns_len();
+    if !(param_len == 4 && ret_len == 1 && ty.args() == [ValType::I32; 4]) {
+        debug!(
+            fn_offset,
+            table_name,
+            param_len,
+            ret_len,
+            args = ?ty.args(),
+            returns = ?ty.returns(),
+            "cchat_write_fn: skip calling tool due to signature mismatch"
+        );
+        return;
+    }
+
+    let mut executor = match Executor::create(None, None) {
+        Ok(e) => e,
+        Err(e) => {
+            debug!(fn_offset, table_name, err = %e, "cchat_write_fn: create executor failed");
+            return;
+        }
+    };
+
+    let args = [
+        WasmValue::from_i32(0),
+        WasmValue::from_i32(0),
+        WasmValue::from_i32(0),
+        WasmValue::from_i32(0),
+    ];
+
+    match executor.call_func(&mut func, args) {
+        Ok(returns) => {
+            let rc = returns.get(0).map(|v| v.to_i32());
+            debug!(fn_offset, table_name, rc = ?rc, "cchat_write_fn: tool called");
+        }
+        Err(e) => {
+            debug!(fn_offset, table_name, err = %e, "cchat_write_fn: tool call failed");
+        }
+    }
+}
+
 pub fn cchat_create(
     host_data: &mut DefaultHostApi,
     _instance: &mut Instance,
@@ -141,6 +267,9 @@ pub fn cchat_write_fn(
         Ok(b) => String::from_utf8_lossy(&b).to_string(),
         Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
     };
+
+    debug!(fd, fn_offset, fn_len, "cchat_write_fn: register tool");
+    debug_call_wasm_tool_by_offset(instance, fn_offset);
 
     let rc = host_data.cchat_write_fn(fd, fn_offset, fn_json);
     Ok(vec![WasmValue::from_i32(rc)])
@@ -925,4 +1054,83 @@ pub fn build_spear_import_with_api(
 
     let import = builder.build();
     Ok(import)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_call_cchat_write_fn() {
+        static INIT: std::sync::Once = std::sync::Once::new();
+        INIT.call_once(|| {
+            let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("spear_next=debug"));
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_test_writer()
+                .try_init();
+        });
+
+        use std::collections::HashMap;
+        use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
+        use wasmedge_sdk::wasi::WasiModule;
+        use wasmedge_sdk::{params, vm::SyncInst, wat2wasm, Module, Store, Vm};
+
+        let wat = r#"(module
+            (type $create_t (func (result i32)))
+            (type $write_fn_t (func (param i32 i32 i32 i32) (result i32)))
+            (import "spear" "cchat_create" (func $cchat_create (type $create_t)))
+            (import "spear" "cchat_write_fn" (func $cchat_write_fn (type $write_fn_t)))
+
+            (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+
+            (memory (export "memory") 1)
+            (data (i32.const 0) "{}")
+            (data (i32.const 32) "tool_called\n")
+
+            (table (export "table") 1 funcref)
+
+            (func $tool (param i32 i32 i32 i32) (result i32)
+                (i32.store (i32.const 64) (i32.const 32))
+                (i32.store (i32.const 68) (i32.const 12))
+                (drop (call $fd_write (i32.const 1) (i32.const 64) (i32.const 1) (i32.const 72)))
+                i32.const 0
+            )
+            (elem (i32.const 0) $tool)
+
+            (func (export "run") (result i32)
+                (local $fd i32)
+                (local.set $fd (call $cchat_create))
+                (call $cchat_write_fn
+                    (local.get $fd)
+                    (i32.const 0)
+                    (i32.const 0)
+                    (i32.const 2)
+                )
+            )
+        )"#;
+
+        let bytes = wat2wasm(wat.as_bytes()).unwrap();
+        let c = ConfigBuilder::new(CommonConfigOptions::default())
+            .build()
+            .unwrap();
+        let mut imports: HashMap<String, &mut dyn SyncInst> = HashMap::new();
+        let mut wasi_module = WasiModule::create(None, None, None).unwrap();
+        imports.insert(wasi_module.name().to_string(), wasi_module.as_mut());
+
+        let spear_import = build_spear_import().unwrap();
+        let spear_static = Box::leak(Box::new(spear_import));
+        imports.insert("spear".to_string(), spear_static);
+
+        let store = Store::new(Some(&c), imports).unwrap();
+        let mut vm = Vm::new(store);
+        let module = Module::from_bytes(None, bytes).unwrap();
+        vm.register_module(None, module).unwrap();
+
+        let out = vm.run_func(None, "run", params!()).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].to_i32(), 0);
+    }
 }

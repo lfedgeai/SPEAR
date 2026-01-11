@@ -9,7 +9,7 @@ This document summarizes the new Web Admin in `spear-next`.
 - Stats cards (total, online, offline, recent 60s)
 - SSE stream `GET /admin/api/nodes/stream`
   - For testing: `?once=true` returns a single snapshot event
-- Theme toggle (Dark/Light) and timezone selection for human-friendly time
+- Theme toggle (Dark/Light)
 - Optional auth via `SMS_WEB_ADMIN_TOKEN` (Bearer token)
 
 ## Configuration
@@ -20,9 +20,9 @@ This document summarizes the new Web Admin in `spear-next`.
 
 ## Implementation Notes
 
-- UI is delivered via embedded static files (`index.html`, `react-app.js`, `style.css`)
-- Uses Ant Design 5 tokens with `ConfigProvider` algorithms to correctly switch themes
-- TopBar shows timezone and a Profile placeholder
+- UI is delivered via embedded static files (`index.html`, `main.js`, `main.css`)
+- UI source lives in `web-admin/` and build output overwrites `assets/admin/*`
+- UI stack: Radix primitives + Tailwind (shadcn/ui style), enterprise console look
 - SSE cancellation uses a `CancellationToken` to allow graceful shutdown
 
 ## Endpoints
@@ -36,6 +36,28 @@ This document summarizes the new Web Admin in `spear-next`.
 
 - `GET /admin/api/tasks` → returns task list with fields:
   - `task_id`, `name`, `description`, `status`, `priority`, `node_uuid`, `endpoint`, `version`
+
+#### Create vs Execute (Two Flows)
+
+Web Admin treats “create task (register)” and “execute task (schedule + run)” as two steps:
+
+- Step 1: create/register
+  - `POST /admin/api/tasks`
+  - `node_uuid` semantics:
+    - pin to node: `node_uuid=<uuid>`
+    - auto-schedule: `node_uuid=""` (empty string)
+- Step 2: trigger execution (optional)
+  - `POST /admin/api/executions`
+  - uses SMS placement to pick candidates, then spillback-invokes Spearlet
+
+Behavior differences:
+
+- Pinned node (`node_uuid` non-empty):
+  - indicates the task is pinned/owned by a specific node (not “last execution placement”)
+  - execution is triggered via `POST /admin/api/executions`; `Run after create` will run on that node
+- Auto-schedule (`node_uuid` empty):
+  - indicates the task is not pinned to a node
+  - execution is triggered via `POST /admin/api/executions`; `Run after create` will use SMS placement to pick a node
 
 ## Secret/Key Management Guidance
 
@@ -55,4 +77,4 @@ If you add an “API key configuration” component to Web Admin, design it as �
 ## Testing
 
 - Integration test for SSE uses `?once=true` to avoid blocking
-- Frontend tests rely on manual verification or E2E in future; backend tests cover list/stats/SSE
+- Frontend includes Playwright UI tests (`make test-ui`)

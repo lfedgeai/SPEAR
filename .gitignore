@@ -1,4 +1,9 @@
 ui-tests/node_modules
 ui-tests/test-results
 ui-tests/data
+data
+logs
 target
+**/node_modules
+**/dist
+.DS_Store

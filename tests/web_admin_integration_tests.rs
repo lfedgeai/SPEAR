@@ -312,3 +312,70 @@ async fn test_admin_node_detail_includes_resource() {
     assert_eq!(body["resource"]["memory_usage_percent"], 34.0);
     assert_eq!(body["resource"]["disk_usage_percent"], 56.0);
 }
+
+#[tokio::test(start_paused = true)]
+async fn test_unhealthy_node_is_marked_offline_not_removed() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut cfg = spear_next::sms::config::SmsConfig::default();
+    cfg.heartbeat_timeout = 1;
+    cfg.cleanup_interval = 1;
+    let service = SmsServiceImpl::new(
+        std::sync::Arc::new(tokio::sync::RwLock::new(
+            spear_next::sms::services::NodeService::new(),
+        )),
+        std::sync::Arc::new(spear_next::sms::services::ResourceService::new()),
+        std::sync::Arc::new(cfg),
+    )
+    .await;
+
+    let handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(NodeServiceServer::new(service.clone()))
+            .add_service(TaskServiceServer::new(service.clone()))
+            .add_service(PlacementServiceServer::new(service))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+
+    let mut node_client = spear_next::proto::sms::node_service_client::NodeServiceClient::connect(
+        format!("http://{}", addr),
+    )
+    .await
+    .unwrap();
+    let now = chrono::Utc::now().timestamp();
+    let uuid = uuid::Uuid::new_v4().to_string();
+    node_client
+        .register_node(RegisterNodeRequest {
+            node: Some(Node {
+                uuid: uuid.clone(),
+                ip_address: "10.0.0.9".into(),
+                port: 8009,
+                status: "online".into(),
+                last_heartbeat: now - 10,
+                registered_at: now,
+                metadata: Default::default(),
+            }),
+        })
+        .await
+        .unwrap();
+
+    tokio::time::advance(std::time::Duration::from_secs(2)).await;
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+
+    let resp = node_client
+        .get_node(spear_next::proto::sms::GetNodeRequest { uuid: uuid.clone() })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(resp.found);
+    assert_eq!(
+        resp.node.as_ref().unwrap().status.to_ascii_lowercase(),
+        "offline"
+    );
+
+    handle.abort();
+}

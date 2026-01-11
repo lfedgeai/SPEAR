@@ -1,17 +1,17 @@
 import { test, expect } from '@playwright/test';
 
-test('modified column shows human-readable date in chosen TZ', async ({ page }) => {
+test('modified column renders a non-empty timestamp', async ({ page }) => {
   await page.goto('/admin');
-  // Set timezone to UTC for deterministic format
-  await page.evaluate(() => { localStorage.setItem('ADMIN_TZ', 'UTC'); });
-  await page.reload();
+  await page.getByTestId('nav-files').click();
 
-  await page.getByRole('menuitem', { name: 'Files' }).click();
-  const fileInput = page.locator('input[type="file"]');
+  const fileInput = page.getByTestId('files-input');
   await fileInput.setInputFiles({ name: 'date.txt', mimeType: 'text/plain', buffer: Buffer.from('date') });
-  await page.getByRole('button', { name: /Upload/i }).click();
-  await expect(page.getByText(/Uploaded:/)).toBeVisible({ timeout: 5000 });
+  await page.getByTestId('files-upload').click();
 
-  const firstModified = await page.locator('.ant-table-row').first().locator('td').nth(3).textContent();
-  expect(firstModified).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+  const row = page.locator('[data-testid^="files-row-"]').filter({ hasText: 'date.txt' }).first();
+  await expect(row).toBeVisible({ timeout: 10_000 });
+
+  const modified = (await row.locator('div.col-span-3').first().textContent()) || '';
+  expect(modified.trim()).not.toBe('');
+  expect(modified.trim()).not.toBe('-');
 });

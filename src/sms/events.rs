@@ -5,7 +5,7 @@ use tokio::sync::broadcast;
 use crate::proto::sms::{Task, TaskEvent, TaskEventKind};
 use crate::sms::services::error::SmsError;
 use crate::storage::kv::{serialization, KvPair, KvStore};
-use tracing::{debug, warn};
+use tracing::debug;
 
 const OUTBOX_PREFIX: &str = "task_events:"; // key: task_events:{node_uuid}:{event_id}
 const COUNTER_PREFIX: &str = "task_events_counter:";
@@ -171,8 +171,8 @@ impl TaskEventBus {
         }
         debug!(node_uuid = %node_uuid, event_id = id, kind = ev.kind, task_id = %ev.task_id, "Published task event to KV and broadcasting");
         let tx = self.get_sender(&node_uuid).await;
-        if let Err(e) = tx.send(ev.clone()) {
-            warn!(error = %e, "Broadcast send failed");
+        if tx.receiver_count() > 0 {
+            let _ = tx.send(ev.clone());
         }
         Ok(ev)
     }

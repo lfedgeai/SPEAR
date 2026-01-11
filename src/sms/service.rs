@@ -124,16 +124,17 @@ impl SmsServiceImpl {
             let mut t = tokio::time::interval(Duration::from_secs(cleanup_config.cleanup_interval));
             loop {
                 t.tick().await;
-                let removed_nodes = {
+                let updated_nodes = {
                     let mut svc = cleanup_node_service.write().await;
-                    svc.cleanup_unhealthy_nodes(cleanup_config.heartbeat_timeout)
+                    svc.mark_unhealthy_nodes_offline(cleanup_config.heartbeat_timeout)
                         .await
                         .unwrap_or_default()
                 };
-                for node_id in removed_nodes {
-                    if let Ok(u) = uuid::Uuid::parse_str(&node_id) {
-                        let _ = cleanup_resource_service.remove_resource(&u).await;
-                    }
+                if !updated_nodes.is_empty() {
+                    tracing::info!(
+                        count = updated_nodes.len(),
+                        "Marked unhealthy nodes offline"
+                    );
                 }
                 let _ = cleanup_resource_service
                     .cleanup_stale_resources(cleanup_config.heartbeat_timeout)

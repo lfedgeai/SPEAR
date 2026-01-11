@@ -318,9 +318,10 @@ impl RegistrationService {
         }
 
         // Update last heartbeat time / 更新最后心跳时间
-        if let RegistrationState::Registered { registered_at, .. } = &*state.read().await {
+        let mut st = state.write().await;
+        if let RegistrationState::Registered { registered_at, .. } = &*st {
             let registered_at = *registered_at;
-            *state.write().await = RegistrationState::Registered {
+            *st = RegistrationState::Registered {
                 registered_at,
                 last_heartbeat: Instant::now(),
             };

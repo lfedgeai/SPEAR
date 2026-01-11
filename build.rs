@@ -43,8 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::env::var("OUT_DIR")?;
     let assets = [
         ("assets/admin/index.html", "index.html"),
-        ("assets/admin/react-app.js", "react-app.js"),
-        ("assets/admin/style.css", "style.css"),
+        ("assets/admin/main.js", "main.js"),
+        ("assets/admin/main.css", "main.css"),
     ];
     for (src, name) in assets.iter() {
         let data = std::fs::read(src)?;

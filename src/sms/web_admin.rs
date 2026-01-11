@@ -211,6 +211,7 @@ pub fn create_admin_router(state: GatewayState) -> Router {
 #[derive(serde::Deserialize)]
 struct CreateExecutionBody {
     task_id: String,
+    node_uuid: Option<String>,
     request_id: Option<String>,
     execution_id: Option<String>,
     execution_mode: Option<String>,
@@ -244,6 +245,63 @@ async fn create_execution(
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let mode = parse_execution_mode(body.execution_mode.as_deref());
     let max_candidates = body.max_candidates.unwrap_or(3);
+
+    if let Some(node_uuid) = body.node_uuid.as_ref().filter(|s| !s.is_empty()) {
+        use crate::proto::sms::GetNodeRequest;
+        let mut node_client = state.node_client.clone();
+        let node_resp = node_client
+            .get_node(GetNodeRequest {
+                uuid: node_uuid.clone(),
+            })
+            .await;
+        let node_resp = match node_resp {
+            Ok(r) => r.into_inner(),
+            Err(e) => return Json(json!({ "success": false, "message": e.to_string() })),
+        };
+        if !node_resp.found {
+            return Json(json!({ "success": false, "message": "node not found" }));
+        }
+        let Some(node) = node_resp.node else {
+            return Json(json!({ "success": false, "message": "node not found" }));
+        };
+
+        let url = format!("http://{}:{}", node.ip_address, node.port);
+        let channel = tonic::transport::Channel::from_shared(url.clone())
+            .ok()
+            .map(|ch| ch.connect_lazy());
+        let Some(channel) = channel else {
+            return Json(json!({ "success": false, "message": "invalid node url" }));
+        };
+        let mut fnc = FunctionServiceClient::new(channel);
+        let req = InvokeFunctionRequest {
+            invocation_type: InvocationType::ExistingTask as i32,
+            task_id: body.task_id.clone(),
+            artifact_spec: Some(ArtifactSpec {
+                artifact_id: format!("sms:{}", body.task_id),
+                artifact_type: "sms".to_string(),
+                location: String::new(),
+                version: String::new(),
+                checksum: String::new(),
+                metadata: std::collections::HashMap::new(),
+            }),
+            execution_mode: mode,
+            wait: mode == ExecutionMode::Sync as i32,
+            execution_id: Some(execution_id.clone()),
+            ..Default::default()
+        };
+        return match fnc.invoke_function(req).await {
+            Ok(resp) => {
+                let inner = resp.into_inner();
+                Json(json!({
+                    "success": inner.success,
+                    "node_uuid": node.uuid,
+                    "execution_id": inner.execution_id,
+                    "message": inner.message,
+                }))
+            }
+            Err(e) => Json(json!({ "success": false, "message": e.to_string() })),
+        };
+    }
 
     let mut placement = state.placement_client.clone();
     // Step 1: ask SMS to return an ordered list of candidate nodes.
@@ -883,23 +941,23 @@ async fn admin_static(headers: HeaderMap, Path(path): Path<String>) -> impl Into
         .unwrap_or("")
         .to_lowercase();
     let (bytes, mime, content_encoding) = match (path, enc.as_str()) {
-        ("react-app.js", enc) if enc.contains("br") => (
-            include_bytes!(concat!(env!("OUT_DIR"), "/react-app.js.br")).as_ref(),
+        ("main.js", enc) if enc.contains("br") => (
+            include_bytes!(concat!(env!("OUT_DIR"), "/main.js.br")).as_ref(),
             "application/javascript",
             Some("br"),
         ),
-        ("react-app.js", enc) if enc.contains("gzip") => (
-            include_bytes!(concat!(env!("OUT_DIR"), "/react-app.js.gz")).as_ref(),
+        ("main.js", enc) if enc.contains("gzip") => (
+            include_bytes!(concat!(env!("OUT_DIR"), "/main.js.gz")).as_ref(),
             "application/javascript",
             Some("gzip"),
         ),
-        ("style.css", enc) if enc.contains("br") => (
-            include_bytes!(concat!(env!("OUT_DIR"), "/style.css.br")).as_ref(),
+        ("main.css", enc) if enc.contains("br") => (
+            include_bytes!(concat!(env!("OUT_DIR"), "/main.css.br")).as_ref(),
             "text/css",
             Some("br"),
         ),
-        ("style.css", enc) if enc.contains("gzip") => (
-            include_bytes!(concat!(env!("OUT_DIR"), "/style.css.gz")).as_ref(),
+        ("main.css", enc) if enc.contains("gzip") => (
+            include_bytes!(concat!(env!("OUT_DIR"), "/main.css.gz")).as_ref(),
             "text/css",
             Some("gzip"),
         ),
@@ -913,24 +971,19 @@ async fn admin_static(headers: HeaderMap, Path(path): Path<String>) -> impl Into
             "text/html",
             Some("gzip"),
         ),
-        ("react-app.js", _) => (
-            include_bytes!("../../assets/admin/react-app.js").as_ref(),
+        ("main.js", _) => (
+            include_bytes!("../../assets/admin/main.js").as_ref(),
             "application/javascript",
             None,
         ),
-        ("style.css", _) => (
-            include_bytes!("../../assets/admin/style.css").as_ref(),
+        ("main.css", _) => (
+            include_bytes!("../../assets/admin/main.css").as_ref(),
             "text/css",
             None,
         ),
         ("index.html", _) => (
             include_bytes!("../../assets/admin/index.html").as_ref(),
             "text/html",
-            None,
-        ),
-        ("app.js", _) => (
-            include_bytes!("../../assets/admin/app.js").as_ref(),
-            "application/javascript",
             None,
         ),
         _ => return axum::http::StatusCode::NOT_FOUND.into_response(),
@@ -940,7 +993,7 @@ async fn admin_static(headers: HeaderMap, Path(path): Path<String>) -> impl Into
         .insert(CONTENT_TYPE, mime.parse().unwrap());
     // Reduce caching to ensure UI updates are visible / 减少缓存以确保前端更新可见
     let cache = match path {
-        "index.html" | "react-app.js" | "style.css" => "no-cache, no-store, must-revalidate",
+        "index.html" | "main.js" | "main.css" => "no-cache, no-store, must-revalidate",
         _ => "public, max-age=31536000",
     };
     resp.headers_mut()

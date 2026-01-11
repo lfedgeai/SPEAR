@@ -13,6 +13,10 @@ COVERAGE_DIR := $(TARGET_DIR)/coverage
 CARGO := cargo
 RUSTC_VERSION := $(shell rustc --version 2>/dev/null || echo "unknown")
 
+WEB_ADMIN_DIR := web-admin
+
+CLIPPY_DENY_WARNINGS ?= 0
+
 NOCAPTURE ?= 1
 
 # Colors for output / 输出颜色
@@ -22,7 +26,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build test clean coverage coverage-quick install-deps format lint check doc help e2e test-mic-device mac-build mac-build-release
+.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean coverage coverage-quick coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-linux mac-build mac-build-release web-admin-build web-admin-lint web-admin-test samples
 .DEFAULT_GOAL := build
 
 # Default target / 默认目标
@@ -47,6 +51,9 @@ help:
 	@echo "  help            - Show this help message / 显示此帮助信息"
 	@echo "  e2e             - Run Docker-based E2E tests / 运行基于Docker的端到端测试"
 	@echo "  samples         - Build WASM samples / 构建WASM示例"
+	@echo "  web-admin-build - Build Web Admin assets / 构建Web Admin静态资源"
+	@echo "  web-admin-test  - Run Web Admin tests / 运行Web Admin测试"
+	@echo "  web-admin-lint  - Lint Web Admin / Web Admin代码检查"
 	@echo ""
 	@echo -e "$(YELLOW)Examples / 示例:$(NC)"
 	@echo "  make build                    # Build with default features / 使用默认特性构建"
@@ -74,7 +81,7 @@ install-deps:
 	@echo -e "$(GREEN)✅ Development dependencies installation completed / 开发依赖安装完成$(NC)"
 
 # Build the project / 构建项目
-build:
+build: web-admin-build
 	@echo -e "$(BLUE)🔨 Building $(PROJECT_NAME)... / 构建$(PROJECT_NAME)...$(NC)"
 	@if [ -n "$(FEATURES)" ]; then \
 		echo -e "$(YELLOW)Building with features: $(FEATURES) / 使用特性构建: $(FEATURES)$(NC)"; \
@@ -85,7 +92,7 @@ build:
 	@echo -e "$(GREEN)✅ Build completed / 构建完成$(NC)"
 
 # Build release version / 构建发布版本
-build-release:
+build-release: web-admin-build
 	@echo -e "$(BLUE)🚀 Building release version... / 构建发布版本...$(NC)"
 	@if [ -n "$(FEATURES)" ]; then \
 		$(CARGO) build --release --features $(FEATURES); \
@@ -106,8 +113,47 @@ test:
 	else \
 		$(CARGO) test $$NOCAPTURE_ARGS; \
 	fi
-	@$(MAKE) test-ui || echo -e "$(YELLOW)⚠️ UI tests skipped (Node/Playwright not available) / UI测试已跳过（未安装Node/Playwright）$(NC)"
+	@$(MAKE) web-admin-test
 	@echo -e "$(GREEN)✅ Tests completed / 测试完成$(NC)"
+
+.PHONY: web-admin-build web-admin-lint web-admin-test
+web-admin-build:
+	@echo -e "$(BLUE)🔧 Building Web Admin assets... / 构建Web Admin静态资源...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		if [ -f "assets/admin/index.html" ] && [ -f "assets/admin/main.js" ] && [ -f "assets/admin/main.css" ]; then \
+			echo -e "$(YELLOW)⚠️ npm not found, using existing assets/admin/* / 未找到npm，使用已有assets/admin/*$(NC)"; \
+			exit 0; \
+		else \
+			echo -e "$(RED)❌ npm not found and assets/admin/* missing. Install npm or run in an environment with Node. / 未找到npm且assets/admin/*不存在，请安装Node/npm$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@cd $(WEB_ADMIN_DIR) && \
+		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
+		npm run build
+	@echo -e "$(GREEN)✅ Web Admin assets built / Web Admin静态资源构建完成$(NC)"
+
+web-admin-lint:
+	@echo -e "$(BLUE)🔍 Linting Web Admin... / Web Admin代码检查...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)⚠️ npm not found, skipping Web Admin lint / 未找到npm，跳过Web Admin代码检查$(NC)"; \
+		exit 0; \
+	fi
+	@cd $(WEB_ADMIN_DIR) && \
+		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
+		npm run lint
+	@echo -e "$(GREEN)✅ Web Admin lint completed / Web Admin代码检查完成$(NC)"
+
+web-admin-test:
+	@echo -e "$(BLUE)🧪 Running Web Admin tests... / 运行Web Admin测试...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)⚠️ npm not found, skipping Web Admin tests / 未找到npm，跳过Web Admin测试$(NC)"; \
+		exit 0; \
+	fi
+	@cd $(WEB_ADMIN_DIR) && \
+		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
+		npm test
+	@echo -e "$(GREEN)✅ Web Admin tests completed / Web Admin测试完成$(NC)"
 
 test-mic-device:
 	@echo -e "$(BLUE)🧪 Running mic-device capture test... / 运行mic-device采集测试...$(NC)"
@@ -127,6 +173,32 @@ test-ui:
 		echo -e "$(YELLOW)⚠️ npm not found, skipping UI tests / 未找到npm，跳过UI测试$(NC)"; \
 		exit 0; \
 	fi
+	@{ \
+		PID=""; \
+		if command -v pgrep >/dev/null 2>&1; then \
+			PID=$$(pgrep -f "target/.*/sms .*--web-admin-addr 127.0.0.1:8081" || true); \
+		fi; \
+		if [ -n "$$PID" ]; then \
+			echo -e "$(YELLOW)⚠️ stopping existing sms web-admin server (pid=$$PID) / 停止已有sms web-admin进程$(NC)"; \
+			kill $$PID >/dev/null 2>&1 || true; \
+			sleep 1; \
+		fi; \
+		if command -v lsof >/dev/null 2>&1; then \
+			PID=$$(lsof -ti tcp:8081 2>/dev/null || true); \
+			if [ -n "$$PID" ]; then \
+				echo -e "$(YELLOW)⚠️ stopping process on :8081 (pid=$$PID) / 停止占用8081端口进程$(NC)"; \
+				kill $$PID >/dev/null 2>&1 || true; \
+				sleep 1; \
+			fi; \
+			PID=$$(lsof -ti tcp:8080 2>/dev/null || true); \
+			if [ -n "$$PID" ]; then \
+				echo -e "$(YELLOW)⚠️ stopping process on :8080 (pid=$$PID) / 停止占用8080端口进程$(NC)"; \
+				kill $$PID >/dev/null 2>&1 || true; \
+				sleep 1; \
+			fi; \
+		fi; \
+	}
+	@$(MAKE) web-admin-build
 	@cd ui-tests && \
 		npm install --silent && \
 		npm run install:pw --silent || true && \
@@ -202,7 +274,12 @@ format-check:
 # Run linter / 运行代码检查
 lint:
 	@echo -e "$(BLUE)🔍 Running linter... / 运行代码检查...$(NC)"
-	$(CARGO) clippy -- -D warnings
+	@if [ "$(CLIPPY_DENY_WARNINGS)" = "1" ]; then \
+		$(CARGO) clippy --all-targets -- -D warnings; \
+	else \
+		$(CARGO) clippy --all-targets; \
+	fi
+	@$(MAKE) web-admin-lint
 	@echo -e "$(GREEN)✅ Linting completed / 代码检查完成$(NC)"
 
 # Run cargo check / 运行cargo检查
@@ -273,7 +350,11 @@ outdated: install-deps
 	fi
 
 # Full CI pipeline / 完整CI流水线
-ci: format-check lint check test coverage-quick
+ci: format-check
+	@$(MAKE) lint CLIPPY_DENY_WARNINGS=1
+	@$(MAKE) check
+	@$(MAKE) test
+	@$(MAKE) coverage-quick
 	@echo -e "$(GREEN)🎉 CI pipeline completed successfully! / CI流水线成功完成！$(NC)"
 
 # Development workflow / 开发工作流

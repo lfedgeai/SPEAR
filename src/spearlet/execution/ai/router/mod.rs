@@ -36,9 +36,44 @@ impl Router {
         }
 
         if candidates.is_empty() {
+            let mut supporting: Vec<String> = Vec::new();
+            for inst in self.registry.instances().iter() {
+                if !inst.capabilities.supports_operation(&req.operation) {
+                    continue;
+                }
+
+                let mut missing_features: Vec<&str> = Vec::new();
+                for f in req.requirements.required_features.iter() {
+                    if !inst.capabilities.has_feature(f) {
+                        missing_features.push(f);
+                    }
+                }
+                let mut missing_transports: Vec<&str> = Vec::new();
+                for t in req.requirements.required_transports.iter() {
+                    if !inst.capabilities.transports.iter().any(|x| x == t) {
+                        missing_transports.push(t);
+                    }
+                }
+
+                supporting.push(format!(
+                    "{}(missing_features={:?}, missing_transports={:?}, features={:?}, transports={:?})",
+                    inst.name, missing_features, missing_transports, inst.capabilities.features, inst.capabilities.transports
+                ));
+            }
+
+            let msg = format!(
+                "no candidate backend: op={:?} required_features={:?} required_transports={:?} routing_backend={:?} allowlist={:?} denylist={:?} backends={:?}",
+                req.operation,
+                req.requirements.required_features,
+                req.requirements.required_transports,
+                req.routing.backend,
+                req.routing.allowlist,
+                req.routing.denylist,
+                supporting,
+            );
             return Err(CanonicalError {
                 code: "no_candidate_backend".to_string(),
-                message: "no candidate backend".to_string(),
+                message: msg,
                 retryable: false,
                 operation: Some(req.operation.clone()),
             });

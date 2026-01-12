@@ -36,7 +36,10 @@ fn test_openai_live_chat_completion() {
             model,
             messages: vec![ChatMessage {
                 role: "user".to_string(),
-                content: "Reply with exactly: pong".to_string(),
+                content: serde_json::Value::String("Reply with exactly: pong".to_string()),
+                tool_call_id: None,
+                tool_calls: None,
+                name: None,
             }],
             tools: vec![],
             params: {

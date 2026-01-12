@@ -23,6 +23,10 @@ impl BackendRegistry {
         Self { instances }
     }
 
+    pub fn instances(&self) -> &[BackendInstance] {
+        &self.instances
+    }
+
     pub fn candidates<'a>(&'a self, req: &CanonicalRequestEnvelope) -> Vec<&'a BackendInstance> {
         self.instances
             .iter()

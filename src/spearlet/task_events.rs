@@ -150,11 +150,7 @@ impl TaskEventSubscriber {
         }
     }
 
-    fn materialize_task(
-        mgr: &Arc<TaskExecutionManager>,
-        task_id: String,
-        task: Option<Task>,
-    ) {
+    fn materialize_task(mgr: &Arc<TaskExecutionManager>, task_id: String, task: Option<Task>) {
         if let Some(t) = task {
             let mgr_cloned = mgr.clone();
             let t_clone = t.clone();
@@ -225,8 +221,7 @@ impl TaskEventSubscriber {
 mod tests {
     use super::*;
     use crate::proto::sms::{
-        Task, TaskEvent, TaskEventKind, TaskExecutable, TaskExecutionKind, TaskPriority,
-        TaskStatus,
+        Task, TaskEvent, TaskEventKind, TaskExecutable, TaskExecutionKind, TaskPriority, TaskStatus,
     };
     use crate::spearlet::execution::instance;
     use crate::spearlet::execution::runtime::{Runtime, RuntimeCapabilities, RuntimeType};

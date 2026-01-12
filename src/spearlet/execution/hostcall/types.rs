@@ -2,6 +2,8 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 
+use crate::spearlet::execution::ai::ir::ChatMessage;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FdKind {
     ChatSession,
@@ -88,7 +90,7 @@ impl Default for PollEvents {
 
 #[derive(Clone, Debug, Default)]
 pub struct ChatSessionState {
-    pub messages: Vec<(String, String)>,
+    pub messages: Vec<ChatMessage>,
     pub tools: Vec<(i32, String)>,
     pub params: HashMap<String, Value>,
 }

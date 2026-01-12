@@ -58,9 +58,16 @@ impl OpenAIChatCompletionBackendAdapter {
             });
         }
 
+        let messages_val = serde_json::to_value(&p.messages).map_err(|e| CanonicalError {
+            code: "serialization".to_string(),
+            message: e.to_string(),
+            retryable: false,
+            operation: Some(req.operation.clone()),
+        })?;
+
         let mut body = json!({
             "model": p.model,
-            "messages": p.messages.iter().map(|m| json!({"role": m.role, "content": m.content})).collect::<Vec<_>>(),
+            "messages": messages_val,
         });
 
         if !p.tools.is_empty() {
@@ -74,6 +81,12 @@ impl OpenAIChatCompletionBackendAdapter {
                     || k == "timeout_ms"
                     || k == "messages"
                     || k == "tools"
+                    || k == "tool_arena_ptr"
+                    || k == "tool_arena_len"
+                    || k == "max_tool_output_bytes"
+                    || k == "max_total_tool_calls"
+                    || k == "max_tool_calls"
+                    || k == "max_iterations"
                 {
                     continue;
                 }
@@ -256,7 +269,10 @@ mod tests {
                 model: "gpt-test".to_string(),
                 messages: vec![ChatMessage {
                     role: "user".to_string(),
-                    content: "hi".to_string(),
+                    content: Value::String("hi".to_string()),
+                    tool_call_id: None,
+                    tool_calls: None,
+                    name: None,
                 }],
                 tools: vec![],
                 params: HashMap::new(),
@@ -291,6 +307,10 @@ mod tests {
             "tools".to_string(),
             json!([{ "type": "function", "function": {"name":"x"}}]),
         );
+        params.insert("tool_arena_ptr".to_string(), json!(1234));
+        params.insert("tool_arena_len".to_string(), json!(5678));
+        params.insert("max_iterations".to_string(), json!(9));
+        params.insert("max_total_tool_calls".to_string(), json!(99));
 
         let req = CanonicalRequestEnvelope {
             version: 1,
@@ -304,7 +324,10 @@ mod tests {
                 model: "gpt-test".to_string(),
                 messages: vec![ChatMessage {
                     role: "user".to_string(),
-                    content: "original".to_string(),
+                    content: Value::String("original".to_string()),
+                    tool_call_id: None,
+                    tool_calls: None,
+                    name: None,
                 }],
                 tools: vec![json!({"type":"function","function":{"name":"y"}})],
                 params,
@@ -318,5 +341,9 @@ mod tests {
             Value::String("original".to_string())
         );
         assert_eq!(body.get("tools").unwrap()[0]["function"]["name"], "y");
+        assert!(body.get("tool_arena_ptr").is_none());
+        assert!(body.get("tool_arena_len").is_none());
+        assert!(body.get("max_iterations").is_none());
+        assert!(body.get("max_total_tool_calls").is_none());
     }
 }

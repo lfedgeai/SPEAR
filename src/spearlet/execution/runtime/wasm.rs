@@ -321,7 +321,7 @@ impl WasmRuntime {
         {
             use std::collections::HashMap;
             use wasmedge_sdk::Store;
-            let c = ConfigBuilder::new(CommonConfigOptions::default())
+            let c = ConfigBuilder::new(CommonConfigOptions::default().threads(true))
                 .build()
                 .map_err(|e| ExecutionError::RuntimeError {
                     message: format!("wasmedge config error: {}", e),

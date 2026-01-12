@@ -3370,6 +3370,7 @@ dependencies = [
  "url",
  "uuid",
  "wasmedge-sdk",
+ "wasmedge-sys",
 ]
 
 [[package]]

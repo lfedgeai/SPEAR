@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::spearlet::execution::ai::ir::{
-    CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload,
-    Requirements, RoutingHints,
+    CanonicalRequestEnvelope, ChatCompletionsPayload, Operation, Payload, Requirements,
+    RoutingHints,
 };
 use crate::spearlet::execution::host_api::ChatSessionSnapshot;
 
@@ -41,14 +41,7 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
         .filter_map(|(_, json)| serde_json::from_str::<Value>(json).ok())
         .collect::<Vec<_>>();
 
-    let messages = snapshot
-        .messages
-        .iter()
-        .map(|(role, content)| ChatMessage {
-            role: role.clone(),
-            content: content.clone(),
-        })
-        .collect::<Vec<_>>();
+    let messages = snapshot.messages.clone();
 
     let mut routing = RoutingHints::default();
     if let Some(b) = snapshot
@@ -84,6 +77,7 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spearlet::execution::ai::ir::ChatMessage;
 
     #[test]
     fn test_normalize_minimal() {
@@ -92,7 +86,13 @@ mod tests {
 
         let snapshot = ChatSessionSnapshot {
             fd: 1000,
-            messages: vec![("user".to_string(), "hi".to_string())],
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: Value::String("hi".to_string()),
+                tool_call_id: None,
+                tool_calls: None,
+                name: None,
+            }],
             tools: vec![],
             params,
         };

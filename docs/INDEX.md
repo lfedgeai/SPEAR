@@ -43,6 +43,8 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Spear Hostcall Chat Completion | [api/spear-hostcall/chat-completion-en.md](./api/spear-hostcall/chat-completion-en.md) | [api/spear-hostcall/chat-completion-zh.md](./api/spear-hostcall/chat-completion-zh.md) | WASM hostcall 的 Chat Completion 设计 |
+| CChat Function Call Design | [cchat-function-call-design-en.md](./cchat-function-call-design-en.md) | [cchat-function-call-design-zh.md](./cchat-function-call-design-zh.md) | Chat completion 的 Tool Calling（Function Call）闭环设计 |
+| CChat Default Model Selection | - | [implementation/cchat-default-model-selection-zh.md](./implementation/cchat-default-model-selection-zh.md) | CChat 默认模型选择策略设计 |
 | Mic Device Capture (mic-device feature) | [mic-device-feature-en.md](./mic-device-feature-en.md) | [mic-device-feature-zh.md](./mic-device-feature-zh.md) | mic_fd 使用本机麦克风采集的可选编译特性 |
 
 ### 🌐 HTTP Layer / HTTP层

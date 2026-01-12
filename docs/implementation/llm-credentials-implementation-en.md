@@ -40,6 +40,7 @@ kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
 credential_ref = "openai_chat"
 ops = ["chat_completions"]
+features = ["supports_tools", "supports_json_schema"]
 transports = ["http"]
 weight = 100
 priority = 0

@@ -181,30 +181,7 @@ fn debug_call_wasm_tool_by_offset(instance: &mut Instance, fn_offset: i32) {
         return;
     }
 
-    let mut executor = match Executor::create(None, None) {
-        Ok(e) => e,
-        Err(e) => {
-            debug!(fn_offset, table_name, err = %e, "cchat_write_fn: create executor failed");
-            return;
-        }
-    };
-
-    let args = [
-        WasmValue::from_i32(0),
-        WasmValue::from_i32(0),
-        WasmValue::from_i32(0),
-        WasmValue::from_i32(0),
-    ];
-
-    match executor.call_func(&mut func, args) {
-        Ok(returns) => {
-            let rc = returns.get(0).map(|v| v.to_i32());
-            debug!(fn_offset, table_name, rc = ?rc, "cchat_write_fn: tool called");
-        }
-        Err(e) => {
-            debug!(fn_offset, table_name, err = %e, "cchat_write_fn: tool call failed");
-        }
-    }
+    let _ = func;
 }
 
 pub fn cchat_create(
@@ -326,7 +303,7 @@ pub fn cchat_ctl(
 
 pub fn cchat_send(
     host_data: &mut DefaultHostApi,
-    _instance: &mut Instance,
+    instance: &mut Instance,
     _frame: &mut CallingFrame,
     input: Vec<WasmValue>,
 ) -> Result<Vec<WasmValue>, CoreError> {
@@ -336,10 +313,207 @@ pub fn cchat_send(
 
     let fd = get_i32_arg(&input, 0).unwrap_or(SPEAR_ERR_INVALID_FD);
     let flags = get_i32_arg(&input, 1).unwrap_or(0);
-    match host_data.cchat_send(fd, flags) {
-        Ok(resp_fd) => Ok(vec![WasmValue::from_i32(resp_fd)]),
-        Err(e) => Ok(vec![WasmValue::from_i32(e)]),
+
+    const AUTO_TOOL_CALL: i32 = 2;
+    if (flags & AUTO_TOOL_CALL) == 0 {
+        match host_data.cchat_send(fd, flags) {
+            Ok(resp_fd) => Ok(vec![WasmValue::from_i32(resp_fd)]),
+            Err(e) => Ok(vec![WasmValue::from_i32(e)]),
+        }
+    } else {
+        let snapshot = match host_data.cchat_snapshot(fd) {
+            Ok(s) => s,
+            Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+        };
+        let arena_ptr = snapshot
+            .params
+            .get("tool_arena_ptr")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let arena_len = snapshot
+            .params
+            .get("tool_arena_len")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+
+        let max_tool_output_bytes = snapshot
+            .params
+            .get("max_tool_output_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(64 * 1024)
+            .min(1024 * 1024) as usize;
+
+        let mut tool_exec = |fn_offset: i32, args_json: &str| -> Result<String, i32> {
+            call_wasm_tool_with_arena(
+                instance,
+                fn_offset,
+                args_json,
+                arena_ptr,
+                arena_len,
+                max_tool_output_bytes,
+            )
+        };
+
+        match host_data.cchat_send_with_tools(fd, flags, &mut tool_exec) {
+            Ok(resp_fd) => Ok(vec![WasmValue::from_i32(resp_fd)]),
+            Err(e) => Ok(vec![WasmValue::from_i32(e)]),
+        }
     }
+}
+
+fn call_wasm_tool_with_arena(
+    instance: &mut Instance,
+    fn_offset: i32,
+    args_json: &str,
+    arena_ptr: i32,
+    arena_len: i32,
+    max_tool_output_bytes: usize,
+) -> Result<String, i32> {
+    if arena_ptr <= 0 || arena_len <= 0 {
+        return Err(SPEAR_ERR_INVALID_PTR);
+    }
+    if fn_offset < 0 {
+        return Err(SPEAR_ERR_INVALID_PTR);
+    }
+
+    let args_bytes = args_json.as_bytes();
+    let args_len = args_bytes.len();
+
+    let base = arena_ptr as i64;
+    let arena_len_i64 = arena_len as i64;
+    let args_ptr = base;
+    let out_ptr = args_ptr + align_up(args_len as i64 + 1, 8);
+    let mut out_cap = (arena_len_i64 - (out_ptr - base) - 8).max(0) as usize;
+    out_cap = out_cap.min(max_tool_output_bytes);
+    let out_len_ptr = out_ptr + align_up(out_cap as i64, 8);
+
+    if out_cap == 0 {
+        return Err(SPEAR_ERR_BUFFER_TOO_SMALL);
+    }
+
+    if out_len_ptr + 4 > base + arena_len_i64 {
+        return Err(SPEAR_ERR_BUFFER_TOO_SMALL);
+    }
+
+    mem_write(instance, args_ptr as i32, args_bytes)?;
+    mem_write(instance, (args_ptr as i32) + args_len as i32, &[0])?;
+
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        if attempt > 2 {
+            return Err(SPEAR_ERR_INTERNAL);
+        }
+
+        mem_write_u32(instance, out_len_ptr as i32, out_cap as u32)?;
+
+        let rc = call_wasm_tool_by_offset(
+            instance,
+            fn_offset,
+            args_ptr as i32,
+            args_len as i32,
+            out_ptr as i32,
+            out_len_ptr as i32,
+        )?;
+
+        if rc == 0 {
+            let wrote = mem_read_u32(instance, out_len_ptr as i32)? as usize;
+            if wrote > out_cap {
+                return Err(SPEAR_ERR_INTERNAL);
+            }
+            let out = mem_read(instance, out_ptr as i32, wrote as i32)?;
+            let s = String::from_utf8(out).map_err(|_| SPEAR_ERR_INTERNAL)?;
+            return Ok(s);
+        }
+
+        if rc == SPEAR_ERR_BUFFER_TOO_SMALL {
+            let need = mem_read_u32(instance, out_len_ptr as i32)? as usize;
+            if need > max_tool_output_bytes {
+                return Err(SPEAR_ERR_BUFFER_TOO_SMALL);
+            }
+            let max_fit = (base + arena_len_i64 - out_ptr - 8).max(0) as usize;
+            if need > max_fit {
+                return Err(SPEAR_ERR_BUFFER_TOO_SMALL);
+            }
+            out_cap = need;
+            continue;
+        }
+
+        return Err(rc);
+    }
+}
+
+fn call_wasm_tool_by_offset(
+    instance: &Instance,
+    fn_offset: i32,
+    args_ptr: i32,
+    args_len: i32,
+    out_ptr: i32,
+    out_len_ptr: i32,
+) -> Result<i32, i32> {
+    let Some(table_name) = choose_func_table_name(instance) else {
+        return Err(SPEAR_ERR_INTERNAL);
+    };
+
+    let table = instance
+        .get_table(&table_name)
+        .map_err(|_| SPEAR_ERR_INTERNAL)?;
+    let func_ref = table
+        .get_data(fn_offset as u32)
+        .map_err(|_| SPEAR_ERR_INTERNAL)?;
+    if func_ref.is_null_ref() {
+        return Err(SPEAR_ERR_INTERNAL);
+    }
+    if func_ref.ty() != ValType::FuncRef {
+        return Err(SPEAR_ERR_INTERNAL);
+    }
+
+    let func_ref_ctx = unsafe { ffi::WasmEdge_ValueGetFuncRef(func_ref.as_raw()) };
+    if func_ref_ctx.is_null() {
+        return Err(SPEAR_ERR_INTERNAL);
+    }
+
+    let mut func =
+        std::mem::ManuallyDrop::new(unsafe { Function::from_raw(func_ref_ctx as *mut _) });
+
+    let ty = func.ty();
+    let Some(ty) = ty else {
+        return Err(SPEAR_ERR_INTERNAL);
+    };
+    let params = ty.args();
+    let rets = ty.returns();
+    if params.len() != 4
+        || rets.len() != 1
+        || params[0] != ValType::I32
+        || params[1] != ValType::I32
+        || params[2] != ValType::I32
+        || params[3] != ValType::I32
+        || rets[0] != ValType::I32
+    {
+        return Err(SPEAR_ERR_INTERNAL);
+    }
+
+    let mut executor = Executor::create(None, None).map_err(|_| SPEAR_ERR_INTERNAL)?;
+    let args = [
+        WasmValue::from_i32(args_ptr),
+        WasmValue::from_i32(args_len),
+        WasmValue::from_i32(out_ptr),
+        WasmValue::from_i32(out_len_ptr),
+    ];
+    let returns = executor
+        .call_func(&mut func, args)
+        .map_err(|_| SPEAR_ERR_INTERNAL)?;
+    Ok(returns
+        .get(0)
+        .map(|v| v.to_i32())
+        .unwrap_or(SPEAR_ERR_INTERNAL))
+}
+
+fn align_up(v: i64, align: i64) -> i64 {
+    if align <= 1 {
+        return v;
+    }
+    (v + align - 1) & !(align - 1)
 }
 
 pub fn cchat_recv(

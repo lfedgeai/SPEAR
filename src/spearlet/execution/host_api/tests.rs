@@ -22,7 +22,10 @@ fn chat_req() -> CanonicalRequestEnvelope {
             model: "gpt-test".to_string(),
             messages: vec![ChatMessage {
                 role: "user".to_string(),
-                content: "hi".to_string(),
+                content: serde_json::Value::String("hi".to_string()),
+                tool_call_id: None,
+                tool_calls: None,
+                name: None,
             }],
             tools: vec![],
             params: HashMap::new(),
@@ -60,14 +63,55 @@ fn test_cchat_send_pipeline_stub_backend() {
     let fd = api.cchat_create();
     assert!(fd > 0);
     assert_eq!(
-        api.cchat_write_msg(fd, "user".to_string(), "hello".to_string()),
+        api.cchat_write_msg(fd, "user".to_string(), "sum 7 35".to_string()),
         0
     );
     let resp_fd = api.cchat_send(fd, 0).unwrap();
     let bytes = api.cchat_recv(resp_fd).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let content = v["choices"][0]["message"]["content"].as_str().unwrap_or("");
-    assert!(content.contains("hello"));
+    assert!(content.contains("sum 7 35"));
+}
+
+#[test]
+fn test_cchat_send_auto_tool_call_loop_stub_backend() {
+    let api = DefaultHostApi::new(RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: None,
+        resource_pool: ResourcePoolConfig::default(),
+    });
+
+    let fd = api.cchat_create();
+    assert!(fd > 0);
+    assert_eq!(
+        api.cchat_write_msg(fd, "user".to_string(), "sum 7 35".to_string()),
+        0
+    );
+
+    let tool_schema = serde_json::json!({
+        "type": "function",
+        "function": {"name": "sum", "parameters": {"type": "object"}}
+    })
+    .to_string();
+
+    assert_eq!(api.cchat_write_fn(fd, 123, tool_schema), 0);
+    let mut called: u32 = 0;
+    let resp_fd = api
+        .cchat_send_with_tools(fd, 2, |off, args| {
+            called += 1;
+            assert_eq!(off, 123);
+            assert_eq!(args, r#"{"a":7,"b":35}"#);
+            Ok("tool_ok".to_string())
+        })
+        .unwrap();
+    assert_eq!(called, 1);
+
+    let bytes = api.cchat_recv(resp_fd).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let content = v["choices"][0]["message"]["content"].as_str().unwrap_or("");
+    assert!(content.contains("after tool"));
 }
 
 #[test]

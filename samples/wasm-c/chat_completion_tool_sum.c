@@ -122,3 +122,4 @@ int main() {
     sp_cchat_close(fd);
     return rc == 0 ? 0 : 1;
 }
+

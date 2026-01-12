@@ -65,7 +65,7 @@
 
 ### 2.2 后端接口（当前 /admin/api）
 
-后端路由在 [src/sms/web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs)。
+后端路由在 [src/sms/web_admin.rs](../src/sms/web_admin.rs)。
 
 #### 2.2.1 认证
 
@@ -609,8 +609,8 @@ P2（可观测）：
 
 ## 7. 附录：代码入口
 
-- 后端 Router：`create_admin_router`（[web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs#L128-L209)）
-- Nodes API：`list_nodes`/`get_node_detail`（[web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs#L398-L473)）
-- Stats API：`get_stats`（[web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs#L839-L870)）
-- 前端源码入口：`web-admin/src/main.tsx`（[main.tsx](file:///Users/bytedance/Documents/GitHub/bge/spear/web-admin/src/main.tsx)）
+- 后端 Router：`create_admin_router`（[web_admin.rs](../src/sms/web_admin.rs#L128-L209)）
+- Nodes API：`list_nodes`/`get_node_detail`（[web_admin.rs](../src/sms/web_admin.rs#L398-L473)）
+- Stats API：`get_stats`（[web_admin.rs](../src/sms/web_admin.rs#L839-L870)）
+- 前端源码入口：`web-admin/src/main.tsx`（[main.tsx](../web-admin/src/main.tsx)）
 - 前端构建产物：`assets/admin/index.html`、`assets/admin/main.js`、`assets/admin/main.css`

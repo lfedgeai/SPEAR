@@ -13,8 +13,8 @@ The current gap is that the host does not automatically execute tool/function ca
 
 Related legacy notes:
 
-- The hostcall documentation already plans an “auto function call” flag (bit 1) for `cchat_send`. See [chat-completion-en.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/chat-completion-en.md).
-- `cchat_write_fn` persists `fn_offset` and `fn_json` (tool schema) in the session. Entry point: [wasm_hostcalls.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm_hostcalls.rs).
+- The hostcall documentation already plans an “auto function call” flag (bit 1) for `cchat_send`. See [chat-completion-en.md](./api/spear-hostcall/chat-completion-en.md).
+- `cchat_write_fn` persists `fn_offset` and `fn_json` (tool schema) in the session. Entry point: [wasm_hostcalls.rs](../src/spearlet/execution/runtime/wasm_hostcalls.rs).
 
 This design keeps compatibility with existing hostcalls and aligns with OpenAI-compatible best practices.
 
@@ -61,7 +61,7 @@ WASM registers a tool with `cchat_write_fn(fd, fn_offset, fn_json)`.
 
 ### Chat completion invocation
 
-`cchat_send` assembles `messages` and `tools` and calls the AI backend (e.g., OpenAI chat/completions). The backend adapter returns the raw JSON payload in a canonical envelope. See [openai_chat_completion.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/ai/backends/openai_chat_completion.rs).
+`cchat_send` assembles `messages` and `tools` and calls the AI backend (e.g., OpenAI chat/completions). The backend adapter returns the raw JSON payload in a canonical envelope. See [openai_chat_completion.rs](../src/spearlet/execution/ai/backends/openai_chat_completion.rs).
 
 ### Missing loop
 

@@ -11,8 +11,8 @@ Spear 的 WASM hostcall 提供了 Chat Completion 的会话式 API，其中 `cch
 
 相关现状与约定：
 
-- Hostcall 文档描述了 `cchat_write_fn`、`cchat_send` 的 flags 里包含「自动 function call」的规划（bit 1）。见 [chat-completion-zh.md](file:///Users/bytedance/Documents/GitHub/bge/spear/docs/api/spear-hostcall/chat-completion-zh.md)。
-- `cchat_write_fn` 在宿主侧会持久化 `fn_offset` 与 `fn_json`（tool schema）。代码入口见 [wasm_hostcalls.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm_hostcalls.rs)。
+- Hostcall 文档描述了 `cchat_write_fn`、`cchat_send` 的 flags 里包含「自动 function call」的规划（bit 1）。见 [chat-completion-zh.md](./api/spear-hostcall/chat-completion-zh.md)。
+- `cchat_write_fn` 在宿主侧会持久化 `fn_offset` 与 `fn_json`（tool schema）。代码入口见 [wasm_hostcalls.rs](../src/spearlet/execution/runtime/wasm_hostcalls.rs)。
 
 本设计基于现有 hostcall/legacy 约定，并对齐 OpenAI 兼容接口的最佳实践。
 
@@ -59,7 +59,7 @@ WASM 侧通过 `cchat_write_fn(fd, fn_offset, fn_json)` 注册工具。
 
 ### 2) chat completion
 
-`cchat_send` 会将会话 messages 与 tools 组装成请求，交给 AI backend（例如 OpenAI chat/completions）。目前 backend 适配层会返回原始 JSON payload（canonical envelope）。见 [openai_chat_completion.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/ai/backends/openai_chat_completion.rs)。
+`cchat_send` 会将会话 messages 与 tools 组装成请求，交给 AI backend（例如 OpenAI chat/completions）。目前 backend 适配层会返回原始 JSON payload（canonical envelope）。见 [openai_chat_completion.rs](../src/spearlet/execution/ai/backends/openai_chat_completion.rs)。
 
 ### 3) 缺口
 

@@ -309,28 +309,28 @@ samples:
 	@echo -e "$(BLUE)🔨 Building WASM samples... / 构建WASM示例...$(NC)"
 	@mkdir -p $(SAMPLES_BUILD)
 	@if command -v zig >/dev/null 2>&1; then \
-		for name in hello chat_completion cchat_write_fn_tool mic_rtasr; do \
+		for name in hello chat_completion chat_completion_tool_sum mic_rtasr; do \
 			src="$(SAMPLES_DIR)/$$name.c"; \
 			out="$(SAMPLES_BUILD)/$$name.wasm"; \
 			extra_ld=""; \
 			case "$$name" in \
-				chat_completion|cchat_write_fn_tool) extra_ld="-Wl,--export-memory" ;; \
+				chat_completion|chat_completion_tool_sum) extra_ld="-Wl,--export-memory" ;; \
 			esac; \
 			zig cc -target wasm32-wasi -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-table $$extra_ld -o "$$out" "$$src" || (echo -e "$(RED)❌ zig wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
 			[ -f "$$out" ] && echo -e "$(GREEN)✅ Built with zig: $$out$(NC)" || (echo -e "$(RED)❌ zig output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
 		done; \
 	else \
 		if command -v clang >/dev/null 2>&1 && [ -n "$(WASI_SYSROOT)" ]; then \
-			for name in hello chat_completion cchat_write_fn_tool mic_rtasr; do \
+			for name in hello chat_completion chat_completion_tool_sum mic_rtasr; do \
 				src="$(SAMPLES_DIR)/$$name.c"; \
 				out="$(SAMPLES_BUILD)/$$name.wasm"; \
 				extra_ld=""; \
 				case "$$name" in \
-					chat_completion|cchat_write_fn_tool) extra_ld="-Wl,--export-memory" ;; \
+					chat_completion|chat_completion_tool_sum) extra_ld="-Wl,--export-memory" ;; \
 				esac; \
 				clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT) -O2 -Isdk/c/include $(SAMPLES_CFLAGS) -Wl,--export-table $$extra_ld -o "$$out" "$$src" || (echo -e "$(RED)❌ clang wasm32-wasi build failed. Install wasi-sdk or zig$(NC)"; exit 1); \
 				[ -f "$$out" ] && echo -e "$(GREEN)✅ Built with clang: $$out$(NC)" || (echo -e "$(RED)❌ clang output missing. Install zig or set WASI_SYSROOT$(NC)"; exit 1); \
-			done; \
+				done; \
 		else \
 			echo -e "$(RED)❌ No suitable compiler found (zig, or clang+WASI_SYSROOT). Install zig or set WASI_SYSROOT$(NC)"; exit 1; \
 		fi; \

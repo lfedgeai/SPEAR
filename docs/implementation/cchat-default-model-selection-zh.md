@@ -5,7 +5,7 @@
 当前 CChat 在将会话快照归一化为 `chat_completions` 请求时，如果用户没有通过 `cchat_ctl` 显式设置 `model`，会退回到一个硬编码默认值：
 
 - 代码现状：`normalize_cchat_session` 使用 `unwrap_or("stub-model")`
-  - 参考：[chat.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/ai/normalize/chat.rs#L12-L17)
+  - 参考：[chat.rs](../../src/spearlet/execution/ai/normalize/chat.rs)
 
 这在使用 stub backend 时是合理的，但当请求被路由到真实 LLM（例如 OpenAI chat completions）时，会导致 upstream 404/400（model_not_found），使用户难以定位问题：
 
@@ -149,4 +149,3 @@ priority = 0
   - stub backend：仍可回退到 stub-model
 - 集成测试（WASM sample）：
   - 不在 WASM 里设置 model 时，在真实 backend 上也能跑通（依赖 host 配置 default_model）
-

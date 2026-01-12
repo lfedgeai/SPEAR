@@ -65,7 +65,7 @@ The frontend (source under `web-admin/`) currently contains 4 main pages:
 
 ### 2.2 Backend Endpoints (Current `/admin/api`)
 
-Routes live in [web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs).
+Routes live in [web_admin.rs](../src/sms/web_admin.rs).
 
 #### 2.2.1 Authentication
 
@@ -609,8 +609,8 @@ Migration plan:
 
 ## 7. Appendix: Code entry points
 
-- Backend router: `create_admin_router` ([web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs#L128-L209))
-- Nodes API: `list_nodes`/`get_node_detail` ([web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs#L398-L473))
-- Stats API: `get_stats` ([web_admin.rs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/sms/web_admin.rs#L839-L870))
-- Frontend entry: [main.tsx](file:///Users/bytedance/Documents/GitHub/bge/spear/web-admin/src/main.tsx)
+- Backend router: `create_admin_router` ([web_admin.rs](../src/sms/web_admin.rs#L128-L209))
+- Nodes API: `list_nodes`/`get_node_detail` ([web_admin.rs](../src/sms/web_admin.rs#L398-L473))
+- Stats API: `get_stats` ([web_admin.rs](../src/sms/web_admin.rs#L839-L870))
+- Frontend entry: [main.tsx](../web-admin/src/main.tsx)
 - Built assets: `assets/admin/index.html`, `assets/admin/main.js`, `assets/admin/main.css`

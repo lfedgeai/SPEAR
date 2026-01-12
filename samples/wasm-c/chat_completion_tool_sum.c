@@ -99,7 +99,7 @@ int main() {
     printf("cchat_write_fn_rc=%d\n", rc);
 
     if (rc == 0) {
-        int32_t resp_fd = sp_cchat_send(fd, 2);
+        int32_t resp_fd = sp_cchat_send(fd, AUTO_TOOL_CALL);
         if (resp_fd < 0) {
             printf("cchat_send failed: %d\n", resp_fd);
             sp_cchat_close(fd);
@@ -122,4 +122,3 @@ int main() {
     sp_cchat_close(fd);
     return rc == 0 ? 0 : 1;
 }
-

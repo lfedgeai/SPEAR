@@ -126,11 +126,7 @@ int tool_call(int args_ptr, int args_len, int out_ptr, int out_len_ptr);
 
 ### C 示例
 ```c
-#define CTL_SET_PARAM 1
-#define CTL_GET_METRICS 2
-
-// 启用 auto tool calling: bit 1
-#define AUTO_TOOL_CALL (1 << 1)
+#include <spear.h>
 
 // 提供一段可写的 arena 供 tool 参数与输出使用
 static uint8_t TOOL_ARENA[128 * 1024];
@@ -152,7 +148,7 @@ int fd = cchat_create();
 
 char param_json[] = "{\"key\":\"model\", \"value\":\"gpt-4\"}";
 size_t param_len = strlen(param_json);
-cchat_ctl(fd, CTL_SET_PARAM, param_json, &param_len);
+cchat_ctl(fd, SPEAR_CCHAT_CTL_SET_PARAM, param_json, &param_len);
 
 cchat_write_msg(fd, "user", strlen("user"), "Hello", strlen("Hello"));
 
@@ -165,20 +161,20 @@ snprintf(arena_ptr_json, sizeof(arena_ptr_json),
          "{\"key\":\"tool_arena_ptr\",\"value\":%u}",
          (unsigned)(uintptr_t)TOOL_ARENA);
 size_t arena_ptr_len = strlen(arena_ptr_json);
-cchat_ctl(fd, CTL_SET_PARAM, arena_ptr_json, &arena_ptr_len);
+cchat_ctl(fd, SPEAR_CCHAT_CTL_SET_PARAM, arena_ptr_json, &arena_ptr_len);
 
 char arena_len_json[128];
 snprintf(arena_len_json, sizeof(arena_len_json),
          "{\"key\":\"tool_arena_len\",\"value\":%u}",
          (unsigned)sizeof(TOOL_ARENA));
 size_t arena_len_len = strlen(arena_len_json);
-cchat_ctl(fd, CTL_SET_PARAM, arena_len_json, &arena_len_len);
+cchat_ctl(fd, SPEAR_CCHAT_CTL_SET_PARAM, arena_len_json, &arena_len_len);
 
 char max_calls_json[] = "{\"key\":\"max_total_tool_calls\",\"value\":8}";
 size_t max_calls_len = strlen(max_calls_json);
-cchat_ctl(fd, CTL_SET_PARAM, max_calls_json, &max_calls_len);
+cchat_ctl(fd, SPEAR_CCHAT_CTL_SET_PARAM, max_calls_json, &max_calls_len);
 
-int resp_fd = cchat_send(fd, 3 /* metrics + auto_call */);
+int resp_fd = cchat_send(fd, SPEAR_CCHAT_SEND_FLAG_ENABLE_METRICS | AUTO_TOOL_CALL);
 
 char buf[4096];
 size_t len = 4096;

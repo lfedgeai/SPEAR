@@ -108,6 +108,7 @@ params = {}
             enable_web_admin: false,
             disable_web_admin: false,
             web_admin_addr: None,
+            mcp_dir: None,
             log_level: None,
             heartbeat_timeout: None,
             cleanup_interval: None,

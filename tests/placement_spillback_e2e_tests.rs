@@ -288,6 +288,12 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
     let mut placement_client = PlacementServiceClient::connect(sms_url.clone())
         .await
         .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
 
     let node1_uuid = Uuid::new_v4().to_string();
     let node2_uuid = Uuid::new_v4().to_string();
@@ -372,6 +378,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         node_client,
         task_client,
         placement_client: placement_client.clone(),
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -419,6 +426,12 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
     let mut node_client = NodeServiceClient::connect(sms_url.clone()).await.unwrap();
     let task_client = TaskServiceClient::connect(sms_url.clone()).await.unwrap();
     let placement_client = PlacementServiceClient::connect(sms_url.clone())
+        .await
+        .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
         .await
         .unwrap();
 
@@ -505,6 +518,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         node_client,
         task_client,
         placement_client,
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

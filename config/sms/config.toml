@@ -44,6 +44,9 @@ pool_size = 10
 backend = "memory"
 params = {}
 
+[mcp]
+dir = "./config/sms/mcp.d"
+
 [log]
 # Log level: trace/debug/info/warn/error / 日志级别
 level = "debug"

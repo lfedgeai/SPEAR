@@ -3,6 +3,7 @@ use crate::spearlet::execution::ai::AiEngine;
 use crate::spearlet::execution::host_api::iface::{HttpCallResult, SpearHostApi};
 use crate::spearlet::execution::hostcall::fd_table::FdTable;
 use crate::spearlet::execution::ExecutionError;
+use crate::spearlet::mcp::registry_sync::McpRegistrySyncService;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -13,6 +14,7 @@ pub struct DefaultHostApi {
     pub(super) runtime_config: super::super::runtime::RuntimeConfig,
     pub(super) fd_table: Arc<FdTable>,
     pub(super) ai_engine: Arc<AiEngine>,
+    pub(super) mcp_registry_sync: Option<Arc<McpRegistrySyncService>>,
 }
 
 impl DefaultHostApi {
@@ -21,16 +23,28 @@ impl DefaultHostApi {
             super::registry::build_registry_from_runtime_config(&runtime_config);
         let router = Router::new(registry, policy);
         let ai_engine = Arc::new(AiEngine::new(router));
+
+        let mcp_registry_sync = runtime_config.spearlet_config.clone().map(|cfg| {
+            let svc = Arc::new(McpRegistrySyncService::new(Arc::new(cfg)));
+            svc.start();
+            svc
+        });
         Self {
             runtime_config,
             fd_table: Arc::new(FdTable::new(1000)),
             ai_engine,
+            mcp_registry_sync,
         }
     }
 }
 
 impl Drop for DefaultHostApi {
     fn drop(&mut self) {
+        if let Some(svc) = self.mcp_registry_sync.as_ref() {
+            if Arc::strong_count(svc) == 1 {
+                svc.shutdown();
+            }
+        }
         if Arc::strong_count(&self.fd_table) == 1 {
             self.fd_table.close_all();
         }

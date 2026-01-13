@@ -1,5 +1,6 @@
 use axum_test::TestServer;
 use spear_next::proto::sms::{
+    mcp_registry_service_server::McpRegistryServiceServer,
     node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
     task_service_server::TaskServiceServer, Node, NodeResource, RegisterNodeRequest,
     UpdateNodeResourceRequest,
@@ -26,6 +27,7 @@ async fn start_test_grpc() -> (tokio::task::JoinHandle<()>, String) {
         Server::builder()
             .add_service(NodeServiceServer::new(service.clone()))
             .add_service(TaskServiceServer::new(service.clone()))
+            .add_service(McpRegistryServiceServer::new(service.clone()))
             .add_service(PlacementServiceServer::new(service))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
@@ -51,10 +53,17 @@ async fn test_admin_list_nodes_empty() {
         )
         .await
         .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -113,10 +122,17 @@ async fn test_admin_list_nodes_filter_and_sort() {
         )
         .await
         .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -188,10 +204,17 @@ async fn test_admin_stats() {
         )
         .await
         .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -219,13 +242,22 @@ async fn test_admin_nodes_stream() {
             .await
             .unwrap();
     let placement_client =
-        spear_next::proto::sms::placement_service_client::PlacementServiceClient::connect(grpc_url)
-            .await
-            .unwrap();
+        spear_next::proto::sms::placement_service_client::PlacementServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url,
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -293,10 +325,17 @@ async fn test_admin_node_detail_includes_resource() {
         )
         .await
         .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        mcp_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -311,6 +350,130 @@ async fn test_admin_node_detail_includes_resource() {
     assert_eq!(body["resource"]["cpu_usage_percent"], 12.0);
     assert_eq!(body["resource"]["memory_usage_percent"], 34.0);
     assert_eq!(body["resource"]["disk_usage_percent"], 56.0);
+}
+
+#[tokio::test]
+async fn test_admin_mcp_servers_crud() {
+    let (_h, grpc_url) = start_test_grpc().await;
+    let node_client =
+        spear_next::proto::sms::node_service_client::NodeServiceClient::connect(grpc_url.clone())
+            .await
+            .unwrap();
+    let task_client =
+        spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url.clone())
+            .await
+            .unwrap();
+    let placement_client =
+        spear_next::proto::sms::placement_service_client::PlacementServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    let state = GatewayState {
+        node_client,
+        task_client,
+        placement_client,
+        mcp_registry_client,
+        cancel_token: CancellationToken::new(),
+        max_upload_bytes: 64 * 1024 * 1024,
+    };
+    let app = create_admin_router(state);
+    let server = TestServer::new(app.into_make_service()).unwrap();
+
+    let list0: serde_json::Value = server.get("/admin/api/mcp/servers").await.json();
+    assert!(list0["success"].as_bool().unwrap());
+
+    let create_body = serde_json::json!({
+        "server_id": "fs",
+        "display_name": "FS",
+        "transport": "stdio",
+        "stdio": {
+            "command": "echo",
+            "args": ["hello"],
+            "env": {"K":"V"},
+            "cwd": ""
+        },
+        "allowed_tools": ["read_*"],
+        "tool_namespace": "",
+        "budgets": {"tool_timeout_ms": 1000}
+    });
+    let upsert: serde_json::Value = server
+        .post("/admin/api/mcp/servers")
+        .json(&create_body)
+        .await
+        .json();
+    assert!(upsert["success"].as_bool().unwrap());
+
+    let list1: serde_json::Value = server.get("/admin/api/mcp/servers").await.json();
+    assert!(list1["success"].as_bool().unwrap());
+    let servers = list1["servers"].as_array().unwrap();
+    assert!(servers.iter().any(|s| s["server_id"] == "fs"));
+
+    let del: serde_json::Value = server
+        .delete("/admin/api/mcp/servers/fs")
+        .await
+        .json();
+    assert!(del["success"].as_bool().unwrap());
+
+    let list2: serde_json::Value = server.get("/admin/api/mcp/servers").await.json();
+    assert!(list2["success"].as_bool().unwrap());
+    let servers2 = list2["servers"].as_array().unwrap();
+    assert!(!servers2.iter().any(|s| s["server_id"] == "fs"));
+}
+
+#[tokio::test]
+async fn test_admin_mcp_servers_validation() {
+    let (_h, grpc_url) = start_test_grpc().await;
+    let node_client =
+        spear_next::proto::sms::node_service_client::NodeServiceClient::connect(grpc_url.clone())
+            .await
+            .unwrap();
+    let task_client =
+        spear_next::proto::sms::task_service_client::TaskServiceClient::connect(grpc_url.clone())
+            .await
+            .unwrap();
+    let placement_client =
+        spear_next::proto::sms::placement_service_client::PlacementServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let mcp_registry_client =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    let state = GatewayState {
+        node_client,
+        task_client,
+        placement_client,
+        mcp_registry_client,
+        cancel_token: CancellationToken::new(),
+        max_upload_bytes: 64 * 1024 * 1024,
+    };
+    let app = create_admin_router(state);
+    let server = TestServer::new(app.into_make_service()).unwrap();
+
+    let bad_transport = serde_json::json!({
+        "server_id": "x",
+        "transport": "bad",
+        "allowed_tools": ["*"]
+    });
+    let resp: serde_json::Value = server
+        .post("/admin/api/mcp/servers")
+        .json(&bad_transport)
+        .await
+        .json();
+    assert!(!resp["success"].as_bool().unwrap());
 }
 
 #[tokio::test(start_paused = true)]

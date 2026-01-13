@@ -160,6 +160,7 @@ impl TestDataGenerator {
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
             event_kv: None,
+            mcp: crate::sms::config::McpConfig::default(),
         }
     }
 
@@ -197,6 +198,7 @@ impl TestDataGenerator {
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
             event_kv: None,
+            mcp: crate::sms::config::McpConfig::default(),
         }
     }
 }

@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/sms/node.proto",
                 "proto/sms/task.proto",
                 "proto/sms/placement.proto",
+                "proto/sms/mcp_registry.proto",
             ],
             &["proto"],
         )?;

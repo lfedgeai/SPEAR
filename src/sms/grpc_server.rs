@@ -7,6 +7,7 @@ use tonic::transport::Server;
 use tracing::{error, info};
 
 use crate::proto::sms::{
+    mcp_registry_service_server::McpRegistryServiceServer,
     node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
     task_service_server::TaskServiceServer,
 };
@@ -30,6 +31,7 @@ impl GrpcServer {
         let server = Server::builder()
             .add_service(NodeServiceServer::new(sms_service.clone()))
             .add_service(TaskServiceServer::new(sms_service.clone()))
+            .add_service(McpRegistryServiceServer::new(sms_service.clone()))
             .add_service(PlacementServiceServer::new(sms_service))
             .serve(addr);
 
@@ -52,6 +54,7 @@ impl GrpcServer {
         let server = Server::builder()
             .add_service(NodeServiceServer::new(sms_service.clone()))
             .add_service(TaskServiceServer::new(sms_service.clone()))
+            .add_service(McpRegistryServiceServer::new(sms_service.clone()))
             .add_service(PlacementServiceServer::new(sms_service))
             .serve_with_shutdown(addr, shutdown);
 

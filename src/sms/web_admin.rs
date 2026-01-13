@@ -22,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::proto::sms::{
+    mcp_registry_service_client::McpRegistryServiceClient,
     node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
     ListNodesRequest,
 };
@@ -80,11 +81,13 @@ impl WebAdminServer {
         let node_client = NodeServiceClient::new(channel.clone());
         let task_client =
             crate::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
-        let placement_client = PlacementServiceClient::new(channel);
+        let placement_client = PlacementServiceClient::new(channel.clone());
+        let mcp_registry_client = McpRegistryServiceClient::new(channel);
         let state = GatewayState {
             node_client,
             task_client,
             placement_client,
+            mcp_registry_client,
             cancel_token: cancel_token.clone(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -160,6 +163,27 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             }),
         )
         .route(
+            "/admin/api/mcp/servers",
+            get({
+                let state = state.clone();
+                move || list_mcp_servers(state.clone())
+            }),
+        )
+        .route(
+            "/admin/api/mcp/servers",
+            post({
+                let state = state.clone();
+                move |body: Json<McpServerUpsertBody>| upsert_mcp_server(state.clone(), body)
+            }),
+        )
+        .route(
+            "/admin/api/mcp/servers/{server_id}",
+            delete({
+                let state = state.clone();
+                move |p: Path<String>| delete_mcp_server(state.clone(), p)
+            }),
+        )
+        .route(
             "/admin/api/tasks",
             get({
                 let state = state.clone();
@@ -206,6 +230,194 @@ pub fn create_admin_router(state: GatewayState) -> Router {
         .route("/admin/api/files/{id}", get(download_file))
         .route("/admin/api/files/{id}", delete(delete_file))
         .route("/admin/api/files/{id}/meta", get(get_file_meta))
+}
+
+#[derive(Deserialize)]
+struct McpServerUpsertBody {
+    server_id: String,
+    display_name: Option<String>,
+    transport: String,
+    stdio: Option<McpStdioBody>,
+    http: Option<McpHttpBody>,
+    tool_namespace: Option<String>,
+    allowed_tools: Option<Vec<String>>,
+    budgets: Option<McpBudgetsBody>,
+    approval_policy: Option<McpApprovalPolicyBody>,
+}
+
+#[derive(Deserialize)]
+struct McpStdioBody {
+    command: String,
+    args: Option<Vec<String>>,
+    env: Option<std::collections::HashMap<String, String>>,
+    cwd: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct McpHttpBody {
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+    auth_ref: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct McpBudgetsBody {
+    tool_timeout_ms: Option<u64>,
+    max_concurrency: Option<u64>,
+    max_tool_output_bytes: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct McpApprovalPolicyBody {
+    default_policy: Option<String>,
+    per_tool: Option<std::collections::HashMap<String, String>>,
+}
+
+async fn list_mcp_servers(state: GatewayState) -> Json<serde_json::Value> {
+    let mut client = state.mcp_registry_client.clone();
+    match client
+        .list_mcp_servers(crate::proto::sms::ListMcpServersRequest { since_revision: 0 })
+        .await
+    {
+        Ok(resp) => {
+            let inner = resp.into_inner();
+            let servers = inner
+                .servers
+                .into_iter()
+                .map(|s| {
+                    let stdio = s.stdio.as_ref().map(|x| {
+                        json!({
+                            "command": x.command,
+                            "args": x.args,
+                            "env": x.env,
+                            "cwd": x.cwd,
+                        })
+                    });
+                    let http = s.http.as_ref().map(|x| {
+                        json!({
+                            "url": x.url,
+                            "headers": x.headers,
+                            "auth_ref": x.auth_ref,
+                        })
+                    });
+                    let approval_policy = s.approval_policy.as_ref().map(|x| {
+                        json!({
+                            "default_policy": x.default_policy,
+                            "per_tool": x.per_tool,
+                        })
+                    });
+                    let budgets = s.budgets.as_ref().map(|x| {
+                        json!({
+                            "tool_timeout_ms": x.tool_timeout_ms,
+                            "max_concurrency": x.max_concurrency,
+                            "max_tool_output_bytes": x.max_tool_output_bytes,
+                        })
+                    });
+                    json!({
+                        "server_id": s.server_id,
+                        "display_name": s.display_name,
+                        "transport": s.transport,
+                        "stdio": stdio,
+                        "http": http,
+                        "tool_namespace": s.tool_namespace,
+                        "allowed_tools": s.allowed_tools,
+                        "approval_policy": approval_policy,
+                        "budgets": budgets,
+                        "updated_at_ms": s.updated_at_ms,
+                    })
+                })
+                .collect::<Vec<_>>();
+            Json(json!({"success": true, "revision": inner.revision, "servers": servers}))
+        }
+        Err(e) => Json(json!({"success": false, "message": e.to_string()})),
+    }
+}
+
+async fn upsert_mcp_server(
+    state: GatewayState,
+    body: Json<McpServerUpsertBody>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::{
+        McpApprovalPolicy, McpBudgets, McpHttpConfig, McpServerRecord, McpStdioConfig,
+        McpTransport,
+    };
+
+    let body = body.0;
+    if body.server_id.trim().is_empty() {
+        return Json(json!({"success": false, "message": "server_id is required"}));
+    }
+
+    let transport = match body.transport.as_str() {
+        "stdio" => McpTransport::Stdio as i32,
+        "streamable_http" => McpTransport::StreamableHttp as i32,
+        _ => {
+            return Json(json!({"success": false, "message": "invalid transport"}));
+        }
+    };
+
+    let stdio = body.stdio.map(|s| McpStdioConfig {
+        command: s.command,
+        args: s.args.unwrap_or_default(),
+        env: s.env.unwrap_or_default(),
+        cwd: s.cwd.unwrap_or_default(),
+    });
+    let http = body.http.map(|h| McpHttpConfig {
+        url: h.url,
+        headers: h.headers.unwrap_or_default(),
+        auth_ref: h.auth_ref.unwrap_or_default(),
+    });
+
+    let budgets = body.budgets.map(|b| McpBudgets {
+        tool_timeout_ms: b.tool_timeout_ms.unwrap_or(0),
+        max_concurrency: b.max_concurrency.unwrap_or(0),
+        max_tool_output_bytes: b.max_tool_output_bytes.unwrap_or(0),
+    });
+
+    let approval_policy = body.approval_policy.map(|p| McpApprovalPolicy {
+        default_policy: p.default_policy.unwrap_or_default(),
+        per_tool: p.per_tool.unwrap_or_default(),
+    });
+
+    let record = McpServerRecord {
+        server_id: body.server_id.trim().to_string(),
+        display_name: body.display_name.unwrap_or_default(),
+        transport,
+        stdio,
+        http,
+        tool_namespace: body.tool_namespace.unwrap_or_default(),
+        allowed_tools: body.allowed_tools.unwrap_or_default(),
+        approval_policy,
+        budgets,
+        updated_at_ms: 0,
+    };
+
+    let mut client = state.mcp_registry_client.clone();
+    match client
+        .upsert_mcp_server(crate::proto::sms::UpsertMcpServerRequest {
+            record: Some(record),
+        })
+        .await
+    {
+        Ok(resp) => Json(json!({"success": true, "revision": resp.into_inner().revision})),
+        Err(e) => Json(json!({"success": false, "message": e.to_string()})),
+    }
+}
+
+async fn delete_mcp_server(state: GatewayState, p: Path<String>) -> Json<serde_json::Value> {
+    let server_id = p.0;
+    if server_id.trim().is_empty() {
+        return Json(json!({"success": false, "message": "server_id is required"}));
+    }
+    let mut client = state.mcp_registry_client.clone();
+    match client
+        .delete_mcp_server(crate::proto::sms::DeleteMcpServerRequest {
+            server_id: server_id.trim().to_string(),
+        })
+        .await
+    {
+        Ok(resp) => Json(json!({"success": true, "revision": resp.into_inner().revision})),
+        Err(e) => Json(json!({"success": false, "message": e.to_string()})),
+    }
 }
 
 #[derive(serde::Deserialize)]

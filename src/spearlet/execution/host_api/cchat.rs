@@ -344,7 +344,7 @@ impl DefaultHostApi {
                                 Ok(s) => s,
                                 Err(rc) => json!({"error": {"code": "tool_exec_failed", "message": format!("tool rc: {}", rc)}}).to_string(),
                             }
-                        } else if tool_name.starts_with("mcp.") {
+                        } else if tool_name.starts_with("mcp.") || tool_name.starts_with("mcp__") {
                             match self.cchat_exec_mcp_tool(&snapshot, &tool_name, &args) {
                                 Ok(s) => s,
                                 Err(msg) => json!({"error": {"code": "mcp_tool_failed", "message": msg}}).to_string(),

@@ -1,4 +1,5 @@
 use crate::proto::sms::McpServerRecord;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 #[derive(Clone, Debug, Default)]
 pub struct McpSessionPolicy {
@@ -65,7 +66,41 @@ pub fn server_allowed_tools(server: &McpServerRecord) -> Vec<String> {
     allowed
 }
 
+fn encode_tool_token(s: &str) -> String {
+    URL_SAFE_NO_PAD.encode(s.as_bytes())
+}
+
+fn decode_tool_token(s: &str) -> Result<String, String> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(s.as_bytes())
+        .map_err(|_| "invalid mcp tool name".to_string())?;
+    String::from_utf8(bytes).map_err(|_| "invalid mcp tool name".to_string())
+}
+
+fn encode_openai_mcp_tool_name(server_id: &str, tool_name: &str) -> String {
+    format!(
+        "mcp__{}__{}",
+        encode_tool_token(server_id),
+        encode_tool_token(tool_name)
+    )
+}
+
 pub fn parse_namespaced_mcp_tool_name(namespaced: &str) -> Result<(String, String), String> {
+    if let Some(rest) = namespaced.strip_prefix("mcp__") {
+        let mut it = rest.splitn(2, "__");
+        let sid_enc = it.next().unwrap_or("");
+        let tool_enc = it.next().unwrap_or("");
+        if sid_enc.is_empty() || tool_enc.is_empty() {
+            return Err("invalid mcp tool name".to_string());
+        }
+        let server_id = decode_tool_token(sid_enc)?;
+        let tool_name = decode_tool_token(tool_enc)?;
+        if server_id.is_empty() || tool_name.is_empty() {
+            return Err("invalid mcp tool name".to_string());
+        }
+        return Ok((server_id, tool_name));
+    }
+
     let rest = namespaced.strip_prefix("mcp.").unwrap_or(namespaced);
     let (server_id, tool_name) = rest
         .split_once('.')
@@ -147,7 +182,7 @@ pub fn filter_and_namespace_openai_tools(
         if allowed_by_policies(server_allowed, session, name).is_err() {
             continue;
         }
-        let ns_name = format!("mcp.{}.{}", server_id, name);
+        let ns_name = encode_openai_mcp_tool_name(server_id, name);
         let desc = t
             .get("description")
             .and_then(|x| x.as_str())
@@ -238,6 +273,11 @@ mod tests {
             parse_namespaced_mcp_tool_name("mcp.fs.read_file").unwrap(),
             ("fs".to_string(), "read_file".to_string())
         );
+        assert_eq!(
+            parse_namespaced_mcp_tool_name(&encode_openai_mcp_tool_name("fs", "read_file"))
+                .unwrap(),
+            ("fs".to_string(), "read_file".to_string())
+        );
         assert!(parse_namespaced_mcp_tool_name("mcp.fs").is_err());
     }
 
@@ -271,7 +311,7 @@ mod tests {
         let out = filter_and_namespace_openai_tools("fs", &server_allowed, &session, &tools);
         assert_eq!(out.len(), 1);
         let v: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
-        assert_eq!(v["function"]["name"], "mcp.fs.read_file");
+        assert_eq!(v["function"]["name"], encode_openai_mcp_tool_name("fs", "read_file"));
     }
 
     #[test]
@@ -313,4 +353,3 @@ mod tests {
         assert_eq!(d.tool_name, "read_file");
     }
 }
-

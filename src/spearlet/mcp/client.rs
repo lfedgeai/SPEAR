@@ -4,6 +4,7 @@ use rmcp::{
     transport::{ConfigureCommandExt, TokioChildProcess},
 };
 use tokio::process::Command;
+use std::process::Stdio;
 
 use crate::proto::sms::{McpServerRecord, McpTransport};
 
@@ -24,6 +25,7 @@ pub async fn list_tools(record: &McpServerRecord) -> Result<Vec<serde_json::Valu
             for (k, v) in stdio.env.iter() {
                 c.env(k, v);
             }
+            c.stderr(Stdio::null());
         });
 
         let peer = ().serve(
@@ -76,6 +78,7 @@ pub async fn call_tool(
             for (k, v) in stdio.env.iter() {
                 c.env(k, v);
             }
+            c.stderr(Stdio::null());
         });
 
         let peer = ().serve(
@@ -103,4 +106,3 @@ pub async fn call_tool(
         Err("unsupported transport".to_string())
     }
 }
-

@@ -76,6 +76,9 @@ impl OpenAIChatCompletionBackendAdapter {
 
         if let Some(obj) = body.as_object_mut() {
             for (k, v) in p.params.iter() {
+                if k.starts_with("mcp.") {
+                    continue;
+                }
                 if k == "model"
                     || k == "backend"
                     || k == "timeout_ms"
@@ -311,6 +314,9 @@ mod tests {
         params.insert("tool_arena_len".to_string(), json!(5678));
         params.insert("max_iterations".to_string(), json!(9));
         params.insert("max_total_tool_calls".to_string(), json!(99));
+        params.insert("mcp.enabled".to_string(), json!(true));
+        params.insert("mcp.server_ids".to_string(), json!(["fs"]));
+        params.insert("mcp.tool_allowlist".to_string(), json!(["read_*"]));
 
         let req = CanonicalRequestEnvelope {
             version: 1,
@@ -345,5 +351,8 @@ mod tests {
         assert!(body.get("tool_arena_len").is_none());
         assert!(body.get("max_iterations").is_none());
         assert!(body.get("max_total_tool_calls").is_none());
+        assert!(body.get("mcp.enabled").is_none());
+        assert!(body.get("mcp.server_ids").is_none());
+        assert!(body.get("mcp.tool_allowlist").is_none());
     }
 }

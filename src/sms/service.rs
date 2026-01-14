@@ -1,6 +1,8 @@
 //! SMS Service Implementation / SMS服务实现
+use std::collections::{HashMap, VecDeque};
 use std::sync::{atomic::AtomicU64, atomic::Ordering, Arc};
-use tokio::sync::RwLock;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tonic::{Request, Response, Status};
 
 use uuid::Uuid;
@@ -17,12 +19,16 @@ use futures::stream::unfold;
 use tokio::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::{debug, warn};
+use anyhow::Context;
 
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
+    mcp_registry_service_server::McpRegistryService as McpRegistryServiceTrait,
     node_service_server::NodeService as NodeServiceTrait,
     placement_service_server::PlacementService as PlacementServiceTrait,
     task_service_server::TaskService as TaskServiceTrait,
+    DeleteMcpServerRequest,
+    DeleteMcpServerResponse,
     DeleteNodeRequest,
     DeleteNodeResponse,
     GetNodeRequest,
@@ -36,15 +42,20 @@ use crate::proto::sms::{
     HeartbeatRequest,
     HeartbeatResponse,
     InvocationOutcomeClass,
+    ListMcpServersRequest,
+    ListMcpServersResponse,
     ListNodeResourcesRequest,
     ListNodeResourcesResponse,
     ListNodesRequest,
     ListNodesResponse,
     ListTasksRequest,
     ListTasksResponse,
+    McpTransport,
     NodeCandidate,
     PlaceInvocationRequest,
     PlaceInvocationResponse,
+    McpRegistryEvent,
+    McpServerRecord,
     // Node service messages / 节点服务消息
     RegisterNodeRequest,
     RegisterNodeResponse,
@@ -63,7 +74,39 @@ use crate::proto::sms::{
     UpdateTaskResultResponse,
     UpdateTaskStatusRequest,
     UpdateTaskStatusResponse,
+    UpsertMcpServerRequest,
+    UpsertMcpServerResponse,
+    WatchMcpServersRequest,
+    WatchMcpServersResponse,
 };
+
+#[derive(Debug)]
+struct McpRegistryState {
+    revision: AtomicU64,
+    records: RwLock<HashMap<String, McpServerRecord>>,
+    recent_events: Mutex<VecDeque<McpRegistryEvent>>,
+    event_tx: broadcast::Sender<McpRegistryEvent>,
+}
+
+impl McpRegistryState {
+    fn new(event_buffer_size: usize, broadcast_buffer_size: usize) -> Self {
+        let (event_tx, _rx) = broadcast::channel(broadcast_buffer_size);
+        Self {
+            revision: AtomicU64::new(0),
+            records: RwLock::new(HashMap::new()),
+            recent_events: Mutex::new(VecDeque::with_capacity(event_buffer_size)),
+            event_tx,
+        }
+    }
+
+    fn current_revision(&self) -> u64 {
+        self.revision.load(Ordering::Relaxed)
+    }
+
+    fn bump_revision(&self) -> u64 {
+        self.revision.fetch_add(1, Ordering::Relaxed) + 1
+    }
+}
 
 // Note: SpearletRegistrationService is not defined in current proto files
 // use crate::proto::spearlet::{
@@ -82,6 +125,206 @@ pub struct SmsServiceImpl {
     task_service: Arc<RwLock<TaskServiceImpl>>,
     events: Arc<TaskEventBus>,
     placement_state: Arc<PlacementState>,
+    mcp_registry: Arc<McpRegistryState>,
+}
+
+impl SmsServiceImpl {
+    async fn upsert_mcp_record_inner(
+        &self,
+        mut record: McpServerRecord,
+    ) -> Result<u64, Status> {
+        if record.server_id.is_empty() {
+            return Err(Status::invalid_argument("server_id is required"));
+        }
+        let server_id = record.server_id.clone();
+        if record.tool_namespace.is_empty() {
+            record.tool_namespace = format!("mcp.{}", record.server_id);
+        }
+
+        match record.transport {
+            x if x == McpTransport::Stdio as i32 => {
+                let stdio = record
+                    .stdio
+                    .as_ref()
+                    .ok_or_else(|| Status::invalid_argument("stdio config is required"))?;
+                if stdio.command.is_empty() {
+                    return Err(Status::invalid_argument("stdio.command is required"));
+                }
+            }
+            x if x == McpTransport::StreamableHttp as i32 => {
+                let http = record
+                    .http
+                    .as_ref()
+                    .ok_or_else(|| Status::invalid_argument("http config is required"))?;
+                if http.url.is_empty() {
+                    return Err(Status::invalid_argument("http.url is required"));
+                }
+            }
+            _ => {
+                return Err(Status::invalid_argument("invalid transport"));
+            }
+        }
+
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        record.updated_at_ms = now_ms;
+
+        {
+            let mut records = self.mcp_registry.records.write().await;
+            records.insert(server_id.clone(), record);
+        }
+
+        let revision = self.mcp_registry.bump_revision();
+        let event = McpRegistryEvent {
+            revision,
+            upserts: vec![server_id],
+            deletes: vec![],
+        };
+
+        {
+            let mut events = self.mcp_registry.recent_events.lock().await;
+            if events.len() >= 1024 {
+                events.pop_front();
+            }
+            events.push_back(event.clone());
+        }
+        let _ = self.mcp_registry.event_tx.send(event);
+
+        Ok(revision)
+    }
+
+    pub async fn bootstrap_mcp_from_dir(&self, dir: &str) -> anyhow::Result<usize> {
+        if dir.is_empty() {
+            return Ok(0);
+        }
+
+        fn expand_tilde(s: &str) -> String {
+            if let Some(rest) = s.strip_prefix("~/") {
+                if let Ok(home) = std::env::var("HOME") {
+                    return format!("{}/{}", home, rest);
+                }
+            }
+            s.to_string()
+        }
+
+        #[derive(serde::Deserialize)]
+        struct FileCfg {
+            server_id: String,
+            display_name: Option<String>,
+            transport: String,
+            stdio: Option<FileStdio>,
+            http: Option<FileHttp>,
+            tool_namespace: Option<String>,
+            allowed_tools: Option<Vec<String>>,
+            budgets: Option<FileBudgets>,
+            approval_policy: Option<FileApprovalPolicy>,
+        }
+        #[derive(serde::Deserialize)]
+        struct FileStdio {
+            command: String,
+            args: Option<Vec<String>>,
+            env: Option<std::collections::HashMap<String, String>>,
+            cwd: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct FileHttp {
+            url: String,
+            headers: Option<std::collections::HashMap<String, String>>,
+            auth_ref: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct FileBudgets {
+            tool_timeout_ms: Option<u64>,
+            max_concurrency: Option<u64>,
+            max_tool_output_bytes: Option<u64>,
+        }
+        #[derive(serde::Deserialize)]
+        struct FileApprovalPolicy {
+            default_policy: Option<String>,
+            per_tool: Option<std::collections::HashMap<String, String>>,
+        }
+
+        let dir = expand_tilde(dir);
+        let mut count = 0usize;
+        let entries = std::fs::read_dir(&dir).with_context(|| format!("read_dir {}", dir))?;
+        for ent in entries {
+            let ent = match ent {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let path = ent.path();
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if ext != "toml" && ext != "json" {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let cfg: FileCfg = if ext == "toml" {
+                match toml::from_str(&content) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                }
+            } else {
+                match serde_json::from_str(&content) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                }
+            };
+
+            let transport = match cfg.transport.as_str() {
+                "stdio" => McpTransport::Stdio as i32,
+                "streamable_http" => McpTransport::StreamableHttp as i32,
+                _ => continue,
+            };
+
+            let record = McpServerRecord {
+                server_id: cfg.server_id,
+                display_name: cfg.display_name.unwrap_or_default(),
+                transport,
+                stdio: cfg.stdio.map(|s| crate::proto::sms::McpStdioConfig {
+                    command: s.command,
+                    args: s.args.unwrap_or_default(),
+                    env: s.env.unwrap_or_default(),
+                    cwd: s.cwd.unwrap_or_default(),
+                }),
+                http: cfg.http.map(|h| crate::proto::sms::McpHttpConfig {
+                    url: h.url,
+                    headers: h.headers.unwrap_or_default(),
+                    auth_ref: h.auth_ref.unwrap_or_default(),
+                }),
+                tool_namespace: cfg.tool_namespace.unwrap_or_default(),
+                allowed_tools: cfg.allowed_tools.unwrap_or_default(),
+                approval_policy: cfg.approval_policy.map(|p| crate::proto::sms::McpApprovalPolicy {
+                    default_policy: p.default_policy.unwrap_or_default(),
+                    per_tool: p.per_tool.unwrap_or_default(),
+                }),
+                budgets: cfg.budgets.map(|b| crate::proto::sms::McpBudgets {
+                    tool_timeout_ms: b.tool_timeout_ms.unwrap_or(0),
+                    max_concurrency: b.max_concurrency.unwrap_or(0),
+                    max_tool_output_bytes: b.max_tool_output_bytes.unwrap_or(0),
+                }),
+                updated_at_ms: 0,
+            };
+
+            if self.upsert_mcp_record_inner(record).await.is_ok() {
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    }
 }
 
 impl SmsServiceImpl {
@@ -149,6 +392,7 @@ impl SmsServiceImpl {
             task_service,
             events,
             placement_state: Arc::new(PlacementState::new()),
+            mcp_registry: Arc::new(McpRegistryState::new(1024, 1024)),
         }
     }
 
@@ -284,6 +528,137 @@ impl SmsServiceImpl {
     /// Get task service reference / 获取任务服务引用
     pub fn task_service(&self) -> Arc<RwLock<TaskServiceImpl>> {
         self.task_service.clone()
+    }
+}
+
+#[tonic::async_trait]
+impl McpRegistryServiceTrait for SmsServiceImpl {
+    type WatchMcpServersStream = std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<WatchMcpServersResponse, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn list_mcp_servers(
+        &self,
+        _request: Request<ListMcpServersRequest>,
+    ) -> Result<Response<ListMcpServersResponse>, Status> {
+        let revision = self.mcp_registry.current_revision();
+        let records = self.mcp_registry.records.read().await;
+        let servers = records.values().cloned().collect::<Vec<_>>();
+        Ok(Response::new(ListMcpServersResponse { revision, servers }))
+    }
+
+    async fn watch_mcp_servers(
+        &self,
+        request: Request<WatchMcpServersRequest>,
+    ) -> Result<Response<Self::WatchMcpServersStream>, Status> {
+        let since_revision = request.into_inner().since_revision;
+
+        let mut pending = VecDeque::new();
+        {
+            let events = self.mcp_registry.recent_events.lock().await;
+            if let Some(oldest) = events.front().map(|e| e.revision) {
+                if since_revision != 0 && since_revision < oldest {
+                    return Err(Status::failed_precondition(
+                        "since_revision too old; resync required",
+                    ));
+                }
+            }
+            for e in events.iter() {
+                if e.revision > since_revision {
+                    pending.push_back(e.clone());
+                }
+            }
+        }
+
+        let rx = self.mcp_registry.event_tx.subscribe();
+
+        struct WatchState {
+            pending: VecDeque<McpRegistryEvent>,
+            rx: broadcast::Receiver<McpRegistryEvent>,
+        }
+
+        let stream = unfold(
+            WatchState { pending, rx },
+            |mut st| async move {
+                if let Some(event) = st.pending.pop_front() {
+                    return Some((
+                        Ok(WatchMcpServersResponse {
+                            event: Some(event),
+                        }),
+                        st,
+                    ));
+                }
+
+                match st.rx.recv().await {
+                    Ok(event) => Some((
+                        Ok(WatchMcpServersResponse {
+                            event: Some(event),
+                        }),
+                        st,
+                    )),
+                    Err(broadcast::error::RecvError::Lagged(_)) => Some((
+                        Err(Status::aborted("watch lagged; resync required")),
+                        st,
+                    )),
+                    Err(broadcast::error::RecvError::Closed) => None,
+                }
+            },
+        );
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn upsert_mcp_server(
+        &self,
+        request: Request<UpsertMcpServerRequest>,
+    ) -> Result<Response<UpsertMcpServerResponse>, Status> {
+        let record = request
+            .into_inner()
+            .record
+            .ok_or_else(|| Status::invalid_argument("record is required"))?;
+
+        let revision = self.upsert_mcp_record_inner(record).await?;
+        Ok(Response::new(UpsertMcpServerResponse { revision }))
+    }
+
+    async fn delete_mcp_server(
+        &self,
+        request: Request<DeleteMcpServerRequest>,
+    ) -> Result<Response<DeleteMcpServerResponse>, Status> {
+        let server_id = request.into_inner().server_id;
+        if server_id.is_empty() {
+            return Err(Status::invalid_argument("server_id is required"));
+        }
+
+        let existed = {
+            let mut records = self.mcp_registry.records.write().await;
+            records.remove(&server_id).is_some()
+        };
+        if !existed {
+            return Err(Status::not_found("server not found"));
+        }
+
+        let revision = self.mcp_registry.bump_revision();
+        let event = McpRegistryEvent {
+            revision,
+            upserts: vec![],
+            deletes: vec![server_id],
+        };
+
+        {
+            let mut events = self.mcp_registry.recent_events.lock().await;
+            if events.len() >= 1024 {
+                events.pop_front();
+            }
+            events.push_back(event.clone());
+        }
+        let _ = self.mcp_registry.event_tx.send(event);
+
+        Ok(Response::new(DeleteMcpServerResponse { revision }))
     }
 }
 

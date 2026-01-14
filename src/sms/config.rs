@@ -123,6 +123,13 @@ pub struct CliArgs {
         help = "Web Admin address (e.g., 0.0.0.0:8081) / Web管理页面监听地址"
     )]
     pub web_admin_addr: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "MCP server configs directory / MCP server 配置目录"
+    )]
+    pub mcp_dir: Option<String>,
 }
 
 /// SMS service configuration / SMS服务配置
@@ -151,6 +158,22 @@ pub struct SmsConfig {
     pub max_upload_bytes: u64,
     /// Optional KV config for task events outbox / 任务事件Outbox的可选KV配置
     pub event_kv: Option<KvStoreConfig>,
+
+    pub mcp: McpConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpConfig {
+    pub dir: String,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            dir: String::new(),
+        }
+    }
 }
 
 /// Database configuration / 数据库配置
@@ -202,6 +225,12 @@ impl SmsConfig {
         if let Ok(v) = std::env::var("SMS_DB_POOL_SIZE") {
             if let Ok(n) = v.parse::<u32>() {
                 config.database.pool_size = Some(n);
+            }
+        }
+
+        if let Ok(v) = std::env::var("SMS_MCP_DIR") {
+            if !v.is_empty() {
+                config.mcp.dir = v;
             }
         }
 
@@ -282,6 +311,10 @@ impl SmsConfig {
 
         if let Some(http_addr) = &args.http_addr {
             config.http.addr = http_addr.parse()?;
+        }
+
+        if let Some(p) = &args.mcp_dir {
+            config.mcp.dir = p.clone();
         }
 
         if let Some(db_type) = &args.db_type {
@@ -387,6 +420,7 @@ impl Default for SmsConfig {
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
             event_kv: None,
+            mcp: McpConfig::default(),
         }
     }
 }

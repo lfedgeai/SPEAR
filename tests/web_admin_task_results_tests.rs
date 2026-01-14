@@ -48,6 +48,10 @@ async fn test_admin_tasks_include_result_fields() {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
         placement_client: PlacementServiceClient::new(channel.clone()),
+        mcp_registry_client:
+            spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
+                channel.clone(),
+            ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

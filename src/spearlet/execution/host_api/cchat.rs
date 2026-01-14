@@ -8,6 +8,12 @@ use crate::spearlet::execution::hostcall::types::{
 use libc::{EBADF, EIO};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
+use crate::spearlet::mcp::policy::{
+    decide_mcp_exec, filter_and_namespace_openai_tools, server_allowed_tools,
+    session_policy_from_params,
+};
 
 #[derive(Clone, Debug)]
 pub struct ChatSessionSnapshot {
@@ -135,6 +141,7 @@ impl DefaultHostApi {
     pub fn cchat_send(&self, fd: i32, flags: i32) -> Result<i32, i32> {
         let metrics_enabled = (flags & 1) != 0;
         let snapshot = self.cchat_get_session_snapshot(fd)?;
+        let snapshot = self.cchat_inject_mcp_tools(&snapshot);
         let resp_fd = self.fd_table.alloc(FdEntry {
             kind: FdKind::ChatResponse,
             flags: FdFlags::default(),
@@ -217,6 +224,8 @@ impl DefaultHostApi {
                 Err(e) => return Err(e),
             };
 
+            let injected_snapshot = self.cchat_inject_mcp_tools(&snapshot);
+
             let max_iterations = snapshot
                 .params
                 .get("max_iterations")
@@ -257,7 +266,7 @@ impl DefaultHostApi {
 
             let tool_name_to_offset = build_tool_name_to_offset(&snapshot.tools);
 
-            let req = normalize_cchat_session(&snapshot);
+            let req = normalize_cchat_session(&injected_snapshot);
             let resp = match self.ai_engine.invoke(&req) {
                 Ok(r) => r,
                 Err(e) => {
@@ -330,12 +339,18 @@ impl DefaultHostApi {
                         total_tool_calls += 1;
                         let tool_name = tc.function.name.clone();
                         let args = tc.function.arguments.clone();
-                        let out = match tool_name_to_offset.get(&tool_name).copied() {
-                            None => json!({"error": {"code": "unknown_tool", "message": format!("unknown tool: {}", tool_name)}}).to_string(),
-                            Some(off) => match tool_exec(off, &args) {
+                        let out = if let Some(off) = tool_name_to_offset.get(&tool_name).copied() {
+                            match tool_exec(off, &args) {
                                 Ok(s) => s,
                                 Err(rc) => json!({"error": {"code": "tool_exec_failed", "message": format!("tool rc: {}", rc)}}).to_string(),
-                            },
+                            }
+                        } else if tool_name.starts_with("mcp.") || tool_name.starts_with("mcp__") {
+                            match self.cchat_exec_mcp_tool(&snapshot, &tool_name, &args) {
+                                Ok(s) => s,
+                                Err(msg) => json!({"error": {"code": "mcp_tool_failed", "message": msg}}).to_string(),
+                            }
+                        } else {
+                            json!({"error": {"code": "unknown_tool", "message": format!("unknown tool: {}", tool_name)}}).to_string()
                         };
                         let _ = self.cchat_append_message(
                             fd,
@@ -413,6 +428,102 @@ impl DefaultHostApi {
         }
         self.fd_table.notify_watchers(resp_fd);
         Ok(())
+    }
+
+    fn cchat_inject_mcp_tools(&self, snapshot: &ChatSessionSnapshot) -> ChatSessionSnapshot {
+        let session = session_policy_from_params(&snapshot.params);
+        if !session.enabled || session.server_ids.is_empty() {
+            return snapshot.clone();
+        }
+
+        let Some(sync) = self.mcp_registry_sync.as_ref() else {
+            return snapshot.clone();
+        };
+
+        let reg = self.block_on(async { sync.cache().snapshot().await });
+        let mut out = snapshot.clone();
+        let mut appended: Vec<(i32, String)> = Vec::new();
+
+        for sid in session.server_ids.iter() {
+            let Some(server) = reg.servers.iter().find(|s| s.server_id == *sid) else {
+                continue;
+            };
+
+            let allowed = server_allowed_tools(server);
+            if allowed.is_empty() {
+                continue;
+            }
+
+            let timeout_ms = server
+                .budgets
+                .as_ref()
+                .map(|b| b.tool_timeout_ms)
+                .unwrap_or(8000)
+                .max(100)
+                .min(120_000);
+            let tools_res = self.block_on(async {
+                tokio::time::timeout(
+                    Duration::from_millis(timeout_ms),
+                    crate::spearlet::mcp::client::list_tools(server),
+                )
+                .await
+            });
+
+            let tools = match tools_res {
+                Ok(Ok(t)) => t,
+                Ok(Err(_)) => Vec::new(),
+                Err(_) => Vec::new(),
+            };
+
+            for s in filter_and_namespace_openai_tools(sid, &allowed, &session, &tools).into_iter()
+            {
+                appended.push((0, s));
+            }
+        }
+
+        out.tools.extend(appended);
+        out
+    }
+
+    fn cchat_exec_mcp_tool(
+        &self,
+        snapshot: &ChatSessionSnapshot,
+        namespaced: &str,
+        args: &str,
+    ) -> Result<String, String> {
+        let Some(sync) = self.mcp_registry_sync.as_ref() else {
+            return Err("mcp registry not available".to_string());
+        };
+
+        let (server_id, _) = crate::spearlet::mcp::policy::parse_namespaced_mcp_tool_name(namespaced)?;
+        let reg = self.block_on(async { sync.cache().snapshot().await });
+        let server = reg
+            .servers
+            .iter()
+            .find(|s| s.server_id == server_id)
+            .ok_or_else(|| "unknown mcp server".to_string())?
+            .clone();
+
+        let decision = decide_mcp_exec(&snapshot.params, &server, namespaced)?;
+
+        let out = self.block_on(async {
+            tokio::time::timeout(
+                Duration::from_millis(decision.timeout_ms),
+                crate::spearlet::mcp::client::call_tool(&server, &decision.tool_name, args),
+            )
+            .await
+        });
+
+        let v = match out {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err("mcp tool timeout".to_string()),
+        };
+        let mut s = serde_json::to_string(&v).map_err(|e| e.to_string())?;
+        if s.as_bytes().len() > decision.max_tool_output_bytes as usize {
+            s.truncate(decision.max_tool_output_bytes as usize);
+        }
+        Ok(s)
     }
 }
 

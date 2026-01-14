@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package sms;
+
+// MCP transport type / MCP 传输类型
+enum McpTransport {
+  MCP_TRANSPORT_UNSPECIFIED = 0; // Unspecified / 未指定
+  MCP_TRANSPORT_STDIO = 1;       // Local subprocess via stdio / 本地子进程 stdio
+  MCP_TRANSPORT_STREAMABLE_HTTP = 2; // Streamable HTTP / Streamable HTTP
+}
+
+// MCP stdio config / MCP stdio 配置
+message McpStdioConfig {
+  string command = 1;            // Executable / 可执行文件
+  repeated string args = 2;      // Arguments / 启动参数
+  map<string, string> env = 3;   // Environment variables / 环境变量
+  string cwd = 4;                // Working directory / 工作目录
+}
+
+// MCP HTTP config / MCP HTTP 配置
+message McpHttpConfig {
+  string url = 1;                // Base URL / 基础 URL
+  map<string, string> headers = 2; // Static headers / 静态 Header
+  string auth_ref = 3;           // Secret reference / 凭证引用
+}
+
+// MCP budgets / MCP 预算限制
+message McpBudgets {
+  uint64 tool_timeout_ms = 1;       // Per call timeout / 单次调用超时
+  uint64 max_concurrency = 2;       // Max concurrent calls / 最大并发
+  uint64 max_tool_output_bytes = 3; // Max tool output / 最大输出字节数
+}
+
+// MCP approval policy / MCP 审批策略
+message McpApprovalPolicy {
+  string default_policy = 1;            // e.g. never/always/policy / 默认策略
+  map<string, string> per_tool = 2;     // tool_name -> policy / 工具级策略
+}
+
+// MCP server record / MCP server 注册记录
+message McpServerRecord {
+  string server_id = 1;           // Unique stable id / 唯一稳定 id
+  string display_name = 2;        // Display name / 展示名称
+  McpTransport transport = 3;     // Transport / 传输类型
+  McpStdioConfig stdio = 4;       // Stdio config / stdio 配置
+  McpHttpConfig http = 5;         // HTTP config / HTTP 配置
+  string tool_namespace = 6;      // Tool namespace / 工具命名空间
+  repeated string allowed_tools = 7; // Allowlist patterns / 工具白名单 pattern
+  McpApprovalPolicy approval_policy = 8; // Approval policy / 审批策略
+  McpBudgets budgets = 9;         // Budgets / 预算
+  uint64 updated_at_ms = 10;      // Updated timestamp / 更新时间戳
+}
+
+// List servers request / 列表请求
+message ListMcpServersRequest {
+  uint64 since_revision = 1; // Optional revision hint / 可选 revision
+}
+
+// List servers response / 列表响应
+message ListMcpServersResponse {
+  uint64 revision = 1;                 // Registry revision / 注册中心 revision
+  repeated McpServerRecord servers = 2; // Servers / server 列表
+}
+
+// Watch servers request / 订阅请求
+message WatchMcpServersRequest {
+  uint64 since_revision = 1; // Start revision / 起始 revision
+}
+
+// Watch event / 订阅事件
+message McpRegistryEvent {
+  uint64 revision = 1;              // New revision / 新 revision
+  repeated string upserts = 2;      // Upserted server_ids / 更新的 server_id
+  repeated string deletes = 3;      // Deleted server_ids / 删除的 server_id
+}
+
+// Watch servers response / 订阅响应
+message WatchMcpServersResponse {
+  McpRegistryEvent event = 1;
+}
+
+// Upsert request / Upsert 请求
+message UpsertMcpServerRequest {
+  McpServerRecord record = 1;
+}
+
+// Upsert response / Upsert 响应
+message UpsertMcpServerResponse {
+  uint64 revision = 1;
+}
+
+// Delete request / 删除请求
+message DeleteMcpServerRequest {
+  string server_id = 1;
+}
+
+// Delete response / 删除响应
+message DeleteMcpServerResponse {
+  uint64 revision = 1;
+}
+
+// MCP registry service / MCP 注册中心服务
+service McpRegistryService {
+  // List MCP servers / 列出 MCP servers
+  rpc ListMcpServers(ListMcpServersRequest) returns (ListMcpServersResponse);
+
+  // Watch registry changes / 订阅 registry 变更
+  rpc WatchMcpServers(WatchMcpServersRequest) returns (stream WatchMcpServersResponse);
+
+  // Upsert a server record / 写入或更新 server
+  rpc UpsertMcpServer(UpsertMcpServerRequest) returns (UpsertMcpServerResponse);
+
+  // Delete a server record / 删除 server
+  rpc DeleteMcpServer(DeleteMcpServerRequest) returns (DeleteMcpServerResponse);
+}
+

@@ -1,0 +1,13 @@
+server_id = "fs"
+display_name = "Filesystem"
+transport = "stdio"
+tool_namespace = ""
+allowed_tools = ["read_*", "list_*", "stat_*", "search_*"]
+
+[stdio]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "./"]
+cwd = ""
+
+[budgets]
+tool_timeout_ms = 8000

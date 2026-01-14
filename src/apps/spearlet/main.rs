@@ -6,6 +6,7 @@ use spear_next::config::init_tracing;
 use spear_next::spearlet::config::CliArgs;
 use spear_next::spearlet::grpc_server::GrpcServer;
 use spear_next::spearlet::http_gateway::HttpGateway;
+use spear_next::spearlet::mcp::registry_sync::McpRegistrySyncService;
 use spear_next::spearlet::registration::RegistrationService;
 
 use std::sync::Arc;
@@ -96,6 +97,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             execution_manager,
         );
         subscriber.start().await;
+
+        let mcp_registry_sync = McpRegistrySyncService::new(config.clone());
+        mcp_registry_sync.start();
     }
 
     // Wait for shutdown signal / 等待关闭信号

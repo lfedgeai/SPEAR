@@ -90,6 +90,21 @@ pub(super) fn build_ws_request_with_headers(
 }
 
 impl DefaultHostApi {
+    pub(super) fn block_on<F>(&self, fut: F) -> F::Output
+    where
+        F: Future,
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return handle.block_on(fut);
+        }
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(fut)
+    }
+
     pub(super) fn spawn_background<F>(&self, fut: F)
     where
         F: Future<Output = ()> + Send + 'static,

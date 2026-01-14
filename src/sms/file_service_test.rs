@@ -1,4 +1,5 @@
 use crate::proto::sms::{
+    mcp_registry_service_client::McpRegistryServiceClient,
     node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
     task_service_client::TaskServiceClient,
 };
@@ -14,7 +15,8 @@ async fn make_router_with_limit(limit: usize) -> Router {
     let state = GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
-        placement_client: PlacementServiceClient::new(channel),
+        placement_client: PlacementServiceClient::new(channel.clone()),
+        mcp_registry_client: McpRegistryServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: limit,
     };

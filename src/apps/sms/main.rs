@@ -49,6 +49,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.clone(),
     )
     .await;
+
+    if !config.mcp.dir.is_empty() {
+        let loaded = sms_service.bootstrap_mcp_from_dir(&config.mcp.dir).await?;
+        tracing::info!(loaded, dir = %config.mcp.dir, "MCP servers loaded from directory");
+    }
     let sms_service_for_cleanup = sms_service.clone();
 
     // Initialize gRPC server / 初始化gRPC服务器

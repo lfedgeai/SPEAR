@@ -72,10 +72,15 @@ mod http_test_utils {
             spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
                 channel.clone(),
             );
+        let mcp_registry_client =
+            spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
+                channel.clone(),
+            );
         let state = GatewayState {
             node_client: sms_client,
             task_client,
             placement_client,
+            mcp_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -224,10 +229,15 @@ async fn test_http_node_lifecycle() {
         spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
             channel_filter.clone(),
         );
+    let mcp_registry_client_filter =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
+            channel_filter.clone(),
+        );
     let filter_state = GatewayState {
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
+        mcp_registry_client: mcp_registry_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -335,10 +345,15 @@ async fn test_http_resource_management() {
         spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
             channel_filter.clone(),
         );
+    let mcp_registry_client_filter =
+        spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
+            channel_filter.clone(),
+        );
     let state = GatewayState {
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
+        mcp_registry_client: mcp_registry_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

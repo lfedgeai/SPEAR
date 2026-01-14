@@ -32,6 +32,7 @@ pub mod execution;
 pub mod function_service;
 pub mod grpc_server;
 pub mod http_gateway;
+pub mod mcp;
 pub mod object_service;
 pub mod registration;
 pub mod task_events;

@@ -87,11 +87,16 @@ mod task_test_utils {
             spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
                 channel.clone(),
             );
+        let mcp_registry_client =
+            spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
+                channel.clone(),
+            );
 
         let state = GatewayState {
             node_client: sms_client,
             task_client,
             placement_client,
+            mcp_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };

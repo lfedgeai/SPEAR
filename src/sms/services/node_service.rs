@@ -7,6 +7,14 @@ use tokio::sync::RwLock;
 use crate::proto::sms::Node;
 use crate::sms::error::{SmsError, SmsResult};
 
+#[derive(Debug, Clone)]
+pub struct NodeOfflineMark {
+    pub uuid: String,
+    pub last_heartbeat: i64,
+    pub age_seconds: i64,
+    pub previous_status: String,
+}
+
 /// Node service for managing cluster nodes / 管理集群节点的服务
 #[derive(Debug, Clone)]
 pub struct NodeService {
@@ -61,7 +69,7 @@ impl NodeService {
     pub async fn mark_unhealthy_nodes_offline(
         &mut self,
         timeout_seconds: u64,
-    ) -> SmsResult<Vec<String>> {
+    ) -> SmsResult<Vec<NodeOfflineMark>> {
         let mut nodes = self.nodes.write().await;
         let current_time = chrono::Utc::now().timestamp();
         let timeout_threshold = current_time - timeout_seconds as i64;
@@ -69,10 +77,16 @@ impl NodeService {
         let mut updated = Vec::new();
         for (uuid, node) in nodes.iter_mut() {
             if node.last_heartbeat < timeout_threshold {
-                if node.status.to_ascii_lowercase() != "offline" {
+                let previous_status = node.status.clone();
+                if previous_status.to_ascii_lowercase() != "offline" {
                     node.status = "offline".to_string();
                 }
-                updated.push(uuid.clone());
+                updated.push(NodeOfflineMark {
+                    uuid: uuid.clone(),
+                    last_heartbeat: node.last_heartbeat,
+                    age_seconds: current_time - node.last_heartbeat,
+                    previous_status,
+                });
             }
         }
 

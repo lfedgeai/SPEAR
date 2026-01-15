@@ -24,6 +24,8 @@ mod tests {
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -49,7 +51,7 @@ mod tests {
 
         assert_eq!(config.grpc.addr.to_string(), "127.0.0.1:50051");
         assert_eq!(config.http.addr.to_string(), "127.0.0.1:8080");
-        assert_eq!(config.log.level, "info");
+        assert_eq!(config.logging.level, "info");
         assert!(config.enable_swagger); // Default is true
         assert_eq!(config.database.db_type, "sled");
         assert_eq!(config.database.path, "./data/sms");
@@ -83,6 +85,8 @@ mod tests {
             web_admin_addr: None,
             mcp_dir: None,
             log_level: Some("debug".to_string()),
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: Some(30),
             cleanup_interval: Some(60),
             max_upload_bytes: None,
@@ -98,7 +102,7 @@ mod tests {
         assert_eq!(config.database.path, "./test-data");
         assert_eq!(config.database.pool_size, Some(5));
         assert!(config.enable_swagger);
-        assert_eq!(config.log.level, "debug");
+        assert_eq!(config.logging.level, "debug");
     }
 
     #[test]
@@ -118,6 +122,8 @@ mod tests {
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -147,6 +153,8 @@ mod tests {
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -173,6 +181,8 @@ mod tests {
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -217,6 +227,8 @@ mod tests {
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -254,7 +266,7 @@ enable_tls = false
 cert_path = ""
 key_path = ""
 
-[log]
+[logging]
 level = "warn"
 format = "json"
 file = "/tmp/sms.log"
@@ -283,6 +295,8 @@ pool_size = 20
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -326,6 +340,8 @@ pool_size = 20
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -336,7 +352,7 @@ pool_size = 20
         let cfg = result.unwrap();
         assert_eq!(cfg.grpc.addr.to_string(), "127.0.0.1:55555");
         assert_eq!(cfg.http.addr.to_string(), "127.0.0.1:8088");
-        assert_eq!(cfg.log.level, "warn");
+        assert_eq!(cfg.logging.level, "warn");
         assert!(!cfg.enable_swagger);
 
         // Cleanup / 清理
@@ -395,6 +411,8 @@ addr = "127.0.0.1:9100"
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
@@ -429,6 +447,8 @@ addr = "127.0.0.1:9100"
             web_admin_addr: None,
             mcp_dir: None,
             log_level: Some("trace".to_string()),
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: Some(1),
             cleanup_interval: Some(1),
             max_upload_bytes: None,
@@ -441,7 +461,7 @@ addr = "127.0.0.1:9100"
         assert_eq!(config.grpc.addr.port(), 0);
         assert_eq!(config.http.addr.port(), 65535);
         assert_eq!(config.database.pool_size, Some(1));
-        assert_eq!(config.log.level, "trace");
+        assert_eq!(config.logging.level, "trace");
     }
 
     #[test]
@@ -461,6 +481,8 @@ addr = "127.0.0.1:9100"
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,

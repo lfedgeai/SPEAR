@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(cfg);
 
     // Initialize logging with configuration / 使用配置初始化日志
-    init_tracing(&config.log.to_logging_config()).unwrap();
+    init_tracing(&config.logging.to_logging_config()).unwrap();
 
     tracing::info!("Starting SMS server with args: {}", log_args);
 

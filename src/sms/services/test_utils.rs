@@ -144,7 +144,7 @@ impl TestDataGenerator {
                 addr: "127.0.0.1:8080".parse().unwrap(),
                 ..Default::default()
             },
-            log: LogConfig::default(),
+            logging: LogConfig::default(),
             enable_swagger: true,
             database: DatabaseConfig {
                 db_type: "memory".to_string(),
@@ -182,7 +182,7 @@ impl TestDataGenerator {
                 addr: http_addr.parse().unwrap(),
                 ..Default::default()
             },
-            log: LogConfig::default(),
+            logging: LogConfig::default(),
             enable_swagger: false,
             database: DatabaseConfig {
                 db_type: "memory".to_string(),

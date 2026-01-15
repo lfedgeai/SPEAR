@@ -24,3 +24,8 @@ pool_size = 10
 [event_kv]
 backend = "rocksdb"
 params = { path = "./data/events-rocksdb" }
+
+[logging]
+level = "info"
+format = "json"
+file = "./logs/sms.log"

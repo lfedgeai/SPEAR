@@ -47,10 +47,10 @@ params = {}
 [mcp]
 dir = "./config/sms/mcp.d"
 
-[log]
+[logging]
 # Log level: trace/debug/info/warn/error / 日志级别
 level = "debug"
 # Log format: json/pretty / 日志格式
-format = "json"
+format = "pretty"
 # Log output file (optional) / 日志输出文件（可选）
 file = "./logs/sms.log"

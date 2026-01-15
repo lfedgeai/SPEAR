@@ -9,9 +9,8 @@ use axum::{
 use tower::ServiceExt;
 
 use crate::proto::sms::{
-    mcp_registry_service_client::McpRegistryServiceClient,
-    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
-    task_service_client::TaskServiceClient,
+    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
+    placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use crate::sms::routes::create_routes;

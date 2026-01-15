@@ -3,9 +3,7 @@ use spear_next::proto::sms::{
     task_service_client::TaskServiceClient, task_service_server::TaskServiceServer,
     RegisterTaskRequest, TaskExecutable,
 };
-use spear_next::proto::spearlet::{
-    ArtifactSpec, ExecutionMode, InvocationType, InvokeFunctionRequest,
-};
+use spear_next::proto::spearlet::{ExecutionMode, InvokeRequest, Payload};
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::spearlet::execution::instance::{
     InstanceConfig, InstanceResourceLimits, TaskInstance,
@@ -14,6 +12,7 @@ use spear_next::spearlet::execution::manager::{TaskExecutionManager, TaskExecuti
 use spear_next::spearlet::execution::runtime::{
     self, Runtime, RuntimeCapabilities, RuntimeExecutionResponse, RuntimeType,
 };
+use spear_next::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tonic::transport::Server;
@@ -185,18 +184,22 @@ async fn test_spearlet_fetches_task_from_sms_when_missing_locally() {
     .unwrap();
 
     let resp = manager
-        .submit_execution(InvokeFunctionRequest {
-            invocation_type: InvocationType::ExistingTask as i32,
+        .submit_invocation(InvokeRequest {
+            invocation_id: "inv-1".to_string(),
+            execution_id: "exec-1".to_string(),
             task_id: task_id.clone(),
-            artifact_spec: Some(ArtifactSpec {
-                artifact_id: "placeholder".to_string(),
-                artifact_type: "sms".to_string(),
-                ..Default::default()
+            function_name: DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: Some(Payload {
+                content_type: "application/octet-stream".to_string(),
+                data: Vec::new(),
             }),
-            execution_mode: ExecutionMode::Sync as i32,
-            wait: true,
-            execution_id: Some("exec-1".to_string()),
-            ..Default::default()
+            headers: Default::default(),
+            environment: Default::default(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode: ExecutionMode::Sync as i32,
+            force_new_instance: false,
+            metadata: Default::default(),
         })
         .await
         .unwrap();

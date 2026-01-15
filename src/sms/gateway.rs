@@ -8,9 +8,8 @@ use tower_http::cors::CorsLayer;
 
 use super::routes::create_routes;
 use crate::proto::sms::{
-    mcp_registry_service_client::McpRegistryServiceClient,
-    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
-    task_service_client::TaskServiceClient,
+    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
+    placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
 };
 
 /// Embedded static files for Swagger UI / Swagger UI的嵌入式静态文件

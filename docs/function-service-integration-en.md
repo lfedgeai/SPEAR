@@ -119,16 +119,23 @@ async fn invoke_function(
     // 1. Create Artifact
     let artifact = self.create_artifact_from_proto(&req.artifact_spec)?;
     
-    // 2. Execute through ExecutionManager
-    let execution_request = ExecutionRequest {
-        artifact_spec: req.artifact_spec,
-        parameters: req.parameters,
-        context: req.context,
+    // 2. Execute through TaskExecutionManager
+    let invoke = InvokeRequest {
+        invocation_id: req.invocation_id,
+        execution_id: req.execution_id,
+        task_id: req.task_id,
+        function_name: req.function_name,
+        input: req.input,
+        headers: req.headers,
+        environment: req.environment,
+        timeout_ms: req.timeout_ms,
+        session_id: req.session_id,
+        mode: req.mode,
+        force_new_instance: req.force_new_instance,
+        metadata: req.metadata,
     };
-    
-    let execution_response = self.execution_manager
-        .execute_task(execution_request)
-        .await?;
+
+    let execution_response = self.execution_manager.submit_invocation(invoke).await?;
     
     // 3. Convert response
     let response = self.execution_response_to_proto(execution_response)?;

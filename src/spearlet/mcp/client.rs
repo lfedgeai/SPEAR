@@ -3,8 +3,8 @@ use rmcp::{
     service::ServiceExt,
     transport::{ConfigureCommandExt, TokioChildProcess},
 };
-use tokio::process::Command;
 use std::process::Stdio;
+use tokio::process::Command;
 
 use crate::proto::sms::{McpServerRecord, McpTransport};
 
@@ -28,12 +28,10 @@ pub async fn list_tools(record: &McpServerRecord) -> Result<Vec<serde_json::Valu
             c.stderr(Stdio::null());
         });
 
-        let peer = ().serve(
-            TokioChildProcess::new(cmd)
-                .map_err(|e| format!("spawn failed: {}", e))?,
-        )
-        .await
-        .map_err(|e| format!("connect failed: {}", e))?;
+        let peer =
+            ().serve(TokioChildProcess::new(cmd).map_err(|e| format!("spawn failed: {}", e))?)
+                .await
+                .map_err(|e| format!("connect failed: {}", e))?;
 
         let tools = peer
             .list_tools(Default::default())
@@ -81,15 +79,13 @@ pub async fn call_tool(
             c.stderr(Stdio::null());
         });
 
-        let peer = ().serve(
-            TokioChildProcess::new(cmd)
-                .map_err(|e| format!("spawn failed: {}", e))?,
-        )
-        .await
-        .map_err(|e| format!("connect failed: {}", e))?;
+        let peer =
+            ().serve(TokioChildProcess::new(cmd).map_err(|e| format!("spawn failed: {}", e))?)
+                .await
+                .map_err(|e| format!("connect failed: {}", e))?;
 
-        let args_val = serde_json::from_str::<serde_json::Value>(args_json)
-            .unwrap_or(serde_json::Value::Null);
+        let args_val =
+            serde_json::from_str::<serde_json::Value>(args_json).unwrap_or(serde_json::Value::Null);
         let args_obj = args_val.as_object().cloned();
 
         let out = peer

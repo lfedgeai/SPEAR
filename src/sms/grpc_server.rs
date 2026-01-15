@@ -7,9 +7,8 @@ use tonic::transport::Server;
 use tracing::{error, info};
 
 use crate::proto::sms::{
-    mcp_registry_service_server::McpRegistryServiceServer,
-    node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
-    task_service_server::TaskServiceServer,
+    mcp_registry_service_server::McpRegistryServiceServer, node_service_server::NodeServiceServer,
+    placement_service_server::PlacementServiceServer, task_service_server::TaskServiceServer,
 };
 
 use crate::sms::service::SmsServiceImpl;

@@ -13,6 +13,7 @@ use spear_next::spearlet::execution::manager::{TaskExecutionManager, TaskExecuti
 use spear_next::spearlet::execution::runtime::{
     ExecutionContext as RtCtx, Runtime, RuntimeCapabilities, RuntimeExecutionResponse, RuntimeType,
 };
+use spear_next::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
 
 struct SuccessRuntime;
 
@@ -170,19 +171,23 @@ async fn test_spearlet_writes_result_on_completion() {
         .await
         .unwrap();
 
-    // Submit execution with desired task_id
-    let mut req = spear_next::proto::spearlet::InvokeFunctionRequest::default();
-    req.task_id = task_id.clone();
-    req.invocation_type = spear_next::proto::spearlet::InvocationType::ExistingTask as i32;
-    req.artifact_spec = Some(spear_next::proto::spearlet::ArtifactSpec {
-        artifact_id: "artifact-x".to_string(),
-        artifact_type: "process".to_string(),
-        location: "file:///bin/foo".to_string(),
-        version: "v1".to_string(),
-        checksum: String::new(),
-        metadata: std::collections::HashMap::new(),
-    });
-    let _ = mgr.submit_execution(req).await.unwrap();
+    let _ = mgr
+        .submit_invocation(spear_next::proto::spearlet::InvokeRequest {
+            invocation_id: "inv-1".to_string(),
+            execution_id: "exec-1".to_string(),
+            task_id: task_id.clone(),
+            function_name: DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: None,
+            headers: Default::default(),
+            environment: Default::default(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode: spear_next::proto::spearlet::ExecutionMode::Sync as i32,
+            force_new_instance: false,
+            metadata: Default::default(),
+        })
+        .await
+        .unwrap();
 
     // Wait for async publish
     sleep(Duration::from_millis(50)).await;

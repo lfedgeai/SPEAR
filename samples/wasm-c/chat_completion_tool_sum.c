@@ -1,5 +1,11 @@
 #include <spear.h>
 
+// Tool calling sample (WASM-C).
+// Tool calling 示例（WASM-C）。
+//
+// This sample registers a host function `sum(a,b)` and lets the model call it.
+// 本示例注册一个宿主函数 `sum(a,b)`，并让模型自动发起工具调用。
+
 static uint8_t TOOL_ARENA[128 * 1024];
 
 static int32_t find_int_field(const char *s, int32_t len, const char *key, int32_t fallback) {
@@ -47,6 +53,8 @@ static int32_t find_int_field(const char *s, int32_t len, const char *key, int32
 }
 
 int32_t sum(int32_t args_ptr, int32_t args_len, int32_t out_ptr, int32_t out_len_ptr) {
+    // Tool function entry: args is a JSON object.
+    // 工具函数入口：args 为 JSON 对象。
     const char *args = (const char *)(uintptr_t)args_ptr;
     int32_t a = find_int_field(args, args_len, "a", 0);
     int32_t b = find_int_field(args, args_len, "b", 0);
@@ -73,12 +81,16 @@ int32_t sum(int32_t args_ptr, int32_t args_len, int32_t out_ptr, int32_t out_len
 }
 
 int main() {
+    // Create a chat session fd.
+    // 创建 chat session fd。
     int32_t fd = sp_cchat_create();
     if (fd < 0) {
         printf("cchat_create failed: %d\n", fd);
         return 1;
     }
 
+    // Provide arena memory for tool call arguments/results.
+    // 提供 tool call 参数/结果的 arena 内存。
     int32_t arena_ptr = (int32_t)(uintptr_t)TOOL_ARENA;
     uint32_t arena_len = (uint32_t)sizeof(TOOL_ARENA);
     sp_cchat_set_param_u32(fd, "tool_arena_ptr", (uint32_t)arena_ptr);
@@ -86,8 +98,12 @@ int main() {
     sp_cchat_set_param_u32(fd, "max_total_tool_calls", 4);
     sp_cchat_set_param_u32(fd, "max_iterations", 4);
 
+    // Choose a model that supports tool calling.
+    // 选择支持 tool calling 的模型。
     sp_cchat_set_param_string(fd, "model", "gpt-4o-mini");
 
+    // Ask the model to call the tool.
+    // 让模型触发工具调用。
     sp_cchat_write_msg_str(fd, "user", "Please call sum(a,b) for a=7 and b=35.");
 
     const char *fn_json =
@@ -99,6 +115,8 @@ int main() {
     printf("cchat_write_fn_rc=%d\n", rc);
 
     if (rc == 0) {
+        // AUTO_TOOL_CALL makes the runtime iterate tool calls automatically.
+        // AUTO_TOOL_CALL 会让 runtime 自动迭代处理工具调用。
         int32_t resp_fd = sp_cchat_send(fd, AUTO_TOOL_CALL);
         if (resp_fd < 0) {
             printf("cchat_send failed: %d\n", resp_fd);

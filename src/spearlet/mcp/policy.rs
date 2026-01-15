@@ -183,10 +183,7 @@ pub fn filter_and_namespace_openai_tools(
             continue;
         }
         let ns_name = encode_openai_mcp_tool_name(server_id, name);
-        let desc = t
-            .get("description")
-            .and_then(|x| x.as_str())
-            .unwrap_or("");
+        let desc = t.get("description").and_then(|x| x.as_str()).unwrap_or("");
         let params = t
             .get("inputSchema")
             .cloned()
@@ -311,20 +308,17 @@ mod tests {
         let out = filter_and_namespace_openai_tools("fs", &server_allowed, &session, &tools);
         assert_eq!(out.len(), 1);
         let v: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
-        assert_eq!(v["function"]["name"], encode_openai_mcp_tool_name("fs", "read_file"));
+        assert_eq!(
+            v["function"]["name"],
+            encode_openai_mcp_tool_name("fs", "read_file")
+        );
     }
 
     #[test]
     fn test_decide_exec_uses_budgets_and_limits() {
         let mut params = std::collections::HashMap::new();
-        params.insert(
-            "mcp.enabled".to_string(),
-            serde_json::Value::Bool(true),
-        );
-        params.insert(
-            "mcp.server_ids".to_string(),
-            serde_json::json!(["fs"]),
-        );
+        params.insert("mcp.enabled".to_string(), serde_json::Value::Bool(true));
+        params.insert("mcp.server_ids".to_string(), serde_json::json!(["fs"]));
         params.insert(
             "max_tool_output_bytes".to_string(),
             serde_json::Value::Number(1024.into()),

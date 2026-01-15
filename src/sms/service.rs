@@ -14,12 +14,12 @@ use crate::sms::services::{
     task_service::TaskService as TaskServiceImpl,
 };
 use crate::storage::kv::{create_kv_store_from_config, get_kv_store_factory, KvStoreConfig};
+use anyhow::Context;
 use dashmap::DashMap;
 use futures::stream::unfold;
 use tokio::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::{debug, warn};
-use anyhow::Context;
 
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
@@ -50,12 +50,12 @@ use crate::proto::sms::{
     ListNodesResponse,
     ListTasksRequest,
     ListTasksResponse,
+    McpRegistryEvent,
+    McpServerRecord,
     McpTransport,
     NodeCandidate,
     PlaceInvocationRequest,
     PlaceInvocationResponse,
-    McpRegistryEvent,
-    McpServerRecord,
     // Node service messages / 节点服务消息
     RegisterNodeRequest,
     RegisterNodeResponse,
@@ -129,10 +129,7 @@ pub struct SmsServiceImpl {
 }
 
 impl SmsServiceImpl {
-    async fn upsert_mcp_record_inner(
-        &self,
-        mut record: McpServerRecord,
-    ) -> Result<u64, Status> {
+    async fn upsert_mcp_record_inner(&self, mut record: McpServerRecord) -> Result<u64, Status> {
         if record.server_id.is_empty() {
             return Err(Status::invalid_argument("server_id is required"));
         }
@@ -306,9 +303,11 @@ impl SmsServiceImpl {
                 }),
                 tool_namespace: cfg.tool_namespace.unwrap_or_default(),
                 allowed_tools: cfg.allowed_tools.unwrap_or_default(),
-                approval_policy: cfg.approval_policy.map(|p| crate::proto::sms::McpApprovalPolicy {
-                    default_policy: p.default_policy.unwrap_or_default(),
-                    per_tool: p.per_tool.unwrap_or_default(),
+                approval_policy: cfg.approval_policy.map(|p| {
+                    crate::proto::sms::McpApprovalPolicy {
+                        default_policy: p.default_policy.unwrap_or_default(),
+                        per_tool: p.per_tool.unwrap_or_default(),
+                    }
                 }),
                 budgets: cfg.budgets.map(|b| crate::proto::sms::McpBudgets {
                     tool_timeout_ms: b.tool_timeout_ms.unwrap_or(0),
@@ -581,33 +580,19 @@ impl McpRegistryServiceTrait for SmsServiceImpl {
             rx: broadcast::Receiver<McpRegistryEvent>,
         }
 
-        let stream = unfold(
-            WatchState { pending, rx },
-            |mut st| async move {
-                if let Some(event) = st.pending.pop_front() {
-                    return Some((
-                        Ok(WatchMcpServersResponse {
-                            event: Some(event),
-                        }),
-                        st,
-                    ));
-                }
+        let stream = unfold(WatchState { pending, rx }, |mut st| async move {
+            if let Some(event) = st.pending.pop_front() {
+                return Some((Ok(WatchMcpServersResponse { event: Some(event) }), st));
+            }
 
-                match st.rx.recv().await {
-                    Ok(event) => Some((
-                        Ok(WatchMcpServersResponse {
-                            event: Some(event),
-                        }),
-                        st,
-                    )),
-                    Err(broadcast::error::RecvError::Lagged(_)) => Some((
-                        Err(Status::aborted("watch lagged; resync required")),
-                        st,
-                    )),
-                    Err(broadcast::error::RecvError::Closed) => None,
+            match st.rx.recv().await {
+                Ok(event) => Some((Ok(WatchMcpServersResponse { event: Some(event) }), st)),
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    Some((Err(Status::aborted("watch lagged; resync required")), st))
                 }
-            },
-        );
+                Err(broadcast::error::RecvError::Closed) => None,
+            }
+        });
 
         Ok(Response::new(Box::pin(stream)))
     }

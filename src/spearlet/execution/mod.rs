@@ -47,6 +47,14 @@ pub mod runtime;
 pub mod scheduler;
 pub mod task;
 
+/// Default entry function name placeholder.
+/// 默认入口函数名占位符。
+///
+/// When the client sets `InvokeRequest.function_name` to this value (or leaves it empty),
+/// the runtime decides the actual entry point.
+/// 当调用方把 `InvokeRequest.function_name` 设为该值（或留空）时，具体 runtime 自行决定实际入口点。
+pub const DEFAULT_ENTRY_FUNCTION_NAME: &str = "__spear_default_entry__";
+
 // Re-export commonly used types / 重新导出常用类型
 pub use artifact::{Artifact, ArtifactId, ArtifactSpec, ArtifactStatus};
 pub use communication::{
@@ -82,6 +90,14 @@ pub struct ExecutionContext {
 pub struct ExecutionResponse {
     /// Execution ID / 执行 ID
     pub execution_id: String,
+    /// Invocation ID / 调用 ID
+    pub invocation_id: String,
+    /// Task ID / 任务 ID
+    pub task_id: String,
+    /// Function name / 函数名
+    pub function_name: String,
+    /// Instance ID / 实例 ID
+    pub instance_id: String,
     /// Output data / 输出数据
     pub output_data: Vec<u8>,
     /// Execution status / 执行状态

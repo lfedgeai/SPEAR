@@ -17,7 +17,8 @@ use tonic::transport::Channel;
 use tracing::{debug, error, info};
 
 use crate::proto::spearlet::{
-    function_service_client::FunctionServiceClient, object_service_client::ObjectServiceClient,
+    execution_service_client::ExecutionServiceClient,
+    invocation_service_client::InvocationServiceClient, object_service_client::ObjectServiceClient,
     AddObjectRefRequest, DeleteObjectRequest, GetObjectRequest, ListObjectsRequest,
     PinObjectRequest, PutObjectRequest, RemoveObjectRefRequest, UnpinObjectRequest,
 };
@@ -37,7 +38,9 @@ pub struct HttpGateway {
 struct AppState {
     object_client: ObjectServiceClient<Channel>,
     #[allow(dead_code)]
-    function_client: FunctionServiceClient<Channel>,
+    invocation_client: InvocationServiceClient<Channel>,
+    #[allow(dead_code)]
+    execution_client: ExecutionServiceClient<Channel>,
     health_service: Arc<HealthService>,
     config: Arc<SpearletConfig>,
 }
@@ -101,13 +104,17 @@ impl HttpGateway {
             }
         }
         let object_client = grpc_client.unwrap();
-        let function_client = FunctionServiceClient::connect(grpc_endpoint.clone())
+        let invocation_client = InvocationServiceClient::connect(grpc_endpoint.clone())
             .await
-            .map_err(|e| format!("Failed to connect to FunctionService: {}", e))?;
+            .map_err(|e| format!("Failed to connect to InvocationService: {}", e))?;
+        let execution_client = ExecutionServiceClient::connect(grpc_endpoint.clone())
+            .await
+            .map_err(|e| format!("Failed to connect to ExecutionService: {}", e))?;
 
         let state = AppState {
             object_client,
-            function_client,
+            invocation_client,
+            execution_client,
             health_service: self.health_service,
             config: self.config.clone(),
         };

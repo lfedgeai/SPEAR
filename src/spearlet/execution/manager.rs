@@ -12,9 +12,9 @@ use super::{
     runtime::{ExecutionContext, RuntimeManager},
     scheduler::{InstanceScheduler, SchedulingPolicy},
     task::{Task, TaskId},
-    ExecutionError, ExecutionResult,
+    ExecutionError, ExecutionResult, DEFAULT_ENTRY_FUNCTION_NAME,
 };
-use crate::proto::spearlet::{ArtifactSpec as ProtoArtifactSpec, InvokeFunctionRequest};
+use crate::proto::spearlet::{ExecutionMode as ProtoExecutionMode, InvokeRequest};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -71,17 +71,16 @@ impl Default for TaskExecutionManagerConfig {
     }
 }
 
-/// Execution request / 执行请求
 #[derive(Debug)]
-pub struct ExecutionRequest {
+struct ExecutionWorkItem {
     /// Execution ID / 执行 ID
     pub execution_id: String,
-    /// Artifact specification / Artifact 规范
-    pub artifact_spec: ProtoArtifactSpec,
+    /// Invocation ID / 调用 ID
+    pub invocation_id: String,
+    /// Task ID / 任务 ID
+    pub task_id: String,
     /// Execution context / 执行上下文
     pub execution_context: ExecutionContext,
-    /// Desired task ID from request (if any) / 来自请求的期望任务ID（如有）
-    pub desired_task_id: Option<String>,
     /// Response sender / 响应发送器
     pub response_sender: oneshot::Sender<ExecutionResult<super::ExecutionResponse>>,
     /// Request timestamp / 请求时间戳
@@ -164,7 +163,7 @@ pub struct TaskExecutionManager {
     /// Request counter / 请求计数器
     request_counter: AtomicU64,
     /// Execution request sender / 执行请求发送器
-    request_sender: mpsc::UnboundedSender<ExecutionRequest>,
+    work_sender: mpsc::UnboundedSender<ExecutionWorkItem>,
     /// Shutdown signal / 关闭信号
     shutdown_sender: Option<oneshot::Sender<()>>,
 }
@@ -179,7 +178,7 @@ impl TaskExecutionManager {
         let scheduler = Arc::new(InstanceScheduler::new(SchedulingPolicy::RoundRobin));
         let execution_semaphore = Arc::new(Semaphore::new(config.max_concurrent_executions));
 
-        let (request_sender, request_receiver) = mpsc::unbounded_channel();
+        let (work_sender, work_receiver) = mpsc::unbounded_channel();
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
 
         let manager = Arc::new(Self {
@@ -194,7 +193,7 @@ impl TaskExecutionManager {
             execution_semaphore,
             statistics: Arc::new(RwLock::new(ExecutionStatistics::default())),
             request_counter: AtomicU64::new(0),
-            request_sender,
+            work_sender,
             shutdown_sender: Some(shutdown_sender),
         });
 
@@ -202,7 +201,7 @@ impl TaskExecutionManager {
         let manager_clone = manager.clone();
         tokio::spawn(async move {
             manager_clone
-                .run_execution_loop(request_receiver, shutdown_receiver)
+                .run_execution_work_loop(work_receiver, shutdown_receiver)
                 .await;
         });
 
@@ -229,104 +228,108 @@ impl TaskExecutionManager {
         self.runtime_manager.list_runtime_types()
     }
 
-    /// Submit execution request / 提交执行请求
-    pub async fn submit_execution(
+    pub async fn submit_invocation(
         &self,
-        request: InvokeFunctionRequest,
+        request: InvokeRequest,
     ) -> ExecutionResult<super::ExecutionResponse> {
-        let execution_id = request
-            .execution_id
-            .clone()
-            .filter(|id| !id.is_empty())
-            .unwrap_or_else(|| {
-                format!(
-                    "req-{}",
-                    self.request_counter.fetch_add(1, Ordering::SeqCst)
-                )
+        if request.task_id.is_empty() {
+            return Err(ExecutionError::InvalidRequest {
+                message: "Missing task_id".to_string(),
             });
+        }
 
-        let (execution_mode, wait) = {
-            let m = request.execution_mode();
-            let wait = request.wait;
-            let m2 = match m {
-                crate::proto::spearlet::ExecutionMode::Sync => {
-                    crate::spearlet::execution::runtime::ExecutionMode::Sync
-                }
-                crate::proto::spearlet::ExecutionMode::Async => {
-                    crate::spearlet::execution::runtime::ExecutionMode::Async
-                }
-                crate::proto::spearlet::ExecutionMode::Stream => {
-                    crate::spearlet::execution::runtime::ExecutionMode::Stream
-                }
-                crate::proto::spearlet::ExecutionMode::Unknown => {
-                    crate::spearlet::execution::runtime::ExecutionMode::Unknown
-                }
-            };
-            (m2, wait)
+        let execution_id = if request.execution_id.is_empty() {
+            format!(
+                "req-{}",
+                self.request_counter.fetch_add(1, Ordering::SeqCst)
+            )
+        } else {
+            request.execution_id.clone()
         };
 
-        let artifact_spec =
-            request
-                .artifact_spec
-                .clone()
-                .ok_or_else(|| ExecutionError::InvalidRequest {
-                    message: "Missing artifact specification".to_string(),
-                })?;
+        let invocation_id = if request.invocation_id.is_empty() {
+            execution_id.clone()
+        } else {
+            request.invocation_id.clone()
+        };
+
+        let mode =
+            ProtoExecutionMode::try_from(request.mode).unwrap_or(ProtoExecutionMode::Unspecified);
+        let execution_mode = match mode {
+            ProtoExecutionMode::Sync => crate::spearlet::execution::runtime::ExecutionMode::Sync,
+            ProtoExecutionMode::Async => crate::spearlet::execution::runtime::ExecutionMode::Async,
+            ProtoExecutionMode::Stream => {
+                crate::spearlet::execution::runtime::ExecutionMode::Stream
+            }
+            ProtoExecutionMode::Console => {
+                crate::spearlet::execution::runtime::ExecutionMode::Async
+            }
+            ProtoExecutionMode::Unspecified => {
+                crate::spearlet::execution::runtime::ExecutionMode::Sync
+            }
+        };
+
+        let wait = matches!(
+            execution_mode,
+            crate::spearlet::execution::runtime::ExecutionMode::Sync
+        );
+
+        let input = request.input.clone().unwrap_or_default();
+        let timeout_ms = if request.timeout_ms == 0 {
+            30000
+        } else {
+            request.timeout_ms
+        };
+        let function_name = if request.function_name.is_empty() {
+            DEFAULT_ENTRY_FUNCTION_NAME.to_string()
+        } else {
+            request.function_name.clone()
+        };
 
         let execution_context = ExecutionContext {
             execution_id: execution_id.clone(),
-            payload: Vec::new(), // TODO: Extract payload from request
-            headers: std::collections::HashMap::new(), // TODO: Extract headers from request
-            timeout_ms: 30000,   // TODO: Extract timeout from request context
+            function_name: function_name.clone(),
+            payload: input.data,
+            headers: request.headers.clone(),
+            timeout_ms,
             execution_mode,
             wait,
-            context_data: std::collections::HashMap::new(), // TODO: Extract context data from request
+            context_data: std::collections::HashMap::new(),
         };
 
         let (response_sender, response_receiver) = oneshot::channel();
 
         let timestamp = SystemTime::now();
 
-        // Desired task id from request / 从请求提取期望task id
-        let desired_task_id = if request.task_id.is_empty() {
-            None
-        } else {
-            Some(request.task_id.clone())
-        };
-
-        let mut meta = std::collections::HashMap::new();
-        if let Some(task_id) = desired_task_id.clone() {
-            if !task_id.is_empty() {
-                meta.insert("task_id".to_string(), task_id);
-            }
-        }
-        meta.insert("artifact_id".to_string(), artifact_spec.artifact_id.clone());
-
         self.executions.insert(
             execution_id.clone(),
             super::ExecutionResponse {
                 execution_id: execution_id.clone(),
+                invocation_id: invocation_id.clone(),
+                task_id: request.task_id.clone(),
+                function_name: function_name.clone(),
+                instance_id: String::new(),
                 output_data: Vec::new(),
                 status: "pending".to_string(),
                 error_message: None,
                 execution_time_ms: 0,
-                metadata: meta,
+                metadata: std::collections::HashMap::new(),
                 timestamp: SystemTime::now(),
             },
         );
 
-        let execution_request = ExecutionRequest {
+        let work_item = ExecutionWorkItem {
             execution_id: execution_id.clone(),
-            artifact_spec,
+            invocation_id,
+            task_id: request.task_id.clone(),
             execution_context,
-            desired_task_id,
             response_sender,
             timestamp,
         };
 
         // Send to execution loop / 发送到执行循环
-        self.request_sender
-            .send(execution_request)
+        self.work_sender
+            .send(work_item)
             .map_err(|_| ExecutionError::RuntimeError {
                 message: "Failed to submit execution request".to_string(),
             })?;
@@ -400,6 +403,29 @@ impl TaskExecutionManager {
             .map(|entry| entry.value().clone()))
     }
 
+    pub fn list_executions(
+        &self,
+        task_id: Option<&str>,
+        invocation_id: Option<&str>,
+        limit: usize,
+    ) -> Vec<super::ExecutionResponse> {
+        let mut items: Vec<super::ExecutionResponse> =
+            self.executions.iter().map(|e| e.value().clone()).collect();
+
+        if let Some(task_id) = task_id {
+            items.retain(|r| r.task_id == task_id);
+        }
+        if let Some(invocation_id) = invocation_id {
+            items.retain(|r| r.invocation_id == invocation_id);
+        }
+
+        items.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        if limit > 0 && items.len() > limit {
+            items.truncate(limit);
+        }
+        items
+    }
+
     /// Shutdown the manager / 关闭管理器
     pub async fn shutdown(&mut self) -> ExecutionResult<()> {
         if let Some(sender) = self.shutdown_sender.take() {
@@ -419,18 +445,18 @@ impl TaskExecutionManager {
     }
 
     /// Main execution loop / 主执行循环
-    async fn run_execution_loop(
+    async fn run_execution_work_loop(
         &self,
-        mut request_receiver: mpsc::UnboundedReceiver<ExecutionRequest>,
+        mut work_receiver: mpsc::UnboundedReceiver<ExecutionWorkItem>,
         mut shutdown_receiver: oneshot::Receiver<()>,
     ) {
         info!("Starting execution loop");
 
         loop {
             tokio::select! {
-                Some(request) = request_receiver.recv() => {
+                Some(request) = work_receiver.recv() => {
                     let manager = self.clone();
-                    tokio::spawn(async move { manager.handle_execution_request(request).await });
+                    tokio::spawn(async move { manager.process_execution_work_item(request).await });
                 }
                 _ = &mut shutdown_receiver => {
                     info!("Execution loop shutting down");
@@ -440,10 +466,10 @@ impl TaskExecutionManager {
         }
     }
 
-    /// Handle execution request / 处理执行请求
-    async fn handle_execution_request(&self, request: ExecutionRequest) {
+    async fn process_execution_work_item(&self, request: ExecutionWorkItem) {
         let start_time = Instant::now();
         let execution_id = request.execution_id.clone();
+        let function_name = request.execution_context.function_name.clone();
         debug!(execution_id = %execution_id, "Execution request received");
 
         // Update statistics / 更新统计信息
@@ -461,6 +487,10 @@ impl TaskExecutionManager {
             })
             .or_insert_with(|| super::ExecutionResponse {
                 execution_id: execution_id.clone(),
+                invocation_id: request.invocation_id.clone(),
+                task_id: request.task_id.clone(),
+                function_name: function_name.clone(),
+                instance_id: String::new(),
                 output_data: Vec::new(),
                 status: "running".to_string(),
                 error_message: None,
@@ -482,13 +512,12 @@ impl TaskExecutionManager {
                 return;
             }
         };
-        let artifact_id = request.artifact_spec.artifact_id.clone();
-        debug!(execution_id = %execution_id, artifact_id = %artifact_id, "Starting execution");
+        debug!(execution_id = %execution_id, invocation_id = %request.invocation_id, "Starting execution");
         let result = self
-            .execute_request(
-                request.artifact_spec,
+            .execute_existing_task_invocation(
+                request.invocation_id.clone(),
+                Some(request.task_id.clone()),
                 request.execution_context,
-                request.desired_task_id.clone(),
             )
             .await;
 
@@ -534,6 +563,10 @@ impl TaskExecutionManager {
                     execution_id.clone(),
                     super::ExecutionResponse {
                         execution_id: execution_id.clone(),
+                        invocation_id: request.invocation_id.clone(),
+                        task_id: request.task_id.clone(),
+                        function_name,
+                        instance_id: String::new(),
                         output_data: Vec::new(),
                         status: "failed".to_string(),
                         error_message: Some(e.to_string()),
@@ -559,7 +592,7 @@ impl TaskExecutionManager {
                 if let Some(err) = &resp.error_message {
                     meta.insert("error_message".to_string(), err.clone());
                 }
-                let task_id = request.desired_task_id.clone().unwrap_or_default();
+                let task_id = request.task_id.clone();
                 if !task_id.is_empty() {
                     self.publish_task_result(
                         &task_id,
@@ -580,7 +613,7 @@ impl TaskExecutionManager {
                 );
                 meta.insert("execution_id".to_string(), execution_id.clone());
                 meta.insert("error_message".to_string(), e.to_string());
-                let task_id = request.desired_task_id.clone().unwrap_or_default();
+                let task_id = request.task_id.clone();
                 if !task_id.is_empty() {
                     self.publish_task_result(
                         &task_id,
@@ -599,12 +632,12 @@ impl TaskExecutionManager {
         let _ = request.response_sender.send(result);
     }
 
-    /// Execute request / 执行请求
-    async fn execute_request(
+    /// Execute an invocation against an existing task / 执行一次对已有 task 的调用
+    async fn execute_existing_task_invocation(
         &self,
-        _artifact_spec: ProtoArtifactSpec,
-        execution_context: ExecutionContext,
+        invocation_id: String,
         desired_task_id: Option<String>,
+        execution_context: ExecutionContext,
     ) -> ExecutionResult<super::ExecutionResponse> {
         let task = if let Some(id) = &desired_task_id {
             if let Some(t) = self.tasks.get(id) {
@@ -621,7 +654,7 @@ impl TaskExecutionManager {
         // Get or create instance / 获取或创建实例
         let instance = self.get_or_create_instance(&task).await?;
 
-        // Execute on instance / 在实例上执行
+        let function_name = execution_context.function_name.clone();
         let runtime = self
             .runtime_manager
             .get_runtime(&task.spec.runtime_type)
@@ -643,7 +676,7 @@ impl TaskExecutionManager {
             .as_ref()
             .map(Self::extract_error_message);
         let duration_ms = runtime_response.duration_ms;
-        let metadata = runtime_response
+        let metadata: std::collections::HashMap<String, String> = runtime_response
             .metadata
             .into_iter()
             .map(|(k, v)| (k, v.to_string()))
@@ -652,6 +685,10 @@ impl TaskExecutionManager {
 
         Ok(super::ExecutionResponse {
             execution_id,
+            invocation_id,
+            task_id: desired_task_id.unwrap_or_else(|| instance.task_id.clone()),
+            function_name,
+            instance_id: instance.id().to_string(),
             output_data: data,
             status: if is_successful {
                 "completed".to_string()
@@ -1356,7 +1393,7 @@ impl Clone for TaskExecutionManager {
             execution_semaphore: self.execution_semaphore.clone(),
             statistics: self.statistics.clone(),
             request_counter: AtomicU64::new(self.request_counter.load(Ordering::SeqCst)),
-            request_sender: self.request_sender.clone(),
+            work_sender: self.work_sender.clone(),
             shutdown_sender: None, // Clone doesn't get shutdown sender / 克隆不获取关闭发送器
         }
     }
@@ -1594,15 +1631,20 @@ mod tests {
         .await
         .unwrap();
 
-        let proto = crate::proto::spearlet::ArtifactSpec {
-            artifact_id: "artifact-long".to_string(),
-            artifact_type: "process".to_string(),
-            location: "".to_string(),
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec {
+            name: "artifact-long".to_string(),
             version: "1.0.0".to_string(),
-            checksum: "".to_string(),
-            metadata: StdHashMap::new(),
+            description: None,
+            runtime_type: RuntimeType::Process,
+            runtime_config: StdHashMap::new(),
+            location: None,
+            checksum_sha256: None,
+            environment: StdHashMap::new(),
+            resource_limits: Default::default(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
+            max_execution_timeout_ms: 30000,
+            labels: StdHashMap::new(),
         };
-        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto.clone());
         let artifact = manager
             .ensure_artifact_with_id("artifact-long".to_string(), spec_local)
             .unwrap();
@@ -1630,18 +1672,26 @@ mod tests {
             .ensure_task_with_id("task-long".to_string(), &artifact, task_spec)
             .unwrap();
 
-        let req = InvokeFunctionRequest {
-            invocation_type: crate::proto::spearlet::InvocationType::ExistingTask as i32,
+        let req = crate::proto::spearlet::InvokeRequest {
+            invocation_id: "inv-long-1".to_string(),
+            execution_id: "exec-long-1".to_string(),
             task_id: "task-long".to_string(),
-            artifact_spec: Some(proto),
-            execution_mode: crate::proto::spearlet::ExecutionMode::Async as i32,
-            wait: false,
-            execution_id: Some("exec-long-1".to_string()),
-            ..Default::default()
+            function_name: crate::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: Some(crate::proto::spearlet::Payload {
+                content_type: "application/octet-stream".to_string(),
+                data: Vec::new(),
+            }),
+            headers: StdHashMap::new(),
+            environment: StdHashMap::new(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode: crate::proto::spearlet::ExecutionMode::Async as i32,
+            force_new_instance: false,
+            metadata: StdHashMap::new(),
         };
 
         let mgr2 = manager.clone();
-        let h = tokio::spawn(async move { mgr2.submit_execution(req).await });
+        let h = tokio::spawn(async move { mgr2.submit_invocation(req).await });
 
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
@@ -1690,16 +1740,20 @@ mod tests {
         .await
         .unwrap();
 
-        let proto = crate::proto::spearlet::ArtifactSpec {
-            artifact_id: "artifact-test".to_string(),
-            artifact_type: "process".to_string(),
-            location: "".to_string(),
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec {
+            name: "artifact-test".to_string(),
             version: "1.0.0".to_string(),
-            checksum: "".to_string(),
-            metadata: StdHashMap::new(),
+            description: None,
+            runtime_type: RuntimeType::Process,
+            runtime_config: StdHashMap::new(),
+            location: None,
+            checksum_sha256: None,
+            environment: StdHashMap::new(),
+            resource_limits: Default::default(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
+            max_execution_timeout_ms: 30000,
+            labels: StdHashMap::new(),
         };
-
-        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
         let artifact = manager
             .ensure_artifact_with_id("artifact-test".to_string(), spec_local)
             .unwrap();
@@ -1763,16 +1817,20 @@ mod tests {
         .await
         .unwrap();
 
-        let proto = crate::proto::spearlet::ArtifactSpec {
-            artifact_id: "artifact-cleanup".to_string(),
-            artifact_type: "process".to_string(),
-            location: "".to_string(),
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec {
+            name: "artifact-cleanup".to_string(),
             version: "1.0.0".to_string(),
-            checksum: "".to_string(),
-            metadata: StdHashMap::new(),
+            description: None,
+            runtime_type: RuntimeType::Process,
+            runtime_config: StdHashMap::new(),
+            location: None,
+            checksum_sha256: None,
+            environment: StdHashMap::new(),
+            resource_limits: Default::default(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
+            max_execution_timeout_ms: 30000,
+            labels: StdHashMap::new(),
         };
-
-        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
         let artifact = manager
             .ensure_artifact_with_id("artifact-cleanup".to_string(), spec_local)
             .unwrap();
@@ -1832,16 +1890,20 @@ mod tests {
         .await
         .unwrap();
 
-        let proto = crate::proto::spearlet::ArtifactSpec {
-            artifact_id: "artifact-fixed".to_string(),
-            artifact_type: "process".to_string(),
-            location: "file:///bin/foo".to_string(),
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec {
+            name: "artifact-fixed".to_string(),
             version: "1.0.0".to_string(),
-            checksum: "".to_string(),
-            metadata: StdHashMap::new(),
+            description: None,
+            runtime_type: RuntimeType::Process,
+            runtime_config: StdHashMap::new(),
+            location: Some("file:///bin/foo".to_string()),
+            checksum_sha256: None,
+            environment: StdHashMap::new(),
+            resource_limits: Default::default(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
+            max_execution_timeout_ms: 30000,
+            labels: StdHashMap::new(),
         };
-
-        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
         let artifact = manager
             .ensure_artifact_with_id("artifact-fixed".to_string(), spec_local)
             .unwrap();
@@ -1981,16 +2043,20 @@ mod tests {
         .await
         .unwrap();
 
-        let proto = crate::proto::spearlet::ArtifactSpec {
-            artifact_id: "artifact-hc".to_string(),
-            artifact_type: "process".to_string(),
-            location: "".to_string(),
+        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec {
+            name: "artifact-hc".to_string(),
             version: "1.0.0".to_string(),
-            checksum: "".to_string(),
-            metadata: StdHashMap::new(),
+            description: None,
+            runtime_type: RuntimeType::Process,
+            runtime_config: StdHashMap::new(),
+            location: None,
+            checksum_sha256: None,
+            environment: StdHashMap::new(),
+            resource_limits: Default::default(),
+            invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
+            max_execution_timeout_ms: 30000,
+            labels: StdHashMap::new(),
         };
-
-        let spec_local = crate::spearlet::execution::artifact::ArtifactSpec::from(proto);
         let artifact = manager
             .ensure_artifact_with_id("artifact-hc".to_string(), spec_local)
             .unwrap();

@@ -841,6 +841,7 @@ mod tests {
 
         let execution_context = ExecutionContext {
             execution_id: "test-execution-123".to_string(),
+            function_name: crate::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
             payload: vec![],
             headers: HashMap::new(),
             timeout_ms: 30000,

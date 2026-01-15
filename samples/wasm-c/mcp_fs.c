@@ -1,5 +1,11 @@
 #include <spear.h>
 
+// MCP filesystem tools sample (WASM-C).
+// MCP 文件系统工具示例（WASM-C）。
+//
+// This sample enables MCP and allows a limited set of filesystem tools.
+// 本示例启用 MCP，并为文件系统工具设置最小 allowlist。
+
 #ifndef SP_OPENAI_MODEL
 #define SP_OPENAI_MODEL "gpt-4o-mini"
 #endif
@@ -34,6 +40,8 @@ static int32_t sp_cchat_set_param_string_array2(int32_t fd, const char *key, con
 }
 
 int main() {
+    // Create chat session.
+    // 创建 chat 会话。
     int32_t fd = sp_cchat_create();
     if (fd < 0) {
         printf("cchat_create failed: %d\n", fd);
@@ -41,6 +49,8 @@ int main() {
     }
 
     int32_t rc = 0;
+    // Configure model and execution limits.
+    // 配置模型与执行限制。
     rc = sp_cchat_set_param_string(fd, "model", SP_OPENAI_MODEL);
     if (rc != 0) {
         printf("set model failed: %d\n", rc);
@@ -69,6 +79,8 @@ int main() {
         return 1;
     }
 
+    // Enable MCP.
+    // 启用 MCP。
     rc = sp_cchat_set_param_bool(fd, "mcp.enabled", 1);
     if (rc != 0) {
         printf("set mcp.enabled failed: %d\n", rc);
@@ -76,6 +88,8 @@ int main() {
         return 1;
     }
 
+    // Select MCP servers.
+    // 选择 MCP server。
     rc = sp_cchat_set_param_string_array1(fd, "mcp.server_ids", "fs");
     if (rc != 0) {
         printf("set mcp.server_ids failed: %d\n", rc);
@@ -83,6 +97,8 @@ int main() {
         return 1;
     }
 
+    // Restrict allowed tools.
+    // 限制允许的工具。
     rc = sp_cchat_set_param_string_array2(fd, "mcp.tool_allowlist", "read_*", "list_*");
     if (rc != 0) {
         printf("set mcp.tool_allowlist failed: %d\n", rc);
@@ -90,6 +106,8 @@ int main() {
         return 1;
     }
 
+    // Ask model to read a file via MCP tool.
+    // 让模型通过 MCP 工具读取文件。
     const char *prompt =
         "Please use the MCP filesystem tools (server_id=fs). "
         "Read the file path=\"Cargo.toml\" using the provided tool, "

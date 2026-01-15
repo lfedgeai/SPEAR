@@ -6,7 +6,10 @@ use spear_next::proto::sms::{
     task_service_server::TaskServiceServer, Node, RegisterNodeRequest,
 };
 use spear_next::proto::spearlet::{
-    function_service_server::FunctionServiceServer, InvokeFunctionRequest, InvokeFunctionResponse,
+    execution_service_server::ExecutionServiceServer,
+    invocation_service_server::InvocationServiceServer, CancelExecutionRequest,
+    CancelExecutionResponse, Execution, GetExecutionRequest, InvokeRequest, InvokeResponse,
+    ListExecutionsRequest, ListExecutionsResponse,
 };
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
@@ -30,93 +33,83 @@ enum MockMode {
 }
 
 #[tonic::async_trait]
-impl spear_next::proto::spearlet::function_service_server::FunctionService for MockFunctionService {
-    async fn invoke_function(
+impl spear_next::proto::spearlet::invocation_service_server::InvocationService
+    for MockFunctionService
+{
+    async fn invoke(
         &self,
-        request: Request<InvokeFunctionRequest>,
-    ) -> Result<Response<InvokeFunctionResponse>, Status> {
+        request: Request<InvokeRequest>,
+    ) -> Result<Response<InvokeResponse>, Status> {
         let req = request.into_inner();
         match self.mode {
             MockMode::Unavailable => Err(Status::unavailable("mock unavailable")),
             MockMode::InvalidArgument => Err(Status::invalid_argument("mock invalid")),
-            MockMode::Success => Ok(Response::new(InvokeFunctionResponse {
-                success: true,
-                message: "ok".to_string(),
-                execution_id: req.execution_id.unwrap_or_default(),
-                task_id: req.task_id,
-                ..Default::default()
+            MockMode::Success => Ok(Response::new(InvokeResponse {
+                invocation_id: req.invocation_id,
+                execution_id: req.execution_id,
+                instance_id: String::new(),
+                status: spear_next::proto::spearlet::ExecutionStatus::Completed as i32,
+                output: None,
+                error: None,
+                started_at: None,
+                completed_at: None,
             })),
         }
     }
 
-    async fn get_execution_status(
+    type InvokeStreamStream = std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<
+                    Item = Result<spear_next::proto::spearlet::InvokeStreamChunk, Status>,
+                > + Send,
+        >,
+    >;
+
+    async fn invoke_stream(
         &self,
-        _request: Request<spear_next::proto::spearlet::GetExecutionStatusRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetExecutionStatusResponse>, Status> {
+        _request: Request<InvokeRequest>,
+    ) -> Result<Response<Self::InvokeStreamStream>, Status> {
+        Err(Status::unimplemented("not used in test"))
+    }
+
+    type OpenConsoleStream = std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<
+                    Item = Result<spear_next::proto::spearlet::ConsoleServerMessage, Status>,
+                > + Send,
+        >,
+    >;
+
+    async fn open_console(
+        &self,
+        _request: Request<tonic::Streaming<spear_next::proto::spearlet::ConsoleClientMessage>>,
+    ) -> Result<Response<Self::OpenConsoleStream>, Status> {
+        Err(Status::unimplemented("not used in test"))
+    }
+}
+
+#[tonic::async_trait]
+impl spear_next::proto::spearlet::execution_service_server::ExecutionService
+    for MockFunctionService
+{
+    async fn get_execution(
+        &self,
+        _request: Request<GetExecutionRequest>,
+    ) -> Result<Response<Execution>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 
     async fn cancel_execution(
         &self,
-        _request: Request<spear_next::proto::spearlet::CancelExecutionRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::CancelExecutionResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    type StreamFunctionStream = std::pin::Pin<
-        Box<
-            dyn tokio_stream::Stream<
-                    Item = Result<spear_next::proto::spearlet::StreamExecutionResult, Status>,
-                > + Send,
-        >,
-    >;
-
-    async fn stream_function(
-        &self,
-        _request: Request<InvokeFunctionRequest>,
-    ) -> Result<Response<Self::StreamFunctionStream>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn list_tasks(
-        &self,
-        _request: Request<spear_next::proto::spearlet::ListTasksRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::ListTasksResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn get_task(
-        &self,
-        _request: Request<spear_next::proto::spearlet::GetTaskRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetTaskResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn delete_task(
-        &self,
-        _request: Request<spear_next::proto::spearlet::DeleteTaskRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::DeleteTaskResponse>, Status> {
+        _request: Request<CancelExecutionRequest>,
+    ) -> Result<Response<CancelExecutionResponse>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 
     async fn list_executions(
         &self,
-        _request: Request<spear_next::proto::spearlet::ListExecutionsRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::ListExecutionsResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn get_health(
-        &self,
-        _request: Request<spear_next::proto::spearlet::GetHealthRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetHealthResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn get_stats(
-        &self,
-        _request: Request<spear_next::proto::spearlet::GetStatsRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetStatsResponse>, Status> {
+        _request: Request<ListExecutionsRequest>,
+    ) -> Result<Response<ListExecutionsResponse>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 }
@@ -128,90 +121,72 @@ struct CountingFunctionService {
 }
 
 #[tonic::async_trait]
-impl spear_next::proto::spearlet::function_service_server::FunctionService
+impl spear_next::proto::spearlet::invocation_service_server::InvocationService
     for CountingFunctionService
 {
-    async fn invoke_function(
+    async fn invoke(
         &self,
-        request: Request<InvokeFunctionRequest>,
-    ) -> Result<Response<InvokeFunctionResponse>, Status> {
+        request: Request<InvokeRequest>,
+    ) -> Result<Response<InvokeResponse>, Status> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let req = request.into_inner();
         match self.mode {
             MockMode::Unavailable => Err(Status::unavailable("mock unavailable")),
             MockMode::InvalidArgument => Err(Status::invalid_argument("mock invalid")),
-            MockMode::Success => Ok(Response::new(InvokeFunctionResponse {
-                success: true,
-                message: "ok".to_string(),
-                execution_id: req.execution_id.unwrap_or_default(),
-                task_id: req.task_id,
-                ..Default::default()
+            MockMode::Success => Ok(Response::new(InvokeResponse {
+                invocation_id: req.invocation_id,
+                execution_id: req.execution_id,
+                instance_id: String::new(),
+                status: spear_next::proto::spearlet::ExecutionStatus::Completed as i32,
+                output: None,
+                error: None,
+                started_at: None,
+                completed_at: None,
             })),
         }
     }
 
-    async fn get_execution_status(
+    type InvokeStreamStream = <MockFunctionService as spear_next::proto::spearlet::invocation_service_server::InvocationService>::InvokeStreamStream;
+
+    async fn invoke_stream(
         &self,
-        _request: Request<spear_next::proto::spearlet::GetExecutionStatusRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetExecutionStatusResponse>, Status> {
+        _request: Request<InvokeRequest>,
+    ) -> Result<Response<Self::InvokeStreamStream>, Status> {
+        Err(Status::unimplemented("not used in test"))
+    }
+
+    type OpenConsoleStream = <MockFunctionService as spear_next::proto::spearlet::invocation_service_server::InvocationService>::OpenConsoleStream;
+
+    async fn open_console(
+        &self,
+        _request: Request<tonic::Streaming<spear_next::proto::spearlet::ConsoleClientMessage>>,
+    ) -> Result<Response<Self::OpenConsoleStream>, Status> {
+        Err(Status::unimplemented("not used in test"))
+    }
+}
+
+#[tonic::async_trait]
+impl spear_next::proto::spearlet::execution_service_server::ExecutionService
+    for CountingFunctionService
+{
+    async fn get_execution(
+        &self,
+        _request: Request<GetExecutionRequest>,
+    ) -> Result<Response<Execution>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 
     async fn cancel_execution(
         &self,
-        _request: Request<spear_next::proto::spearlet::CancelExecutionRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::CancelExecutionResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    type StreamFunctionStream = <MockFunctionService as spear_next::proto::spearlet::function_service_server::FunctionService>::StreamFunctionStream;
-
-    async fn stream_function(
-        &self,
-        _request: Request<InvokeFunctionRequest>,
-    ) -> Result<Response<Self::StreamFunctionStream>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn list_tasks(
-        &self,
-        _request: Request<spear_next::proto::spearlet::ListTasksRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::ListTasksResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn get_task(
-        &self,
-        _request: Request<spear_next::proto::spearlet::GetTaskRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetTaskResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn delete_task(
-        &self,
-        _request: Request<spear_next::proto::spearlet::DeleteTaskRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::DeleteTaskResponse>, Status> {
+        _request: Request<CancelExecutionRequest>,
+    ) -> Result<Response<CancelExecutionResponse>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 
     async fn list_executions(
         &self,
-        _request: Request<spear_next::proto::spearlet::ListExecutionsRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::ListExecutionsResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn get_health(
-        &self,
-        _request: Request<spear_next::proto::spearlet::GetHealthRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetHealthResponse>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    async fn get_stats(
-        &self,
-        _request: Request<spear_next::proto::spearlet::GetStatsRequest>,
-    ) -> Result<Response<spear_next::proto::spearlet::GetStatsResponse>, Status> {
+        _request: Request<ListExecutionsRequest>,
+    ) -> Result<Response<ListExecutionsResponse>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 }
@@ -228,7 +203,8 @@ async fn start_counting_spearlet(
     };
     let handle = tokio::spawn(async move {
         tonic::transport::Server::builder()
-            .add_service(FunctionServiceServer::new(svc))
+            .add_service(InvocationServiceServer::new(svc.clone()))
+            .add_service(ExecutionServiceServer::new(svc))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .unwrap();
@@ -242,7 +218,8 @@ async fn start_mock_spearlet(mode: MockMode) -> (tokio::task::JoinHandle<()>, u1
     let svc = MockFunctionService { mode };
     let handle = tokio::spawn(async move {
         tonic::transport::Server::builder()
-            .add_service(FunctionServiceServer::new(svc))
+            .add_service(InvocationServiceServer::new(svc.clone()))
+            .add_service(ExecutionServiceServer::new(svc))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .unwrap();
@@ -386,7 +363,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
     let server = TestServer::new(app.into_make_service()).unwrap();
 
     let resp = server
-        .post("/admin/api/executions")
+        .post("/admin/api/invocations")
         .json(&serde_json::json!({
             "task_id": "t-1",
             "request_id": Uuid::new_v4().to_string(),
@@ -526,7 +503,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
     let server = TestServer::new(app.into_make_service()).unwrap();
 
     let resp = server
-        .post("/admin/api/executions")
+        .post("/admin/api/invocations")
         .json(&serde_json::json!({
             "task_id": "t-1",
             "request_id": Uuid::new_v4().to_string(),

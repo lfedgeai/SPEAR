@@ -1,5 +1,18 @@
 #include <spear.h>
 
+// Microphone -> Realtime ASR sample (WASM-C).
+// 麦克风 -> Realtime ASR 示例（WASM-C）。
+//
+// This sample shows a single-threaded epoll loop that:
+// - reads pcm frames from mic_fd
+// - writes audio bytes into rtasr_fd
+// - reads JSON transcription events from rtasr_fd
+//
+// 本示例展示一个单线程 epoll 循环：
+// - 从 mic_fd 读取 pcm 帧
+// - 写入 rtasr_fd
+// - 从 rtasr_fd 读取转写 JSON 事件
+
 #ifndef SP_RTASR_BACKEND
 #define SP_RTASR_BACKEND "openai-realtime-asr"
 #endif
@@ -59,12 +72,16 @@ static int get_json_string_field_buf(const char *json, const char *key, char *ou
 }
 
 int main() {
+    // Create epoll instance.
+    // 创建 epoll 实例。
     int32_t epfd = sp_ep_create();
     if (epfd < 0) {
         printf("ep_create failed: %d\n", epfd);
         return 1;
     }
 
+    // Create mic and rtasr fds.
+    // 创建 mic 与 rtasr fd。
     int32_t mic_fd = sp_mic_create();
     if (mic_fd < 0) {
         printf("mic_create failed: %d\n", mic_fd);
@@ -80,6 +97,8 @@ int main() {
         return 1;
     }
 
+    // Watch both fds.
+    // 同时监听两个 fd。
     int32_t rc = sp_ep_ctl(epfd, SPEAR_EP_CTL_ADD, mic_fd,
                            SPEAR_EPOLLIN | SPEAR_EPOLLERR | SPEAR_EPOLLHUP);
     if (rc != 0) {
@@ -100,6 +119,8 @@ int main() {
         return 1;
     }
 
+    // Configure mic source.
+    // 配置 mic 输入源。
     const char *mic_cfg =
         "{\"sample_rate_hz\":24000,\"channels\":1,\"format\":\"pcm16\",\"frame_ms\":20,\"source\":\"device\",\"fallback\":{\"to_stub\":false}}";
     rc = sp_mic_set_param_json(mic_fd, mic_cfg, (uint32_t)strlen(mic_cfg));
@@ -117,6 +138,8 @@ int main() {
         return 1;
     }
 
+    // Configure rtasr backend.
+    // 配置 rtasr backend。
     rc = sp_rtasr_set_param_string(asr_fd, "transport", "websocket");
     if (rc != 0) {
         printf("rtasr set transport failed: %d\n", rc);
@@ -144,6 +167,8 @@ int main() {
         return 1;
     }
 
+    // Set server-vad based segmentation / autoflush.
+    // 设置 server-vad 分段策略 / autoflush。
     const char *autoflush =
         "{\"strategy\":\"server_vad\",\"vad\":{\"silence_ms\":600},\"flush_on_close\":true}";
     rc = sp_rtasr_set_autoflush_json(asr_fd, autoflush, (uint32_t)strlen(autoflush));
@@ -155,6 +180,8 @@ int main() {
         return 1;
     }
 
+    // Connect to backend.
+    // 连接 backend。
     rc = sp_rtasr_connect(asr_fd);
     if (rc != 0) {
         printf("rtasr connect failed: %d\n", rc);
@@ -168,6 +195,8 @@ int main() {
 
     uint8_t ready_buf[8 * 64];
     while (1) {
+        // Wait for readiness events.
+        // 等待就绪事件。
         uint32_t ready_len = sizeof(ready_buf);
         int32_t nready = sp_ep_wait(epfd, (int32_t)(uintptr_t)ready_buf,
                                     (int32_t)(uintptr_t)&ready_len, 2000);
@@ -203,6 +232,8 @@ int main() {
             }
 
             if (fd == mic_fd && (ev & SPEAR_EPOLLIN)) {
+                // Read one PCM frame and feed it into rtasr.
+                // 读一帧 PCM 并写入 rtasr。
                 uint32_t pcm_len = 0;
                 uint8_t *pcm = sp_mic_read_alloc(mic_fd, &pcm_len);
                 if (!pcm) {
@@ -216,6 +247,8 @@ int main() {
             }
 
             if (fd == asr_fd && (ev & SPEAR_EPOLLIN)) {
+                // Read one JSON event.
+                // 读一条 JSON 事件。
                 uint32_t msg_len = 0;
                 uint8_t *msg = sp_rtasr_read_alloc(asr_fd, &msg_len);
                 if (!msg) {

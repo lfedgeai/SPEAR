@@ -44,7 +44,10 @@
 |---|---|---|---|
 | Spear Hostcall Chat Completion | [api/spear-hostcall/chat-completion-en.md](./api/spear-hostcall/chat-completion-en.md) | [api/spear-hostcall/chat-completion-zh.md](./api/spear-hostcall/chat-completion-zh.md) | WASM hostcall 的 Chat Completion 设计 |
 | CChat Function Call Design | [cchat-function-call-design-en.md](./cchat-function-call-design-en.md) | [cchat-function-call-design-zh.md](./cchat-function-call-design-zh.md) | Chat completion 的 Tool Calling（Function Call）闭环设计 |
-| CChat Default Model Selection | - | [implementation/cchat-default-model-selection-zh.md](./implementation/cchat-default-model-selection-zh.md) | CChat 默认模型选择策略设计 |
+| CChat Default Model Selection | [implementation/cchat-default-model-selection-en.md](./implementation/cchat-default-model-selection-en.md) | [implementation/cchat-default-model-selection-zh.md](./implementation/cchat-default-model-selection-zh.md) | CChat 默认模型选择策略设计 |
+| fd/epoll + cchat Migration Plan | [implementation/fd-epoll-cchat-migration-plan-en.md](./implementation/fd-epoll-cchat-migration-plan-en.md) | [implementation/fd-epoll-cchat-migration-plan-zh.md](./implementation/fd-epoll-cchat-migration-plan-zh.md) | fd/epoll 子系统落地与 cchat 迁移实施计划 |
+| mic_fd Implementation Notes | [implementation/mic-fd-implementation-en.md](./implementation/mic-fd-implementation-en.md) | [implementation/mic-fd-implementation-zh.md](./implementation/mic-fd-implementation-zh.md) | mic_fd 落地实现说明 |
+| rtasr_fd Implementation Notes | [implementation/realtime-asr-implementation-en.md](./implementation/realtime-asr-implementation-en.md) | [implementation/realtime-asr-implementation-zh.md](./implementation/realtime-asr-implementation-zh.md) | rtasr_fd 落地实现说明 |
 | Mic Device Capture (mic-device feature) | [mic-device-feature-en.md](./mic-device-feature-en.md) | [mic-device-feature-zh.md](./mic-device-feature-zh.md) | mic_fd 使用本机麦克风采集的可选编译特性 |
 
 ### 🌐 HTTP Layer / HTTP层
@@ -66,6 +69,7 @@
 | gRPC Error Handling Fix | [grpc-error-handling-fix-en.md](./grpc-error-handling-fix-en.md) | [grpc-error-handling-fix-zh.md](./grpc-error-handling-fix-zh.md) | gRPC错误处理修复文档 |
 | Registration.proto Removal Analysis | [registration-proto-removal-analysis-en.md](./registration-proto-removal-analysis-en.md) | [registration-proto-removal-analysis-zh.md](./registration-proto-removal-analysis-zh.md) | Registration.proto删除可行性分析 |
 | Function Invocation Sync-Async Analysis | [function-invocation-sync-async-analysis-en.md](./function-invocation-sync-async-analysis-en.md) | [function-invocation-sync-async-analysis-zh.md](./function-invocation-sync-async-analysis-zh.md) | 同步异步支持现状分析 |
+| Invocation/Execution Model Refactor | [invocation-execution-model-refactor-en.md](./invocation-execution-model-refactor-en.md) | [invocation-execution-model-refactor-zh.md](./invocation-execution-model-refactor-zh.md) | 调用模型（Invocation/Execution/Instance）重构设计 |
 
 ### 🧹 Code Cleanup & Maintenance / 代码清理与维护
 
@@ -106,6 +110,12 @@
 |---|---|
 | [kv-factory-examples.rs](../examples/kv-factory-examples.rs) | KV工厂模式使用示例 |
 | [kv-factory-implementation-summary.md](./kv-factory-implementation-summary.md) | KV工厂实现摘要 |
+
+### 📚 Documentation Guidelines / 文档规范
+
+| 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
+|---|---|---|---|
+| Documentation Guidelines | [documentation-guidelines-en.md](./documentation-guidelines-en.md) | [documentation-guidelines-zh.md](./documentation-guidelines-zh.md) | 文档命名与双语维护规范 |
 
 ### 🔄 Proto File Management / Proto文件管理
 

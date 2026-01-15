@@ -5,9 +5,6 @@
 //! Artifact 表示包含一个或多个任务的可部署单元。
 
 use super::{ExecutionError, ExecutionResult, RuntimeType, TaskId};
-use crate::proto::spearlet::{
-    ArtifactSpec as ProtoArtifactSpec, InvocationType as ProtoInvocationType,
-};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,26 +25,6 @@ pub enum InvocationType {
     NewTask,
     /// Existing task invocation / 现有任务调用
     ExistingTask,
-}
-
-impl From<ProtoInvocationType> for InvocationType {
-    fn from(proto: ProtoInvocationType) -> Self {
-        match proto {
-            ProtoInvocationType::Unknown => InvocationType::Unknown,
-            ProtoInvocationType::NewTask => InvocationType::NewTask,
-            ProtoInvocationType::ExistingTask => InvocationType::ExistingTask,
-        }
-    }
-}
-
-impl From<InvocationType> for ProtoInvocationType {
-    fn from(local: InvocationType) -> Self {
-        match local {
-            InvocationType::Unknown => ProtoInvocationType::Unknown,
-            InvocationType::NewTask => ProtoInvocationType::NewTask,
-            InvocationType::ExistingTask => ProtoInvocationType::ExistingTask,
-        }
-    }
 }
 
 /// Artifact status enumeration / Artifact 状态枚举
@@ -330,45 +307,9 @@ impl Artifact {
     }
 }
 
-impl From<ProtoArtifactSpec> for ArtifactSpec {
-    fn from(proto: ProtoArtifactSpec) -> Self {
-        let runtime_type = match proto.artifact_type.as_str() {
-            "docker" => RuntimeType::Kubernetes, // Migrate Docker to Kubernetes / 将 Docker 迁移到 Kubernetes
-            "kubernetes" => RuntimeType::Kubernetes,
-            "process" => RuntimeType::Process,
-            "wasm" => RuntimeType::Wasm,
-            _ => RuntimeType::Process, // default fallback
-        };
-
-        Self {
-            name: proto.artifact_id.clone(), // Use artifact_id as name / 使用 artifact_id 作为名称
-            version: proto.version,
-            description: None, // Proto doesn't have description field / Proto 没有 description 字段
-            runtime_type,
-            runtime_config: std::collections::HashMap::new(), // Proto doesn't have runtime_config / Proto 没有 runtime_config
-            location: if proto.location.is_empty() {
-                None
-            } else {
-                Some(proto.location)
-            },
-            checksum_sha256: if proto.checksum.is_empty() {
-                None
-            } else {
-                Some(proto.checksum)
-            },
-            environment: std::collections::HashMap::new(), // Proto doesn't have environment / Proto 没有 environment
-            resource_limits: ResourceLimits::default(),    // TODO: Add to proto
-            invocation_type: InvocationType::NewTask,      // Default value / 默认值
-            max_execution_timeout_ms: 30000,               // Default timeout / 默认超时时间
-            labels: proto.metadata, // Use metadata as labels / 使用 metadata 作为 labels
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proto::spearlet::ArtifactSpec as ProtoArtifactSpec;
 
     #[test]
     fn test_artifact_creation() {
@@ -417,24 +358,5 @@ mod tests {
         assert_ne!(id1, id2);
         assert!(id1.contains(&artifact.id));
         assert!(id2.contains(&artifact.id));
-    }
-
-    #[test]
-    fn test_proto_artifact_spec_mapping_location_checksum() {
-        let proto = ProtoArtifactSpec {
-            artifact_id: "wasm-artifact".to_string(),
-            artifact_type: "wasm".to_string(),
-            location: "sms+file://abc123".to_string(),
-            version: "0.1.0".to_string(),
-            checksum: "deadbeef".to_string(),
-            metadata: std::collections::HashMap::new(),
-        };
-
-        let local = ArtifactSpec::from(proto);
-        assert_eq!(local.runtime_type, RuntimeType::Wasm);
-        assert_eq!(local.name, "wasm-artifact");
-        assert_eq!(local.version, "0.1.0");
-        assert_eq!(local.location.as_deref(), Some("sms+file://abc123"));
-        assert_eq!(local.checksum_sha256.as_deref(), Some("deadbeef"));
     }
 }

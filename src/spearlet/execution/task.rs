@@ -596,13 +596,16 @@ mod tests {
 
     #[test]
     fn test_instance_config_injects_task_id_env() {
+        let mut env = HashMap::new();
+        env.insert("FOO".to_string(), "bar".to_string());
+
         let spec = TaskSpec {
             name: "test-task".to_string(),
             task_type: TaskType::HttpHandler,
-            runtime_type: RuntimeType::Kubernetes,
+            runtime_type: RuntimeType::Wasm,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
-            environment: HashMap::new(),
+            environment: env,
             invocation_type: InvocationType::NewTask,
             min_instances: 1,
             max_instances: 10,
@@ -619,5 +622,6 @@ mod tests {
             cfg.environment.get("TASK_ID").cloned(),
             Some(task.id().to_string())
         );
+        assert_eq!(cfg.environment.get("FOO").cloned(), Some("bar".to_string()));
     }
 }

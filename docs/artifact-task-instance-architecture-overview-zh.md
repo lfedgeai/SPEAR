@@ -64,7 +64,7 @@ src/spearlet/execution/instance.rs
 ```
 src/spearlet/execution/manager.rs
 ├── TaskExecutionManager  # 任务执行管理器
-├── ExecutionRequest      # 执行请求
+├── ExecutionWorkItem     # 执行队列中的内部工作项
 ├── ExecutionResponse     # 执行响应
 ├── ExecutionContext      # 执行上下文
 └── ExecutionStatistics   # 执行统计

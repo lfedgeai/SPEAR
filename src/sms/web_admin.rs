@@ -22,9 +22,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::proto::sms::{
-    mcp_registry_service_client::McpRegistryServiceClient,
-    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
-    ListNodesRequest,
+    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
+    placement_service_client::PlacementServiceClient, ListNodesRequest,
 };
 use crate::sms::gateway::GatewayState;
 use crate::sms::handlers::{
@@ -32,9 +31,10 @@ use crate::sms::handlers::{
 };
 
 use crate::proto::spearlet::{
-    function_service_client::FunctionServiceClient, ArtifactSpec, ExecutionMode, InvocationType,
-    InvokeFunctionRequest,
+    invocation_service_client::InvocationServiceClient, ExecutionMode, ExecutionStatus,
+    InvokeRequest, Payload,
 };
+use crate::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
 
 pub struct WebAdminServer {
     addr: SocketAddr,
@@ -207,11 +207,20 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             }),
         )
         .route(
+            "/admin/api/invocations",
+            post({
+                let state = state.clone();
+                move |payload: axum::extract::Json<CreateExecutionBody>| {
+                    create_invocation(state.clone(), payload)
+                }
+            }),
+        )
+        .route(
             "/admin/api/executions",
             post({
                 let state = state.clone();
                 move |payload: axum::extract::Json<CreateExecutionBody>| {
-                    create_execution(state.clone(), payload)
+                    create_invocation(state.clone(), payload)
                 }
             }),
         )
@@ -338,8 +347,7 @@ async fn upsert_mcp_server(
     body: Json<McpServerUpsertBody>,
 ) -> Json<serde_json::Value> {
     use crate::proto::sms::{
-        McpApprovalPolicy, McpBudgets, McpHttpConfig, McpServerRecord, McpStdioConfig,
-        McpTransport,
+        McpApprovalPolicy, McpBudgets, McpHttpConfig, McpServerRecord, McpStdioConfig, McpTransport,
     };
 
     let body = body.0;
@@ -434,11 +442,12 @@ fn parse_execution_mode(v: Option<&str>) -> i32 {
     match v.map(|s| s.to_ascii_lowercase()) {
         Some(s) if s == "async" => ExecutionMode::Async as i32,
         Some(s) if s == "stream" => ExecutionMode::Stream as i32,
+        Some(s) if s == "console" => ExecutionMode::Console as i32,
         _ => ExecutionMode::Sync as i32,
     }
 }
 
-async fn create_execution(
+async fn create_invocation(
     state: GatewayState,
     axum::extract::Json(body): axum::extract::Json<CreateExecutionBody>,
 ) -> Json<serde_json::Value> {
@@ -484,31 +493,39 @@ async fn create_execution(
         let Some(channel) = channel else {
             return Json(json!({ "success": false, "message": "invalid node url" }));
         };
-        let mut fnc = FunctionServiceClient::new(channel);
-        let req = InvokeFunctionRequest {
-            invocation_type: InvocationType::ExistingTask as i32,
+        let mut invc = InvocationServiceClient::new(channel);
+        let req = InvokeRequest {
+            invocation_id: request_id.clone(),
+            execution_id: execution_id.clone(),
             task_id: body.task_id.clone(),
-            artifact_spec: Some(ArtifactSpec {
-                artifact_id: format!("sms:{}", body.task_id),
-                artifact_type: "sms".to_string(),
-                location: String::new(),
-                version: String::new(),
-                checksum: String::new(),
-                metadata: std::collections::HashMap::new(),
+            function_name: DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: Some(Payload {
+                content_type: "application/octet-stream".to_string(),
+                data: Vec::new(),
             }),
-            execution_mode: mode,
-            wait: mode == ExecutionMode::Sync as i32,
-            execution_id: Some(execution_id.clone()),
-            ..Default::default()
+            headers: Default::default(),
+            environment: Default::default(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode,
+            force_new_instance: false,
+            metadata: Default::default(),
         };
-        return match fnc.invoke_function(req).await {
+        return match invc.invoke(req).await {
             Ok(resp) => {
                 let inner = resp.into_inner();
+                let success = inner.status == ExecutionStatus::Completed as i32;
+                let message = inner
+                    .error
+                    .as_ref()
+                    .map(|e| e.message.clone())
+                    .unwrap_or_else(|| "ok".to_string());
                 Json(json!({
-                    "success": inner.success,
+                    "success": success,
                     "node_uuid": node.uuid,
+                    "invocation_id": inner.invocation_id,
                     "execution_id": inner.execution_id,
-                    "message": inner.message,
+                    "message": message,
                 }))
             }
             Err(e) => Json(json!({ "success": false, "message": e.to_string() })),
@@ -558,29 +575,36 @@ async fn create_execution(
                 .await;
             continue;
         };
-        let mut fnc = FunctionServiceClient::new(channel);
+        let mut invc = InvocationServiceClient::new(channel);
         // Use ExistingTask invocation; Spearlet may fetch task from SMS when missing.
         // 使用 ExistingTask 调用；若节点本地缺 task，Spearlet 会从 SMS 拉取补齐后执行。
-        let req = InvokeFunctionRequest {
-            invocation_type: InvocationType::ExistingTask as i32,
+        let req = InvokeRequest {
+            invocation_id: request_id.clone(),
+            execution_id: execution_id.clone(),
             task_id: body.task_id.clone(),
-            artifact_spec: Some(ArtifactSpec {
-                artifact_id: format!("sms:{}", body.task_id),
-                artifact_type: "sms".to_string(),
-                location: String::new(),
-                version: String::new(),
-                checksum: String::new(),
-                metadata: std::collections::HashMap::new(),
+            function_name: DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: Some(Payload {
+                content_type: "application/octet-stream".to_string(),
+                data: Vec::new(),
             }),
-            execution_mode: mode,
-            wait: mode == ExecutionMode::Sync as i32,
-            execution_id: Some(execution_id.clone()),
-            ..Default::default()
+            headers: Default::default(),
+            environment: Default::default(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode,
+            force_new_instance: false,
+            metadata: Default::default(),
         };
-        match fnc.invoke_function(req).await {
+        match invc.invoke(req).await {
             Ok(resp) => {
                 let inner = resp.into_inner();
-                if inner.success {
+                let success = inner.status == ExecutionStatus::Completed as i32;
+                let message = inner
+                    .error
+                    .as_ref()
+                    .map(|e| e.message.clone())
+                    .unwrap_or_else(|| "ok".to_string());
+                if success {
                     // Success: report feedback to SMS and return.
                     // 成功：回报给 SMS 用于后续 placement，然后直接返回。
                     let _ = placement
@@ -600,8 +624,9 @@ async fn create_execution(
                         "success": true,
                         "decision_id": placement_resp.decision_id,
                         "node_uuid": c.node_uuid,
+                        "invocation_id": inner.invocation_id,
                         "execution_id": inner.execution_id,
-                        "message": inner.message,
+                        "message": message,
                     }));
                 }
                 // Function-level failure is not retryable here: return immediately.
@@ -613,10 +638,10 @@ async fn create_execution(
                         task_id: body.task_id.clone(),
                         node_uuid: c.node_uuid.clone(),
                         outcome_class: crate::proto::sms::InvocationOutcomeClass::Internal as i32,
-                        error_message: inner.message.clone(),
+                        error_message: message.clone(),
                     })
                     .await;
-                return Json(json!({ "success": false, "message": inner.message }));
+                return Json(json!({ "success": false, "message": message }));
             }
             Err(e) => {
                 // gRPC error classification decides whether to spillback.

@@ -80,13 +80,18 @@ impl McpRegistrySyncService {
     }
 }
 
-async fn connect_sms(config: &SpearletConfig) -> Result<McpRegistryServiceClient<Channel>, tonic::Status> {
+async fn connect_sms(
+    config: &SpearletConfig,
+) -> Result<McpRegistryServiceClient<Channel>, tonic::Status> {
     let sms_url = format!("http://{}", config.sms_grpc_addr);
     let connect_fut = McpRegistryServiceClient::connect(sms_url);
-    let client = timeout(Duration::from_millis(config.sms_connect_timeout_ms), connect_fut)
-        .await
-        .map_err(|_| tonic::Status::deadline_exceeded("connect sms timeout"))?
-        .map_err(|e| tonic::Status::unavailable(format!("connect sms failed: {}", e)))?;
+    let client = timeout(
+        Duration::from_millis(config.sms_connect_timeout_ms),
+        connect_fut,
+    )
+    .await
+    .map_err(|_| tonic::Status::deadline_exceeded("connect sms timeout"))?
+    .map_err(|e| tonic::Status::unavailable(format!("connect sms failed: {}", e)))?;
     Ok(client)
 }
 
@@ -106,7 +111,11 @@ async fn refresh_once(
     Ok(resp.revision)
 }
 
-async fn sync_loop(config: Arc<SpearletConfig>, cache: Arc<McpRegistryCache>, cancel: CancellationToken) {
+async fn sync_loop(
+    config: Arc<SpearletConfig>,
+    cache: Arc<McpRegistryCache>,
+    cancel: CancellationToken,
+) {
     let mut backoff_ms = config.sms_connect_retry_ms.max(200);
     let mut revision: Option<u64> = None;
     let mut poll = interval(Duration::from_secs(60));

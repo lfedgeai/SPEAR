@@ -1,9 +1,8 @@
 use axum_test::TestServer;
 use spear_next::proto::sms::{
-    mcp_registry_service_server::McpRegistryServiceServer,
-    node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
-    task_service_server::TaskServiceServer, Node, NodeResource, RegisterNodeRequest,
-    UpdateNodeResourceRequest,
+    mcp_registry_service_server::McpRegistryServiceServer, node_service_server::NodeServiceServer,
+    placement_service_server::PlacementServiceServer, task_service_server::TaskServiceServer, Node,
+    NodeResource, RegisterNodeRequest, UpdateNodeResourceRequest,
 };
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
@@ -416,10 +415,7 @@ async fn test_admin_mcp_servers_crud() {
     let servers = list1["servers"].as_array().unwrap();
     assert!(servers.iter().any(|s| s["server_id"] == "fs"));
 
-    let del: serde_json::Value = server
-        .delete("/admin/api/mcp/servers/fs")
-        .await
-        .json();
+    let del: serde_json::Value = server.delete("/admin/api/mcp/servers/fs").await.json();
     assert!(del["success"].as_bool().unwrap());
 
     let list2: serde_json::Value = server.get("/admin/api/mcp/servers").await.json();

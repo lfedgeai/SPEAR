@@ -11,6 +11,7 @@ async fn test_long_running_existing_task_invocation_allowed() {
         ExecutionContext as RtCtx, Runtime, RuntimeCapabilities, RuntimeExecutionResponse,
         RuntimeManager, RuntimeType,
     };
+    use spear_next::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
 
     struct DummyRuntime;
     #[async_trait]
@@ -99,17 +100,6 @@ async fn test_long_running_existing_task_invocation_allowed() {
         .await
         .unwrap();
 
-    let mut labels = std::collections::HashMap::new();
-    labels.insert("execution_kind".to_string(), "long_running".to_string());
-    let artifact_spec = spear_next::proto::spearlet::ArtifactSpec {
-        artifact_id: "artifact-a".to_string(),
-        artifact_type: "process".to_string(),
-        location: "file:///bin/foo".to_string(),
-        version: "v1".to_string(),
-        checksum: String::new(),
-        metadata: labels,
-    };
-
     // Pre-register task locally via SMS-like mapping
     let mut sms_task = spear_next::proto::sms::Task::default();
     sms_task.task_id = "task-long-1".to_string();
@@ -132,12 +122,23 @@ async fn test_long_running_existing_task_invocation_allowed() {
         .await
         .unwrap();
 
-    let mut req2 = spear_next::proto::spearlet::InvokeFunctionRequest::default();
-    req2.task_id = "task-long-1".to_string();
-    req2.invocation_type = spear_next::proto::spearlet::InvocationType::ExistingTask as i32;
-    req2.artifact_spec = Some(artifact_spec.clone());
-    req2.execution_id = Some("exec-long-1".to_string());
-    let resp = mgr.submit_execution(req2).await.unwrap();
+    let resp = mgr
+        .submit_invocation(spear_next::proto::spearlet::InvokeRequest {
+            invocation_id: "inv-long-1".to_string(),
+            execution_id: "exec-long-1".to_string(),
+            task_id: "task-long-1".to_string(),
+            function_name: DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: None,
+            headers: Default::default(),
+            environment: Default::default(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode: spear_next::proto::spearlet::ExecutionMode::Sync as i32,
+            force_new_instance: false,
+            metadata: Default::default(),
+        })
+        .await
+        .unwrap();
     assert_eq!(resp.execution_id, "exec-long-1");
 }
 
@@ -152,6 +153,7 @@ async fn test_short_running_existing_task_invocation_allowed() {
         ExecutionContext as RtCtx, Runtime, RuntimeCapabilities, RuntimeExecutionResponse,
         RuntimeManager, RuntimeType,
     };
+    use spear_next::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
 
     struct DummyRuntime;
     #[async_trait]
@@ -239,16 +241,6 @@ async fn test_short_running_existing_task_invocation_allowed() {
         .await
         .unwrap();
 
-    let labels = std::collections::HashMap::new();
-    let artifact_spec = spear_next::proto::spearlet::ArtifactSpec {
-        artifact_id: "artifact-b".to_string(),
-        artifact_type: "process".to_string(),
-        location: "file:///bin/foo".to_string(),
-        version: "v1".to_string(),
-        checksum: String::new(),
-        metadata: labels,
-    };
-
     // Pre-register short-running task
     let mut sms_task = spear_next::proto::sms::Task::default();
     sms_task.task_id = "task-short-1".to_string();
@@ -271,9 +263,21 @@ async fn test_short_running_existing_task_invocation_allowed() {
         .await
         .unwrap();
 
-    let mut req2 = spear_next::proto::spearlet::InvokeFunctionRequest::default();
-    req2.task_id = "task-short-1".to_string();
-    req2.invocation_type = spear_next::proto::spearlet::InvocationType::ExistingTask as i32;
-    req2.artifact_spec = Some(artifact_spec.clone());
-    let _ = mgr.submit_execution(req2).await.unwrap();
+    let _ = mgr
+        .submit_invocation(spear_next::proto::spearlet::InvokeRequest {
+            invocation_id: "inv-short-1".to_string(),
+            execution_id: "exec-short-1".to_string(),
+            task_id: "task-short-1".to_string(),
+            function_name: DEFAULT_ENTRY_FUNCTION_NAME.to_string(),
+            input: None,
+            headers: Default::default(),
+            environment: Default::default(),
+            timeout_ms: 0,
+            session_id: String::new(),
+            mode: spear_next::proto::spearlet::ExecutionMode::Sync as i32,
+            force_new_instance: false,
+            metadata: Default::default(),
+        })
+        .await
+        .unwrap();
 }

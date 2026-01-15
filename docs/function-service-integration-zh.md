@@ -119,16 +119,23 @@ async fn invoke_function(
     // 1. 创建 Artifact
     let artifact = self.create_artifact_from_proto(&req.artifact_spec)?;
     
-    // 2. 通过 ExecutionManager 执行
-    let execution_request = ExecutionRequest {
-        artifact_spec: req.artifact_spec,
-        parameters: req.parameters,
-        context: req.context,
+    // 2. 通过 TaskExecutionManager 执行
+    let invoke = InvokeRequest {
+        invocation_id: req.invocation_id,
+        execution_id: req.execution_id,
+        task_id: req.task_id,
+        function_name: req.function_name,
+        input: req.input,
+        headers: req.headers,
+        environment: req.environment,
+        timeout_ms: req.timeout_ms,
+        session_id: req.session_id,
+        mode: req.mode,
+        force_new_instance: req.force_new_instance,
+        metadata: req.metadata,
     };
-    
-    let execution_response = self.execution_manager
-        .execute_task(execution_request)
-        .await?;
+
+    let execution_response = self.execution_manager.submit_invocation(invoke).await?;
     
     // 3. 转换响应
     let response = self.execution_response_to_proto(execution_response)?;

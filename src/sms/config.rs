@@ -170,9 +170,7 @@ pub struct McpConfig {
 
 impl Default for McpConfig {
     fn default() -> Self {
-        Self {
-            dir: String::new(),
-        }
+        Self { dir: String::new() }
     }
 }
 

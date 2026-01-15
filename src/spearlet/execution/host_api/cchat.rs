@@ -347,7 +347,10 @@ impl DefaultHostApi {
                         } else if tool_name.starts_with("mcp.") || tool_name.starts_with("mcp__") {
                             match self.cchat_exec_mcp_tool(&snapshot, &tool_name, &args) {
                                 Ok(s) => s,
-                                Err(msg) => json!({"error": {"code": "mcp_tool_failed", "message": msg}}).to_string(),
+                                Err(msg) => {
+                                    json!({"error": {"code": "mcp_tool_failed", "message": msg}})
+                                        .to_string()
+                                }
                             }
                         } else {
                             json!({"error": {"code": "unknown_tool", "message": format!("unknown tool: {}", tool_name)}}).to_string()
@@ -495,7 +498,8 @@ impl DefaultHostApi {
             return Err("mcp registry not available".to_string());
         };
 
-        let (server_id, _) = crate::spearlet::mcp::policy::parse_namespaced_mcp_tool_name(namespaced)?;
+        let (server_id, _) =
+            crate::spearlet::mcp::policy::parse_namespaced_mcp_tool_name(namespaced)?;
         let reg = self.block_on(async { sync.cache().snapshot().await });
         let server = reg
             .servers

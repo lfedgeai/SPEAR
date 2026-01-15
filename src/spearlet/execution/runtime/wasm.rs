@@ -13,7 +13,7 @@ use super::{
 use crate::spearlet::execution::artifact_fetch;
 use crate::spearlet::execution::{
     instance::{InstanceConfig, InstanceResourceLimits, TaskInstance},
-    ExecutionError, ExecutionResult, InstanceStatus,
+    ExecutionError, ExecutionResult, InstanceStatus, DEFAULT_ENTRY_FUNCTION_NAME,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -725,18 +725,23 @@ impl Runtime for WasmRuntime {
                 message: "No WASM instance handle found".to_string(),
             })?;
 
-        // Execute WASM function / 执行 WASM 函数
-        let function_name = {
+        let function_name = if context.function_name.is_empty()
+            || context.function_name == DEFAULT_ENTRY_FUNCTION_NAME
+        {
+            // Runtime-default entrypoint selection.
+            // 运行时默认入口选择。
+            //
+            // For WASM/WASI modules, `_start` is the conventional entrypoint.
+            // If the module doesn't export `_start`, we fall back to `main`.
+            // 对于 WASM/WASI 模块，惯例入口是 `_start`；若未导出 `_start`，则回退到 `main`。
             let has_start = wasm_handle
                 .module_handle
                 .exported_functions
                 .iter()
                 .any(|f| f == "_start");
-            if has_start {
-                "_start"
-            } else {
-                "main"
-            }
+            if has_start { "_start" } else { "main" }.to_string()
+        } else {
+            context.function_name.clone()
         };
 
         let no_wait = !context.wait
@@ -759,12 +764,12 @@ impl Runtime for WasmRuntime {
                 let mut state = wasm_handle.state.lock().await;
                 state.last_execution_time = Some(std::time::SystemTime::now());
                 state.is_running = true;
-                state.current_function = Some(function_name.to_string());
+                state.current_function = Some(function_name.clone());
             }
 
             let (tx, _rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
             let req = ExecRequest {
-                function_name: function_name.to_string(),
+                function_name: function_name.clone(),
                 timeout_ms: None,
                 reply_tx: tx,
             };
@@ -796,7 +801,7 @@ impl Runtime for WasmRuntime {
         let result = self
             .execute_wasm_function(
                 &wasm_handle,
-                function_name,
+                &function_name,
                 Some(context.timeout_ms),
                 &context.payload,
             )

@@ -1,5 +1,11 @@
 #include <spear.h>
 
+// Chat completion sample (WASM-C).
+// Chat completion 示例（WASM-C）。
+//
+// This sample uses cchat_* hostcalls to submit a single chat completion request.
+// 本示例使用 cchat_* hostcalls 提交一次 chat completion 请求。
+
 #ifndef SP_OPENAI_MODEL
 #define SP_OPENAI_MODEL "gpt-4o-mini"
 #endif
@@ -21,6 +27,8 @@ int main() {
     }
 
     const char *model = SP_OPENAI_MODEL;
+    // Set model explicitly for non-stub backends.
+    // 对非 stub backend 显式设置模型。
     rc = sp_cchat_set_param_string(fd, "model", model);
     if (rc != 0) {
         printf("set model failed: %d\n", rc);
@@ -28,6 +36,8 @@ int main() {
         return 1;
     }
 
+    // Timeout in milliseconds.
+    // 超时（毫秒）。
     rc = sp_cchat_set_param_u32(fd, "timeout_ms", 30000);
     if (rc != 0) {
         printf("set timeout_ms failed: %d\n", rc);
@@ -35,6 +45,8 @@ int main() {
         return 1;
     }
 
+    // Send request and get a response fd.
+    // 发送请求并获得 response fd。
     int32_t resp_fd = sp_cchat_send(fd, 0);
     if (resp_fd < 0) {
         printf("cchat_send failed: %d\n", resp_fd);
@@ -42,6 +54,8 @@ int main() {
         return 1;
     }
 
+    // Receive response JSON into a heap buffer.
+    // 把响应 JSON 读到堆内存 buffer。
     uint32_t resp_len = 0;
     uint8_t *resp = sp_cchat_recv_alloc(resp_fd, &resp_len);
     if (!resp) {

@@ -110,6 +110,7 @@ impl Default for ResourcePoolConfig {
 pub struct ExecutionContext {
     /// Execution ID / 执行 ID
     pub execution_id: String,
+    pub function_name: String,
     /// Request payload / 请求负载
     pub payload: Vec<u8>,
     /// Request headers / 请求头

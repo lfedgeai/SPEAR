@@ -7,7 +7,8 @@ use tonic::transport::Server;
 
 use tracing::{error, info};
 
-use crate::proto::spearlet::function_service_server::FunctionServiceServer;
+use crate::proto::spearlet::execution_service_server::ExecutionServiceServer;
+use crate::proto::spearlet::invocation_service_server::InvocationServiceServer;
 use crate::proto::spearlet::object_service_server::ObjectServiceServer;
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::function_service::FunctionServiceImpl;
@@ -52,10 +53,11 @@ impl GrpcServer {
 
     /// Start gRPC server / 启动gRPC服务器
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (addr, object_service, function_service) = self.prepare().await?;
+        let (addr, object_service, invocation_service, execution_service) = self.prepare().await?;
         let server = Server::builder()
             .add_service(object_service)
-            .add_service(function_service)
+            .add_service(invocation_service)
+            .add_service(execution_service)
             .serve(addr);
 
         match server.await {
@@ -78,10 +80,11 @@ impl GrpcServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        let (addr, object_service, function_service) = self.prepare().await?;
+        let (addr, object_service, invocation_service, execution_service) = self.prepare().await?;
         let server = Server::builder()
             .add_service(object_service)
-            .add_service(function_service)
+            .add_service(invocation_service)
+            .add_service(execution_service)
             .serve_with_shutdown(addr, shutdown);
 
         match server.await {
@@ -102,7 +105,8 @@ impl GrpcServer {
         (
             SocketAddr,
             ObjectServiceServer<Arc<ObjectServiceImpl>>,
-            FunctionServiceServer<Arc<FunctionServiceImpl>>,
+            InvocationServiceServer<Arc<FunctionServiceImpl>>,
+            ExecutionServiceServer<Arc<FunctionServiceImpl>>,
         ),
         Box<dyn std::error::Error + Send + Sync>,
     > {
@@ -113,11 +117,15 @@ impl GrpcServer {
             .max_decoding_message_size(self.config.storage.max_object_size as usize)
             .max_encoding_message_size(self.config.storage.max_object_size as usize);
 
-        let function_service = FunctionServiceServer::new(self.function_service.clone())
+        let invocation_service = InvocationServiceServer::new(self.function_service.clone())
             .max_decoding_message_size(self.config.storage.max_object_size as usize)
             .max_encoding_message_size(self.config.storage.max_object_size as usize);
 
-        Ok((addr, object_service, function_service))
+        let execution_service = ExecutionServiceServer::new(self.function_service.clone())
+            .max_decoding_message_size(self.config.storage.max_object_size as usize)
+            .max_encoding_message_size(self.config.storage.max_object_size as usize);
+
+        Ok((addr, object_service, invocation_service, execution_service))
     }
 }
 

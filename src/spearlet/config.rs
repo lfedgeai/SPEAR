@@ -91,6 +91,12 @@ pub struct CliArgs {
     )]
     pub log_level: Option<String>,
 
+    #[arg(long, value_name = "FORMAT")]
+    pub log_format: Option<String>,
+
+    #[arg(long, value_name = "FILE")]
+    pub log_file: Option<String>,
+
     #[arg(long, value_name = "MS")]
     pub sms_connect_timeout_ms: Option<u64>,
 
@@ -286,6 +292,14 @@ impl AppConfig {
 
         if let Some(log_level) = &args.log_level {
             config.spearlet.logging.level = log_level.clone();
+        }
+        if let Some(log_format) = &args.log_format {
+            config.spearlet.logging.format = log_format.clone();
+        }
+        if let Some(log_file) = &args.log_file {
+            if !log_file.is_empty() {
+                config.spearlet.logging.file = Some(log_file.clone());
+            }
         }
 
         if let Some(t) = args.sms_connect_timeout_ms {

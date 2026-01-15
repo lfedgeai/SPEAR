@@ -22,6 +22,7 @@ use figment::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// Base configuration shared by all applications / 所有应用程序共享的基础配置
 pub mod base;
@@ -117,6 +118,8 @@ pub struct LoggingConfig {
     pub file_path: Option<PathBuf>,
 }
 
+static FILE_LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
@@ -133,32 +136,103 @@ impl Default for LoggingConfig {
 pub fn init_tracing(config: &LoggingConfig) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-    // In debug builds, always use debug level unless RUST_LOG overrides / 在debug构建中始终使用debug级别（若未设置RUST_LOG）
-    let default_level = if cfg!(debug_assertions) {
-        "debug"
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        if config.level.trim().is_empty() {
+            EnvFilter::new("info")
+        } else {
+            EnvFilter::new(config.level.clone())
+        }
+    });
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    let file_writer = if config.file_enabled {
+        if let Some(path) = config.file_path.as_ref() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("create log dir: {}", parent.display()))?;
+            }
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .with_context(|| format!("open log file: {}", path.display()))?;
+            let (file_writer, guard) = tracing_appender::non_blocking(file);
+            let _ = FILE_LOG_GUARD.set(guard);
+            Some(file_writer)
+        } else {
+            None
+        }
     } else {
-        &config.level
+        None
     };
 
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
-
-    let subscriber = tracing_subscriber::registry().with(env_filter);
-
-    match config.format.as_str() {
-        "json" => {
-            let json_layer = tracing_subscriber::fmt::layer()
-                .with_target(false)
+    match (config.format.as_str(), file_writer) {
+        ("json", Some(file_writer)) => {
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(true)
                 .with_timer(tracing_subscriber::fmt::time::uptime())
                 .with_level(true);
-            subscriber.with(json_layer).init();
+            let file_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true)
+                .with_writer(file_writer);
+            registry.with(stdout_layer).with(file_layer).init();
         }
-        _ => {
-            let pretty_layer = tracing_subscriber::fmt::layer()
-                .with_target(false)
+        ("compact", Some(file_writer)) => {
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
                 .with_timer(tracing_subscriber::fmt::time::uptime())
                 .with_level(true);
-            subscriber.with(pretty_layer).init();
+            let file_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true)
+                .with_writer(file_writer);
+            registry.with(stdout_layer).with(file_layer).init();
+        }
+        (_, Some(file_writer)) => {
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true);
+            let file_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true)
+                .with_writer(file_writer);
+            registry.with(stdout_layer).with(file_layer).init();
+        }
+        ("json", None) => {
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true);
+            registry.with(stdout_layer).init();
+        }
+        ("compact", None) => {
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true);
+            registry.with(stdout_layer).init();
+        }
+        (_, None) => {
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_target(true)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
+                .with_level(true);
+            registry.with(stdout_layer).init();
         }
     }
 

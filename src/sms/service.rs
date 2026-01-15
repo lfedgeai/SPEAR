@@ -375,6 +375,8 @@ impl SmsServiceImpl {
                 if !updated_nodes.is_empty() {
                     tracing::info!(
                         count = updated_nodes.len(),
+                        heartbeat_timeout_s = cleanup_config.heartbeat_timeout,
+                        nodes = ?updated_nodes,
                         "Marked unhealthy nodes offline"
                     );
                 }

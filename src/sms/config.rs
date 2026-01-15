@@ -81,6 +81,12 @@ pub struct CliArgs {
     )]
     pub log_level: Option<String>,
 
+    #[arg(long, value_name = "FORMAT")]
+    pub log_format: Option<String>,
+
+    #[arg(long, value_name = "FILE")]
+    pub log_file: Option<String>,
+
     /// Heartbeat timeout in seconds / 心跳超时时间（秒）
     #[arg(
         long,
@@ -140,8 +146,7 @@ pub struct SmsConfig {
     pub grpc: ServerConfig,
     /// HTTP gateway configuration / HTTP网关配置
     pub http: ServerConfig,
-    /// Logging configuration / 日志配置
-    pub log: LogConfig,
+    pub logging: LogConfig,
     /// Enable Swagger UI / 启用Swagger UI
     pub enable_swagger: bool,
     /// Database configuration / 数据库配置
@@ -234,17 +239,17 @@ impl SmsConfig {
 
         if let Ok(v) = std::env::var("SMS_LOG_LEVEL") {
             if !v.is_empty() {
-                config.log.level = v;
+                config.logging.level = v;
             }
         }
         if let Ok(v) = std::env::var("SMS_LOG_FORMAT") {
             if !v.is_empty() {
-                config.log.format = v;
+                config.logging.format = v;
             }
         }
         if let Ok(v) = std::env::var("SMS_LOG_FILE") {
             if !v.is_empty() {
-                config.log.file = Some(v);
+                config.logging.file = Some(v);
             }
         }
 
@@ -273,7 +278,6 @@ impl SmsConfig {
                     .join("config.toml");
                 if home_path.exists() {
                     let cfg = std::fs::read_to_string(&home_path)?;
-                    eprintln!("SMS home config content:\n{}", cfg);
                     match toml::from_str::<Self>(&cfg) {
                         Ok(c) => {
                             config = c;
@@ -346,7 +350,15 @@ impl SmsConfig {
         }
 
         if let Some(log_level) = &args.log_level {
-            config.log.level = log_level.clone();
+            config.logging.level = log_level.clone();
+        }
+        if let Some(log_format) = &args.log_format {
+            config.logging.format = log_format.clone();
+        }
+        if let Some(log_file) = &args.log_file {
+            if !log_file.is_empty() {
+                config.logging.file = Some(log_file.clone());
+            }
         }
 
         // Heartbeat & cleanup overrides / 心跳与清理覆盖
@@ -402,7 +414,7 @@ impl Default for SmsConfig {
                 addr: "127.0.0.1:8080".parse().unwrap(),
                 ..Default::default()
             },
-            log: LogConfig::default(),
+            logging: LogConfig::default(),
             enable_swagger: true,
             database: DatabaseConfig {
                 db_type: "sled".to_string(),

@@ -1,4 +1,4 @@
-use crate::spearlet::execution::ai::ir::ResultPayload;
+use crate::spearlet::execution::ai::ir::{CanonicalRequestEnvelope, Payload, ResultPayload};
 use crate::spearlet::execution::ai::ir::{ChatMessage, ToolCall};
 use crate::spearlet::execution::ai::normalize::chat::normalize_cchat_session;
 use crate::spearlet::execution::host_api::DefaultHostApi;
@@ -6,7 +6,7 @@ use crate::spearlet::execution::hostcall::types::{
     ChatResponseState, ChatSessionState, FdEntry, FdFlags, FdInner, FdKind, PollEvents,
 };
 use libc::{EBADF, EIO};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
@@ -14,6 +14,70 @@ use crate::spearlet::mcp::policy::{
     decide_mcp_exec, filter_and_namespace_openai_tools, server_allowed_tools,
     session_policy_from_params,
 };
+
+fn redact_canonical_request_for_log(req: &CanonicalRequestEnvelope) -> CanonicalRequestEnvelope {
+    let mut out = req.clone();
+
+    for (k, v) in out.meta.iter_mut() {
+        if should_redact_key(k) {
+            *v = "***".to_string();
+        }
+    }
+
+    for (k, v) in out.extra.iter_mut() {
+        redact_value_by_key(k, v);
+    }
+
+    match &mut out.payload {
+        Payload::ChatCompletions(p) => {
+            for (k, v) in p.params.iter_mut() {
+                redact_value_by_key(k, v);
+            }
+        }
+        Payload::Embeddings(_) => {}
+        Payload::ImageGeneration(_) => {}
+        Payload::SpeechToText(_) => {}
+        Payload::TextToSpeech(_) => {}
+        Payload::RealtimeVoice(_) => {}
+    }
+
+    out
+}
+
+fn should_redact_key(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    k.contains("api_key")
+        || k.contains("apikey")
+        || k.contains("authorization")
+        || k == "auth"
+        || k.ends_with("_token")
+        || k.contains("token")
+        || k.contains("secret")
+        || k.contains("password")
+        || k.contains("cookie")
+}
+
+fn should_redact_header_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n == "authorization" || n == "cookie" || n == "x-api-key" || n.ends_with("-token")
+}
+
+fn redact_value_by_key(key: &str, v: &mut Value) {
+    if should_redact_key(key) {
+        *v = Value::String("***".to_string());
+        return;
+    }
+
+    if key.eq_ignore_ascii_case("headers") {
+        if let Value::Object(obj) = v {
+            for (hk, hv) in obj.iter_mut() {
+                if should_redact_header_name(hk) {
+                    *hv = Value::String("***".to_string());
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ChatSessionSnapshot {
@@ -152,6 +216,13 @@ impl DefaultHostApi {
         });
 
         let req = normalize_cchat_session(&snapshot);
+        tracing::debug!(
+            chat_fd = fd,
+            response_fd = resp_fd,
+            flags,
+            req = ?redact_canonical_request_for_log(&req),
+            "cchat_send canonical request"
+        );
         let resp = match self.ai_engine.invoke(&req) {
             Ok(r) => r,
             Err(e) => {
@@ -267,6 +338,16 @@ impl DefaultHostApi {
             let tool_name_to_offset = build_tool_name_to_offset(&snapshot.tools);
 
             let req = normalize_cchat_session(&injected_snapshot);
+            tracing::debug!(
+                chat_fd = fd,
+                response_fd = resp_fd,
+                iter,
+                total_tool_calls,
+                max_iterations,
+                max_total_tool_calls,
+                req = ?redact_canonical_request_for_log(&req),
+                "cchat_send canonical request"
+            );
             let resp = match self.ai_engine.invoke(&req) {
                 Ok(r) => r,
                 Err(e) => {

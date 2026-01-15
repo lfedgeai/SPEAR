@@ -24,3 +24,8 @@ pool_size = 10
 [event_kv]
 backend = "sled"
 params = { path = "./data/events-sled.db" }
+
+[logging]
+level = "info"
+format = "json"
+file = "./logs/sms.log"

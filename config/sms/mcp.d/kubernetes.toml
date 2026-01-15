@@ -1,0 +1,22 @@
+server_id = "kubernetes"
+display_name = "Kubernetes"
+transport = "stdio"
+tool_namespace = ""
+allowed_tools = [
+  "ping",
+  "kubectl_get",
+  "kubectl_describe",
+  "kubectl_logs",
+  "kubectl_context",
+  "list_api_resources",
+  "explain_resource",
+]
+
+[stdio]
+command = "npx"
+args = ["-y", "mcp-server-kubernetes"]
+cwd = ""
+
+[budgets]
+tool_timeout_ms = 15000
+

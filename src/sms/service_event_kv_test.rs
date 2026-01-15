@@ -110,6 +110,8 @@ params = {}
             web_admin_addr: None,
             mcp_dir: None,
             log_level: None,
+            log_format: None,
+            log_file: None,
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,

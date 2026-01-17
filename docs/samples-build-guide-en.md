@@ -2,6 +2,7 @@
 
 ## Layout
 - Source: `samples/wasm-c/hello.c`
+- Source: `samples/wasm-c/chat_completion.c` (Chat Completions sample)
 - Source: `samples/wasm-c/mic_rtasr.c` (realtime mic → realtime ASR)
 - Output: `samples/build/hello.wasm`
 
@@ -19,6 +20,12 @@ Suggested setup:
 - Set env before running: `OPENAI_REALTIME_API_KEY`
 
 How to run: after building `samples/build/mic_rtasr.wasm`, upload it as a WASM executable and run it as a task (see `docs/api-usage-guide-en.md` for the upload/task workflow).
+
+## chat_completion sample
+
+- Uses `SP_MODEL` (default `gpt-4o-mini`) as the request model
+- Optional: define `SP_ROUTE_OLLAMA_GEMMA3` at build time to switch the model to `SP_OLLAMA_GEMMA3_MODEL` (default `gemma3:1b`)
+- Response JSON includes `_spear.backend` (selected backend name) and `_spear.model` (request model); the sample prints `debug_backend=...`
 
 ## Build
 - Run: `make samples`

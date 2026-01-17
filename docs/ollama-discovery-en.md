@@ -59,6 +59,8 @@ Each model becomes one backend entry:
 - `model = "<model_name>"` (fixed)
 - `credential_ref = null` (no secrets)
 
+With “route by model” enabled, guests can set `model = "<model_name>"` and do not need to specify an explicit `backend` name.
+
 ## Web Admin
 
 - Backends tab shows aggregated backends across nodes.
@@ -78,4 +80,3 @@ Availability does not probe network. Check:
 
 - Ollama is listening on `base_url`
 - SPEARlet can reach that address
-

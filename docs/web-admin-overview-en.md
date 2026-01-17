@@ -6,6 +6,7 @@ This document summarizes the new Web Admin in `spear-next`.
 
 - Independent port (default `127.0.0.1:8081`) with Axum router
 - Nodes list with search, sort, pagination
+- Backends list (aggregated view; includes a detail dialog with Raw JSON)
 - Stats cards (total, online, offline, recent 60s)
 - SSE stream `GET /admin/api/nodes/stream`
   - For testing: `?once=true` returns a single snapshot event
@@ -31,6 +32,7 @@ This document summarizes the new Web Admin in `spear-next`.
 - `GET /admin/api/nodes/:uuid` → Node + optional resource info
 - `GET /admin/api/stats` → counts (total/online/offline/recent_60s)
 - `GET /admin/api/nodes/stream[?once=true]` → SSE snapshot events
+- `GET /admin/api/backends` → aggregated backend list (capabilities + per-node availability)
 
 ### Tasks Endpoints
 

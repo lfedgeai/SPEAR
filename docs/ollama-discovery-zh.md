@@ -59,6 +59,8 @@ default_transports = ["http"]
 - `model = "<model_name>"`（固定绑定模型）
 - `credential_ref = null`（不需要密钥）
 
+当启用“按模型路由”时，guest 只需要设置 `model = "<model_name>"`，无需显式指定 `backend` 名称。
+
 ## Web Admin 查看
 
 - Backends 页面会展示聚合后的 backends。
@@ -78,4 +80,3 @@ Backends 可用性不做网络探测；需要检查：
 
 - Ollama 是否在对应 `base_url` 监听
 - SPEARlet 进程是否可访问该地址
-

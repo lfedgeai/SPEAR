@@ -1,134 +1,75 @@
-# CChat Default Model Selection Design
+# CChat Model Selection and Routing (Implementation Notes)
 
-## 1. Background
+This document describes how the current CChat (`cchat_*` hostcalls) implementation routes requests using `model` and optional backend constraints, and how to observe which backend was selected.
 
-When CChat normalizes a session snapshot into an upstream `chat_completions` request, if the user does not explicitly set `model` via `cchat_ctl`, the current implementation falls back to a hard-coded default:
+## 1. The request model
 
-- Current behavior: `normalize_cchat_session` uses `unwrap_or("stub-model")`
-  - Reference: [chat.rs](../../src/spearlet/execution/ai/normalize/chat.rs)
+In CChat, the request `model` comes from session params:
 
-This is fine for the stub backend, but when the request is routed to a real LLM backend (e.g. OpenAI Chat Completions), it commonly results in upstream 404/400 (`model_not_found`). This makes the root cause hard to diagnose.
+- The WASM guest sets `{"key":"model","value":"..."}` via `cchat_ctl(SET_PARAM)`
+- Or the WASM-C sample (`samples/wasm-c/chat_completion.c`) selects a model at build time and calls `sp_cchat_set_param_string(fd, "model", model)`
 
-## 2. Problem statement
+Normalization writes this model into `CanonicalRequestEnvelope.payload` and it participates in routing and backend invocation.
 
-We want:
+## 2. backend.model binding (model-bound backends)
 
-- If the user does not set `model`, real backends should still get a usable default model.
-- The default model must be configurable, ideally per-backend.
-- The rule must be transparent and debuggable.
-- Avoid scattering concrete model names across WASM samples or business code.
-
-## 3. Goals and non-goals
-
-### 3.1 Goals
-
-- Introduce a configurable “default model” that replaces `stub-model` fallback for non-stub backends.
-- Clear precedence: session param > backend default > global default > (stub only) `stub-model`.
-- Avoid unpredictable behavior in multi-backend routing.
-- Improve observability: missing default configuration should be obvious from the error.
-
-### 3.2 Non-goals
-
-- No complex rule engine (by feature/transport/json_schema/tools) in this iteration.
-- No upstream model availability probing (e.g. listing models).
-
-## 4. Terminology
-
-- **Session params**: values stored into `ChatSessionState.params` via `cchat_ctl(CTL_SET_PARAM, {key,value})`.
-- **Backend default model**: a default model declared in `[[spearlet.llm.backends]]`.
-- **Global default model**: a fallback model declared in `[spearlet.llm]`.
-
-## 5. Configuration
-
-### 5.1 Global default model
-
-Add a field under `[spearlet.llm]`:
-
-```toml
-[spearlet.llm]
-default_model = "gpt-4o-mini"
-```
-
-Semantics: used when session has no `model` and the selected backend also has no `default_model`.
-
-### 5.2 Backend default model (recommended)
-
-Add a field under `[[spearlet.llm.backends]]`:
+`[[spearlet.llm.backends]]` supports an optional `model` field:
 
 ```toml
 [[spearlet.llm.backends]]
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
-credential_ref = "openai_chat"
-ops = ["chat_completions"]
-features = ["supports_tools", "supports_json_schema"]
-transports = ["http"]
-default_model = "gpt-4o-mini"
-weight = 100
-priority = 0
+model = "gpt-4o-mini"
+...
 ```
 
-Semantics: when this backend is selected for `chat_completions` and the session does not set `model`, use this default.
+Semantics: if a backend has `model` set, it is considered “bound” to that model.
 
-## 6. Default model selection rules
+Routing behavior:
 
-Selection happens before routing/adapters are invoked, to ensure the request has a non-empty, explainable `model`.
+- First filter candidates by op/features/transports and routing allowlist/denylist.
+- If the request carries a non-empty `model` and any candidate has `backend.model != None`:
+  - further retain only candidates where `backend.model == request.model`
+  - if that yields zero candidates, return `no_candidate_backend` and include `available_models`
 
-### 6.1 Precedence (high to low)
+This lets guests select a backend indirectly by setting only `model`, without explicitly setting `backend`.
 
-1. **Explicit session `model`**: `session.params["model"]`
-2. **Backend default model for an explicitly selected backend**: when `session.params["backend"]` (or routing hints) selects a backend
-3. **Default model of the single remaining candidate backend**: after routing filters yield exactly one candidate
-4. **Global default model**: `spearlet.llm.default_model`
-5. **Stub fallback**: only when the selected backend is the stub backend, fall back to `stub-model`
+## 3. Routing to Ollama gemma3
 
-### 6.2 Ambiguity handling for multiple candidates
+Once Ollama discovery imports `gemma3:1b`:
 
-If there are multiple candidate backends and the user sets neither backend nor model:
+- set `model = "gemma3:1b"`
+- routing will match the candidate backend with `backend.model = "gemma3:1b"`
 
-- If all candidates have `default_model` and they are identical: use that shared value.
-- Otherwise: return an error telling the user to either:
-  - set `cchat_ctl(model=...)`, or
-  - set `cchat_ctl(backend=...)`.
+No explicit backend name is required on the guest side.
 
-This avoids “weighted routing + differing default models” producing non-deterministic behavior.
+## 4. How to tell which backend was selected
 
-## 7. Errors and observability
+Two options are available:
 
-If a non-stub backend is selected but no default model can be determined:
+### 4.1 Inspect `_spear.backend` in response JSON
 
-- The error should include:
-  - operation (`chat_completions`)
-  - routing constraints (backend/allowlist/denylist)
-  - required_features / required_transports
-  - candidate backends with their features/transports/default_model (if any)
-  - suggested actions: configure `spearlet.llm.default_model` or backend `default_model`, or set session `model`
+The JSON returned by `cchat_recv` includes a top-level:
 
-Recommend logging at debug level:
+```json
+"_spear": {"backend": "...", "model": "..."}
+```
 
-- selected_backend
-- selected_model
-- model_source (session/backend/global/stub)
+The WASM-C sample prints:
 
-## 8. Security
+- `debug_model=...`
+- `debug_backend=...`
 
-- Default model names are not sensitive and can be kept in config.
-- API keys must continue to come from `credentials[].api_key_env` only.
+### 4.2 Check Router debug logs
 
-## 9. Migration
+With debug logging enabled, the Router emits a `router selected backend` debug line after selection, including:
 
-- Keep `stub-model` only for the stub backend.
-- For real backends, migrate from implicit fallback to explicit defaults.
+- `selected_backend` / `selected_model`
+- operation/model/routing constraints and candidate summary
 
-## 10. Test plan
+## 5. Recommendations
 
-- Unit tests:
-  - session specifies model
-  - backend specified by routing uses its default_model
-  - single candidate backend uses its default_model
-  - multiple candidates with mismatching default_model returns ambiguity error
-  - stub backend still falls back to `stub-model`
-- Integration (WASM sample):
-  - when WASM does not set model, real backend still works via host-side default_model
+- If one backend should support multiple models (e.g. OpenAI), do not bind it via `backend.model`; use explicit `backend`/allowlist/denylist or other selection mechanisms.
+- If you want strict “model → backend” routing (e.g. pin some models to local Ollama), set `backend.model` and have guests only set `model`.
 

@@ -6,6 +6,8 @@ This document describes the Chat Completion API design for Spear WASM hostcalls.
 
 The API supports automatic tool invocation: when the model response contains `tool_calls`, the host can call back into the WASM guest using the registered `fn_offset`, execute the corresponding function, and merge results into the conversation.
 
+For troubleshooting, the host may attach a top-level `_spear` object to the returned JSON (e.g. `_spear.backend` / `_spear.model`) to indicate the selected backend and the requested model.
+
 ## Function Signatures
 
 All functions are `extern "C"` and WASM-friendly (e.g., `i32`, `*const u8`). Errors return negative values (e.g., `-1` for invalid fd).

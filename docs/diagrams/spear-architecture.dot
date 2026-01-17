@@ -1,0 +1,91 @@
+digraph spear_architecture {
+  graph [
+    rankdir=LR,
+    bgcolor="transparent",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="SPEAR Next (High-level Architecture)",
+    nodesep=0.55,
+    ranksep=0.8,
+    splines=curved,
+    overlap=false,
+    concentrate=true,
+    pad=0.2
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    fontname="Helvetica",
+    fontsize=14,
+    penwidth=1,
+    color="#334155",
+    fontcolor="#0f172a",
+    margin="0.15,0.10"
+  ];
+
+  edge [
+    fontname="Helvetica",
+    fontsize=12,
+    color="#94A3B8",
+    fontcolor="#475569",
+    penwidth=1.1,
+    arrowsize=0.75,
+    arrowhead=vee
+  ];
+
+  subgraph cluster_ui {
+    label="Experience";
+    style="rounded";
+    color="#4F46E5";
+    fontcolor="#312E81";
+
+    user [label="🧑\nUser", fillcolor="#EEF2FF", color="#4F46E5", fontcolor="#111827"];
+    web_admin [label="📊\nWeb Admin", fillcolor="#EEF2FF", color="#4F46E5", fontcolor="#111827"];
+  }
+
+  subgraph cluster_control {
+    label="Control Plane";
+    style="rounded";
+    color="#0284C7";
+    fontcolor="#0C4A6E";
+
+    sms [label="🧭\nSMS\n(Control Plane)", fillcolor="#E0F2FE", color="#0284C7", fontcolor="#0C4A6E"];
+    tasks [label="📦\nTasks & Files", fillcolor="#E0F2FE", color="#0284C7", fontcolor="#0C4A6E"];
+  }
+
+  subgraph cluster_node {
+    label="Worker Node";
+    style="rounded";
+    color="#10B981";
+    fontcolor="#065F46";
+
+    spearlet [label="⚙️\nSPEARlet\n(Node Runtime)", fillcolor="#D1FAE5", color="#10B981", fontcolor="#065F46"];
+    agent [label="🤖\nAI Agent (WASM)\n(Your Logic)", fillcolor="#D1FAE5", color="#10B981", fontcolor="#065F46"];
+  }
+
+  subgraph cluster_services {
+    label="LLMs & Tools";
+    style="rounded";
+    color="#F97316";
+    fontcolor="#7C2D12";
+
+    openai [label="☁️\nOpenAI\n(Cloud LLM)", fillcolor="#FFF7ED", color="#F97316", fontcolor="#7C2D12"];
+    ollama [label="🧠\nOllama\n(Local LLM)", fillcolor="#FFF7ED", color="#F97316", fontcolor="#7C2D12"];
+    mcp [label="🧰\nMCP Servers\n(Tools)", fillcolor="#F5F3FF", color="#7C3AED", fontcolor="#2E1065"];
+  }
+
+  user -> web_admin [xlabel="opens", color="#6366F1", fontcolor="#312E81"];
+  web_admin -> sms [xlabel="create / run", color="#38BDF8", fontcolor="#0C4A6E"];
+  user -> sms [xlabel="API / CLI", color="#38BDF8", fontcolor="#0C4A6E"];
+
+  sms -> tasks [xlabel="stores", color="#38BDF8", fontcolor="#0C4A6E"];
+  sms -> spearlet [dir=both, xlabel="gRPC\nassign + status", color="#34D399", fontcolor="#065F46"];
+  spearlet -> agent [xlabel="runs", color="#34D399", fontcolor="#065F46"];
+
+  agent -> openai [xlabel="ask", color="#FB923C", fontcolor="#7C2D12"];
+  agent -> ollama [xlabel="ask", color="#FB923C", fontcolor="#7C2D12"];
+  agent -> mcp [xlabel="use tools", color="#A78BFA", fontcolor="#2E1065"];
+}
+

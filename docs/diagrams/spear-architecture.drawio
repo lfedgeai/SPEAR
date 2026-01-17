@@ -1,0 +1,95 @@
+<mxfile host="app.diagrams.net" modified="2026-01-17T00:00:00.000Z" agent="spear-next" version="24.7.1" type="device">
+  <diagram id="spear-arch" name="SPEAR Architecture">
+    <mxGraphModel dx="1280" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="user" value="🧑 User" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#4F46E5;fontColor=#111827;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="80" y="120" width="220" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="webadmin" value="📊 Web Admin
+Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#4F46E5;fontColor=#111827;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="80" y="250" width="220" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sms" value="🧭 SMS
+Control Plane" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontColor=#0C4A6E;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="370" y="160" width="320" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tasks" value="📦 Tasks &amp; Files
+(what to run)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontColor=#0C4A6E;align=center;verticalAlign=middle;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="370" y="320" width="320" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node" value="🖥️ Worker Node" style="swimlane;rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#10B981;fontColor=#065F46;startSize=34;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="780" y="90" width="520" height="380" as="geometry" />
+        </mxCell>
+
+        <mxCell id="spearlet" value="⚙️ SPEARlet
+Runtime" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontColor=#065F46;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="node">
+          <mxGeometry x="40" y="70" width="440" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agent" value="🤖 AI Agent (WASM)
+Your packaged logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontColor=#065F46;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="node">
+          <mxGeometry x="40" y="210" width="440" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="openai" value="☁️ OpenAI
+Cloud LLM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#F97316;fontColor=#7C2D12;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="120" width="300" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ollama" value="🧠 Ollama
+Local LLM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#F97316;fontColor=#7C2D12;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="260" width="300" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mcp" value="🧰 MCP Servers
+Tools (FS, DB, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#2E1065;align=center;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="400" width="300" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_user_admin" value="" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4F46E5;" edge="1" parent="1" source="user" target="webadmin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_admin_sms" value="create / run" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284C7;fontColor=#0C4A6E;" edge="1" parent="1" source="webadmin" target="sms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_user_sms" value="API / CLI" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284C7;fontColor=#0C4A6E;" edge="1" parent="1" source="user" target="sms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_sms_tasks" value="stores" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284C7;fontColor=#0C4A6E;" edge="1" parent="1" source="sms" target="tasks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_sms_spearlet" value="assign + status (gRPC)" style="endArrow=block;startArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10B981;fontColor=#065F46;" edge="1" parent="1" source="sms" target="spearlet">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_spearlet_agent" value="runs" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10B981;fontColor=#065F46;" edge="1" parent="node" source="spearlet" target="agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_agent_openai" value="ask" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#F97316;fontColor=#7C2D12;" edge="1" parent="1" source="agent" target="openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_agent_ollama" value="ask" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#F97316;fontColor=#7C2D12;" edge="1" parent="1" source="agent" target="ollama">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_agent_mcp" value="use tools" style="endArrow=block;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7C3AED;fontColor=#2E1065;" edge="1" parent="1" source="agent" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+

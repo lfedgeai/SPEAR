@@ -6,6 +6,7 @@
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
+| System Architecture Diagram | - | - | 架构图：`docs/diagrams/spear-architecture.png` |
 | Project Architecture Overview | [project-architecture-overview-en.md](./project-architecture-overview-en.md) | [project-architecture-overview-zh.md](./project-architecture-overview-zh.md) | 项目架构全面概述 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
 | ObjectRef API Removal | [objectref-api-removal-en.md](./objectref-api-removal-en.md) | [objectref-api-removal-zh.md](./objectref-api-removal-zh.md) | ObjectRef API移除文档 |

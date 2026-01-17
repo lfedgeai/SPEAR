@@ -16,6 +16,10 @@ Chinese README: [README.zh.md](./README.zh.md)
 - `samples/wasm-c/`: C-based WASM samples (WASI)
 - `docs/`: design notes and usage guides
 
+## Architecture
+
+![SPEAR architecture](docs/diagrams/spear-architecture.png)
+
 ## Quick start
 
 ### Prerequisites

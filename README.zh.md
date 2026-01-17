@@ -16,6 +16,10 @@ English README: [README.md](./README.md)
 - `samples/wasm-c/`：基于 C 的 WASM 示例（WASI）
 - `docs/`：设计与使用文档
 
+## 架构示意图
+
+![SPEAR 架构](docs/diagrams/spear-architecture.png)
+
 ## 快速开始
 
 ### 前置依赖
@@ -146,4 +150,3 @@ make test-ui
 ## License
 
 Apache-2.0，见 `LICENSE`。
-

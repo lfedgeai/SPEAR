@@ -3,10 +3,12 @@
 
 use clap::Parser;
 use spear_next::config::init_tracing;
+use spear_next::spearlet::backend_reporter::BackendReporterService;
 use spear_next::spearlet::config::CliArgs;
 use spear_next::spearlet::grpc_server::GrpcServer;
 use spear_next::spearlet::http_gateway::HttpGateway;
 use spear_next::spearlet::mcp::registry_sync::McpRegistrySyncService;
+use spear_next::spearlet::ollama_discovery::maybe_import_ollama_serving_models;
 use spear_next::spearlet::registration::RegistrationService;
 
 use std::sync::Arc;
@@ -22,10 +24,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Load configuration with home-first, then CLI override /
     // 先从主目录加载配置，其次使用命令行覆盖
     let app_cfg = spear_next::spearlet::config::AppConfig::load_with_cli(&args)?;
-    let config = Arc::new(app_cfg.spearlet);
+    let mut spearlet_cfg = app_cfg.spearlet;
 
     // Initialize logging with configuration / 使用配置初始化日志
-    init_tracing(&config.logging.to_logging_config()).unwrap();
+    init_tracing(&spearlet_cfg.logging.to_logging_config()).unwrap();
+
+    if spearlet_cfg.llm.discovery.ollama.enabled {
+        match maybe_import_ollama_serving_models(&mut spearlet_cfg).await {
+            Ok(n) => {
+                if n > 0 {
+                    tracing::info!(imported = n, "Imported Ollama serving models");
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Ollama model import failed");
+            }
+        }
+    }
+
+    let config = Arc::new(spearlet_cfg);
 
     tracing::info!("Starting SPEARlet with args: {}", log_args);
 
@@ -100,6 +117,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let mcp_registry_sync = McpRegistrySyncService::new(config.clone());
         mcp_registry_sync.start();
+
+        let backend_reporter = BackendReporterService::new(config.clone());
+        backend_reporter.start();
     }
 
     // Wait for shutdown signal / 等待关闭信号

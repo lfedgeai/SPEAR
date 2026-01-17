@@ -5,6 +5,7 @@ use axum::Router;
 use tonic::transport::Channel;
 
 use crate::proto::sms::{
+    backend_registry_service_client::BackendRegistryServiceClient,
     mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
     placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
 };
@@ -20,7 +21,8 @@ async fn create_mock_gateway_state() -> GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
         placement_client: PlacementServiceClient::new(channel.clone()),
-        mcp_registry_client: McpRegistryServiceClient::new(channel),
+        mcp_registry_client: McpRegistryServiceClient::new(channel.clone()),
+        backend_registry_client: BackendRegistryServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     }
@@ -141,13 +143,15 @@ async fn test_gateway_state_with_different_endpoints() {
         let node_client = NodeServiceClient::new(channel.clone());
         let task_client = TaskServiceClient::new(channel.clone());
         let placement_client = PlacementServiceClient::new(channel.clone());
-        let mcp_registry_client = McpRegistryServiceClient::new(channel);
+        let mcp_registry_client = McpRegistryServiceClient::new(channel.clone());
+        let backend_registry_client = BackendRegistryServiceClient::new(channel);
 
         let state = GatewayState {
             node_client,
             task_client,
             placement_client,
             mcp_registry_client,
+            backend_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };

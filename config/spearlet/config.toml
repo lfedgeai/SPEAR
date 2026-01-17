@@ -54,6 +54,38 @@ file = "./logs/spearlet.log"
 # Backend routing policy / 后端路由策略
 default_policy = "weighted_random"
 
+[spearlet.llm.discovery.ollama]
+# Enable importing Ollama currently serving models / 是否导入 Ollama 当前正在 serve 的模型
+enabled = true
+# Discovery scope: serving|installed / 导入范围：serving|installed
+scope = "serving"
+# Ollama base URL / Ollama 服务地址
+base_url = "http://127.0.0.1:11434"
+# Allow non-loopback base_url (SSRF risk) / 是否允许非本机地址（有 SSRF 风险）
+allow_remote = false
+# HTTP request timeout (ms) / HTTP 请求超时（毫秒）
+timeout_ms = 1500
+# Max models to import per refresh / 每次最多导入的模型数量
+max_models = 32
+# Allowlist of model names (exact match); empty means allow all / 模型白名单（精确匹配）；空表示允许全部
+allow_models = []
+# Denylist of model names (exact match) / 模型黑名单（精确匹配）
+deny_models = []
+# Imported backend name prefix / 导入后 backend 名称前缀
+name_prefix = "ollama/"
+# How to handle name conflicts: skip|overwrite / 命名冲突处理：skip|overwrite
+name_conflict = "skip"
+# Default routing weight / 默认权重
+default_weight = 100
+# Default routing priority / 默认优先级
+default_priority = 0
+# Default operations / 默认能力（操作）
+default_ops = ["chat_completions"]
+# Default features / 默认特性
+default_features = []
+# Default transports / 默认传输方式
+default_transports = ["http"]
+
 [[spearlet.llm.credentials]]
 # Credential name / 凭据名称
 name = "openai_chat"
@@ -71,6 +103,7 @@ api_key_env = "OPENAI_API_KEY"
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
 credential_ref = "openai_chat"
 ops = ["chat_completions"]
 features = ["supports_tools", "supports_json_schema"]

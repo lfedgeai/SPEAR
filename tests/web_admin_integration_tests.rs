@@ -58,11 +58,43 @@ async fn test_admin_list_nodes_empty() {
         )
         .await
         .unwrap();
+
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -127,11 +159,18 @@ async fn test_admin_list_nodes_filter_and_sort() {
         )
         .await
         .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -209,11 +248,18 @@ async fn test_admin_stats() {
         )
         .await
         .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -248,6 +294,12 @@ async fn test_admin_nodes_stream() {
         .unwrap();
     let mcp_registry_client =
         spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
             grpc_url,
         )
         .await
@@ -257,6 +309,7 @@ async fn test_admin_nodes_stream() {
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -330,11 +383,18 @@ async fn test_admin_node_detail_includes_resource() {
         )
         .await
         .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -375,11 +435,19 @@ async fn test_admin_mcp_servers_crud() {
         .await
         .unwrap();
 
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -448,11 +516,19 @@ async fn test_admin_mcp_servers_validation() {
         .await
         .unwrap();
 
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

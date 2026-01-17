@@ -23,14 +23,18 @@ use tracing::{debug, warn};
 
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
+    backend_registry_service_server::BackendRegistryService as BackendRegistryServiceTrait,
     mcp_registry_service_server::McpRegistryService as McpRegistryServiceTrait,
     node_service_server::NodeService as NodeServiceTrait,
     placement_service_server::PlacementService as PlacementServiceTrait,
     task_service_server::TaskService as TaskServiceTrait,
+    BackendStatus,
     DeleteMcpServerRequest,
     DeleteMcpServerResponse,
     DeleteNodeRequest,
     DeleteNodeResponse,
+    GetNodeBackendsRequest,
+    GetNodeBackendsResponse,
     GetNodeRequest,
     GetNodeResourceRequest,
     GetNodeResourceResponse,
@@ -44,6 +48,8 @@ use crate::proto::sms::{
     InvocationOutcomeClass,
     ListMcpServersRequest,
     ListMcpServersResponse,
+    ListNodeBackendSnapshotsRequest,
+    ListNodeBackendSnapshotsResponse,
     ListNodeResourcesRequest,
     ListNodeResourcesResponse,
     ListNodesRequest,
@@ -53,6 +59,7 @@ use crate::proto::sms::{
     McpRegistryEvent,
     McpServerRecord,
     McpTransport,
+    NodeBackendSnapshot,
     NodeCandidate,
     PlaceInvocationRequest,
     PlaceInvocationResponse,
@@ -64,6 +71,8 @@ use crate::proto::sms::{
     RegisterTaskResponse,
     ReportInvocationOutcomeRequest,
     ReportInvocationOutcomeResponse,
+    ReportNodeBackendsRequest,
+    ReportNodeBackendsResponse,
     UnregisterTaskRequest,
     UnregisterTaskResponse,
     UpdateNodeRequest,
@@ -86,6 +95,19 @@ struct McpRegistryState {
     records: RwLock<HashMap<String, McpServerRecord>>,
     recent_events: Mutex<VecDeque<McpRegistryEvent>>,
     event_tx: broadcast::Sender<McpRegistryEvent>,
+}
+
+#[derive(Debug)]
+struct BackendRegistryState {
+    snapshots: RwLock<HashMap<String, NodeBackendSnapshot>>,
+}
+
+impl BackendRegistryState {
+    fn new() -> Self {
+        Self {
+            snapshots: RwLock::new(HashMap::new()),
+        }
+    }
 }
 
 impl McpRegistryState {
@@ -126,6 +148,7 @@ pub struct SmsServiceImpl {
     events: Arc<TaskEventBus>,
     placement_state: Arc<PlacementState>,
     mcp_registry: Arc<McpRegistryState>,
+    backend_registry: Arc<BackendRegistryState>,
 }
 
 impl SmsServiceImpl {
@@ -394,6 +417,7 @@ impl SmsServiceImpl {
             events,
             placement_state: Arc::new(PlacementState::new()),
             mcp_registry: Arc::new(McpRegistryState::new(1024, 1024)),
+            backend_registry: Arc::new(BackendRegistryState::new()),
         }
     }
 
@@ -646,6 +670,102 @@ impl McpRegistryServiceTrait for SmsServiceImpl {
         let _ = self.mcp_registry.event_tx.send(event);
 
         Ok(Response::new(DeleteMcpServerResponse { revision }))
+    }
+}
+
+#[tonic::async_trait]
+impl BackendRegistryServiceTrait for SmsServiceImpl {
+    async fn report_node_backends(
+        &self,
+        request: Request<ReportNodeBackendsRequest>,
+    ) -> Result<Response<ReportNodeBackendsResponse>, Status> {
+        let mut snapshot = request
+            .into_inner()
+            .snapshot
+            .ok_or_else(|| Status::invalid_argument("snapshot is required"))?;
+
+        if snapshot.node_uuid.trim().is_empty() {
+            return Err(Status::invalid_argument("snapshot.node_uuid is required"));
+        }
+
+        if snapshot.reported_at_ms == 0 {
+            snapshot.reported_at_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+        }
+
+        snapshot.backends.retain(|b| !b.name.trim().is_empty());
+        snapshot.backends.iter_mut().for_each(|b| {
+            if b.kind.trim().is_empty() {
+                b.kind = "unknown".to_string();
+            }
+            if b.status == BackendStatus::Unspecified as i32 {
+                b.status = BackendStatus::Unavailable as i32;
+                if b.status_reason.trim().is_empty() {
+                    b.status_reason = "unspecified".to_string();
+                }
+            }
+        });
+
+        let node_uuid = snapshot.node_uuid.clone();
+        let mut guard = self.backend_registry.snapshots.write().await;
+        let accepted_revision = match guard.get(&node_uuid) {
+            Some(prev) if prev.revision > snapshot.revision => prev.revision,
+            _ => {
+                let rev = snapshot.revision;
+                guard.insert(node_uuid, snapshot);
+                rev
+            }
+        };
+
+        Ok(Response::new(ReportNodeBackendsResponse {
+            success: true,
+            message: "ok".to_string(),
+            accepted_revision,
+        }))
+    }
+
+    async fn get_node_backends(
+        &self,
+        request: Request<GetNodeBackendsRequest>,
+    ) -> Result<Response<GetNodeBackendsResponse>, Status> {
+        let node_uuid = request.into_inner().node_uuid;
+        if node_uuid.trim().is_empty() {
+            return Err(Status::invalid_argument("node_uuid is required"));
+        }
+
+        let guard = self.backend_registry.snapshots.read().await;
+        let snapshot = guard.get(&node_uuid).cloned();
+        Ok(Response::new(GetNodeBackendsResponse {
+            found: snapshot.is_some(),
+            snapshot,
+        }))
+    }
+
+    async fn list_node_backend_snapshots(
+        &self,
+        request: Request<ListNodeBackendSnapshotsRequest>,
+    ) -> Result<Response<ListNodeBackendSnapshotsResponse>, Status> {
+        let req = request.into_inner();
+        let limit = if req.limit == 0 { 200 } else { req.limit } as usize;
+        let offset = req.offset as usize;
+
+        let guard = self.backend_registry.snapshots.read().await;
+        let mut items: Vec<NodeBackendSnapshot> = guard.values().cloned().collect();
+        items.sort_by(|a, b| a.node_uuid.cmp(&b.node_uuid));
+
+        let total_count = items.len() as u32;
+        let snapshots = if offset >= items.len() {
+            Vec::new()
+        } else {
+            items.into_iter().skip(offset).take(limit).collect()
+        };
+
+        Ok(Response::new(ListNodeBackendSnapshotsResponse {
+            snapshots,
+            total_count,
+        }))
     }
 }
 

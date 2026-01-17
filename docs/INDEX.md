@@ -82,6 +82,7 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | gRPC Transport Error | [grpc-transport-error-troubleshooting-en.md](./grpc-transport-error-troubleshooting-en.md) | [grpc-transport-error-troubleshooting-zh.md](./grpc-transport-error-troubleshooting-zh.md) | gRPC传输错误故障排除指南 |
+| Ollama Model Discovery | [ollama-discovery-en.md](./ollama-discovery-en.md) | [ollama-discovery-zh.md](./ollama-discovery-zh.md) | Ollama 模型导入与排障 |
 | API Usage Guide | [api-usage-guide-en.md](./api-usage-guide-en.md) | [api-usage-guide-zh.md](./api-usage-guide-zh.md) | RESTful API使用指南 |
 | WASM Runtime Usage | [wasm-runtime-usage-en.md](./wasm-runtime-usage-en.md) | [wasm-runtime-usage-zh.md](./wasm-runtime-usage-zh.md) | WASM运行时使用与错误行为说明 |
 | Samples Build Guide | [samples-build-guide-en.md](./samples-build-guide-en.md) | [samples-build-guide-zh.md](./samples-build-guide-zh.md) | WASM示例构建指南（Makefile） |

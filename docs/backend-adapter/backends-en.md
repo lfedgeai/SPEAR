@@ -68,6 +68,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 name = "openai-us"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
 credential_ref = "openai_chat"
 weight = 80
 priority = 10
@@ -86,6 +87,13 @@ ops = ["speech_to_text"]
 features = ["supports_bidi_stream", "supports_audio_input", "supports_audio_output"]
 transports = ["websocket"]
 ```
+
+### 5.1 Model binding and “route by model”
+
+If some backend instances declare `model` (for example, one Ollama backend per imported model), routing can select instances using only the request `model`:
+
+- when the candidate set contains any `backend.model != None`, further filter by `backend.model == request.model`
+- guests don’t need to set an explicit `backend` name; setting `model` is sufficient
 
 Recommended: manage API keys centrally in `llm.credentials[]` and reference them from backends via `credential_ref`.
 

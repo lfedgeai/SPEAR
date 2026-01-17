@@ -22,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::proto::sms::{
+    backend_registry_service_client::BackendRegistryServiceClient,
     mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
     placement_service_client::PlacementServiceClient, ListNodesRequest,
 };
@@ -82,12 +83,14 @@ impl WebAdminServer {
         let task_client =
             crate::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
         let placement_client = PlacementServiceClient::new(channel.clone());
-        let mcp_registry_client = McpRegistryServiceClient::new(channel);
+        let mcp_registry_client = McpRegistryServiceClient::new(channel.clone());
+        let backend_registry_client = BackendRegistryServiceClient::new(channel);
         let state = GatewayState {
             node_client,
             task_client,
             placement_client,
             mcp_registry_client,
+            backend_registry_client,
             cancel_token: cancel_token.clone(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -160,6 +163,20 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             get({
                 let state = state.clone();
                 move || get_stats(state.clone())
+            }),
+        )
+        .route(
+            "/admin/api/backends",
+            get({
+                let state = state.clone();
+                move |q: Query<ListQuery>| list_backends(state.clone(), q)
+            }),
+        )
+        .route(
+            "/admin/api/nodes/{uuid}/backends",
+            get({
+                let state = state.clone();
+                move |p: Path<String>| get_node_backends(state.clone(), p)
             }),
         )
         .route(
@@ -280,6 +297,185 @@ struct McpBudgetsBody {
 struct McpApprovalPolicyBody {
     default_policy: Option<String>,
     per_tool: Option<std::collections::HashMap<String, String>>,
+}
+
+async fn list_backends(state: GatewayState, Query(q): Query<ListQuery>) -> Json<serde_json::Value> {
+    use crate::proto::sms::{BackendStatus, ListNodeBackendSnapshotsRequest};
+
+    #[derive(Default)]
+    struct Agg {
+        name: String,
+        kind: String,
+        operations: std::collections::BTreeSet<String>,
+        features: std::collections::BTreeSet<String>,
+        transports: std::collections::BTreeSet<String>,
+        available_nodes: i64,
+        total_nodes: i64,
+        nodes: Vec<serde_json::Value>,
+    }
+
+    let mut client = state.backend_registry_client.clone();
+    let limit = q.limit.unwrap_or(500) as u32;
+    let offset = q.offset.unwrap_or(0) as u32;
+    let resp = match client
+        .list_node_backend_snapshots(ListNodeBackendSnapshotsRequest { limit, offset })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    let status_filter = q.status.as_deref().map(|s| s.to_ascii_lowercase());
+    let needle = q.q.as_deref().map(|s| s.to_ascii_lowercase());
+
+    let mut agg: std::collections::HashMap<(String, String), Agg> =
+        std::collections::HashMap::new();
+
+    for snap in resp.snapshots.into_iter() {
+        let node_uuid = snap.node_uuid.clone();
+        for b in snap.backends.into_iter() {
+            let status = if b.status == BackendStatus::Available as i32 {
+                "available"
+            } else {
+                "unavailable"
+            };
+            if let Some(f) = status_filter.as_ref() {
+                if f != status {
+                    continue;
+                }
+            }
+            if let Some(n) = needle.as_ref() {
+                let hay = format!("{} {}", b.name, b.kind).to_ascii_lowercase();
+                if !hay.contains(n) {
+                    continue;
+                }
+            }
+
+            let key = (b.name.clone(), b.kind.clone());
+            let entry = agg.entry(key).or_insert_with(|| Agg {
+                name: b.name.clone(),
+                kind: b.kind.clone(),
+                ..Default::default()
+            });
+
+            for op in b.operations.iter() {
+                if !op.trim().is_empty() {
+                    entry.operations.insert(op.clone());
+                }
+            }
+            for f in b.features.iter() {
+                if !f.trim().is_empty() {
+                    entry.features.insert(f.clone());
+                }
+            }
+            for t in b.transports.iter() {
+                if !t.trim().is_empty() {
+                    entry.transports.insert(t.clone());
+                }
+            }
+
+            entry.nodes.push(json!({
+                "node_uuid": node_uuid,
+                "status": status,
+                "status_reason": b.status_reason,
+                "weight": b.weight,
+                "priority": b.priority,
+                "base_url": b.base_url,
+            }));
+            entry.total_nodes += 1;
+            if status == "available" {
+                entry.available_nodes += 1;
+            }
+        }
+    }
+
+    let mut list = agg
+        .into_values()
+        .map(|a| {
+            json!({
+                "name": a.name,
+                "kind": a.kind,
+                "operations": a.operations.into_iter().collect::<Vec<_>>(),
+                "features": a.features.into_iter().collect::<Vec<_>>(),
+                "transports": a.transports.into_iter().collect::<Vec<_>>(),
+                "available_nodes": a.available_nodes,
+                "total_nodes": a.total_nodes,
+                "nodes": a.nodes,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    list.sort_by(|a, b| {
+        let av = a
+            .get("available_nodes")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let bv = b
+            .get("available_nodes")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let an = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let bn = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        bv.cmp(&av).then_with(|| an.cmp(bn))
+    });
+
+    Json(json!({"success": true, "backends": list, "total_count": resp.total_count}))
+}
+
+async fn get_node_backends(state: GatewayState, p: Path<String>) -> Json<serde_json::Value> {
+    use crate::proto::sms::GetNodeBackendsRequest;
+
+    let node_uuid = p.0;
+    if node_uuid.trim().is_empty() {
+        return Json(json!({"found": false}));
+    }
+    let mut client = state.backend_registry_client.clone();
+    match client
+        .get_node_backends(GetNodeBackendsRequest {
+            node_uuid: node_uuid.clone(),
+        })
+        .await
+    {
+        Ok(resp) => {
+            let inner = resp.into_inner();
+            let meta = inner.snapshot.as_ref().map(|s| {
+                json!({
+                    "revision": s.revision,
+                    "reported_at_ms": s.reported_at_ms,
+                })
+            });
+            let backends = inner
+                .snapshot
+                .as_ref()
+                .map(|s| {
+                    s.backends
+                        .iter()
+                        .map(|b| {
+                            json!({
+                                "name": b.name,
+                                "kind": b.kind,
+                                "operations": b.operations,
+                                "features": b.features,
+                                "transports": b.transports,
+                                "weight": b.weight,
+                                "priority": b.priority,
+                                "base_url": b.base_url,
+                                "status": b.status,
+                                "status_reason": b.status_reason,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Json(json!({
+                "found": inner.found,
+                "node_uuid": node_uuid,
+                "backends": backends,
+                "snapshot": meta,
+            }))
+        }
+        Err(e) => Json(json!({"found": false, "message": e.to_string()})),
+    }
 }
 
 async fn list_mcp_servers(state: GatewayState) -> Json<serde_json::Value> {

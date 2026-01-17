@@ -1,3 +1,4 @@
+use crate::spearlet::execution::ai::backends::ollama_chat::OllamaChatBackendAdapter;
 use crate::spearlet::execution::ai::backends::openai_chat_completion::OpenAIChatCompletionBackendAdapter;
 use crate::spearlet::execution::ai::backends::openai_realtime_ws::OpenAIRealtimeWsBackendAdapter;
 use crate::spearlet::execution::ai::backends::stub::StubBackendAdapter;
@@ -75,11 +76,17 @@ pub(super) fn build_registry_from_runtime_config(
                     b.base_url.clone(),
                     api_key_env.clone(),
                 )),
+                "ollama_chat" => Arc::new(OllamaChatBackendAdapter::new(
+                    b.name.clone(),
+                    b.base_url.clone(),
+                    b.model.clone(),
+                )),
                 _ => continue,
             };
 
             instances.push(BackendInstance {
                 name: b.name.clone(),
+                model: b.model.clone(),
                 weight: b.weight,
                 priority: b.priority,
                 capabilities: Capabilities {
@@ -96,6 +103,7 @@ pub(super) fn build_registry_from_runtime_config(
         let stub = Arc::new(StubBackendAdapter::new("stub"));
         instances.push(BackendInstance {
             name: "stub".to_string(),
+            model: None,
             weight: 100,
             priority: 0,
             capabilities: Capabilities {

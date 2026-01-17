@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
-import { LayoutDashboard, Moon, Server, Settings, Sun, FileBox, ListTodo, Plug } from 'lucide-react'
+import { LayoutDashboard, Moon, Server, Settings, Sun, FileBox, ListTodo, Plug, Boxes } from 'lucide-react'
 import { Toaster } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import DashboardPage from '@/features/dashboard/DashboardPage'
 import NodesPage from '@/features/nodes/NodesPage'
 import TasksPage from '@/features/tasks/TasksPage'
 import FilesPage from '@/features/files/FilesPage'
+import BackendsPage from '@/features/backends/BackendsPage'
 import McpPage from '@/features/mcp/McpPage'
 import SettingsPage from '@/features/settings/SettingsPage'
 
@@ -21,6 +22,7 @@ function Shell() {
       { to: '/nodes', label: 'Nodes', icon: Server },
       { to: '/tasks', label: 'Tasks', icon: ListTodo },
       { to: '/files', label: 'Files', icon: FileBox },
+      { to: '/backends', label: 'Backends', icon: Boxes },
       { to: '/mcp', label: 'MCP', icon: Plug },
       { to: '/settings', label: 'Settings', icon: Settings },
     ],
@@ -118,6 +120,7 @@ function Shell() {
                 <Route path="/nodes" element={<NodesPage />} />
                 <Route path="/tasks" element={<TasksPage />} />
                 <Route path="/files" element={<FilesPage />} />
+                <Route path="/backends" element={<BackendsPage />} />
                 <Route path="/mcp" element={<McpPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>

@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .compile_protos(
             &[
+                "proto/sms/backend_registry.proto",
                 "proto/sms/node.proto",
                 "proto/sms/task.proto",
                 "proto/sms/placement.proto",

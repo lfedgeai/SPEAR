@@ -9,6 +9,7 @@ API 支持自动工具调用：当响应包含 tool_calls 时，host 可以根�
 ## 返回内容
 
 - `cchat_recv` 返回模型响应 JSON（建议返回 OpenAI 原始响应结构，包含 `choices`、`usage` 等字段）。
+- 为便于排障，宿主可能会在响应 JSON 顶层附带 `_spear` 字段（例如 `_spear.backend` / `_spear.model`），用于标识本次请求最终路由到的 backend 与请求模型。
 - `cchat_ctl(..., CTL_GET_METRICS, ...)` 用于在启用 metrics 时读取使用量等指标（建议返回 `usage` 子对象 JSON）。
 
 ## 函数签名

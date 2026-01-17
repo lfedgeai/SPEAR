@@ -2,6 +2,7 @@
 
 ## 目录结构
 - 源码：`samples/wasm-c/hello.c`
+- 源码：`samples/wasm-c/chat_completion.c`（Chat Completions 示例）
 - 源码：`samples/wasm-c/mic_rtasr.c`（实时麦克风→实时ASR示例）
 - 产物：`samples/build/hello.wasm`
 
@@ -19,6 +20,12 @@
 - 运行前设置环境变量：`OPENAI_REALTIME_API_KEY`
 
 运行方式：构建 `samples/build/mic_rtasr.wasm` 后，将其作为 WASM 可执行文件上传并创建任务运行（具体上传/创建任务流程见 `docs/api-usage-guide-zh.md`）。
+
+## chat_completion 示例
+
+- 默认使用 `SP_MODEL`（默认 `gpt-4o-mini`）作为请求模型
+- 可选：构建时定义 `SP_ROUTE_OLLAMA_GEMMA3`，会将 `model` 切换为 `SP_OLLAMA_GEMMA3_MODEL`（默认 `gemma3:1b`）
+- 响应 JSON 会附带 `_spear.backend`（最终路由到的 backend 名称）与 `_spear.model`（请求模型）；示例会打印 `debug_backend=...`
 
 ## 构建命令
 - 运行：`make samples`

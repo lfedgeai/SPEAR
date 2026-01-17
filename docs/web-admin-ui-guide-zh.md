@@ -50,6 +50,13 @@
   - `Long Running` 通过 SMS 事件创建；作为 ExistingTask 调用会被策略拒绝
 - 列表：任务列表提供 `Exec Kind` 列显示后端返回的执行类型
 
+## 后端（Backends）
+
+- 列表支持搜索与可用性筛选
+- 点击某个 backend 行会打开详情弹窗
+  - Summary：展示聚合后的可用节点数、ops/transports/node 数等
+  - Raw JSON：展示该 backend 聚合对象的完整 JSON
+
 ## 常见问题
 
 - 下拉长期悬浮：已移除强制 `open`，恢复默认交互
@@ -60,3 +67,4 @@
 
 - `docs/web-admin-overview-zh.md`
 - `docs/ui-tests-guide-zh.md`
+- `docs/ollama-discovery-zh.md`

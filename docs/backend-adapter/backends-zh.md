@@ -68,6 +68,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 name = "openai-us"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
 credential_ref = "openai_chat"
 weight = 80
 priority = 10
@@ -86,6 +87,13 @@ ops = ["realtime_voice"]
 features = ["supports_bidi_stream", "supports_audio_input", "supports_audio_output"]
 transports = ["websocket"]
 ```
+
+### 5.1 model 绑定与“按模型路由”
+
+当某些 backend 实例配置了 `model`（例如本机 Ollama 导入的每模型一个 backend），路由可以仅通过请求中的 `model` 来选择实例：
+
+- 若候选集中存在任何 `backend.model != None`，则可进一步用 `backend.model == request.model` 过滤候选
+- 这样 guest 不必显式指定 `backend` 名称，只需设置 `model`
 
 建议通过 `llm.credentials[]` 集中管理 API key，并让 `llm.backends[].credential_ref` 引用凭据，以支持不同 backend 使用不同 key。
 

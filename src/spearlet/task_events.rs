@@ -27,21 +27,8 @@ impl TaskEventSubscriber {
         }
     }
 
-    fn compute_node_uuid(cfg: &SpearletConfig) -> String {
-        if let Ok(u) = uuid::Uuid::parse_str(&cfg.node_name) {
-            return u.to_string();
-        }
-        let base = format!(
-            "{}:{}:{}",
-            cfg.grpc.addr.ip(),
-            cfg.grpc.addr.port(),
-            cfg.node_name
-        );
-        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, base.as_bytes()).to_string()
-    }
-
     fn cursor_path(cfg: &SpearletConfig) -> PathBuf {
-        let node = Self::compute_node_uuid(cfg);
+        let node = cfg.compute_node_uuid();
         PathBuf::from(&cfg.storage.data_dir).join(format!("task_events_cursor_{}.json", node))
     }
 
@@ -66,7 +53,7 @@ impl TaskEventSubscriber {
         let exec_mgr = self.execution_manager.clone();
         let last_event_id = self.last_event_id.clone();
         tokio::spawn(async move {
-            let node_uuid = Self::compute_node_uuid(&cfg);
+            let node_uuid = cfg.compute_node_uuid();
             info!(node_uuid = %node_uuid, sms_grpc_addr = %cfg.sms_grpc_addr, "TaskEventSubscriber starting");
             loop {
                 let sms_grpc_url = format!("http://{}", cfg.sms_grpc_addr);
@@ -129,7 +116,7 @@ impl TaskEventSubscriber {
         mgr: &Arc<TaskExecutionManager>,
         ev: TaskEvent,
     ) {
-        if ev.node_uuid != Self::compute_node_uuid(cfg) {
+        if ev.node_uuid != cfg.compute_node_uuid() {
             debug!(event_id = ev.event_id, "Ignoring event for other node");
             return;
         }
@@ -328,7 +315,7 @@ mod tests {
         let mut cfg = SpearletConfig::default();
         cfg.node_name = uuid::Uuid::new_v4().to_string();
         let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), mgr.clone());
-        let node_uuid = TaskEventSubscriber::compute_node_uuid(&cfg);
+        let node_uuid = cfg.compute_node_uuid();
 
         let mut meta = std::collections::HashMap::new();
         meta.insert("version".to_string(), "v1".to_string());
@@ -399,7 +386,7 @@ mod tests {
         let mut cfg = SpearletConfig::default();
         cfg.node_name = uuid::Uuid::new_v4().to_string();
         let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), mgr.clone());
-        let node_uuid = TaskEventSubscriber::compute_node_uuid(&cfg);
+        let node_uuid = cfg.compute_node_uuid();
 
         let uri = "http://example/abc";
         let sms_task = Task {

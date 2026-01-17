@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package sms;
+
+enum BackendStatus {
+  BACKEND_STATUS_UNSPECIFIED = 0;
+  BACKEND_STATUS_AVAILABLE = 1;
+  BACKEND_STATUS_UNAVAILABLE = 2;
+}
+
+message BackendInfo {
+  string name = 1;
+  string kind = 2;
+  repeated string operations = 3;
+  repeated string features = 4;
+  repeated string transports = 5;
+  uint32 weight = 6;
+  int32 priority = 7;
+  string base_url = 8;
+  BackendStatus status = 9;
+  string status_reason = 10;
+}
+
+message NodeBackendSnapshot {
+  string node_uuid = 1;
+  uint64 revision = 2;
+  int64 reported_at_ms = 3;
+  repeated BackendInfo backends = 4;
+}
+
+message ReportNodeBackendsRequest {
+  NodeBackendSnapshot snapshot = 1;
+}
+
+message ReportNodeBackendsResponse {
+  bool success = 1;
+  string message = 2;
+  uint64 accepted_revision = 3;
+}
+
+message GetNodeBackendsRequest {
+  string node_uuid = 1;
+}
+
+message GetNodeBackendsResponse {
+  bool found = 1;
+  NodeBackendSnapshot snapshot = 2;
+}
+
+message ListNodeBackendSnapshotsRequest {
+  uint32 limit = 1;
+  uint32 offset = 2;
+}
+
+message ListNodeBackendSnapshotsResponse {
+  repeated NodeBackendSnapshot snapshots = 1;
+  uint32 total_count = 2;
+}
+
+service BackendRegistryService {
+  rpc ReportNodeBackends(ReportNodeBackendsRequest) returns (ReportNodeBackendsResponse);
+  rpc GetNodeBackends(GetNodeBackendsRequest) returns (GetNodeBackendsResponse);
+  rpc ListNodeBackendSnapshots(ListNodeBackendSnapshotsRequest)
+      returns (ListNodeBackendSnapshotsResponse);
+}
+

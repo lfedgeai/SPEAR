@@ -7,6 +7,7 @@ use crate::spearlet::execution::ai::router::capabilities::Capabilities;
 #[derive(Clone)]
 pub struct BackendInstance {
     pub name: String,
+    pub model: Option<String>,
     pub weight: u32,
     pub priority: i32,
     pub capabilities: Capabilities,

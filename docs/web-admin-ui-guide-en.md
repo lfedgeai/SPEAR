@@ -44,6 +44,13 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
   - `Long Running` is created via SMS events; invoking as ExistingTask is rejected by policy
 - Table: Tasks list shows `Exec Kind` column reflecting the server response
 
+## Backends
+
+- List supports search and availability filtering
+- Click a backend row to open a detail dialog
+  - Summary: shows aggregated availability and capability counts
+  - Raw JSON: shows the full aggregated backend JSON
+
 ## Known Issues & Fixes
 
 - None tracked in this doc; use issues in repo.
@@ -52,3 +59,4 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
 
 - `docs/web-admin-overview-en.md`
 - `docs/ui-tests-guide-en.md`
+- `docs/ollama-discovery-en.md`

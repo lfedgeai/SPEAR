@@ -362,12 +362,84 @@ pub struct SpearletConfig {
     pub llm: LlmConfig,
 }
 
+impl SpearletConfig {
+    pub fn compute_node_uuid(&self) -> String {
+        if let Ok(u) = uuid::Uuid::parse_str(&self.node_name) {
+            return u.to_string();
+        }
+        let base = format!(
+            "{}:{}:{}",
+            self.grpc.addr.ip(),
+            self.grpc.addr.port(),
+            self.node_name
+        );
+        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, base.as_bytes()).to_string()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct LlmConfig {
     pub default_policy: Option<String>,
     pub credentials: Vec<LlmCredentialConfig>,
     pub backends: Vec<LlmBackendConfig>,
+    pub discovery: LlmDiscoveryConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LlmDiscoveryConfig {
+    pub ollama: OllamaDiscoveryConfig,
+}
+
+impl Default for LlmDiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            ollama: OllamaDiscoveryConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OllamaDiscoveryConfig {
+    pub enabled: bool,
+    pub scope: String,
+    pub base_url: String,
+    pub allow_remote: bool,
+    pub timeout_ms: u64,
+    pub max_models: usize,
+    pub allow_models: Vec<String>,
+    pub deny_models: Vec<String>,
+    pub name_prefix: String,
+    pub name_conflict: String,
+    pub default_weight: u32,
+    pub default_priority: i32,
+    pub default_ops: Vec<String>,
+    pub default_features: Vec<String>,
+    pub default_transports: Vec<String>,
+}
+
+impl Default for OllamaDiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            scope: "serving".to_string(),
+            base_url: "http://127.0.0.1:11434".to_string(),
+            allow_remote: false,
+            timeout_ms: 1500,
+            max_models: 32,
+            allow_models: Vec::new(),
+            deny_models: Vec::new(),
+            name_prefix: "ollama/".to_string(),
+            name_conflict: "skip".to_string(),
+            default_weight: 100,
+            default_priority: 0,
+            default_ops: vec!["chat_completions".to_string()],
+            default_features: Vec::new(),
+            default_transports: vec!["http".to_string()],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,6 +466,7 @@ pub struct LlmBackendConfig {
     pub name: String,
     pub kind: String,
     pub base_url: String,
+    pub model: Option<String>,
     pub credential_ref: Option<String>,
     pub weight: u32,
     pub priority: i32,
@@ -408,6 +481,7 @@ impl Default for LlmBackendConfig {
             name: String::new(),
             kind: String::new(),
             base_url: String::new(),
+            model: None,
             credential_ref: None,
             weight: 100,
             priority: 0,

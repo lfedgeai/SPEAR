@@ -88,6 +88,19 @@ pub struct ChatSessionSnapshot {
 }
 
 impl DefaultHostApi {
+    fn cchat_attach_debug_fields(&self, mut v: Value, backend: &str, model: &str) -> Value {
+        match v.as_object_mut() {
+            Some(obj) => {
+                obj.insert(
+                    "_spear".to_string(),
+                    json!({"backend": backend, "model": model}),
+                );
+                v
+            }
+            None => json!({"_spear": {"backend": backend, "model": model}, "result": v}),
+        }
+    }
+
     pub fn cchat_create(&self) -> i32 {
         self.fd_table.alloc(FdEntry {
             kind: FdKind::ChatSession,
@@ -238,8 +251,16 @@ impl DefaultHostApi {
             }
         };
 
+        let req_model = match &req.payload {
+            Payload::ChatCompletions(p) => p.model.as_str(),
+            _ => "",
+        };
+
         let bytes = match resp.result {
-            ResultPayload::Payload(v) => serde_json::to_vec(&v).map_err(|_| -EIO)?,
+            ResultPayload::Payload(v) => {
+                let v = self.cchat_attach_debug_fields(v, &resp.backend, req_model);
+                serde_json::to_vec(&v).map_err(|_| -EIO)?
+            }
             ResultPayload::Error(e) => {
                 let body = json!({"error": {"code": e.code, "message": e.message}});
                 serde_json::to_vec(&body).map_err(|_| -EIO)?
@@ -363,6 +384,11 @@ impl DefaultHostApi {
                 }
             };
 
+            let req_model = match &req.payload {
+                Payload::ChatCompletions(p) => p.model.as_str(),
+                _ => "",
+            };
+
             let response_value = match resp.result {
                 ResultPayload::Payload(v) => v,
                 ResultPayload::Error(e) => {
@@ -387,6 +413,8 @@ impl DefaultHostApi {
                         let _ = self.cchat_append_message(fd, m);
                     }
 
+                    let response_value =
+                        self.cchat_attach_debug_fields(response_value, &resp.backend, req_model);
                     let bytes = serde_json::to_vec(&response_value).map_err(|_| -EIO)?;
                     let metrics_bytes = if metrics_enabled {
                         let usage = json!({

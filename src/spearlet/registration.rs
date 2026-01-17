@@ -76,18 +76,6 @@ pub struct RegistrationService {
 }
 
 impl RegistrationService {
-    fn compute_node_uuid(config: &SpearletConfig) -> String {
-        if let Ok(u) = uuid::Uuid::parse_str(&config.node_name) {
-            return u.to_string();
-        }
-        let base = format!(
-            "{}:{}:{}",
-            config.grpc.addr.ip(),
-            config.grpc.addr.port(),
-            config.node_name
-        );
-        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, base.as_bytes()).to_string()
-    }
     /// Create new registration service / 创建新的注册服务
     pub fn new(config: Arc<SpearletConfig>) -> Self {
         Self {
@@ -255,7 +243,7 @@ impl RegistrationService {
         let client = client_guard.as_mut().ok_or("Node client not connected")?;
 
         let node_addr = config.grpc.addr;
-        let node_uuid = Self::compute_node_uuid(config);
+        let node_uuid = config.compute_node_uuid();
         let node = Node {
             uuid: node_uuid,
             ip_address: node_addr.ip().to_string(),
@@ -297,7 +285,7 @@ impl RegistrationService {
         let mut client_guard = node_client.write().await;
         let client = client_guard.as_mut().ok_or("Node client not connected")?;
 
-        let node_uuid = Self::compute_node_uuid(config);
+        let node_uuid = config.compute_node_uuid();
         let ts = chrono::Utc::now().timestamp();
         debug!(
             "Sending heartbeat: uuid={}, node_name={}, ts={}, sms_grpc_addr={}",
@@ -335,7 +323,7 @@ impl RegistrationService {
         client: &mut NodeServiceClient<Channel>,
         config: &SpearletConfig,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let node_uuid = Self::compute_node_uuid(config);
+        let node_uuid = config.compute_node_uuid();
         let resource = Self::collect_node_resource(&node_uuid);
         let req = tonic::Request::new(UpdateNodeResourceRequest {
             resource: Some(resource),

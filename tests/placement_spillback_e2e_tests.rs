@@ -272,6 +272,31 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         .await
         .unwrap();
 
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+
     let node1_uuid = Uuid::new_v4().to_string();
     let node2_uuid = Uuid::new_v4().to_string();
 
@@ -356,6 +381,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         task_client,
         placement_client: placement_client.clone(),
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -407,6 +433,13 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         .unwrap();
     let mcp_registry_client =
         spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    let backend_registry_client =
+        spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
             sms_url.clone(),
         )
         .await
@@ -496,6 +529,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         task_client,
         placement_client,
         mcp_registry_client,
+        backend_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

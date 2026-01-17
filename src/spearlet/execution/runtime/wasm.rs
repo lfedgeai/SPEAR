@@ -339,6 +339,8 @@ impl WasmRuntime {
             let runtime_config = self.runtime_config.clone();
             let handle_module_name = module_handle.module_name.clone();
             std::thread::spawn(move || {
+                use wasmedge_sys::AsInstance;
+
                 let mut wasi_module = WasiModule::create(None, None, None).unwrap();
                 let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
                 instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());

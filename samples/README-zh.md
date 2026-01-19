@@ -1,10 +1,11 @@
 # Samples（示例）
 
-本目录包含可直接构建的 WASM 示例（C 语言），以及对应的构建产物输出目录。
+本目录包含可直接构建的 WASM 示例（C + Rust），以及对应的构建产物输出目录。
 
 ## 目录结构
 
 - `wasm-c/`：示例源码（C）
+- `wasm-rust/`：示例源码（Rust）
 - `build/`：构建输出（`.wasm`）
 
 ## 构建
@@ -17,6 +18,8 @@ make samples
 
 构建会优先使用 `zig`（`zig cc -target wasm32-wasi`）；若未安装 `zig`，则使用 `clang` + `WASI_SYSROOT`。
 
+Rust 示例通过 `cargo build --release --target wasm32-wasip1` 构建，并拷贝到 `build/rust/`。
+
 ## 示例列表
 
 - `hello.c`：最小示例
@@ -24,6 +27,13 @@ make samples
 - `chat_completion_tool_sum.c`：WASM 自定义 tool（函数）+ AUTO_TOOL_CALL 闭环
 - `mic_rtasr.c`：mic + realtime ASR 示例
 - `mcp_fs.c`：MCP filesystem（stdio）工具注入与调用示例
+
+## Rust 示例列表
+
+- `wasm-rust/chat_completion`：通过 Boa JS 运行时调用 Chat Completion
+  - 产物：`./build/rust/chat_completion.wasm`
+- `wasm-rust/chat_completion_tool_sum`：通过 Boa JS 运行时进行 tool calling（sum）
+  - 产物：`./build/rust/chat_completion_tool_sum.wasm`
 
 ## MCP 示例（mcp_fs）
 

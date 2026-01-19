@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/spear-wasm-sys",
+  "crates/spear-wasm",
+  "crates/spear-boa",
+]

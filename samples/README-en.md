@@ -1,10 +1,11 @@
 # Samples
 
-This directory contains buildable WASM samples (C) and their build outputs.
+This directory contains buildable WASM samples (C + Rust) and their build outputs.
 
 ## Layout
 
 - `wasm-c/`: sample sources (C)
+- `wasm-rust/`: sample sources (Rust)
 - `build/`: build outputs (`.wasm`)
 
 ## Build
@@ -17,6 +18,8 @@ make samples
 
 The build uses `zig` (`zig cc -target wasm32-wasi`) if available; otherwise it falls back to `clang` + `WASI_SYSROOT`.
 
+Rust samples are built with `cargo` for `wasm32-wasip1` (and are copied into `build/rust/`).
+
 ## Samples
 
 - `hello.c`: minimal sample
@@ -24,6 +27,13 @@ The build uses `zig` (`zig cc -target wasm32-wasi`) if available; otherwise it f
 - `chat_completion_tool_sum.c`: WASM custom tool + AUTO_TOOL_CALL loop
 - `mic_rtasr.c`: mic + realtime ASR sample
 - `mcp_fs.c`: MCP filesystem (stdio) tool injection + execution sample
+
+## Rust samples
+
+- `wasm-rust/chat_completion`: Chat Completion via Boa JS runtime
+  - Output: `./build/rust/chat_completion.wasm`
+- `wasm-rust/chat_completion_tool_sum`: Tool calling (sum) via Boa JS runtime
+  - Output: `./build/rust/chat_completion_tool_sum.wasm`
 
 ## MCP sample (mcp_fs)
 

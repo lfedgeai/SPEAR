@@ -3,8 +3,11 @@
 ## Layout
 - Source: `samples/wasm-c/hello.c`
 - Source: `samples/wasm-c/chat_completion.c` (Chat Completions sample)
+- Source: `samples/wasm-rust/chat_completion/src/main.rs` (Boa JS → Chat Completion)
+- Source: `samples/wasm-rust/chat_completion_tool_sum/src/main.rs` (Boa JS → Tool calling)
 - Source: `samples/wasm-c/mic_rtasr.c` (realtime mic → realtime ASR)
 - Output: `samples/build/hello.wasm`
+  - Rust outputs: `samples/build/rust/*.wasm`
 
 ## mic_rtasr prerequisites
 
@@ -33,14 +36,19 @@ How to run: after building `samples/build/mic_rtasr.wasm`, upload it as a WASM e
   - Prefer `zig`: `zig cc -target wasm32-wasi`
   - Fallback `clang`: requires `WASI_SYSROOT` pointing to WASI SDK sysroot
 
+Rust samples:
+- Built by `cargo build --release --target wasm32-wasip1`
+- Controlled by Makefile vars:
+  - `BUILD_RUST_SAMPLES=0` to skip Rust samples
+  - `RUST_SAMPLES="chat_completion chat_completion_tool_sum"` to select which Rust samples to build
+
 ## clang usage
 - Environment: `WASI_SYSROOT=/opt/wasi-sdk/share/wasi-sysroot` (adjust as needed)
 - Command uses: `clang --target=wasm32-wasi --sysroot=$(WASI_SYSROOT)`
 - Without SDK or sysroot, command fails; install `zig` or set `WASI_SYSROOT`
 
 ## Important changes
-- Makefile retains only `samples` target
-- Removed `sample-upload` and `sample-register` targets (no upload/register in build workflow)
+- `make samples` builds both WASM-C and WASM-Rust samples and writes artifacts under `samples/build/`
 
 ## Runtime integration
 - The generated `hello.wasm` can be uploaded via SMS file service and referenced in task registration `executable.uri`

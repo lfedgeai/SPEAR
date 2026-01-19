@@ -49,6 +49,8 @@ pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<
 - 下载失败或校验失败：记录具体错误信息并返回 `RuntimeError` 或 `InvalidConfiguration`
 
 ## 最佳实践
-- 提前在构建环节生成合法 WASM（例如使用 `zig cc -target wasm32-wasi`）
+- 提前在构建环节生成合法 WASM：
+  - C：`zig cc -target wasm32-wasi`
+  - Rust：`cargo build --release --target wasm32-wasip1`
 - 对于通过 SMS 文件服务上传的模块，建议保留校验信息（`checksum_sha256`）
 - 在集成测试中显式提供合法模块字节，以验证入口函数选择与执行路径

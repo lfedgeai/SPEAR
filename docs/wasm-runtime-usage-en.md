@@ -49,6 +49,8 @@ pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<
 - Download/validation failures: detailed error recorded, returning `RuntimeError` or `InvalidConfiguration`.
 
 ## Best Practices
-- Produce valid WASM during build (e.g., `zig cc -target wasm32-wasi`).
+- Produce valid WASM during build:
+  - C: `zig cc -target wasm32-wasi`
+  - Rust: `cargo build --release --target wasm32-wasip1`
 - When uploading via SMS file service, provide `checksum_sha256` if possible.
 - In integration tests, explicitly provide valid module bytes to verify entry selection and execution.

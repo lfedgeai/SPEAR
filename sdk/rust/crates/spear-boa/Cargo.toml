@@ -1,0 +1,16 @@
+[package]
+name = "spear-boa"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+boa_engine = "0.19"
+boa_parser = "0.19"
+serde_json = "1"
+spear-wasm = { path = "../spear-wasm" }
+thiserror = "1"
+libc = "0.2"
+seq-macro = "0.3"

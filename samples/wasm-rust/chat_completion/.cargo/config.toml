@@ -1,0 +1,6 @@
+[target.wasm32-wasip1]
+rustflags = [
+  "-C", "link-arg=--export-table",
+  "-C", "link-arg=--export-memory",
+]
+

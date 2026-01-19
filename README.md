@@ -125,6 +125,8 @@ Docs:
 make samples
 ```
 
+Artifacts are written to `samples/build/` (C) and `samples/build/rust/` (Rust).
+
 Docs:
 
 - `docs/samples-build-guide-en.md`

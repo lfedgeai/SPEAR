@@ -8,6 +8,7 @@ use crate::spearlet::execution::ai::ir::{
     CanonicalError, CanonicalRequestEnvelope, CanonicalResponseEnvelope, Operation, Payload,
     ResultPayload,
 };
+use crate::spearlet::param_keys::{chat as chat_keys, mcp as mcp_keys};
 
 pub struct OllamaChatBackendAdapter {
     name: String,
@@ -80,21 +81,10 @@ impl OllamaChatBackendAdapter {
         if let Some(obj) = body.as_object_mut() {
             let mut options = serde_json::Map::new();
             for (k, v) in p.params.iter() {
-                if k.starts_with("mcp.") {
+                if k.starts_with(mcp_keys::param::PREFIX) {
                     continue;
                 }
-                if k == "model"
-                    || k == "backend"
-                    || k == "timeout_ms"
-                    || k == "messages"
-                    || k == "tools"
-                    || k == "tool_arena_ptr"
-                    || k == "tool_arena_len"
-                    || k == "max_tool_output_bytes"
-                    || k == "max_total_tool_calls"
-                    || k == "max_tool_calls"
-                    || k == "max_iterations"
-                {
+                if chat_keys::is_structural_param_key(k) {
                     continue;
                 }
                 options.insert(k.clone(), v.clone());

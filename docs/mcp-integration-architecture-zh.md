@@ -135,6 +135,11 @@
   - `mcp.server_ids`: string[]
   - 可选：`mcp.tool_allowlist`: string[] patterns（会话级进一步收敛）
 
+当前实现说明：
+
+- Task 级默认值可能会在创建 chat session 时，从 `Task.config` 自动写入到 session params。
+- 暂不支持通过 invocation metadata/context_data 做 per-invocation 覆盖（例如在 invocation metadata 里传 `mcp.server_ids`）。
+
 这样可以保持 WASM API 面稳定，并且让 MCP 的启用更可控、更可审计。
 
 ### 让用户选择 MCP 工具（best practice）
@@ -149,6 +154,8 @@
 
 - `mcp.enabled`: boolean
 - `mcp.server_ids`: string[]（启用 MCP 时建议必填）
+- `mcp.task_tool_allowlist`: string[] patterns（task 级；host 注入；WASM 不可写）
+- `mcp.task_tool_denylist`: string[] patterns（task 级；host 注入；WASM 不可写）
 - `mcp.tool_allowlist`: string[] patterns（可选）
 - `mcp.tool_denylist`: string[] patterns（可选）
 
@@ -367,6 +374,18 @@ tool_timeout_ms = 8000
 max_concurrency = 8
 max_tool_output_bytes = 65536
 ```
+
+环境变量与引用：
+
+- `stdio.env` 支持在 value 中使用环境变量引用：
+  - 必填：`${ENV:VAR_NAME}`
+  - 带默认值：`${ENV:VAR_NAME:-default_value}`
+- `stdio.env_from`（仅目录加载的配置支持）是“透传这些环境变量”的语法糖：
+  - `env_from = ["API_TOKEN"]` 等价于 `env.API_TOKEN = "${ENV:API_TOKEN}"`
+- 当环境变量缺失时的行为：
+  - 如果必填引用（无默认值）无法解析，Spearlet 会认为 `tools/list` 失败，并在该 chat session 中不注入这个 MCP server 的任何 tools（等价于“未 load”）。
+  - 如果提供了默认值，则使用默认值继续注入。
+- GitLab MCP 配置示例：[config/sms/mcp.d/gitlab.toml](../config/sms/mcp.d/gitlab.toml)
 
 合并策略建议：
 
@@ -632,6 +651,8 @@ best practice：不要每次 `cchat_send` 都去 list_tools。
 
 - `mcp.enabled`: bool
 - `mcp.server_ids`: string[]
+- `mcp.task_tool_allowlist`: string[] patterns（task 级；host 注入；WASM 不可写）
+- `mcp.task_tool_denylist`: string[] patterns（task 级；host 注入；WASM 不可写）
 - `mcp.tool_allowlist`: string[] patterns
 - `mcp.tool_denylist`: string[] patterns
 - `tool_choice`: `none | auto | {"type":"function",...}`（直接透传上游模型）

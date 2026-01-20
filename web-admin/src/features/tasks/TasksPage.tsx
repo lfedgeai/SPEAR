@@ -7,6 +7,7 @@ import { createTask, getTaskDetail, listTasks } from '@/api/tasks'
 import { createExecution } from '@/api/executions'
 import { listNodes } from '@/api/nodes'
 import { listFiles } from '@/api/files'
+import { listMcpServers } from '@/api/mcp'
 import type { TaskSummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,6 +44,9 @@ type CreateForm = {
   checksum: string
   args: string
   env: string
+  mcp_enabled: boolean
+  mcp_tool_allowlist: string
+  mcp_tool_denylist: string
 }
 
 function endpointFromName(name: string) {
@@ -69,6 +73,10 @@ function parseCsv(v: string) {
     .filter(Boolean)
 }
 
+function toJsonArrayString(items: string[]) {
+  return JSON.stringify(items)
+}
+
 function parseEnv(v: string) {
   const lines = v
     .split('\n')
@@ -91,6 +99,12 @@ function CreateTaskDialog(props: {
     queryKey: ['nodes-for-task'],
     queryFn: () => listNodes({ limit: 200, sort_by: 'last_heartbeat', order: 'desc' }),
     staleTime: 15_000,
+  })
+
+  const mcpServersQuery = useQuery({
+    queryKey: ['mcp-servers-for-task'],
+    queryFn: listMcpServers,
+    staleTime: 10_000,
   })
 
   const [scheme, setScheme] = useState<UriScheme>('sms+file')
@@ -138,14 +152,53 @@ function CreateTaskDialog(props: {
     checksum: '',
     args: '',
     env: '',
+    mcp_enabled: false,
+    mcp_tool_allowlist: '',
+    mcp_tool_denylist: '',
   })
 
   const [endpointTouched, setEndpointTouched] = useState(false)
 
   const nodes = nodesQuery.data?.nodes || []
-  const canSubmit = form.name && form.endpoint && form.version
+  const mcpServers = useMemo(() => {
+    if (!mcpServersQuery.data?.success) return []
+    return mcpServersQuery.data.servers ?? []
+  }, [mcpServersQuery.data])
+
+  const [mcpFilter, setMcpFilter] = useState('')
+  const [mcpAllowed, setMcpAllowed] = useState<Set<string>>(() => new Set())
+  const [mcpDefault, setMcpDefault] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    if (!props.open) return
+    setMcpAllowed(new Set())
+    setMcpDefault(new Set())
+    setMcpFilter('')
+  }, [props.open])
+
+  const mcpDefaultIds = useMemo(
+    () => Array.from(mcpDefault).sort(),
+    [mcpDefault],
+  )
+  const mcpAllowedIds = useMemo(
+    () => Array.from(mcpAllowed).sort(),
+    [mcpAllowed],
+  )
+
+  const mcpCanSubmit = !form.mcp_enabled || mcpDefaultIds.length > 0
+  const canSubmit = !!(form.name && form.endpoint && form.version && mcpCanSubmit)
 
   const [runAfterCreate, setRunAfterCreate] = useState(true)
+
+  const filteredMcpServers = useMemo(() => {
+    const needle = mcpFilter.trim().toLowerCase()
+    if (!needle) return mcpServers
+    return mcpServers.filter((s) => {
+      const id = (s.server_id || '').toLowerCase()
+      const name = (s.display_name || '').toLowerCase()
+      return id.includes(needle) || name.includes(needle)
+    })
+  }, [mcpServers, mcpFilter])
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -230,6 +283,154 @@ function CreateTaskDialog(props: {
               data-testid="task-run-after-create"
             />
           </label>
+
+          <div className="col-span-2 overflow-hidden rounded-[var(--radius)] border border-[hsl(var(--border))]">
+            <div className="flex items-center justify-between bg-[hsl(var(--muted))] px-3 py-2">
+              <div>
+                <div className="text-sm font-medium">MCP tools</div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Default deny; pick minimal servers per task
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={form.mcp_enabled}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setForm((f) => ({ ...f, mcp_enabled: on }))
+                  if (!on) {
+                    setMcpAllowed(new Set())
+                    setMcpDefault(new Set())
+                  }
+                }}
+                aria-label="Enable MCP tools"
+              />
+            </div>
+
+            {form.mcp_enabled ? (
+              <div className="space-y-3 p-3">
+                {!mcpServersQuery.data?.success ? (
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                    Failed to load MCP registry.
+                  </div>
+                ) : mcpServers.length === 0 ? (
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                    No MCP servers found. Create servers in MCP page first.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <div className="mb-1 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                        Search servers
+                      </div>
+                      <Input
+                        value={mcpFilter}
+                        onChange={(e) => setMcpFilter(e.target.value)}
+                        placeholder="Filter by server_id or display_name"
+                      />
+                    </div>
+
+                    <div className="max-h-[220px] overflow-auto rounded-[var(--radius)] border border-[hsl(var(--border))]">
+                      <div className="grid grid-cols-12 border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                        <div className="col-span-7">Server</div>
+                        <div className="col-span-3">Allow</div>
+                        <div className="col-span-2">Default</div>
+                      </div>
+                      {filteredMcpServers.map((s) => {
+                        const isAllowed = mcpAllowed.has(s.server_id)
+                        const isDefault = mcpDefault.has(s.server_id)
+                        return (
+                          <div
+                            key={s.server_id}
+                            className="grid grid-cols-12 items-center gap-2 border-b border-[hsl(var(--border))] px-3 py-2 text-sm last:border-b-0"
+                          >
+                            <div className="col-span-7 min-w-0">
+                              <div className="truncate font-mono text-xs">{s.server_id}</div>
+                              <div className="mt-0.5 truncate text-xs text-[hsl(var(--muted-foreground))]">
+                                {s.display_name || '-'}
+                              </div>
+                            </div>
+
+                            <div className="col-span-3">
+                              <input
+                                type="checkbox"
+                                checked={isAllowed}
+                                onChange={(e) => {
+                                  const next = new Set(mcpAllowed)
+                                  const nextDefault = new Set(mcpDefault)
+                                  if (e.target.checked) {
+                                    next.add(s.server_id)
+                                  } else {
+                                    next.delete(s.server_id)
+                                    nextDefault.delete(s.server_id)
+                                  }
+                                  setMcpAllowed(next)
+                                  setMcpDefault(nextDefault)
+                                }}
+                                aria-label={`Allow ${s.server_id}`}
+                              />
+                            </div>
+
+                            <div className="col-span-2 flex justify-end">
+                              <input
+                                type="checkbox"
+                                checked={isDefault}
+                                onChange={(e) => {
+                                  const nextAllowed = new Set(mcpAllowed)
+                                  const nextDefault = new Set(mcpDefault)
+                                  if (e.target.checked) {
+                                    nextDefault.add(s.server_id)
+                                    nextAllowed.add(s.server_id)
+                                  } else {
+                                    nextDefault.delete(s.server_id)
+                                  }
+                                  setMcpAllowed(nextAllowed)
+                                  setMcpDefault(nextDefault)
+                                }}
+                                aria-label={`Default ${s.server_id}`}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {filteredMcpServers.length === 0 ? (
+                        <div className="px-3 py-4 text-xs text-[hsl(var(--muted-foreground))]">
+                          No matches
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {!mcpCanSubmit ? (
+                      <div className="text-xs text-[hsl(var(--destructive))]">
+                        Pick at least one default MCP server.
+                      </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-1">
+                        <Input
+                          placeholder="Tool allowlist (comma patterns, optional)"
+                          value={form.mcp_tool_allowlist}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, mcp_tool_allowlist: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Input
+                          placeholder="Tool denylist (comma patterns, optional)"
+                          value={form.mcp_tool_denylist}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, mcp_tool_denylist: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </div>
 
           <div className="col-span-2">
             <Input
@@ -475,6 +676,26 @@ function CreateTaskDialog(props: {
             disabled={!canSubmit}
             onClick={async () => {
               try {
+                const config: Record<string, string> = {}
+                if (form.mcp_enabled) {
+                  config['mcp.enabled'] = 'true'
+                  if (mcpDefaultIds.length > 0) {
+                    config['mcp.default_server_ids'] = toJsonArrayString(mcpDefaultIds)
+                  }
+                  const allowed = Array.from(new Set([...mcpAllowedIds, ...mcpDefaultIds])).sort()
+                  if (
+                    allowed.length > 0 &&
+                    (allowed.length !== mcpDefaultIds.length ||
+                      allowed.some((x, i) => x !== mcpDefaultIds[i]))
+                  ) {
+                    config['mcp.allowed_server_ids'] = toJsonArrayString(allowed)
+                  }
+                  const allow = parseCsv(form.mcp_tool_allowlist)
+                  const deny = parseCsv(form.mcp_tool_denylist)
+                  if (allow.length > 0) config['mcp.tool_allowlist'] = toJsonArrayString(allow)
+                  if (deny.length > 0) config['mcp.tool_denylist'] = toJsonArrayString(deny)
+                }
+
                 const payload = {
                   name: form.name,
                   description: form.description || undefined,
@@ -495,6 +716,7 @@ function CreateTaskDialog(props: {
                           args: parseCsv(form.args),
                           env: parseEnv(form.env),
                         },
+                  config: Object.keys(config).length ? config : undefined,
                 }
                 const res = await createTask(payload)
                 if (!res.success) throw new Error(res.message || 'Create failed')

@@ -27,10 +27,13 @@ MCP tool injection is gated by session params:
 
 - `mcp.enabled`: boolean, must be `true`
 - `mcp.server_ids`: array of strings, must include the server id (e.g. `"fs"`)
+- `mcp.task_tool_allowlist` / `mcp.task_tool_denylist`: task-level filters (if configured); injected by host from `Task.config`; read-only to the guest
 
 See parsing logic: `session_policy_from_params` in [policy.rs](../src/spearlet/mcp/policy.rs)
 
 If either is missing, no MCP tools are injected and the model will respond as if tools do not exist.
+
+Note: if the task has MCP policy in `Task.config`, `cchat_create` may auto-apply defaults for `mcp.enabled` / `mcp.server_ids`, so you may not need to set them manually.
 
 ## Common root causes
 
@@ -39,6 +42,7 @@ If either is missing, no MCP tools are injected and the model will respond as if
 3. **Server not found** in registry snapshot (server id mismatch)
 4. **Server policy denies tools** (allowed tool patterns empty / restrictive)
 5. **list_tools timed out / failed**, resulting in an empty tool list
+6. **Task policy denied**: the task has MCP disabled or you tried to set server_ids outside task allowed set
 
 ## What to check
 
@@ -50,4 +54,3 @@ If either is missing, no MCP tools are injected and the model will respond as if
   - These indicate SMS connectivity / MCP registry issues.
 - Server allowlist:
   - `allowed_tools` must include patterns that match tool names.
-

@@ -36,6 +36,7 @@ pub mod http_gateway;
 pub mod mcp;
 pub mod object_service;
 pub mod ollama_discovery;
+pub mod param_keys;
 pub mod registration;
 pub mod task_events;
 

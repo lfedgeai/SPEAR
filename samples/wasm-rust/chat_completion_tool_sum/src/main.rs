@@ -7,40 +7,7 @@ use boa_engine::object::builtins::JsPromise;
 use boa_engine::Source;
 use std::rc::Rc;
 
-const DEFAULT_ENTRY: &str = r#"
-import { Spear } from "spear";
-
-export default async function main() {
-  const tools = [
-    Spear.tool({
-      name: "sum",
-      description: "Add two integers",
-      parameters: {
-        type: "object",
-        properties: {
-          a: { type: "integer" },
-          b: { type: "integer" },
-        },
-        required: ["a", "b"],
-      },
-      handler: ({ a, b }) => {
-        console.log("sum invoked:", "a=", a, "b=", b);
-        return { sum: (a ?? 0) + (b ?? 0) };
-      },
-    }),
-  ];
-
-  const resp = await Spear.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: "Please call sum(a,b) for a=7 and b=35." }],
-    tools,
-    maxTotalToolCalls: 4,
-    maxIterations: 4,
-  });
-
-  return resp.text();
-}
-"#;
+const DEFAULT_ENTRY: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/entry.mjs"));
 
 fn main() {
     let loader = Rc::new(spear_boa::BuiltinModuleRegistry::new());
@@ -49,10 +16,9 @@ fn main() {
     spear_boa::install_native_bindings(&mut context);
 
     let src = std::env::var("SPEAR_JS_ENTRY").ok();
-    let entry_code = match src {
-        Some(path) => std::fs::read_to_string(path).unwrap_or_else(|_| DEFAULT_ENTRY.to_string()),
-        None => DEFAULT_ENTRY.to_string(),
-    };
+    let entry_code =
+        src.and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_else(|| DEFAULT_ENTRY.to_string());
 
     let specifier = "app";
     let entry_source = Source::from_bytes(entry_code.as_bytes());

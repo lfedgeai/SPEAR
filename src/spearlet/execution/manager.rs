@@ -286,6 +286,11 @@ impl TaskExecutionManager {
             request.function_name.clone()
         };
 
+        let mut context_data = std::collections::HashMap::new();
+        for (k, v) in request.metadata.iter() {
+            context_data.insert(k.clone(), serde_json::Value::String(v.clone()));
+        }
+
         let execution_context = ExecutionContext {
             execution_id: execution_id.clone(),
             function_name: function_name.clone(),
@@ -294,7 +299,7 @@ impl TaskExecutionManager {
             timeout_ms,
             execution_mode,
             wait,
-            context_data: std::collections::HashMap::new(),
+            context_data,
         };
 
         let (response_sender, response_receiver) = oneshot::channel();
@@ -876,6 +881,7 @@ impl TaskExecutionManager {
             runtime_type,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
+            task_config: sms_task.config.clone(),
             environment: env,
             invocation_type: super::artifact::InvocationType::ExistingTask,
             min_instances: 1,
@@ -1658,6 +1664,7 @@ mod tests {
             runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
+            task_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
             invocation_type: artifact.spec.invocation_type.clone(),
             min_instances: 1,
@@ -1766,6 +1773,7 @@ mod tests {
             runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
+            task_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
             invocation_type: artifact.spec.invocation_type.clone(),
             min_instances: 1,
@@ -1843,6 +1851,7 @@ mod tests {
             runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
+            task_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
             invocation_type: artifact.spec.invocation_type.clone(),
             min_instances: 1,
@@ -1917,6 +1926,7 @@ mod tests {
             runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
+            task_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
             invocation_type: artifact.spec.invocation_type.clone(),
             min_instances: 1,
@@ -2069,6 +2079,7 @@ mod tests {
             runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: StdHashMap::new(),
+            task_config: StdHashMap::new(),
             environment: artifact.spec.environment.clone(),
             invocation_type: artifact.spec.invocation_type.clone(),
             min_instances: 1,

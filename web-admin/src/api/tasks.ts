@@ -67,6 +67,8 @@ export type CreateTaskPayload = {
     /** Default environment variables (optional) / 默认环境变量（可选） */
     env?: Record<string, string>
   }
+  /** Task config map / Task 配置（map<string,string>） */
+  config?: Record<string, string>
 }
 
 /**
@@ -90,6 +92,7 @@ export function createTask(payload: CreateTaskPayload) {
         metadata: payload.execution_kind
           ? { execution_kind: payload.execution_kind }
           : undefined,
+        config: payload.config,
         executable: payload.executable,
       }),
     },

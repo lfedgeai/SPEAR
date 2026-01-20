@@ -246,6 +246,7 @@ impl SmsServiceImpl {
             command: String,
             args: Option<Vec<String>>,
             env: Option<std::collections::HashMap<String, String>>,
+            env_from: Option<Vec<String>>,
             cwd: Option<String>,
         }
         #[derive(serde::Deserialize)]
@@ -313,11 +314,23 @@ impl SmsServiceImpl {
                 server_id: cfg.server_id,
                 display_name: cfg.display_name.unwrap_or_default(),
                 transport,
-                stdio: cfg.stdio.map(|s| crate::proto::sms::McpStdioConfig {
-                    command: s.command,
-                    args: s.args.unwrap_or_default(),
-                    env: s.env.unwrap_or_default(),
-                    cwd: s.cwd.unwrap_or_default(),
+                stdio: cfg.stdio.map(|s| {
+                    let mut env = s.env.unwrap_or_default();
+                    if let Some(from) = s.env_from {
+                        for name in from {
+                            let name = name.trim();
+                            if name.is_empty() {
+                                continue;
+                            }
+                            env.insert(name.to_string(), format!("${{ENV:{}}}", name));
+                        }
+                    }
+                    crate::proto::sms::McpStdioConfig {
+                        command: s.command,
+                        args: s.args.unwrap_or_default(),
+                        env,
+                        cwd: s.cwd.unwrap_or_default(),
+                    }
                 }),
                 http: cfg.http.map(|h| crate::proto::sms::McpHttpConfig {
                     url: h.url,

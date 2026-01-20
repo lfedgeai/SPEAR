@@ -116,6 +116,8 @@ pub struct InstanceConfig {
     pub runtime_type: RuntimeType,
     /// Runtime-specific configuration / 运行时特定配置
     pub runtime_config: HashMap<String, serde_json::Value>,
+    /// Task configuration / Task 配置
+    pub task_config: HashMap<String, String>,
     /// Artifact snapshot for runtime consumption / 供运行时使用的 Artifact 快照
     pub artifact: Option<ArtifactSnapshot>,
     /// Environment variables / 环境变量
@@ -464,6 +466,7 @@ mod tests {
             artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
@@ -486,6 +489,7 @@ mod tests {
             artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
@@ -518,6 +522,7 @@ mod tests {
             artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
@@ -552,6 +557,7 @@ mod tests {
             artifact_id: "artifact-test".to_string(),
             runtime_type: RuntimeType::Kubernetes,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),

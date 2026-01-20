@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use tokio::sync::RwLock;
 use tokio::time::{interval, timeout};
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
@@ -19,16 +19,16 @@ pub struct McpRegistrySnapshot {
 
 #[derive(Debug, Default)]
 pub struct McpRegistryCache {
-    inner: RwLock<McpRegistrySnapshot>,
+    inner: parking_lot::RwLock<Arc<McpRegistrySnapshot>>,
 }
 
 impl McpRegistryCache {
-    pub async fn snapshot(&self) -> McpRegistrySnapshot {
-        self.inner.read().await.clone()
+    pub fn snapshot(&self) -> Arc<McpRegistrySnapshot> {
+        self.inner.read().clone()
     }
 
-    async fn replace(&self, snapshot: McpRegistrySnapshot) {
-        *self.inner.write().await = snapshot;
+    fn replace(&self, snapshot: McpRegistrySnapshot) {
+        *self.inner.write() = Arc::new(snapshot);
     }
 }
 
@@ -37,6 +37,7 @@ pub struct McpRegistrySyncService {
     config: Arc<SpearletConfig>,
     cache: Arc<McpRegistryCache>,
     cancel: CancellationToken,
+    started: AtomicBool,
 }
 
 impl McpRegistrySyncService {
@@ -45,10 +46,23 @@ impl McpRegistrySyncService {
             config,
             cache: Arc::new(McpRegistryCache::default()),
             cancel: CancellationToken::new(),
+            started: AtomicBool::new(false),
         }
     }
 
     pub fn cache(&self) -> Arc<McpRegistryCache> {
+        let snap = self.cache.snapshot();
+        let server_ids = snap
+            .servers
+            .iter()
+            .map(|s| s.server_id.clone())
+            .collect::<Vec<_>>();
+        debug!(
+            revision = snap.revision,
+            server_count = server_ids.len(),
+            server_ids = ?server_ids,
+            "MCP registry cache snapshot (cache() called)"
+        );
         self.cache.clone()
     }
 
@@ -57,6 +71,11 @@ impl McpRegistrySyncService {
     }
 
     pub fn start(&self) {
+        debug!("MCP registry sync service started");
+        if self.started.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
         let config = self.config.clone();
         let cache = self.cache.clone();
         let cancel = self.cancel.clone();
@@ -103,12 +122,35 @@ async fn refresh_once(
         .list_mcp_servers(ListMcpServersRequest { since_revision: 0 })
         .await?
         .into_inner();
+    let server_ids = resp
+        .servers
+        .iter()
+        .map(|s| s.server_id.clone())
+        .collect::<Vec<_>>();
     let snapshot = McpRegistrySnapshot {
         revision: resp.revision,
         servers: resp.servers,
     };
-    cache.replace(snapshot).await;
+    cache.replace(snapshot);
+    debug!(
+        revision = resp.revision,
+        server_count = server_ids.len(),
+        server_ids = ?server_ids,
+        "MCP registry snapshot replaced"
+    );
     Ok(resp.revision)
+}
+
+static GLOBAL_MCP_REGISTRY_SYNC: OnceLock<Arc<McpRegistrySyncService>> = OnceLock::new();
+
+pub fn global_mcp_registry_sync(config: Arc<SpearletConfig>) -> Arc<McpRegistrySyncService> {
+    GLOBAL_MCP_REGISTRY_SYNC
+        .get_or_init(|| {
+            let svc = Arc::new(McpRegistrySyncService::new(config));
+            svc.start();
+            svc
+        })
+        .clone()
 }
 
 async fn sync_loop(

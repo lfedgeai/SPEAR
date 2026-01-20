@@ -170,6 +170,7 @@ pub struct WasmInstanceHandle {
 pub struct ExecRequest {
     function_name: String,
     timeout_ms: Option<u64>,
+    context_data: std::collections::HashMap<String, serde_json::Value>,
     reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
 }
 
@@ -302,7 +303,7 @@ impl WasmRuntime {
     async fn create_wasm_instance(
         &self,
         module_handle: WasmModuleHandle,
-        _instance_config: &InstanceConfig,
+        instance_config: &InstanceConfig,
     ) -> ExecutionResult<WasmInstanceHandle> {
         let instance_id = uuid::Uuid::new_v4().to_string();
 
@@ -338,6 +339,10 @@ impl WasmRuntime {
             };
             let runtime_config = self.runtime_config.clone();
             let handle_module_name = module_handle.module_name.clone();
+            let task_id = instance_config.task_id.clone();
+            let task_policy = std::sync::Arc::new(
+                crate::spearlet::mcp::task_subset::parse_task_config(&instance_config.task_config),
+            );
             std::thread::spawn(move || {
                 use wasmedge_sys::AsInstance;
 
@@ -345,7 +350,12 @@ impl WasmRuntime {
                 let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
                 instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());
 
-                let mut spear_import = build_spear_import_with_api(runtime_config).unwrap();
+                let mut spear_import = build_spear_import_with_api(
+                    runtime_config,
+                    task_id.clone(),
+                    task_policy.clone(),
+                )
+                .unwrap();
                 let spear_name = "spear".to_string();
                 let spear_inst: &mut dyn SyncInst = &mut spear_import;
                 instances.insert(spear_name, spear_inst);
@@ -373,6 +383,7 @@ impl WasmRuntime {
                             }
                             #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
                             {
+                                let _ = _timeout_ms;
                                 vm.run_func(Some(&handle_module_name), &r.function_name, params!())
                             }
                         } else {
@@ -411,6 +422,7 @@ impl WasmRuntime {
         instance_handle: &WasmInstanceHandle,
         function_name: &str,
         timeout_ms: Option<u64>,
+        context_data: &std::collections::HashMap<String, serde_json::Value>,
         _input_data: &[u8],
     ) -> ExecutionResult<Vec<u8>> {
         let start_time = Instant::now();
@@ -435,6 +447,7 @@ impl WasmRuntime {
             let req = ExecRequest {
                 function_name: function_name.to_string(),
                 timeout_ms,
+                context_data: context_data.clone(),
                 reply_tx: tx,
             };
             let send_res = instance_handle.req_tx.send(req);
@@ -689,6 +702,7 @@ impl Runtime for WasmRuntime {
         let req = ExecRequest {
             function_name: "__stop__".to_string(),
             timeout_ms: None,
+            context_data: std::collections::HashMap::new(),
             reply_tx: tx,
         };
         wasm_handle
@@ -773,6 +787,7 @@ impl Runtime for WasmRuntime {
             let req = ExecRequest {
                 function_name: function_name.clone(),
                 timeout_ms: None,
+                context_data: context.context_data.clone(),
                 reply_tx: tx,
             };
             wasm_handle
@@ -805,6 +820,7 @@ impl Runtime for WasmRuntime {
                 &wasm_handle,
                 &function_name,
                 Some(context.timeout_ms),
+                &context.context_data,
                 &context.payload,
             )
             .await;
@@ -1045,6 +1061,7 @@ mod wasm_runtime_thread_tests {
             artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Wasm,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits {
@@ -1065,6 +1082,7 @@ mod wasm_runtime_thread_tests {
             artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Process, // Different runtime type for testing / 用于测试的不同运行时类型
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
@@ -1108,6 +1126,7 @@ mod wasm_runtime_thread_tests {
             artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Wasm,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits {
@@ -1292,6 +1311,7 @@ mod wasm_runtime_tests {
             artifact_id: "art-1".to_string(),
             runtime_type: RuntimeType::Wasm,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
@@ -1348,7 +1368,13 @@ mod wasm_runtime_tests {
         };
 
         let out = rt
-            .execute_wasm_function(&handle, "main", Some(30_000), &[])
+            .execute_wasm_function(
+                &handle,
+                "main",
+                Some(30_000),
+                &std::collections::HashMap::new(),
+                &[],
+            )
             .await
             .unwrap();
         assert_eq!(out, b"[]");
@@ -1410,7 +1436,13 @@ mod wasm_runtime_tests {
         let _hold = handle.exec_lock.lock().await;
         // Attempt an execution while lock is held; should fail fast
         let h2 = rt
-            .execute_wasm_function(&handle, "main", Some(30_000), &[])
+            .execute_wasm_function(
+                &handle,
+                "main",
+                Some(30_000),
+                &std::collections::HashMap::new(),
+                &[],
+            )
             .await;
         assert!(h2.is_err());
         if let Err(ExecutionError::InvalidRequest { message }) = h2 {

@@ -7,7 +7,7 @@ use spear_next::spearlet::backend_reporter::BackendReporterService;
 use spear_next::spearlet::config::CliArgs;
 use spear_next::spearlet::grpc_server::GrpcServer;
 use spear_next::spearlet::http_gateway::HttpGateway;
-use spear_next::spearlet::mcp::registry_sync::McpRegistrySyncService;
+use spear_next::spearlet::mcp::registry_sync::global_mcp_registry_sync;
 use spear_next::spearlet::ollama_discovery::maybe_import_ollama_serving_models;
 use spear_next::spearlet::registration::RegistrationService;
 
@@ -53,6 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing::info!("  - Node Name: {}", config.node_name);
     tracing::info!("  - Storage backend: {:?}", config.storage.backend);
     tracing::info!("  - Auto register: {}", config.auto_register);
+
+    global_mcp_registry_sync(config.clone());
 
     // Initialize gRPC server / 初始化gRPC服务器
     let grpc_server = GrpcServer::new(config.clone()).await?;
@@ -114,9 +116,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             execution_manager,
         );
         subscriber.start().await;
-
-        let mcp_registry_sync = McpRegistrySyncService::new(config.clone());
-        mcp_registry_sync.start();
 
         let backend_reporter = BackendReporterService::new(config.clone());
         backend_reporter.start();

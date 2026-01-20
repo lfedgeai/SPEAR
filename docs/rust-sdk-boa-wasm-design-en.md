@@ -254,6 +254,13 @@ Mapping to params:
 - `mcp.enabled`
 - `mcp.server_ids`
 - `mcp.tool_allowlist`
+- `mcp.tool_denylist` (optional)
+
+Notes:
+
+- If the task has MCP policy in `Task.config`, the host may auto-apply defaults (`mcp.enabled` / `mcp.server_ids`) when the chat session is created.
+- Task-level filters are injected as `mcp.task_tool_allowlist` / `mcp.task_tool_denylist` and are read-only to the guest.
+- The host enforces task policy: enabling MCP or setting `mcp.server_ids` outside the task allowed set will be rejected.
 
 ### 5.6 Audio (mic + rtasr)
 

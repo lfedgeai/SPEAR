@@ -3,7 +3,8 @@ use crate::spearlet::execution::ai::AiEngine;
 use crate::spearlet::execution::host_api::iface::{HttpCallResult, SpearHostApi};
 use crate::spearlet::execution::hostcall::fd_table::FdTable;
 use crate::spearlet::execution::ExecutionError;
-use crate::spearlet::mcp::registry_sync::McpRegistrySyncService;
+use crate::spearlet::mcp::registry_sync::{global_mcp_registry_sync, McpRegistrySyncService};
+use crate::spearlet::mcp::task_subset::McpTaskPolicy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,6 +16,8 @@ pub struct DefaultHostApi {
     pub(super) fd_table: Arc<FdTable>,
     pub(super) ai_engine: Arc<AiEngine>,
     pub(super) mcp_registry_sync: Option<Arc<McpRegistrySyncService>>,
+    pub(super) task_id: Option<String>,
+    pub(super) mcp_task_policy: Option<Arc<McpTaskPolicy>>,
 }
 
 impl DefaultHostApi {
@@ -24,17 +27,24 @@ impl DefaultHostApi {
         let router = Router::new(registry, policy);
         let ai_engine = Arc::new(AiEngine::new(router));
 
-        let mcp_registry_sync = runtime_config.spearlet_config.clone().map(|cfg| {
-            let svc = Arc::new(McpRegistrySyncService::new(Arc::new(cfg)));
-            svc.start();
-            svc
-        });
+        let mcp_registry_sync = runtime_config
+            .spearlet_config
+            .clone()
+            .map(|cfg| global_mcp_registry_sync(Arc::new(cfg)));
         Self {
             runtime_config,
             fd_table: Arc::new(FdTable::new(1000)),
             ai_engine,
             mcp_registry_sync,
+            task_id: None,
+            mcp_task_policy: None,
         }
+    }
+
+    pub fn with_task_policy(mut self, task_id: String, policy: Arc<McpTaskPolicy>) -> Self {
+        self.task_id = Some(task_id);
+        self.mcp_task_policy = Some(policy);
+        self
     }
 }
 

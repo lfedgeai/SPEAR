@@ -5,15 +5,16 @@ use crate::spearlet::execution::host_api::DefaultHostApi;
 use crate::spearlet::execution::hostcall::types::{
     ChatResponseState, ChatSessionState, FdEntry, FdFlags, FdInner, FdKind, PollEvents,
 };
-use libc::{EBADF, EIO};
+use libc::{EACCES, EBADF, EINVAL, EIO};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::spearlet::mcp::policy::{
-    decide_mcp_exec, filter_and_namespace_openai_tools, server_allowed_tools,
-    session_policy_from_params,
+    decide_mcp_exec, filter_and_namespace_openai_tools, server_allowed_tools, McpSessionParams,
 };
+use crate::spearlet::mcp::task_subset::task_default_session_params;
+use crate::spearlet::param_keys::{chat as chat_keys, mcp as mcp_keys};
 
 fn redact_canonical_request_for_log(req: &CanonicalRequestEnvelope) -> CanonicalRequestEnvelope {
     let mut out = req.clone();
@@ -85,6 +86,7 @@ pub struct ChatSessionSnapshot {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<(i32, String)>,
     pub params: HashMap<String, serde_json::Value>,
+    pub mcp: McpSessionParams,
 }
 
 impl DefaultHostApi {
@@ -102,14 +104,52 @@ impl DefaultHostApi {
     }
 
     pub fn cchat_create(&self) -> i32 {
-        self.fd_table.alloc(FdEntry {
+        let fd = self.fd_table.alloc(FdEntry {
             kind: FdKind::ChatSession,
             flags: FdFlags::default(),
             poll_mask: PollEvents::default(),
             watchers: HashSet::new(),
             closed: false,
             inner: FdInner::ChatSession(ChatSessionState::default()),
-        })
+        });
+        self.cchat_apply_task_mcp_defaults(fd);
+        fd
+    }
+
+    fn cchat_apply_task_mcp_defaults(&self, fd: i32) {
+        let Some(task_policy) = self.mcp_task_policy.as_ref() else {
+            return;
+        };
+        let defaults = task_default_session_params(task_policy);
+        if !defaults.is_effectively_enabled() {
+            return;
+        }
+
+        let Some(entry) = self.fd_table.get(fd) else {
+            return;
+        };
+        let mut e = match entry.lock() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        if e.closed {
+            return;
+        }
+        let FdInner::ChatSession(s) = &mut e.inner else {
+            return;
+        };
+        if !s.mcp.enabled {
+            s.mcp.enabled = defaults.enabled;
+        }
+        if s.mcp.server_ids.is_empty() {
+            s.mcp.server_ids = defaults.server_ids;
+        }
+        if s.mcp.task_tool_allowlist.is_empty() {
+            s.mcp.task_tool_allowlist = defaults.task_tool_allowlist;
+        }
+        if s.mcp.task_tool_denylist.is_empty() {
+            s.mcp.task_tool_denylist = defaults.task_tool_denylist;
+        }
     }
 
     pub fn cchat_write_msg(&self, fd: i32, role: String, content: String) -> i32 {
@@ -180,6 +220,38 @@ impl DefaultHostApi {
         let Some(entry) = self.fd_table.get(fd) else {
             return -EBADF;
         };
+        if key.starts_with(mcp_keys::param::TASK_PREFIX) {
+            return -EACCES;
+        }
+        if key == mcp_keys::param::ENABLED || key == mcp_keys::param::SERVER_IDS {
+            if let Some(task_policy) = self.mcp_task_policy.as_ref() {
+                if key == mcp_keys::param::ENABLED {
+                    let Some(b) = value.as_bool() else {
+                        return -EINVAL;
+                    };
+                    if b && !task_policy.enabled {
+                        return -EACCES;
+                    }
+                }
+                if key == mcp_keys::param::SERVER_IDS {
+                    let Some(arr) = value.as_array() else {
+                        return -EINVAL;
+                    };
+                    let requested = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>();
+                    if crate::spearlet::mcp::task_subset::validate_requested_server_ids(
+                        task_policy,
+                        &requested,
+                    )
+                    .is_err()
+                    {
+                        return -EACCES;
+                    }
+                }
+            }
+        }
         let mut e = match entry.lock() {
             Ok(v) => v,
             Err(_) => return -EIO,
@@ -189,6 +261,45 @@ impl DefaultHostApi {
         }
         match &mut e.inner {
             FdInner::ChatSession(s) => {
+                if key == mcp_keys::param::ENABLED {
+                    let Some(b) = value.as_bool() else {
+                        return -EINVAL;
+                    };
+                    s.mcp.enabled = b;
+                    return 0;
+                }
+                if key == mcp_keys::param::SERVER_IDS {
+                    let Some(arr) = value.as_array() else {
+                        return -EINVAL;
+                    };
+                    let requested = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>();
+                    s.mcp.server_ids = requested;
+                    return 0;
+                }
+                if key == mcp_keys::param::TOOL_ALLOWLIST {
+                    let Some(arr) = value.as_array() else {
+                        return -EINVAL;
+                    };
+                    s.mcp.tool_allowlist = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>();
+                    return 0;
+                }
+                if key == mcp_keys::param::TOOL_DENYLIST {
+                    let Some(arr) = value.as_array() else {
+                        return -EINVAL;
+                    };
+                    s.mcp.tool_denylist = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>();
+                    return 0;
+                }
+
                 s.params.insert(key, value);
                 0
             }
@@ -320,14 +431,14 @@ impl DefaultHostApi {
 
             let max_iterations = snapshot
                 .params
-                .get("max_iterations")
+                .get(chat_keys::MAX_ITERATIONS)
                 .and_then(|v| v.as_u64())
                 .unwrap_or(8)
                 .min(128) as u32;
             let max_total_tool_calls = snapshot
                 .params
-                .get("max_total_tool_calls")
-                .or_else(|| snapshot.params.get("max_tool_calls"))
+                .get(chat_keys::MAX_TOTAL_TOOL_CALLS)
+                .or_else(|| snapshot.params.get(chat_keys::MAX_TOOL_CALLS))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(32)
                 .min(10_000) as u32;
@@ -453,7 +564,10 @@ impl DefaultHostApi {
                                 Ok(s) => s,
                                 Err(rc) => json!({"error": {"code": "tool_exec_failed", "message": format!("tool rc: {}", rc)}}).to_string(),
                             }
-                        } else if tool_name.starts_with("mcp.") || tool_name.starts_with("mcp__") {
+                        } else if tool_name.starts_with(mcp_keys::tool::NAMESPACE_PREFIX_DOT)
+                            || tool_name
+                                .starts_with(mcp_keys::tool::NAMESPACE_PREFIX_DBL_UNDERSCORE)
+                        {
                             match self.cchat_exec_mcp_tool(&snapshot, &tool_name, &args) {
                                 Ok(s) => s,
                                 Err(msg) => {
@@ -512,11 +626,14 @@ impl DefaultHostApi {
         let FdInner::ChatSession(s) = &e.inner else {
             return Err(-EBADF);
         };
+        let mut params = s.params.clone();
+        s.mcp.materialize_into(&mut params);
         Ok(ChatSessionSnapshot {
             fd,
             messages: s.messages.clone(),
             tools: s.tools.clone(),
-            params: s.params.clone(),
+            params,
+            mcp: s.mcp.clone(),
         })
     }
 
@@ -543,26 +660,42 @@ impl DefaultHostApi {
     }
 
     fn cchat_inject_mcp_tools(&self, snapshot: &ChatSessionSnapshot) -> ChatSessionSnapshot {
-        let session = session_policy_from_params(&snapshot.params);
-        if !session.enabled || session.server_ids.is_empty() {
+        let session = &snapshot.mcp;
+        if !session.is_effectively_enabled() {
             return snapshot.clone();
         }
 
         let Some(sync) = self.mcp_registry_sync.as_ref() else {
+            tracing::debug!(
+                chat_fd = snapshot.fd,
+                server_ids = ?session.server_ids,
+                "mcp tool injection skipped: registry sync unavailable"
+            );
             return snapshot.clone();
         };
 
-        let reg = self.block_on(async { sync.cache().snapshot().await });
+        let reg = sync.cache().snapshot();
         let mut out = snapshot.clone();
         let mut appended: Vec<(i32, String)> = Vec::new();
 
         for sid in session.server_ids.iter() {
             let Some(server) = reg.servers.iter().find(|s| s.server_id == *sid) else {
+                tracing::debug!(
+                    chat_fd = snapshot.fd,
+                    server_id = sid,
+                    known_servers = reg.servers.len(),
+                    "mcp tool injection skipped: unknown server_id"
+                );
                 continue;
             };
 
             let allowed = server_allowed_tools(server);
             if allowed.is_empty() {
+                tracing::debug!(
+                    chat_fd = snapshot.fd,
+                    server_id = sid,
+                    "mcp tool injection skipped: empty server allowed_tools"
+                );
                 continue;
             }
 
@@ -583,16 +716,50 @@ impl DefaultHostApi {
 
             let tools = match tools_res {
                 Ok(Ok(t)) => t,
-                Ok(Err(_)) => Vec::new(),
-                Err(_) => Vec::new(),
+                Ok(Err(e)) => {
+                    tracing::debug!(
+                        chat_fd = snapshot.fd,
+                        server_id = sid,
+                        error = %e,
+                        "mcp tool injection: list_tools failed"
+                    );
+                    Vec::new()
+                }
+                Err(_) => {
+                    tracing::debug!(
+                        chat_fd = snapshot.fd,
+                        server_id = sid,
+                        timeout_ms,
+                        "mcp tool injection: list_tools timeout"
+                    );
+                    Vec::new()
+                }
             };
 
-            for s in filter_and_namespace_openai_tools(sid, &allowed, &session, &tools).into_iter()
-            {
+            let filtered = filter_and_namespace_openai_tools(sid, &allowed, session, &tools);
+            if filtered.is_empty() {
+                tracing::debug!(
+                    chat_fd = snapshot.fd,
+                    server_id = sid,
+                    tools_count = tools.len(),
+                    allowlist = ?session.tool_allowlist,
+                    denylist = ?session.tool_denylist,
+                    task_allowlist = ?session.task_tool_allowlist,
+                    task_denylist = ?session.task_tool_denylist,
+                    "mcp tool injection produced no tools after filtering"
+                );
+            }
+            for s in filtered.into_iter() {
                 appended.push((0, s));
             }
         }
 
+        tracing::debug!(
+            chat_fd = snapshot.fd,
+            server_ids = ?session.server_ids,
+            injected_tools = appended.len(),
+            "mcp tool injection completed"
+        );
         out.tools.extend(appended);
         out
     }
@@ -609,7 +776,7 @@ impl DefaultHostApi {
 
         let (server_id, _) =
             crate::spearlet::mcp::policy::parse_namespaced_mcp_tool_name(namespaced)?;
-        let reg = self.block_on(async { sync.cache().snapshot().await });
+        let reg = sync.cache().snapshot();
         let server = reg
             .servers
             .iter()
@@ -617,7 +784,7 @@ impl DefaultHostApi {
             .ok_or_else(|| "unknown mcp server".to_string())?
             .clone();
 
-        let decision = decide_mcp_exec(&snapshot.params, &server, namespaced)?;
+        let decision = decide_mcp_exec(&snapshot.mcp, &snapshot.params, &server, namespaced)?;
 
         let out = self.block_on(async {
             tokio::time::timeout(

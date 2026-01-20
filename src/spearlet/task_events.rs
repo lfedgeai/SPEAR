@@ -170,6 +170,7 @@ impl TaskEventSubscriber {
             runtime_type: artifact.spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: std::collections::HashMap::new(),
+            task_config: task.config.clone(),
             environment: env,
             invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
             min_instances: 1,

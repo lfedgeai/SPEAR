@@ -2,6 +2,8 @@ use crate::spearlet::execution::host_api::{DefaultHostApi, SpearHostApi};
 use crate::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig};
 use crate::spearlet::execution::ExecutionError;
 use crate::spearlet::execution::RuntimeType;
+use crate::spearlet::mcp::task_subset::McpTaskPolicy;
+use crate::spearlet::param_keys::chat as chat_keys;
 use libc::{EFAULT, EINVAL, EIO, ENOSPC};
 use std::time::SystemTime;
 use tracing::debug;
@@ -327,18 +329,18 @@ pub fn cchat_send(
         };
         let arena_ptr = snapshot
             .params
-            .get("tool_arena_ptr")
+            .get(chat_keys::TOOL_ARENA_PTR)
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as i32;
         let arena_len = snapshot
             .params
-            .get("tool_arena_len")
+            .get(chat_keys::TOOL_ARENA_LEN)
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as i32;
 
         let max_tool_output_bytes = snapshot
             .params
-            .get("max_tool_output_bytes")
+            .get(chat_keys::MAX_TOOL_OUTPUT_BYTES)
             .and_then(|v| v.as_u64())
             .unwrap_or(64 * 1024)
             .min(1024 * 1024) as usize;
@@ -1089,8 +1091,10 @@ pub fn build_spear_import() -> Result<ImportObject<DefaultHostApi>, ExecutionErr
 
 pub fn build_spear_import_with_api(
     runtime_config: RuntimeConfig,
+    task_id: String,
+    mcp_task_policy: std::sync::Arc<McpTaskPolicy>,
 ) -> Result<ImportObject<DefaultHostApi>, ExecutionError> {
-    let api = DefaultHostApi::new(runtime_config);
+    let api = DefaultHostApi::new(runtime_config).with_task_policy(task_id, mcp_task_policy);
     let mut builder =
         ImportObjectBuilder::new("spear", api).map_err(|e| ExecutionError::RuntimeError {
             message: format!("create import builder error: {}", e),

@@ -1,0 +1,15 @@
+server_id = "gitlab"
+display_name = "GitLab"
+transport = "stdio"
+tool_namespace = ""
+allowed_tools = ["*"]
+
+[stdio]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-gitlab"]
+env = { GITLAB_PERSONAL_ACCESS_TOKEN = "${ENV:GITLAB_PERSONAL_ACCESS_TOKEN}", GITLAB_API_URL = "${ENV:GITLAB_API_URL:-https://gitlab.com/api/v4}" }
+cwd = ""
+
+[budgets]
+tool_timeout_ms = 15000
+max_concurrency = 2

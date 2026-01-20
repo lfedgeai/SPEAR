@@ -135,6 +135,11 @@ Recommended policy:
   - `mcp.server_ids`: string[]
   - Optional: `mcp.tool_allowlist`: string[] patterns (further restrict for this session)
 
+Current implementation note:
+
+- Task defaults may be applied automatically from `Task.config` when a chat session is created.
+- Invocation-level override via invocation metadata/context is currently not supported.
+
 This keeps the WASM API surface stable and makes MCP enablement explicit.
 
 ### Letting users choose MCP tools (best practices)
@@ -367,6 +372,18 @@ tool_timeout_ms = 8000
 max_concurrency = 8
 max_tool_output_bytes = 65536
 ```
+
+Environment variables and references:
+
+- `stdio.env` supports environment references in values:
+  - Required: `${ENV:VAR_NAME}`
+  - With default: `${ENV:VAR_NAME:-default_value}`
+- `stdio.env_from` (directory-loaded config only) is a shorthand for “pass through these environment variables”:
+  - `env_from = ["API_TOKEN"]` expands to `env.API_TOKEN = "${ENV:API_TOKEN}"`
+- Behavior when an environment variable is missing:
+  - If a required reference (no default) cannot be resolved, Spearlet will treat `tools/list` as failed and inject no tools for that MCP server in the chat session.
+  - If a default is provided, injection proceeds using the default value.
+- Example GitLab MCP config: [config/sms/mcp.d/gitlab.toml](../config/sms/mcp.d/gitlab.toml)
 
 Merge strategy:
 
@@ -632,6 +649,8 @@ Set via existing `cchat_ctl_set_param`:
 
 - `mcp.enabled`: bool
 - `mcp.server_ids`: string[]
+- `mcp.task_tool_allowlist`: string[] patterns (task-level; injected by host; read-only to guest)
+- `mcp.task_tool_denylist`: string[] patterns (task-level; injected by host; read-only to guest)
 - `mcp.tool_allowlist`: string[] patterns
 - `mcp.tool_denylist`: string[] patterns
 - `tool_choice`: `none | auto | {"type":"function",...}` (passed upstream)

@@ -75,6 +75,7 @@ pub struct TaskSpec {
     pub entry_point: String,
     /// Handler configuration / 处理器配置
     pub handler_config: HashMap<String, serde_json::Value>,
+    pub task_config: HashMap<String, String>,
     /// Environment variables / 环境变量
     pub environment: HashMap<String, String>,
     /// Invocation type / 调用类型
@@ -376,6 +377,7 @@ impl Task {
             artifact_id: self.artifact_id.clone(),
             runtime_type: self.spec.runtime_type,
             runtime_config: HashMap::new(),
+            task_config: self.spec.task_config.clone(),
             artifact: None,
             environment: env,
             resource_limits: InstanceResourceLimits {
@@ -496,6 +498,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
+            task_config: HashMap::new(),
             environment: HashMap::new(),
             invocation_type: InvocationType::NewTask,
             min_instances: 1,
@@ -522,6 +525,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
+            task_config: HashMap::new(),
             environment: HashMap::new(),
             invocation_type: InvocationType::NewTask,
             min_instances: 1,
@@ -552,6 +556,7 @@ mod tests {
             runtime_type: RuntimeType::Kubernetes,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
+            task_config: HashMap::new(),
             environment: HashMap::new(),
             invocation_type: InvocationType::NewTask,
             min_instances: 1,
@@ -605,6 +610,7 @@ mod tests {
             runtime_type: RuntimeType::Wasm,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
+            task_config: HashMap::new(),
             environment: env,
             invocation_type: InvocationType::NewTask,
             min_instances: 1,

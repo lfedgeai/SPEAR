@@ -9,6 +9,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use crate::spearlet::param_keys::{chat as chat_keys, rtasr as rtasr_keys};
+
 mod readiness;
 mod segmentation;
 mod stub;
@@ -69,19 +71,19 @@ impl DefaultHostApi {
                         st.state = RtAsrConnState::Configured;
                     }
 
-                    if key == "max_send_queue_bytes" {
+                    if key == rtasr_keys::MAX_SEND_QUEUE_BYTES {
                         if let Some(n) = st
                             .params
-                            .get("max_send_queue_bytes")
+                            .get(rtasr_keys::MAX_SEND_QUEUE_BYTES)
                             .and_then(|x| x.as_u64())
                         {
                             st.max_send_queue_bytes = n as usize;
                         }
                     }
-                    if key == "max_recv_queue_bytes" {
+                    if key == rtasr_keys::MAX_RECV_QUEUE_BYTES {
                         if let Some(n) = st
                             .params
-                            .get("max_recv_queue_bytes")
+                            .get(rtasr_keys::MAX_RECV_QUEUE_BYTES)
                             .and_then(|x| x.as_u64())
                         {
                             st.max_recv_queue_bytes = n as usize;
@@ -125,17 +127,22 @@ impl DefaultHostApi {
                         st.state = RtAsrConnState::Connected;
                         let transport = st
                             .params
-                            .get("transport")
+                            .get(rtasr_keys::TRANSPORT)
                             .and_then(|x| x.as_str())
                             .unwrap_or("stub");
 
-                        if let Some(s) = st.params.get("ws_url").and_then(|x| x.as_str()) {
+                        if let Some(s) = st.params.get(rtasr_keys::WS_URL).and_then(|x| x.as_str())
+                        {
                             ws_url_override = Some(s.to_string());
                         }
-                        if let Some(s) = st.params.get("client_secret").and_then(|x| x.as_str()) {
+                        if let Some(s) = st
+                            .params
+                            .get(rtasr_keys::CLIENT_SECRET)
+                            .and_then(|x| x.as_str())
+                        {
                             client_secret_override = Some(s.to_string());
                         }
-                        if let Some(s) = st.params.get("model").and_then(|x| x.as_str()) {
+                        if let Some(s) = st.params.get(rtasr_keys::MODEL).and_then(|x| x.as_str()) {
                             model_override = Some(s.to_string());
                         }
 
@@ -149,7 +156,7 @@ impl DefaultHostApi {
                                     routing: RoutingHints {
                                         backend: st
                                             .params
-                                            .get("backend")
+                                            .get(chat_keys::BACKEND)
                                             .and_then(|x| x.as_str())
                                             .map(|s| s.to_string()),
                                         allowlist: vec![],

@@ -908,6 +908,7 @@ mod tests {
             artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Process,
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),
@@ -923,6 +924,7 @@ mod tests {
             artifact_id: "artifact-xyz".to_string(),
             runtime_type: RuntimeType::Kubernetes, // Different runtime type for testing / 用于测试的不同运行时类型
             runtime_config: HashMap::new(),
+            task_config: HashMap::new(),
             artifact: None,
             environment: HashMap::new(),
             resource_limits: InstanceResourceLimits::default(),

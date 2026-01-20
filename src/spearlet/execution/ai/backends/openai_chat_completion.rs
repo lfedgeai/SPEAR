@@ -7,6 +7,7 @@ use crate::spearlet::execution::ai::ir::{
     CanonicalError, CanonicalRequestEnvelope, CanonicalResponseEnvelope, Operation, Payload,
     ResultPayload,
 };
+use crate::spearlet::param_keys::{chat as chat_keys, mcp as mcp_keys};
 
 pub struct OpenAIChatCompletionBackendAdapter {
     name: String,
@@ -76,21 +77,10 @@ impl OpenAIChatCompletionBackendAdapter {
 
         if let Some(obj) = body.as_object_mut() {
             for (k, v) in p.params.iter() {
-                if k.starts_with("mcp.") {
+                if k.starts_with(mcp_keys::param::PREFIX) {
                     continue;
                 }
-                if k == "model"
-                    || k == "backend"
-                    || k == "timeout_ms"
-                    || k == "messages"
-                    || k == "tools"
-                    || k == "tool_arena_ptr"
-                    || k == "tool_arena_len"
-                    || k == "max_tool_output_bytes"
-                    || k == "max_total_tool_calls"
-                    || k == "max_tool_calls"
-                    || k == "max_iterations"
-                {
+                if chat_keys::is_structural_param_key(k) {
                     continue;
                 }
                 obj.insert(k.clone(), v.clone());
@@ -303,20 +293,23 @@ mod tests {
 
         let mut params = HashMap::new();
         params.insert(
-            "messages".to_string(),
+            chat_keys::MESSAGES.to_string(),
             json!([{ "role": "user", "content": "override" }]),
         );
         params.insert(
-            "tools".to_string(),
+            chat_keys::TOOLS.to_string(),
             json!([{ "type": "function", "function": {"name":"x"}}]),
         );
-        params.insert("tool_arena_ptr".to_string(), json!(1234));
-        params.insert("tool_arena_len".to_string(), json!(5678));
-        params.insert("max_iterations".to_string(), json!(9));
-        params.insert("max_total_tool_calls".to_string(), json!(99));
-        params.insert("mcp.enabled".to_string(), json!(true));
-        params.insert("mcp.server_ids".to_string(), json!(["fs"]));
-        params.insert("mcp.tool_allowlist".to_string(), json!(["read_*"]));
+        params.insert(chat_keys::TOOL_ARENA_PTR.to_string(), json!(1234));
+        params.insert(chat_keys::TOOL_ARENA_LEN.to_string(), json!(5678));
+        params.insert(chat_keys::MAX_ITERATIONS.to_string(), json!(9));
+        params.insert(chat_keys::MAX_TOTAL_TOOL_CALLS.to_string(), json!(99));
+        params.insert(mcp_keys::param::ENABLED.to_string(), json!(true));
+        params.insert(mcp_keys::param::SERVER_IDS.to_string(), json!(["fs"]));
+        params.insert(
+            mcp_keys::param::TOOL_ALLOWLIST.to_string(),
+            json!(["read_*"]),
+        );
 
         let req = CanonicalRequestEnvelope {
             version: 1,
@@ -347,12 +340,12 @@ mod tests {
             Value::String("original".to_string())
         );
         assert_eq!(body.get("tools").unwrap()[0]["function"]["name"], "y");
-        assert!(body.get("tool_arena_ptr").is_none());
-        assert!(body.get("tool_arena_len").is_none());
-        assert!(body.get("max_iterations").is_none());
-        assert!(body.get("max_total_tool_calls").is_none());
-        assert!(body.get("mcp.enabled").is_none());
-        assert!(body.get("mcp.server_ids").is_none());
-        assert!(body.get("mcp.tool_allowlist").is_none());
+        assert!(body.get(chat_keys::TOOL_ARENA_PTR).is_none());
+        assert!(body.get(chat_keys::TOOL_ARENA_LEN).is_none());
+        assert!(body.get(chat_keys::MAX_ITERATIONS).is_none());
+        assert!(body.get(chat_keys::MAX_TOTAL_TOOL_CALLS).is_none());
+        assert!(body.get(mcp_keys::param::ENABLED).is_none());
+        assert!(body.get(mcp_keys::param::SERVER_IDS).is_none());
+        assert!(body.get(mcp_keys::param::TOOL_ALLOWLIST).is_none());
     }
 }

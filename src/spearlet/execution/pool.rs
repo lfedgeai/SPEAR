@@ -860,6 +860,7 @@ mod tests {
             runtime_type: artifact_spec.runtime_type,
             entry_point: "main".to_string(),
             handler_config: HashMap::new(),
+            task_config: HashMap::new(),
             environment: artifact_spec.environment.clone(),
             invocation_type: artifact_spec.invocation_type,
             min_instances: 1,

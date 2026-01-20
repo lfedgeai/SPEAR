@@ -10,19 +10,7 @@ use boa_engine::object::builtins::JsPromise;
 use boa_engine::Source;
 use std::rc::Rc;
 
-const DEFAULT_ENTRY: &str = r#"
-import { Spear } from "spear";
-
-export default async function main() {
-  const resp = await Spear.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: "Hi" }],
-    timeoutMs: 30_000,
-  });
-
-  return resp.text();
-}
-"#;
+const DEFAULT_ENTRY: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/entry.mjs"));
 
 fn main() {
     let loader = Rc::new(spear_boa::BuiltinModuleRegistry::new());
@@ -33,10 +21,9 @@ fn main() {
     // `SPEAR_JS_ENTRY` optionally points to a JS module file (WASI preopen required).
     // `SPEAR_JS_ENTRY` 可选指定 JS 模块文件路径（需要 WASI 预打开目录）。
     let src = std::env::var("SPEAR_JS_ENTRY").ok();
-    let entry_code = match src {
-        Some(path) => std::fs::read_to_string(path).unwrap_or_else(|_| DEFAULT_ENTRY.to_string()),
-        None => DEFAULT_ENTRY.to_string(),
-    };
+    let entry_code =
+        src.and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_else(|| DEFAULT_ENTRY.to_string());
 
     // Register the entry module under a fixed specifier.
     // 将入口模块注册到固定 specifier。

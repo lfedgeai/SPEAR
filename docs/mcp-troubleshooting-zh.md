@@ -27,10 +27,13 @@ MCP 工具注入受 session 参数控制：
 
 - `mcp.enabled`：bool，必须为 `true`
 - `mcp.server_ids`：string 数组，必须包含 server id（例如 `"fs"`）
+- `mcp.task_tool_allowlist` / `mcp.task_tool_denylist`：task 级工具过滤（如配置）；由 host 从 `Task.config` 注入；WASM 侧不可写
 
 解析逻辑见：`session_policy_from_params`，[policy.rs](../src/spearlet/mcp/policy.rs)
 
 任何一个缺失，都会导致 MCP 工具不注入，模型就会像“没有工具”一样回答。
+
+补充：在当前实现中，如果 task 配置了 `Task.config` 的 MCP 策略，`cchat_create` 会自动写入 `mcp.enabled` / `mcp.server_ids` 等缺省值，你未必需要手工 set_param。
 
 ## 常见根因
 
@@ -39,6 +42,7 @@ MCP 工具注入受 session 参数控制：
 3. **server_id 不匹配**（registry 里找不到对应 server）
 4. **server policy 禁止工具**（allowed_tools 为空或过严）
 5. **list_tools 超时/失败**，导致拿到的工具列表为空
+6. **task policy 拒绝**：task 未启用 MCP 或你试图设置超出 task allowed 的 server_ids（会被 hostcall 拒绝）
 
 ## 建议检查点
 
@@ -50,4 +54,3 @@ MCP 工具注入受 session 参数控制：
   - 这些通常指向 SMS 连通性或 MCP registry 服务问题。
 - server allowlist：
   - `allowed_tools` 需要包含能匹配工具名的 pattern。
-

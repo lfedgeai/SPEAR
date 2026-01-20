@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 
 use crate::spearlet::execution::ai::ir::ChatMessage;
+use crate::spearlet::mcp::policy::McpSessionParams;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FdKind {
@@ -93,6 +94,7 @@ pub struct ChatSessionState {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<(i32, String)>,
     pub params: HashMap<String, Value>,
+    pub mcp: McpSessionParams,
 }
 
 #[derive(Clone, Debug, Default)]

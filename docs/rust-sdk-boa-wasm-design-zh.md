@@ -255,6 +255,13 @@ SDK 会把上述 options 映射为 params：
 - `mcp.enabled`
 - `mcp.server_ids`
 - `mcp.tool_allowlist`
+- `mcp.tool_denylist`（可选）
+
+说明：
+
+- 如果 task 在 `Task.config` 中配置了 MCP 策略，host 可能会在创建 chat session 时自动写入缺省值（`mcp.enabled` / `mcp.server_ids`），SDK 未必需要显式设置。
+- task 级过滤会以 `mcp.task_tool_allowlist` / `mcp.task_tool_denylist` 注入，并且对 WASM 侧只读。
+- host 会强制 task policy：若 task 未允许启用 MCP，或你试图把 `mcp.server_ids` 设到 task allowed 之外，会被拒绝。
 
 ### 5.6 Audio（mic + rtasr）
 

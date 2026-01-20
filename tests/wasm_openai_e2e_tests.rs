@@ -160,7 +160,12 @@ fn test_wasm_to_openai_chat_completion_e2e() {
     let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
     instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());
 
-    let mut spear_import = build_spear_import_with_api(runtime_config).unwrap();
+    let mcp_task_policy = std::sync::Arc::new(
+        spear_next::spearlet::mcp::task_subset::parse_task_config(&HashMap::new()),
+    );
+    let mut spear_import =
+        build_spear_import_with_api(runtime_config, "task-e2e".to_string(), mcp_task_policy)
+            .unwrap();
     let spear_inst: &mut dyn SyncInst = &mut spear_import;
     instances.insert("spear".to_string(), spear_inst);
 

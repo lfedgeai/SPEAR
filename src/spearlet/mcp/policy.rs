@@ -1,10 +1,16 @@
 use crate::proto::sms::McpServerRecord;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use serde_json::Value;
+use std::collections::HashMap;
+
+use crate::spearlet::param_keys::{chat as chat_keys, mcp as mcp_keys};
 
 #[derive(Clone, Debug, Default)]
-pub struct McpSessionPolicy {
+pub struct McpSessionParams {
     pub enabled: bool,
     pub server_ids: Vec<String>,
+    pub task_tool_allowlist: Vec<String>,
+    pub task_tool_denylist: Vec<String>,
     pub tool_allowlist: Vec<String>,
     pub tool_denylist: Vec<String>,
 }
@@ -17,46 +23,69 @@ pub struct McpExecDecision {
     pub max_tool_output_bytes: u64,
 }
 
-pub fn session_policy_from_params(
-    params: &std::collections::HashMap<String, serde_json::Value>,
-) -> McpSessionPolicy {
-    let enabled = params
-        .get("mcp.enabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let server_ids = params
-        .get("mcp.server_ids")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let tool_allowlist = params
-        .get("mcp.tool_allowlist")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let tool_denylist = params
-        .get("mcp.tool_denylist")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+impl McpSessionParams {
+    pub fn is_effectively_enabled(&self) -> bool {
+        self.enabled && !self.server_ids.is_empty()
+    }
 
-    McpSessionPolicy {
-        enabled,
-        server_ids,
-        tool_allowlist,
-        tool_denylist,
+    pub fn materialize_into(&self, params: &mut HashMap<String, Value>) {
+        if !self.is_effectively_enabled() {
+            return;
+        }
+        params.insert(mcp_keys::param::ENABLED.to_string(), Value::Bool(true));
+        params.insert(
+            mcp_keys::param::SERVER_IDS.to_string(),
+            Value::Array(
+                self.server_ids
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            ),
+        );
+        if !self.task_tool_allowlist.is_empty() {
+            params.insert(
+                mcp_keys::param::TASK_TOOL_ALLOWLIST.to_string(),
+                Value::Array(
+                    self.task_tool_allowlist
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if !self.task_tool_denylist.is_empty() {
+            params.insert(
+                mcp_keys::param::TASK_TOOL_DENYLIST.to_string(),
+                Value::Array(
+                    self.task_tool_denylist
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if !self.tool_allowlist.is_empty() {
+            params.insert(
+                mcp_keys::param::TOOL_ALLOWLIST.to_string(),
+                Value::Array(
+                    self.tool_allowlist
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if !self.tool_denylist.is_empty() {
+            params.insert(
+                mcp_keys::param::TOOL_DENYLIST.to_string(),
+                Value::Array(
+                    self.tool_denylist
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
+        }
     }
 }
 
@@ -79,14 +108,15 @@ fn decode_tool_token(s: &str) -> Result<String, String> {
 
 fn encode_openai_mcp_tool_name(server_id: &str, tool_name: &str) -> String {
     format!(
-        "mcp__{}__{}",
+        "{}{}__{}",
+        mcp_keys::tool::NAMESPACE_PREFIX_DBL_UNDERSCORE,
         encode_tool_token(server_id),
         encode_tool_token(tool_name)
     )
 }
 
 pub fn parse_namespaced_mcp_tool_name(namespaced: &str) -> Result<(String, String), String> {
-    if let Some(rest) = namespaced.strip_prefix("mcp__") {
+    if let Some(rest) = namespaced.strip_prefix(mcp_keys::tool::NAMESPACE_PREFIX_DBL_UNDERSCORE) {
         let mut it = rest.splitn(2, "__");
         let sid_enc = it.next().unwrap_or("");
         let tool_enc = it.next().unwrap_or("");
@@ -101,7 +131,9 @@ pub fn parse_namespaced_mcp_tool_name(namespaced: &str) -> Result<(String, Strin
         return Ok((server_id, tool_name));
     }
 
-    let rest = namespaced.strip_prefix("mcp.").unwrap_or(namespaced);
+    let rest = namespaced
+        .strip_prefix(mcp_keys::tool::NAMESPACE_PREFIX_DOT)
+        .unwrap_or(namespaced);
     let (server_id, tool_name) = rest
         .split_once('.')
         .ok_or_else(|| "invalid mcp tool name".to_string())?;
@@ -113,11 +145,21 @@ pub fn parse_namespaced_mcp_tool_name(namespaced: &str) -> Result<(String, Strin
 
 pub fn allowed_by_policies(
     server_allowed: &[String],
-    session: &McpSessionPolicy,
+    session: &McpSessionParams,
     tool_name: &str,
 ) -> Result<(), String> {
     if server_allowed.is_empty() || !match_any_pattern(server_allowed, tool_name) {
         return Err("mcp tool denied by server policy".to_string());
+    }
+    if !session.task_tool_allowlist.is_empty()
+        && !match_any_pattern(&session.task_tool_allowlist, tool_name)
+    {
+        return Err("mcp tool denied by task allowlist".to_string());
+    }
+    if !session.task_tool_denylist.is_empty()
+        && match_any_pattern(&session.task_tool_denylist, tool_name)
+    {
+        return Err("mcp tool denied by task denylist".to_string());
     }
     if !session.tool_allowlist.is_empty() && !match_any_pattern(&session.tool_allowlist, tool_name)
     {
@@ -130,11 +172,11 @@ pub fn allowed_by_policies(
 }
 
 pub fn decide_mcp_exec(
-    params: &std::collections::HashMap<String, serde_json::Value>,
+    session: &McpSessionParams,
+    params: &HashMap<String, Value>,
     server: &McpServerRecord,
     namespaced_tool_name: &str,
 ) -> Result<McpExecDecision, String> {
-    let session = session_policy_from_params(params);
     let (server_id, tool_name) = parse_namespaced_mcp_tool_name(namespaced_tool_name)?;
     if server.server_id != server_id {
         return Err("unknown mcp server".to_string());
@@ -151,7 +193,7 @@ pub fn decide_mcp_exec(
         .max(100)
         .min(120_000);
     let max_tool_output_bytes = params
-        .get("max_tool_output_bytes")
+        .get(chat_keys::MAX_TOOL_OUTPUT_BYTES)
         .and_then(|v| v.as_u64())
         .unwrap_or(64 * 1024)
         .min(10 * 1024 * 1024);
@@ -167,7 +209,7 @@ pub fn decide_mcp_exec(
 pub fn filter_and_namespace_openai_tools(
     server_id: &str,
     server_allowed: &[String],
-    session: &McpSessionPolicy,
+    session: &McpSessionParams,
     tools: &[serde_json::Value],
 ) -> Vec<String> {
     if server_allowed.is_empty() {
@@ -281,9 +323,11 @@ mod tests {
     #[test]
     fn test_allowed_by_policies() {
         let server_allowed = vec!["read_*".to_string()];
-        let session = McpSessionPolicy {
+        let session = McpSessionParams {
             enabled: true,
             server_ids: vec!["fs".to_string()],
+            task_tool_allowlist: vec![],
+            task_tool_denylist: vec![],
             tool_allowlist: vec!["read_*".to_string()],
             tool_denylist: vec!["read_secret".to_string()],
         };
@@ -294,9 +338,11 @@ mod tests {
 
     #[test]
     fn test_filter_and_namespace_openai_tools() {
-        let session = McpSessionPolicy {
+        let session = McpSessionParams {
             enabled: true,
             server_ids: vec!["fs".to_string()],
+            task_tool_allowlist: vec![],
+            task_tool_denylist: vec![],
             tool_allowlist: vec![],
             tool_denylist: vec!["delete_*".to_string()],
         };
@@ -316,9 +362,14 @@ mod tests {
 
     #[test]
     fn test_decide_exec_uses_budgets_and_limits() {
+        let session = McpSessionParams {
+            enabled: true,
+            server_ids: vec!["fs".to_string()],
+            tool_allowlist: vec!["read_*".to_string()],
+            ..Default::default()
+        };
+
         let mut params = std::collections::HashMap::new();
-        params.insert("mcp.enabled".to_string(), serde_json::Value::Bool(true));
-        params.insert("mcp.server_ids".to_string(), serde_json::json!(["fs"]));
         params.insert(
             "max_tool_output_bytes".to_string(),
             serde_json::Value::Number(1024.into()),
@@ -341,7 +392,7 @@ mod tests {
             updated_at_ms: 0,
         };
 
-        let d = decide_mcp_exec(&params, &server, "mcp.fs.read_file").unwrap();
+        let d = decide_mcp_exec(&session, &params, &server, "mcp.fs.read_file").unwrap();
         assert_eq!(d.timeout_ms, 1234);
         assert_eq!(d.max_tool_output_bytes, 1024);
         assert_eq!(d.tool_name, "read_file");

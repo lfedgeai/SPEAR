@@ -7,11 +7,13 @@ use crate::spearlet::execution::ai::ir::{
     RoutingHints,
 };
 use crate::spearlet::execution::host_api::ChatSessionSnapshot;
+use crate::spearlet::mcp::policy::McpSessionParams;
+use crate::spearlet::param_keys::chat as chat_keys;
 
 pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalRequestEnvelope {
     let model = snapshot
         .params
-        .get("model")
+        .get(chat_keys::MODEL)
         .and_then(|v| v.as_str())
         .unwrap_or("stub-model")
         .to_string();
@@ -25,7 +27,7 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
 
     if snapshot
         .params
-        .get("response_format")
+        .get(chat_keys::RESPONSE_FORMAT)
         .and_then(|v| v.get("type"))
         .and_then(|v| v.as_str())
         == Some("json_schema")
@@ -46,7 +48,7 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
     let mut routing = RoutingHints::default();
     if let Some(b) = snapshot
         .params
-        .get("backend")
+        .get(chat_keys::BACKEND)
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
     {
@@ -63,7 +65,10 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
         meta,
         routing,
         requirements,
-        timeout_ms: snapshot.params.get("timeout_ms").and_then(|v| v.as_u64()),
+        timeout_ms: snapshot
+            .params
+            .get(chat_keys::TIMEOUT_MS)
+            .and_then(|v| v.as_u64()),
         payload: Payload::ChatCompletions(ChatCompletionsPayload {
             model,
             messages,
@@ -82,7 +87,10 @@ mod tests {
     #[test]
     fn test_normalize_minimal() {
         let mut params = HashMap::new();
-        params.insert("model".to_string(), Value::String("gpt-test".to_string()));
+        params.insert(
+            chat_keys::MODEL.to_string(),
+            Value::String("gpt-test".to_string()),
+        );
 
         let snapshot = ChatSessionSnapshot {
             fd: 1000,
@@ -95,6 +103,7 @@ mod tests {
             }],
             tools: vec![],
             params,
+            mcp: McpSessionParams::default(),
         };
 
         let req = normalize_cchat_session(&snapshot);
@@ -116,6 +125,7 @@ mod tests {
             messages: vec![],
             tools: vec![(0, "{}".to_string())],
             params: HashMap::new(),
+            mcp: McpSessionParams::default(),
         };
         let req = normalize_cchat_session(&snapshot);
         assert!(req

@@ -34,6 +34,11 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
 - Executable type: `No Executable | Binary | Script | Container | WASM | Process`
 - Executable URI accepts `sms+file://<id>` for embedded file artifacts
 - Parameters: `Capabilities` (comma), `Args` (comma), `Env` (`key=value` per line)
+ - MCP tools (optional):
+   - Enable MCP tools and pick per-task servers from the MCP registry
+   - “Default” servers map to `Task.config["mcp.default_server_ids"]`
+   - “Allowed” servers map to `Task.config["mcp.allowed_server_ids"]` (upper bound)
+   - Tool filters map to `Task.config["mcp.tool_allowlist"]` / `["mcp.tool_denylist"]`
 
 ### Execution Kind
 

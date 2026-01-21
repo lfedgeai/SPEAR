@@ -5,7 +5,7 @@
 ## 目录结构
 
 - `wasm-c/`：示例源码（C）
-- `wasm-rust/`：示例源码（Rust）
+- `wasm-js/`：以 JS 为主的 WASM 示例（Boa JS runner 编译为 WASM）
 - `build/`：构建输出（`.wasm`）
 
 ## 构建
@@ -18,7 +18,7 @@ make samples
 
 构建会优先使用 `zig`（`zig cc -target wasm32-wasi`）；若未安装 `zig`，则使用 `clang` + `WASI_SYSROOT`。
 
-Rust 示例通过 `cargo build --release --target wasm32-wasip1` 构建，并拷贝到 `build/rust/`。
+WASM-JS 示例通过 `cargo build --release --target wasm32-wasip1` 构建，主要输出到 `build/js/`，并兼容拷贝到 `build/rust/`。
 
 ## 示例列表
 
@@ -28,12 +28,12 @@ Rust 示例通过 `cargo build --release --target wasm32-wasip1` 构建，并拷
 - `mic_rtasr.c`：mic + realtime ASR 示例
 - `mcp_fs.c`：MCP filesystem（stdio）工具注入与调用示例
 
-## Rust 示例列表
+## JS 示例列表（Boa JS runner 编译为 WASM）
 
-- `wasm-rust/chat_completion`：通过 Boa JS 运行时调用 Chat Completion
-  - 产物：`./build/rust/chat_completion.wasm`
-- `wasm-rust/chat_completion_tool_sum`：通过 Boa JS 运行时进行 tool calling（sum）
-  - 产物：`./build/rust/chat_completion_tool_sum.wasm`
+- `wasm-js/chat_completion`：通过 Boa JS 运行时执行 `entry.mjs`，调用 Chat Completion
+  - 产物：`./build/js/chat_completion.wasm`
+- `wasm-js/chat_completion_tool_sum`：通过 Boa JS 运行时执行 `entry.mjs`，进行 tool calling（sum）
+  - 产物：`./build/js/chat_completion_tool_sum.wasm`
 
 ## MCP 示例（mcp_fs）
 

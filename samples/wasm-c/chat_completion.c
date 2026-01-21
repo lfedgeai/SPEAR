@@ -34,7 +34,7 @@ static int extract_spear_backend(const char *json, char *out, size_t out_len) {
     return 1;
 }
 
-//#define SP_ROUTE_OLLAMA_GEMMA3
+#define SP_ROUTE_OLLAMA_GEMMA3
 
 int main() {
     int32_t fd = sp_cchat_create();

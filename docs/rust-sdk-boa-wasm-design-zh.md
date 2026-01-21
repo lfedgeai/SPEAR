@@ -76,7 +76,7 @@ Rust SDK 需要把这些模式内化，变成对 JS 用户不可见的实现细�
   - 将 `spear-wasm` 的能力映射到 JS 友好的 API（Promise/Options object）。
   - 维护工具回调注册表（JS tool handler 表）。
 
-4) 样例（`samples/wasm-rust/*`）（WASI 可执行）
+4) 样例（`samples/wasm-js/*`）（以 JS 为主；通过 Boa JS runner 编译为 WASI 可执行）
 - 提供一个轻量 runner：
   - 加载用户 JS（内嵌或从 WASI 允许目录读取）
   - 创建 Boa `Context`
@@ -345,18 +345,18 @@ try {
   - 参考现有 `tests/wasm_openai_e2e_tests.rs` 的方式，新增 “Boa runtime + chat completion” 的 e2e。
 - 样例：
   - WASM-C：`samples/wasm-c/*`
-  - WASM-Rust（Boa runner）：`samples/wasm-rust/chat_completion`、`samples/wasm-rust/chat_completion_tool_sum`
+- WASM-JS（Boa JS runner）：`samples/wasm-js/chat_completion`、`samples/wasm-js/chat_completion_tool_sum`
 
 ## 9. 交付拆分（Milestones）
 
 M1（最小可用）
 - `spear-wasm-sys` + `spear-wasm` 封装现有 hostcalls
-- Rust WASI runner 示例（`samples/wasm-rust/chat_completion`）：运行单文件 JS，注入 `Spear.chat.completions.create`
+- WASM-JS runner 示例（`samples/wasm-js/chat_completion`）：运行单文件 JS（`entry.mjs`），注入 `Spear.chat.completions.create`
 
 M2（工具调用）
 - 预置 N 个 tool trampoline + JS `Spear.tool()` 注册
 - `AUTO_TOOL_CALL` 跑通 JS 工具函数
-  - 示例：`samples/wasm-rust/chat_completion_tool_sum`
+  - 示例：`samples/wasm-js/chat_completion_tool_sum`
 
 M3（音频流）
 - `mic`/`rtasr` JS 封装 + `AsyncIterable`

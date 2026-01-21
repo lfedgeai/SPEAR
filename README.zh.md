@@ -125,7 +125,7 @@ Web Admin 提供 Nodes/Tasks/Files/Backends 等页面。
 make samples
 ```
 
-产物输出到 `samples/build/`（C）与 `samples/build/rust/`（Rust）。
+产物输出到 `samples/build/`（C）与 `samples/build/js/`（WASM-JS；兼容：`samples/build/rust/`）。
 
 文档：
 

@@ -335,28 +335,30 @@ samples:
 			echo -e "$(RED)❌ No suitable compiler found (zig, or clang+WASI_SYSROOT). Install zig or set WASI_SYSROOT$(NC)"; exit 1; \
 		fi; \
 	fi
-	@if [ "$(BUILD_RUST_SAMPLES)" = "1" ]; then \
+	@if [ "$(BUILD_JS_SAMPLES)" = "1" ]; then \
 		if command -v cargo >/dev/null 2>&1; then \
-			echo -e "$(BLUE)🦀 Building Rust WASM samples... / 构建Rust WASM示例...$(NC)"; \
-			mkdir -p "$(SAMPLES_RUST_BUILD)"; \
-			for name in $(RUST_SAMPLES); do \
-				dir="$(REPO_ROOT)/$(SAMPLES_RUST_DIR)/$$name"; \
+			echo -e "$(BLUE)🟨 Building WASM-JS samples... / 构建WASM-JS示例...$(NC)"; \
+			mkdir -p "$(SAMPLES_JS_BUILD)" "$(SAMPLES_RUST_BUILD)"; \
+			for name in $(JS_SAMPLES); do \
+				dir="$(REPO_ROOT)/$(SAMPLES_JS_DIR)/$$name"; \
 				if [ ! -f "$$dir/Cargo.toml" ]; then \
-					echo -e "$(YELLOW)⚠️  Rust sample missing Cargo.toml: $$dir (skip) / 缺少Cargo.toml，跳过$(NC)"; \
+					echo -e "$(YELLOW)⚠️  Sample missing Cargo.toml: $$dir (skip) / 缺少Cargo.toml，跳过$(NC)"; \
 					continue; \
 				fi; \
-				( cd "$$dir" && cargo build --release --target wasm32-wasip1 ) || (echo -e "$(RED)❌ rust wasm build failed: $$name (need rustup target wasm32-wasip1) / Rust wasm构建失败（需要安装wasm32-wasip1目标）$(NC)"; exit 1); \
+				( cd "$$dir" && cargo build --release --target wasm32-wasip1 ) || (echo -e "$(RED)❌ wasm-js build failed: $$name (need rustup target wasm32-wasip1) / WASM-JS构建失败（需要安装wasm32-wasip1目标）$(NC)"; exit 1); \
 				in="$$dir/target/wasm32-wasip1/release/$$name.wasm"; \
-				out="$(SAMPLES_RUST_BUILD)/$$name.wasm"; \
+				out_js="$(SAMPLES_JS_BUILD)/$$name.wasm"; \
+				out_rust="$(SAMPLES_RUST_BUILD)/$$name.wasm"; \
 				if [ -f "$$in" ]; then \
-					cp "$$in" "$$out"; \
-					echo -e "$(GREEN)✅ Built Rust sample: $$out$(NC)"; \
+					cp "$$in" "$$out_js"; \
+					cp "$$in" "$$out_rust"; \
+					echo -e "$(GREEN)✅ Built WASM-JS sample: $$out_js$(NC)"; \
 				else \
-					echo -e "$(RED)❌ Rust output missing: $$in$(NC)"; exit 1; \
+					echo -e "$(RED)❌ WASM-JS output missing: $$in$(NC)"; exit 1; \
 				fi; \
 			done; \
 		else \
-			echo -e "$(YELLOW)⚠️  cargo not found, skipping Rust WASM samples / 未找到cargo，跳过Rust WASM示例$(NC)"; \
+			echo -e "$(YELLOW)⚠️  cargo not found, skipping WASM-JS samples / 未找到cargo，跳过WASM-JS示例$(NC)"; \
 		fi; \
 	fi
 	@echo -e "$(GREEN)✅ Samples build completed / 示例构建完成$(NC)"
@@ -435,7 +437,23 @@ e2e-linux:
 SAMPLES_DIR := samples/wasm-c
 SAMPLES_BUILD := samples/build
 SAMPLES_CFLAGS ?=
-SAMPLES_RUST_DIR := samples/wasm-rust
-SAMPLES_RUST_BUILD := $(SAMPLES_BUILD)/rust
-RUST_SAMPLES ?= chat_completion chat_completion_tool_sum
-BUILD_RUST_SAMPLES ?= 1
+SAMPLES_JS_DIR ?= samples/wasm-js
+SAMPLES_JS_BUILD ?= $(SAMPLES_BUILD)/js
+JS_SAMPLES ?= chat_completion chat_completion_tool_sum
+BUILD_JS_SAMPLES ?= 1
+SAMPLES_RUST_DIR ?= $(SAMPLES_JS_DIR)
+SAMPLES_RUST_BUILD ?= $(SAMPLES_BUILD)/rust
+RUST_SAMPLES ?= $(JS_SAMPLES)
+BUILD_RUST_SAMPLES ?= $(BUILD_JS_SAMPLES)
+
+ifeq ($(origin JS_SAMPLES), file)
+ifeq ($(origin RUST_SAMPLES), command line)
+JS_SAMPLES := $(RUST_SAMPLES)
+endif
+endif
+
+ifeq ($(origin BUILD_JS_SAMPLES), file)
+ifeq ($(origin BUILD_RUST_SAMPLES), command line)
+BUILD_JS_SAMPLES := $(BUILD_RUST_SAMPLES)
+endif
+endif

@@ -76,7 +76,7 @@ Add `sdk/rust/` and organize it as multiple crates (workspace style) to keep con
   - map `spear-wasm` to JS-friendly APIs (Promise, options objects)
   - maintain tool handler registry (JS tool handler table)
 
-4) Samples (`samples/wasm-rust/*`) (WASI executables)
+4) Samples (`samples/wasm-js/*`) (JS-first; built as WASI executables via a Boa JS runner)
 - A small runner binary that:
   - loads user JS (embedded or via WASI allowed dirs)
   - creates Boa `Context`
@@ -344,18 +344,18 @@ To better match JS ecosystem expectations, consider adding these hostcalls later
   - extend existing approach (see `tests/wasm_openai_e2e_tests.rs`) with “Boa runtime + chat completion” e2e
 - Samples:
   - WASM-C: `samples/wasm-c/*`
-  - WASM-Rust (Boa runner): `samples/wasm-rust/chat_completion`, `samples/wasm-rust/chat_completion_tool_sum`
+  - WASM-JS (Boa JS runner): `samples/wasm-js/chat_completion`, `samples/wasm-js/chat_completion_tool_sum`
 
 ## 9. Milestones
 
 M1 (minimum viable)
 - `spear-wasm-sys` + `spear-wasm` wrappers for existing hostcalls
-- A Rust WASI runner sample (`samples/wasm-rust/chat_completion`) runs a single JS file and exposes `Spear.chat.completions.create`
+- A WASM-JS runner sample (`samples/wasm-js/chat_completion`) runs a single JS file (`entry.mjs`) and exposes `Spear.chat.completions.create`
 
 M2 (tool calling)
 - precompiled N tool trampolines + JS `Spear.tool()`
 - `AUTO_TOOL_CALL` works with JS handlers
-  - sample: `samples/wasm-rust/chat_completion_tool_sum`
+  - sample: `samples/wasm-js/chat_completion_tool_sum`
 
 M3 (audio streaming)
 - JS wrappers for `mic`/`rtasr` + `AsyncIterable`

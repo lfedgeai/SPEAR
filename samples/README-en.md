@@ -5,7 +5,7 @@ This directory contains buildable WASM samples (C + Rust) and their build output
 ## Layout
 
 - `wasm-c/`: sample sources (C)
-- `wasm-rust/`: sample sources (Rust)
+- `wasm-js/`: JS-first WASM samples (Boa JS runner compiled to WASM)
 - `build/`: build outputs (`.wasm`)
 
 ## Build
@@ -18,7 +18,7 @@ make samples
 
 The build uses `zig` (`zig cc -target wasm32-wasi`) if available; otherwise it falls back to `clang` + `WASI_SYSROOT`.
 
-Rust samples are built with `cargo` for `wasm32-wasip1` (and are copied into `build/rust/`).
+WASM-JS samples are built with `cargo` for `wasm32-wasip1` (primary output: `build/js/`, compatibility copy: `build/rust/`).
 
 ## Samples
 
@@ -28,12 +28,12 @@ Rust samples are built with `cargo` for `wasm32-wasip1` (and are copied into `bu
 - `mic_rtasr.c`: mic + realtime ASR sample
 - `mcp_fs.c`: MCP filesystem (stdio) tool injection + execution sample
 
-## Rust samples
+## JS samples (Boa JS runner compiled to WASM)
 
-- `wasm-rust/chat_completion`: Chat Completion via Boa JS runtime
-  - Output: `./build/rust/chat_completion.wasm`
-- `wasm-rust/chat_completion_tool_sum`: Tool calling (sum) via Boa JS runtime
-  - Output: `./build/rust/chat_completion_tool_sum.wasm`
+- `wasm-js/chat_completion`: executes `entry.mjs` via Boa JS runtime and calls Chat Completion
+  - Output: `./build/js/chat_completion.wasm`
+- `wasm-js/chat_completion_tool_sum`: executes `entry.mjs` via Boa JS runtime for tool calling (sum)
+  - Output: `./build/js/chat_completion_tool_sum.wasm`
 
 ## MCP sample (mcp_fs)
 

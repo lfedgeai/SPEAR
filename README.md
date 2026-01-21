@@ -125,7 +125,7 @@ Docs:
 make samples
 ```
 
-Artifacts are written to `samples/build/` (C) and `samples/build/rust/` (Rust).
+Artifacts are written to `samples/build/` (C) and `samples/build/js/` (WASM-JS, compat: `samples/build/rust/`).
 
 Docs:
 

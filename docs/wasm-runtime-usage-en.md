@@ -1,10 +1,15 @@
 # WASM Runtime Usage
 
 ## Overview
-The Spearlet WASM runtime requires a valid WASM binary at instance creation. If the provided bytes are not a valid WASM module, the runtime returns `InvalidConfiguration: "Invalid WASM module format"` immediately.
+The Spearlet WASM runtime requires a valid WASM binary at instance creation. If the module bytes are invalid (e.g. missing the WASM magic header), the runtime returns `InvalidConfiguration` and refuses to create the instance.
+
+## Lifecycle Notes
+- `create_instance`: downloads module bytes, validates the WASM magic header, loads the module, and creates the instance handle
+- `start_instance`: moves the instance into a serving state; when built with `wasmedge`, starts the WASM worker
+- `stop_instance`: sends a Stop control request and waits for an ack to ensure the worker exits
 
 ## Instantiation Requirements
-- Instance configuration must resolve module bytes via `InstanceConfig.runtime_config["module_bytes"]` or by downloading from the task `executable.uri`.
+- Instance configuration must resolve module bytes by downloading from `InstanceConfig.artifact.location` (derived from the task `executable.uri` during artifact/task materialization).
 - Module bytes must start with the WASM magic number `00 61 73 6d` (`\0asm`).
 - Empty or invalid content causes `create_instance` to fail.
 
@@ -28,7 +33,8 @@ The Spearlet WASM runtime requires a valid WASM binary at instance creation. If 
   }
 }
 ```
-- The runtime downloads content from `executable.uri` and validates the module format in `create_wasm_instance`.
+- The runtime downloads content from the artifact `location` during `create_instance`, validates the WASM magic header before loading, and then creates the WASM instance handle.
+- When built with the `wasmedge` feature enabled, `start_instance` starts a WASM worker that receives and executes subsequent invocation requests.
 
 ### SMS File Scheme and Config Source
 

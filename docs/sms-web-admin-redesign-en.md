@@ -397,7 +397,7 @@ Use right-side Drawer or standalone route (prefer `#/nodes/:uuid` for deep linki
 
 #### 3.2.4 Tasks
 
-- List: status/priority/execution kind/target node/last result
+- List: status/priority/target node/last result
 - Detail:
   - Spec (endpoint/version/capabilities)
   - Executable (type/uri/name/args/env)

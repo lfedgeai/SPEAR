@@ -6,7 +6,7 @@ mod tests {
 
     use crate::proto::sms::{
         task_service_server::TaskService as TaskServiceTrait, RegisterTaskRequest,
-        SubscribeTaskEventsRequest, TaskExecutionKind, TaskPriority,
+        SubscribeTaskEventsRequest, TaskPriority,
     };
     use crate::sms::config::SmsConfig;
     use crate::sms::service::SmsServiceImpl;
@@ -25,7 +25,6 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             config: std::collections::HashMap::new(),
             executable: None,
-            execution_kind: TaskExecutionKind::ShortRunning as i32,
         }
     }
 

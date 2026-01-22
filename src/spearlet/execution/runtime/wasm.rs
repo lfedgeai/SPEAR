@@ -162,16 +162,22 @@ pub struct WasmInstanceHandle {
     pub state: Arc<Mutex<WasmInstanceState>>,
     /// Execution statistics / 执行统计
     pub execution_stats: Arc<Mutex<WasmExecutionStats>>,
-    pub req_tx: std::sync::mpsc::Sender<ExecRequest>,
+    pub req_tx: std::sync::mpsc::Sender<WasmWorkerRequest>,
+    pub req_rx: Arc<Mutex<Option<std::sync::mpsc::Receiver<WasmWorkerRequest>>>>,
     pub exec_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Debug)]
-pub struct ExecRequest {
-    function_name: String,
-    timeout_ms: Option<u64>,
-    context_data: std::collections::HashMap<String, serde_json::Value>,
-    reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
+pub enum WasmWorkerRequest {
+    Invoke {
+        function_name: String,
+        timeout_ms: Option<u64>,
+        context_data: std::collections::HashMap<String, serde_json::Value>,
+        reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
+    },
+    Stop {
+        reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
+    },
 }
 
 /// WASM instance state / WASM 实例状态
@@ -303,7 +309,7 @@ impl WasmRuntime {
     async fn create_wasm_instance(
         &self,
         module_handle: WasmModuleHandle,
-        instance_config: &InstanceConfig,
+        _instance_config: &InstanceConfig,
     ) -> ExecutionResult<WasmInstanceHandle> {
         let instance_id = uuid::Uuid::new_v4().to_string();
 
@@ -316,104 +322,128 @@ impl WasmRuntime {
             current_function: None,
         };
 
-        #[cfg(feature = "wasmedge")]
-        let (req_tx, req_rx) = std::sync::mpsc::channel::<ExecRequest>();
-        #[cfg(feature = "wasmedge")]
-        {
-            use std::collections::HashMap;
-            use wasmedge_sdk::Store;
-            let c = ConfigBuilder::new(CommonConfigOptions::default().threads(true))
-                .build()
-                .map_err(|e| ExecutionError::RuntimeError {
-                    message: format!("wasmedge config error: {}", e),
-                })?;
-            let bytes = if module_handle
-                .module_bytes
-                .starts_with(&[0x00, 0x61, 0x73, 0x6d])
-            {
-                module_handle.module_bytes.clone()
-            } else {
-                return Err(ExecutionError::InvalidConfiguration {
-                    message: "Invalid WASM module format".to_string(),
-                });
-            };
-            let runtime_config = self.runtime_config.clone();
-            let handle_module_name = module_handle.module_name.clone();
-            let task_id = instance_config.task_id.clone();
-            let task_policy = std::sync::Arc::new(
-                crate::spearlet::mcp::task_subset::parse_task_config(&instance_config.task_config),
-            );
-            std::thread::spawn(move || {
-                use wasmedge_sys::AsInstance;
-
-                let mut wasi_module = WasiModule::create(None, None, None).unwrap();
-                let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
-                instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());
-
-                let mut spear_import = build_spear_import_with_api(
-                    runtime_config,
-                    task_id.clone(),
-                    task_policy.clone(),
-                )
-                .unwrap();
-                let spear_name = "spear".to_string();
-                let spear_inst: &mut dyn SyncInst = &mut spear_import;
-                instances.insert(spear_name, spear_inst);
-
-                let store = Store::new(Some(&c), instances).unwrap();
-                let mut vm = Vm::new(store);
-                let module = Module::from_bytes(None, &bytes).unwrap();
-                vm.register_module(Some(&handle_module_name), module)
-                    .unwrap();
-                while let Ok(r) = req_rx.recv() {
-                    if r.function_name == "__stop__" {
-                        let _ = r.reply_tx.send(Ok(Vec::new()));
-                        break;
-                    }
-                    let res = {
-                        let out = if let Some(_timeout_ms) = r.timeout_ms {
-                            #[cfg(all(target_os = "linux", not(target_env = "musl")))]
-                            {
-                                vm.run_func_with_timeout(
-                                    Some(&handle_module_name),
-                                    &r.function_name,
-                                    params!(),
-                                    std::time::Duration::from_millis(_timeout_ms),
-                                )
-                            }
-                            #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
-                            {
-                                let _ = _timeout_ms;
-                                vm.run_func(Some(&handle_module_name), &r.function_name, params!())
-                            }
-                        } else {
-                            vm.run_func(Some(&handle_module_name), &r.function_name, params!())
-                        };
-
-                        match out {
-                            Ok(values) => Ok(format!("{:?}", values).into_bytes()),
-                            Err(e) => Err(ExecutionError::RuntimeError {
-                                message: format!("wasmedge exec error: {}", e),
-                            }),
-                        }
-                    };
-                    let _ = r.reply_tx.send(res);
-                }
-            });
-        }
+        let (req_tx, req_rx) = std::sync::mpsc::channel::<WasmWorkerRequest>();
 
         let instance_handle = WasmInstanceHandle {
             instance_id,
             module_handle,
             state: Arc::new(Mutex::new(state)),
             execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
-            #[cfg(feature = "wasmedge")]
             req_tx,
-            #[cfg(feature = "wasmedge")]
+            req_rx: Arc::new(Mutex::new(Some(req_rx))),
             exec_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
 
         Ok(instance_handle)
+    }
+
+    #[cfg(feature = "wasmedge")]
+    async fn maybe_start_wasm_worker(
+        &self,
+        instance: &Arc<TaskInstance>,
+        wasm_handle: &Arc<WasmInstanceHandle>,
+    ) -> ExecutionResult<()> {
+        let req_rx = wasm_handle.req_rx.lock().await.take();
+        let Some(req_rx) = req_rx else {
+            return Ok(());
+        };
+
+        use std::collections::HashMap;
+        use wasmedge_sdk::Store;
+
+        let c = ConfigBuilder::new(CommonConfigOptions::default().threads(true))
+            .build()
+            .map_err(|e| ExecutionError::RuntimeError {
+                message: format!("wasmedge config error: {}", e),
+            })?;
+
+        let bytes = if wasm_handle
+            .module_handle
+            .module_bytes
+            .starts_with(&[0x00, 0x61, 0x73, 0x6d])
+        {
+            wasm_handle.module_handle.module_bytes.clone()
+        } else {
+            return Err(ExecutionError::InvalidConfiguration {
+                message: "Invalid WASM module format".to_string(),
+            });
+        };
+
+        let runtime_config = self.runtime_config.clone();
+        let handle_module_name = wasm_handle.module_handle.module_name.clone();
+        let task_id = instance.task_id.clone();
+        let task_policy = std::sync::Arc::new(
+            crate::spearlet::mcp::task_subset::parse_task_config(&instance.config.task_config),
+        );
+
+        std::thread::spawn(move || {
+            let mut wasi_module = WasiModule::create(None, None, None).unwrap();
+            let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
+            instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());
+
+            let mut spear_import =
+                build_spear_import_with_api(runtime_config, task_id.clone(), task_policy.clone())
+                    .unwrap();
+            let spear_name = "spear".to_string();
+            let spear_inst: &mut dyn SyncInst = &mut spear_import;
+            instances.insert(spear_name, spear_inst);
+
+            let store = Store::new(Some(&c), instances).unwrap();
+            let mut vm = Vm::new(store);
+            let module = Module::from_bytes(None, &bytes).unwrap();
+            vm.register_module(Some(&handle_module_name), module)
+                .unwrap();
+
+            while let Ok(r) = req_rx.recv() {
+                match r {
+                    WasmWorkerRequest::Stop { reply_tx } => {
+                        let _ = reply_tx.send(Ok(Vec::new()));
+                        break;
+                    }
+                    WasmWorkerRequest::Invoke {
+                        function_name,
+                        timeout_ms,
+                        context_data: _,
+                        reply_tx,
+                    } => {
+                        let res = {
+                            let out = if let Some(_timeout_ms) = timeout_ms {
+                                #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+                                {
+                                    vm.run_func_with_timeout(
+                                        Some(&handle_module_name),
+                                        &function_name,
+                                        params!(),
+                                        std::time::Duration::from_millis(_timeout_ms),
+                                    )
+                                }
+                                #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
+                                {
+                                    let _ = _timeout_ms;
+                                    vm.run_func(
+                                        Some(&handle_module_name),
+                                        &function_name,
+                                        params!(),
+                                    )
+                                }
+                            } else {
+                                vm.run_func(Some(&handle_module_name), &function_name, params!())
+                            };
+
+                            match out {
+                                Ok(values) => Ok(format!("{:?}", values).into_bytes()),
+                                Err(e) => Err(ExecutionError::RuntimeError {
+                                    message: format!("wasmedge exec error: {}", e),
+                                }),
+                            }
+                        };
+                        let _ = reply_tx.send(res);
+                    }
+                }
+            }
+        });
+
+        Ok(())
     }
 
     /// Execute WASM function / 执行 WASM 函数
@@ -444,7 +474,7 @@ impl WasmRuntime {
                 state.current_function = Some(function_name.to_string());
             }
             let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
-            let req = ExecRequest {
+            let req = WasmWorkerRequest::Invoke {
                 function_name: function_name.to_string(),
                 timeout_ms,
                 context_data: context_data.clone(),
@@ -683,6 +713,15 @@ impl Runtime for WasmRuntime {
     async fn start_instance(&self, instance: &Arc<TaskInstance>) -> ExecutionResult<()> {
         debug!("WasmRuntime::start_instance instance_id={}", instance.id());
         // WASM instance is ready to execute when created / WASM 实例在创建时就准备好执行
+        #[cfg(feature = "wasmedge")]
+        {
+            let wasm_handle = instance
+                .get_runtime_handle::<WasmInstanceHandle>()
+                .ok_or_else(|| ExecutionError::RuntimeError {
+                    message: "No WASM instance handle found".to_string(),
+                })?;
+            self.maybe_start_wasm_worker(instance, &wasm_handle).await?;
+        }
         instance.set_status(InstanceStatus::Running);
         Ok(())
     }
@@ -691,20 +730,35 @@ impl Runtime for WasmRuntime {
         debug!("WasmRuntime::stop_instance instance_id={}", instance.id());
         instance.set_status(InstanceStatus::Stopping);
 
+        #[cfg(not(feature = "wasmedge"))]
+        {
+            instance.set_status(InstanceStatus::Stopped);
+            return Ok(());
+        }
+
         let wasm_handle = instance
             .get_runtime_handle::<WasmInstanceHandle>()
             .ok_or_else(|| ExecutionError::RuntimeError {
                 message: "No WASM instance handle found".to_string(),
             })?;
 
+        let mut rx_guard = wasm_handle.req_rx.lock().await;
+        if rx_guard.is_some() {
+            let _ = rx_guard.take();
+            drop(rx_guard);
+            {
+                let mut state = wasm_handle.state.lock().await;
+                state.is_running = false;
+                state.current_function = None;
+            }
+            instance.set_status(InstanceStatus::Stopped);
+            return Ok(());
+        }
+        drop(rx_guard);
+
         let _g = wasm_handle.exec_lock.lock().await;
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
-        let req = ExecRequest {
-            function_name: "__stop__".to_string(),
-            timeout_ms: None,
-            context_data: std::collections::HashMap::new(),
-            reply_tx: tx,
-        };
+        let req = WasmWorkerRequest::Stop { reply_tx: tx };
         wasm_handle
             .req_tx
             .send(req)
@@ -740,6 +794,9 @@ impl Runtime for WasmRuntime {
             .ok_or_else(|| ExecutionError::RuntimeError {
                 message: "No WASM instance handle found".to_string(),
             })?;
+
+        #[cfg(feature = "wasmedge")]
+        self.maybe_start_wasm_worker(instance, &wasm_handle).await?;
 
         let function_name = if context.function_name.is_empty()
             || context.function_name == DEFAULT_ENTRY_FUNCTION_NAME
@@ -784,7 +841,7 @@ impl Runtime for WasmRuntime {
             }
 
             let (tx, _rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
-            let req = ExecRequest {
+            let req = WasmWorkerRequest::Invoke {
                 function_name: function_name.clone(),
                 timeout_ms: None,
                 context_data: context.context_data.clone(),
@@ -1344,16 +1401,18 @@ mod wasm_runtime_tests {
             current_function: None,
         };
 
-        let (tx, rx) = std::sync::mpsc::channel::<ExecRequest>();
+        let (tx, rx) = std::sync::mpsc::channel::<WasmWorkerRequest>();
         std::thread::spawn(move || loop {
             match rx.recv() {
-                Ok(r) => {
-                    if r.function_name == "__stop__" {
-                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                Ok(r) => match r {
+                    WasmWorkerRequest::Stop { reply_tx } => {
+                        let _ = reply_tx.send(Ok(Vec::new()));
                         break;
                     }
-                    let _ = r.reply_tx.send(Ok(b"[]".to_vec()));
-                }
+                    WasmWorkerRequest::Invoke { reply_tx, .. } => {
+                        let _ = reply_tx.send(Ok(b"[]".to_vec()));
+                    }
+                },
                 Err(_) => break,
             }
         });
@@ -1364,6 +1423,7 @@ mod wasm_runtime_tests {
             state: Arc::new(Mutex::new(state)),
             execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
             req_tx: tx,
+            req_rx: Arc::new(Mutex::new(None)),
             exec_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
 
@@ -1409,17 +1469,19 @@ mod wasm_runtime_tests {
             current_function: None,
         };
 
-        let (tx, rx) = std::sync::mpsc::channel::<ExecRequest>();
+        let (tx, rx) = std::sync::mpsc::channel::<WasmWorkerRequest>();
         std::thread::spawn(move || loop {
             match rx.recv() {
-                Ok(r) => {
-                    if r.function_name == "__stop__" {
-                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                Ok(r) => match r {
+                    WasmWorkerRequest::Stop { reply_tx } => {
+                        let _ = reply_tx.send(Ok(Vec::new()));
                         break;
                     }
-                    std::thread::sleep(Duration::from_millis(150));
-                    let _ = r.reply_tx.send(Ok(Vec::new()));
-                }
+                    WasmWorkerRequest::Invoke { reply_tx, .. } => {
+                        std::thread::sleep(Duration::from_millis(150));
+                        let _ = reply_tx.send(Ok(Vec::new()));
+                    }
+                },
                 Err(_) => break,
             }
         });
@@ -1430,6 +1492,7 @@ mod wasm_runtime_tests {
             state: Arc::new(Mutex::new(state)),
             execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
             req_tx: tx,
+            req_rx: Arc::new(Mutex::new(None)),
             exec_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
 
@@ -1481,16 +1544,18 @@ mod wasm_runtime_tests {
             is_running: false,
             current_function: None,
         };
-        let (tx, rx) = std::sync::mpsc::channel::<ExecRequest>();
+        let (tx, rx) = std::sync::mpsc::channel::<WasmWorkerRequest>();
         std::thread::spawn(move || loop {
             match rx.recv() {
-                Ok(r) => {
-                    if r.function_name == "__stop__" {
-                        let _ = r.reply_tx.send(Ok(Vec::new()));
+                Ok(r) => match r {
+                    WasmWorkerRequest::Stop { reply_tx } => {
+                        let _ = reply_tx.send(Ok(Vec::new()));
                         break;
                     }
-                    let _ = r.reply_tx.send(Ok(Vec::new()));
-                }
+                    WasmWorkerRequest::Invoke { reply_tx, .. } => {
+                        let _ = reply_tx.send(Ok(Vec::new()));
+                    }
+                },
                 Err(_) => break,
             }
         });
@@ -1500,6 +1565,7 @@ mod wasm_runtime_tests {
             state: Arc::new(Mutex::new(state)),
             execution_stats: Arc::new(Mutex::new(WasmExecutionStats::default())),
             req_tx: tx,
+            req_rx: Arc::new(Mutex::new(None)),
             exec_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
         instance.set_runtime_handle(Arc::new(handle));

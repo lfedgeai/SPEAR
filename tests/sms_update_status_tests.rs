@@ -25,7 +25,6 @@ async fn test_update_task_status_persists_and_returns_updated_task() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
-        execution_kind: spear_next::proto::sms::TaskExecutionKind::ShortRunning as i32,
     };
     let resp = svc
         .register_task(Request::new(req))

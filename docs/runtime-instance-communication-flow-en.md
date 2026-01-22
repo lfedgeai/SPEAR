@@ -45,6 +45,7 @@ In spear-next, the process of runtime creating task instances and obtaining comm
 
 3. **Execution Path Constraint**
    - `execute_request` only supports invoking existing tasks; it does not create artifacts or tasks.
+   - If the task is missing locally on the target node, Spearlet fetches it from SMS on-demand and materializes it before executing (see `TaskExecutionManager::fetch_and_materialize_task_from_sms`).
 
 ### Phase 2: Instance Creation and Startup
 
@@ -71,6 +72,7 @@ In spear-next, the process of runtime creating task instances and obtaining comm
 
        // Start the instance
        runtime.start_instance(&instance).await?;
+       // Note: semantics are runtime-specific (e.g. ProcessRuntime spawns a process; WasmRuntime may start a worker thread when built with wasmedge)
 
        // Register instance
        self.instances.insert(instance_id.clone(), instance.clone());

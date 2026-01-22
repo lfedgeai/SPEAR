@@ -398,7 +398,7 @@ Dashboard 的定位：提供“可行动”的全局总览，而不是替代监�
 
 #### 3.2.4 Tasks
 
-- 列表：状态/优先级/执行类型/目标节点/最近一次结果
+- 列表：状态/优先级/目标节点/最近一次结果
 - 详情：
   - Spec（endpoint/version/capabilities）
   - Executable（type/uri/name/args/env）

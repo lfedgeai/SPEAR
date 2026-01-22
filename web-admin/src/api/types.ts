@@ -74,8 +74,6 @@ export type TaskSummary = {
   endpoint: string
   /** Task version / 任务版本 */
   version: string
-  /** Execution kind / 执行类型 */
-  execution_kind?: string
   /** Executable type / 可执行类型 */
   executable_type?: string
   /** Executable URI / 可执行 URI */

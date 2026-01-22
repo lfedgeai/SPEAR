@@ -42,8 +42,6 @@ export type CreateTaskPayload = {
   description?: string
   /** Task priority (optional) / 任务优先级（可选） */
   priority?: string
-  /** Execution kind (optional) / 执行类型（可选） */
-  execution_kind?: 'short_running' | 'long_running'
   /** Target node uuid (optional) / 目标节点 uuid（可选） */
   node_uuid?: string
   /** Task endpoint / 任务端点 */
@@ -89,9 +87,6 @@ export function createTask(payload: CreateTaskPayload) {
         endpoint: payload.endpoint,
         version: payload.version,
         capabilities: payload.capabilities,
-        metadata: payload.execution_kind
-          ? { execution_kind: payload.execution_kind }
-          : undefined,
         config: payload.config,
         executable: payload.executable,
       }),

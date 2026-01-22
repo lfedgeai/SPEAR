@@ -18,7 +18,6 @@ struct StoredEvent {
     node_uuid: String,
     task_id: String,
     kind: i32,
-    execution_kind: i32,
     #[serde(default)]
     execution_id: Option<String>,
 }
@@ -95,7 +94,6 @@ impl TaskEventBus {
                             node_uuid: se.node_uuid,
                             task_id: se.task_id,
                             kind: se.kind,
-                            execution_kind: se.execution_kind,
                             execution_id: se.execution_id,
                         };
                         events.push(ev);
@@ -126,12 +124,6 @@ impl TaskEventBus {
     async fn publish(&self, task: &Task, kind: TaskEventKind) -> Result<TaskEvent, SmsError> {
         let node_uuid = task.node_uuid.clone();
         let id = self.next_id(&node_uuid).await;
-        let ek_val =
-            if task.execution_kind == crate::proto::sms::TaskExecutionKind::LongRunning as i32 {
-                crate::proto::sms::TaskExecutionKind::LongRunning as i32
-            } else {
-                crate::proto::sms::TaskExecutionKind::ShortRunning as i32
-            };
         let execution_id = if kind == TaskEventKind::Create {
             Some(format!("task-event-{}-{}", node_uuid, id))
         } else {
@@ -144,7 +136,6 @@ impl TaskEventBus {
             node_uuid: node_uuid.clone(),
             task_id: task.task_id.clone(),
             kind: kind as i32,
-            execution_kind: ek_val,
             execution_id,
         };
         let key = format!("{}{}:{}", OUTBOX_PREFIX, node_uuid, id);
@@ -154,7 +145,6 @@ impl TaskEventBus {
             node_uuid: ev.node_uuid.clone(),
             task_id: ev.task_id.clone(),
             kind: ev.kind,
-            execution_kind: ek_val,
             execution_id: ev.execution_id.clone(),
         };
         let val = serialization::serialize(&se)?;

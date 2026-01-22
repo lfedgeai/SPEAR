@@ -982,20 +982,8 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
         .tasks
         .into_iter()
         .map(|t| {
-            let status = match t.status {
-                1 => "registered",
-                2 => "active",
-                3 => "inactive",
-                4 => "unregistered",
-                _ => "unknown",
-            };
-            let priority = match t.priority {
-                1 => "low",
-                2 => "normal",
-                3 => "high",
-                4 => "urgent",
-                _ => "unknown",
-            };
+            let status = crate::sms::task_status_to_public_str(t.status);
+            let priority = crate::sms::task_priority_to_public_str(t.priority);
             let (exec_type, exec_uri, exec_name) = if let Some(exec) = t.executable {
                 let et = match exec.r#type {
                     1 => "binary",
@@ -1008,15 +996,6 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
                 (et.to_string(), exec.uri, exec.name)
             } else {
                 (String::new(), String::new(), String::new())
-            };
-            let execution_kind = match t.execution_kind {
-                x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
-                    "long_running".to_string()
-                }
-                x if x == crate::proto::sms::TaskExecutionKind::ShortRunning as i32 => {
-                    "short_running".to_string()
-                }
-                _ => "short_running".to_string(),
             };
             json!({
                 "task_id": t.task_id,
@@ -1032,7 +1011,6 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
                 "last_heartbeat": t.last_heartbeat,
                 "metadata": t.metadata,
                 "config": t.config,
-                "execution_kind": execution_kind,
                 "executable_type": exec_type,
                 "executable_uri": exec_uri,
                 "executable_name": exec_name,
@@ -1169,17 +1147,6 @@ async fn create_task(
         metadata: meta.clone(),
         config: body.config.unwrap_or_default(),
         executable: exe,
-        execution_kind: {
-            let ek = meta
-                .get("execution_kind")
-                .cloned()
-                .unwrap_or_else(|| "short_running".to_string());
-            if ek.to_lowercase() == "long_running" {
-                crate::proto::sms::TaskExecutionKind::LongRunning as i32
-            } else {
-                crate::proto::sms::TaskExecutionKind::ShortRunning as i32
-            }
-        },
     };
     let mut client = state.task_client.clone();
     let resp = client.register_task(tonic::Request::new(req)).await;
@@ -1205,20 +1172,8 @@ async fn get_task_detail(
         Ok(r) => {
             let inner = r.into_inner();
             if let Some(t) = inner.task {
-                let status = match t.status {
-                    1 => "registered",
-                    2 => "active",
-                    3 => "inactive",
-                    4 => "unregistered",
-                    _ => "unknown",
-                };
-                let priority = match t.priority {
-                    1 => "low",
-                    2 => "normal",
-                    3 => "high",
-                    4 => "urgent",
-                    _ => "unknown",
-                };
+                let status = crate::sms::task_status_to_public_str(t.status);
+                let priority = crate::sms::task_priority_to_public_str(t.priority);
                 let (exec_type, exec_uri, exec_name, exec_sum, exec_args, exec_env) =
                     if let Some(exec) = t.executable {
                         let et = match exec.r#type {
@@ -1247,15 +1202,6 @@ async fn get_task_detail(
                             std::collections::HashMap::new(),
                         )
                     };
-                let execution_kind = match t.execution_kind {
-                    x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
-                        "long_running".to_string()
-                    }
-                    x if x == crate::proto::sms::TaskExecutionKind::ShortRunning as i32 => {
-                        "short_running".to_string()
-                    }
-                    _ => "short_running".to_string(),
-                };
                 Json(json!({
                     "found": true,
                     "task": {
@@ -1272,7 +1218,6 @@ async fn get_task_detail(
                         "last_heartbeat": t.last_heartbeat,
                         "metadata": t.metadata,
                         "config": t.config,
-                        "execution_kind": execution_kind,
                         "executable_type": exec_type,
                         "executable_uri": exec_uri,
                         "executable_name": exec_name,

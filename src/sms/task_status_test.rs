@@ -4,7 +4,7 @@ use tonic::Request;
 use crate::config::base::StorageConfig;
 use crate::proto::sms::{
     task_service_server::TaskService as TaskServiceTrait, GetTaskRequest, RegisterTaskRequest,
-    TaskExecutionKind, TaskPriority, TaskStatus, UpdateTaskStatusRequest,
+    TaskPriority, TaskStatus, UpdateTaskStatusRequest,
 };
 use crate::sms::service::SmsServiceImpl;
 use uuid::Uuid;
@@ -35,7 +35,6 @@ async fn test_update_task_status_active_then_inactive() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
-        execution_kind: TaskExecutionKind::ShortRunning as i32,
     };
     let resp = TaskServiceTrait::register_task(&sms_service, Request::new(req))
         .await
@@ -44,11 +43,11 @@ async fn test_update_task_status_active_then_inactive() {
 
     let update_req = UpdateTaskStatusRequest {
         task_id: task_id.clone(),
-        status: TaskStatus::Created as i32,
+        status: TaskStatus::Registered as i32,
         node_uuid: Uuid::new_v4().to_string(),
         status_version: 1,
         updated_at: chrono::Utc::now().timestamp(),
-        reason: "created".to_string(),
+        reason: "registered".to_string(),
     };
     let update_resp = TaskServiceTrait::update_task_status(&sms_service, Request::new(update_req))
         .await
@@ -64,7 +63,7 @@ async fn test_update_task_status_active_then_inactive() {
     .await
     .unwrap();
     let task = get_resp.get_ref().task.as_ref().unwrap();
-    assert_eq!(task.status, TaskStatus::Created as i32);
+    assert_eq!(task.status, TaskStatus::Registered as i32);
 
     let update_req2 = UpdateTaskStatusRequest {
         task_id: task_id.clone(),
@@ -150,7 +149,6 @@ async fn test_register_task_sets_registered_status() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
-        execution_kind: TaskExecutionKind::ShortRunning as i32,
     };
     let resp = TaskServiceTrait::register_task(&sms_service, Request::new(req))
         .await

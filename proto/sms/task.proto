@@ -8,8 +8,6 @@ enum TaskStatus {
   TASK_STATUS_REGISTERED = 1;   // Task is registered / 任务已注册
   TASK_STATUS_ACTIVE = 2;       // Task is active / 任务活跃
   TASK_STATUS_INACTIVE = 3;     // Task is inactive / 任务非活跃
-  TASK_STATUS_UNREGISTERED = 4; // Task is unregistered / 任务已注销
-  TASK_STATUS_CREATED = 5;      // Task is created (post-registration) / 任务已创建（注册后）
 }
 
 // Task priority enumeration / 任务优先级枚举
@@ -62,7 +60,6 @@ message Task {
   string last_result_status = 17;        // Status of the last execution (completed/failed) / 最近一次执行状态（completed/failed）
   int64 last_completed_at = 18;          // Timestamp of last completion / 最近一次完成时间戳
   map<string, string> last_result_metadata = 19; // Metadata of last result / 最近一次结果的元数据
-  TaskExecutionKind execution_kind = 20;   // Execution kind / 执行类型
 }
 
 // Task registration request / 任务注册请求
@@ -77,7 +74,6 @@ message RegisterTaskRequest {
   map<string, string> metadata = 8;      // Additional task metadata / 额外任务元数据
   map<string, string> config = 9;        // Task configuration / 任务配置
   TaskExecutable executable = 10;        // Executable descriptor / 可执行描述
-  TaskExecutionKind execution_kind = 11; // Execution kind (optional) / 执行类型（可选）
 }
 
 // Task registration response / 任务注册响应
@@ -103,7 +99,6 @@ message TaskEvent {
   string node_uuid = 3;         // Target node UUID / 目标节点UUID
   string task_id = 4;           // Task ID / 任务ID
   TaskEventKind kind = 5;       // Event kind / 事件类型
-  TaskExecutionKind execution_kind = 6;    // Execution kind / 执行类型
   optional string execution_id = 7;         // Optional execution identifier / 可选的执行标识符
 }
 
@@ -210,10 +205,4 @@ message UpdateTaskResultResponse {
   bool success = 1;                // Whether update succeeded / 更新是否成功
   string message = 2;              // Response message / 响应消息
   Task task = 3;                   // Updated task / 已更新任务
-}
-// Execution kind enum / 执行类型枚举
-enum TaskExecutionKind {
-  TASK_EXECUTION_KIND_UNKNOWN = 0;
-  TASK_EXECUTION_KIND_LONG_RUNNING = 1;
-  TASK_EXECUTION_KIND_SHORT_RUNNING = 2;
 }

@@ -40,15 +40,6 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
    - “Allowed” servers map to `Task.config["mcp.allowed_server_ids"]` (upper bound)
    - Tool filters map to `Task.config["mcp.tool_allowlist"]` / `["mcp.tool_denylist"]`
 
-### Execution Kind
-
-- Option: `Short Running | Long Running`
-- Mapping: sent via `metadata.execution_kind` in `POST /admin/api/tasks`
-- Policy:
-  - `Short Running` supports ExistingTask invocation
-  - `Long Running` is created via SMS events; invoking as ExistingTask is rejected by policy
-- Table: Tasks list shows `Exec Kind` column reflecting the server response
-
 ## Backends
 
 - List supports search and availability filtering

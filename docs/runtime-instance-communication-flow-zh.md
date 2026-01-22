@@ -45,6 +45,7 @@
 
 3. **执行路径约束**
    - `execute_request` 仅支持调用已存在任务；不会创建 Artifact 或 Task。
+   - 若目标节点本地缺少该 Task，Spearlet 会在执行前按需从 SMS 拉取并 materialize（见 `TaskExecutionManager::fetch_and_materialize_task_from_sms`）。
 
 ### 阶段 2：Instance 创建和启动
 
@@ -71,6 +72,7 @@
 
        // 启动实例
        runtime.start_instance(&instance).await?;
+       // 注意：语义因 runtime 而异（如 ProcessRuntime 启动进程；WasmRuntime 在启用 wasmedge 时可能启动 worker 线程）
 
        // 注册实例
        self.instances.insert(instance_id.clone(), instance.clone());

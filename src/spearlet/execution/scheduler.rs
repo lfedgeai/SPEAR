@@ -539,7 +539,6 @@ impl InstanceScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::task::ExecutionKind;
     use crate::spearlet::execution::{
         artifact::{Artifact, ArtifactSpec},
         instance::{InstanceConfig, InstanceResourceLimits},
@@ -607,7 +606,6 @@ mod tests {
             scaling_config: Default::default(),
             health_check: Default::default(),
             timeout_config: Default::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
         let task_id = "test-task-id".to_string();
         Arc::new(Task::new(task_id, task_spec))

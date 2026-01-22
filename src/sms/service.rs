@@ -1116,25 +1116,7 @@ impl TaskServiceTrait for SmsServiceImpl {
             last_result_status: String::new(),
             last_completed_at: 0,
             last_result_metadata: std::collections::HashMap::new(),
-            execution_kind: crate::proto::sms::TaskExecutionKind::Unknown as i32,
         };
-        // Derive execution_kind / 解析执行类型
-        task.execution_kind =
-            if req.execution_kind != crate::proto::sms::TaskExecutionKind::Unknown as i32 {
-                req.execution_kind
-            } else {
-                let ek = task
-                    .metadata
-                    .get("execution_kind")
-                    .cloned()
-                    .or_else(|| task.config.get("execution_kind").cloned())
-                    .unwrap_or_else(|| "short_running".to_string());
-                if ek.eq_ignore_ascii_case("long_running") {
-                    crate::proto::sms::TaskExecutionKind::LongRunning as i32
-                } else {
-                    crate::proto::sms::TaskExecutionKind::ShortRunning as i32
-                }
-            };
 
         let mut task_service = self.task_service.write().await;
         match task_service.register_task(task.clone()).await {

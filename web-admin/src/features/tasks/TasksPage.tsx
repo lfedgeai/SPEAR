@@ -33,7 +33,6 @@ type CreateForm = {
   name: string
   description: string
   priority: string
-  execution_kind: 'short_running' | 'long_running'
   node_uuid: string
   endpoint: string
   version: string
@@ -141,7 +140,6 @@ function CreateTaskDialog(props: {
     name: '',
     description: '',
     priority: 'normal',
-    execution_kind: 'short_running',
     node_uuid: '',
     endpoint: '',
     version: 'v1',
@@ -236,20 +234,6 @@ function CreateTaskDialog(props: {
             <option value="normal">normal</option>
             <option value="high">high</option>
             <option value="urgent">urgent</option>
-          </select>
-
-          <select
-            className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
-            value={form.execution_kind}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                execution_kind: e.target.value as CreateForm['execution_kind'],
-              }))
-            }
-          >
-            <option value="short_running">short_running</option>
-            <option value="long_running">long_running</option>
           </select>
 
           <div className="col-span-2">
@@ -700,7 +684,6 @@ function CreateTaskDialog(props: {
                   name: form.name,
                   description: form.description || undefined,
                   priority: form.priority,
-                  execution_kind: form.execution_kind,
                   node_uuid: form.node_uuid || undefined,
                   endpoint: form.endpoint,
                   version: form.version,
@@ -784,9 +767,7 @@ export default function TasksPage() {
   const title = useMemo(() => `Tasks (${rows.length}/${total})`, [rows.length, total])
 
   function runDisabledReason(task: TaskSummary) {
-    const ek = (task.execution_kind || '').toLowerCase()
-    const st = (task.status || '').toLowerCase()
-    if (ek === 'long_running' && st === 'active') return 'Already running'
+    void task
     return null
   }
 

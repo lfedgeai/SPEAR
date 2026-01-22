@@ -68,13 +68,12 @@ Web Admin 将“创建任务（注册 Task）”与“执行任务（调度 + �
 - UI/控制面管理：backend instance 与 `credential_ref`（或 `credential_refs`）的映射
 - secret 值的落地：交由部署系统注入（Kubernetes Secret / Vault Agent / systemd drop-in）
 - 可观测性：仅展示“是否存在/可用”（例如由 spearlet 心跳上报 `HAS_ENV:<ENV_NAME>=true`），不展示值
-  - `execution_kind`（`short_running | long_running`）、`executable_type`、`executable_uri`、`executable_name`
+  - `executable_type`、`executable_uri`、`executable_name`
   - `registered_at`、`last_heartbeat`、`metadata`、`config`
   - `result_uris`、`last_result_uri`、`last_result_status`、`last_completed_at`、`last_result_metadata`
 - `GET /admin/api/tasks/{task_id}` → 返回任务详情（字段同上）
 - `POST /admin/api/tasks` → 创建任务
   - 请求体包含 `name`、`description`、`priority`、`node_uuid`、`endpoint`、`version`、`capabilities`、`metadata`、`config`、可选 `executable`
-  - `metadata.execution_kind` 映射为服务端的 `execution_kind` 枚举
 
 ## 测试
 

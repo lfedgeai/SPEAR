@@ -8,6 +8,7 @@
 |---|---|---|---|
 | System Architecture Diagram | - | - | 架构图：`docs/diagrams/spear-architecture.png` |
 | Project Architecture Overview | [project-architecture-overview-en.md](./project-architecture-overview-en.md) | [project-architecture-overview-zh.md](./project-architecture-overview-zh.md) | 项目架构全面概述 |
+| Task Execution Model | [task-execution-model-en.md](./task-execution-model-en.md) | [task-execution-model-zh.md](./task-execution-model-zh.md) | Task 执行模型与方案 A 约定 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
 | ObjectRef API Removal | [objectref-api-removal-en.md](./objectref-api-removal-en.md) | [objectref-api-removal-zh.md](./objectref-api-removal-zh.md) | ObjectRef API移除文档 |
 
@@ -37,6 +38,7 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Kubernetes Runtime Implementation | [kubernetes-runtime-implementation-en.md](./kubernetes-runtime-implementation-en.md) | [kubernetes-runtime-implementation-zh.md](./kubernetes-runtime-implementation-zh.md) | Kubernetes运行时实现文档 |
+| WASM Runtime Usage | [wasm-runtime-usage-en.md](./wasm-runtime-usage-en.md) | [wasm-runtime-usage-zh.md](./wasm-runtime-usage-zh.md) | WASM 运行时使用与 SMS 文件协议说明 |
 | Execution Mode Support | [execution-mode-support-en.md](./execution-mode-support-en.md) | [execution-mode-support-zh.md](./execution-mode-support-zh.md) | 函数调用执行模式（Sync/Async/Stream）支持 |
 
 ### 🧩 Hostcall API / Hostcall API

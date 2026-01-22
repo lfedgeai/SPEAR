@@ -198,13 +198,8 @@ async fn test_task_lifecycle() {
     // Test 5: Verify task is unregistered / 测试5：验证任务已注销
     let response = server.get(&format!("/api/v1/tasks/{}", task_id)).await;
 
-    // Task should either be not found or have unregistered status / 任务应该不存在或状态为已注销
-    assert!(
-        response.status_code() == 404 || {
-            let task_details: serde_json::Value = response.json();
-            task_details["status"] == "unregistered"
-        }
-    );
+    // Task should be not found / 任务应该不存在
+    assert_eq!(response.status_code(), 404);
 }
 
 #[tokio::test]

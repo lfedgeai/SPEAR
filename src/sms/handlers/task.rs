@@ -15,13 +15,15 @@ use tonic::Request;
 use tracing::{debug, error, info};
 
 use super::common::ErrorResponse;
-use crate::proto::sms::TaskExecutionKind;
 use crate::proto::sms::{
     ExecutableType, GetTaskRequest, ListTasksRequest, RegisterTaskRequest, TaskExecutable,
-    TaskPriority, TaskStatus, UnregisterTaskRequest,
+    TaskPriority, UnregisterTaskRequest,
 };
 use crate::sms::gateway::GatewayState;
-use crate::sms::FilterState;
+use crate::sms::{
+    parse_task_priority_public_str, parse_task_status_public_str, task_priority_to_public_str,
+    task_status_to_public_str, FilterState,
+};
 
 // HTTP request/response types / HTTP请求/响应类型
 
@@ -52,7 +54,7 @@ pub struct TaskExecutableParams {
 #[derive(Debug, Deserialize)]
 pub struct ListTasksParams {
     pub node_uuid: Option<String>,
-    pub status: Option<String>, // "unknown", "registered", "active", "inactive", "unregistered"
+    pub status: Option<String>, // "unknown", "registered", "active", "inactive"
     pub priority: Option<String>, // "low", "normal", "high"
     pub limit: Option<i32>,
     pub offset: Option<i32>,
@@ -104,52 +106,14 @@ pub struct TaskActionResponse {
     pub message: String,
 }
 
-// Helper function to convert TaskStatus enum / 转换TaskStatus枚举的辅助函数
-fn parse_task_status(status: &str) -> Option<TaskStatus> {
-    match status.to_lowercase().as_str() {
-        "unknown" => Some(TaskStatus::Unknown),
-        "registered" => Some(TaskStatus::Registered),
-        "created" => Some(TaskStatus::Created),
-        "active" => Some(TaskStatus::Active),
-        "inactive" => Some(TaskStatus::Inactive),
-        "unregistered" => Some(TaskStatus::Unregistered),
-        _ => None,
-    }
-}
-
-// Helper function to convert TaskPriority enum / 转换TaskPriority枚举的辅助函数
-fn parse_task_priority(priority: &str) -> TaskPriority {
-    match priority.to_lowercase().as_str() {
-        "unknown" => TaskPriority::Unknown,
-        "low" => TaskPriority::Low,
-        "normal" => TaskPriority::Normal,
-        "high" => TaskPriority::High,
-        "urgent" => TaskPriority::Urgent,
-        _ => TaskPriority::Normal,
-    }
-}
-
 // Helper function to convert proto Task to TaskResponse / 转换proto Task为TaskResponse的辅助函数
 fn task_to_response(task: crate::proto::sms::Task) -> TaskResponse {
     TaskResponse {
         task_id: task.task_id,
         name: task.name,
         description: task.description,
-        status: match TaskStatus::try_from(task.status).unwrap_or(TaskStatus::Unknown) {
-            TaskStatus::Unknown => "unknown".to_string(),
-            TaskStatus::Registered => "registered".to_string(),
-            TaskStatus::Created => "created".to_string(),
-            TaskStatus::Active => "active".to_string(),
-            TaskStatus::Inactive => "inactive".to_string(),
-            TaskStatus::Unregistered => "unregistered".to_string(),
-        },
-        priority: match TaskPriority::try_from(task.priority).unwrap_or(TaskPriority::Normal) {
-            TaskPriority::Unknown => "unknown".to_string(),
-            TaskPriority::Low => "low".to_string(),
-            TaskPriority::Normal => "normal".to_string(),
-            TaskPriority::High => "high".to_string(),
-            TaskPriority::Urgent => "urgent".to_string(),
-        },
+        status: task_status_to_public_str(task.status).to_string(),
+        priority: task_priority_to_public_str(task.priority).to_string(),
         node_uuid: task.node_uuid,
         endpoint: task.endpoint,
         version: task.version,
@@ -177,9 +141,9 @@ pub async fn register_task(
 
     let priority = params
         .priority
-        .as_ref()
-        .map(|p| parse_task_priority(p))
-        .unwrap_or(TaskPriority::Normal);
+        .as_deref()
+        .map(parse_task_priority_public_str)
+        .unwrap_or(TaskPriority::Normal as i32);
 
     let meta = params.metadata.clone().unwrap_or_default();
     let request = Request::new(RegisterTaskRequest {
@@ -187,7 +151,7 @@ pub async fn register_task(
         description: params
             .description
             .unwrap_or_else(|| format!("Task: {}", params.name)),
-        priority: priority as i32,
+        priority,
         node_uuid: params.node_uuid.unwrap_or_default(),
         endpoint: params.endpoint,
         version: params.version,
@@ -209,17 +173,6 @@ pub async fn register_task(
             args: e.args.clone().unwrap_or_default(),
             env: e.env.clone().unwrap_or_default(),
         }),
-        execution_kind: {
-            let ek = meta
-                .get("execution_kind")
-                .cloned()
-                .unwrap_or_else(|| "short_running".to_string());
-            if ek.to_lowercase() == "long_running" {
-                TaskExecutionKind::LongRunning as i32
-            } else {
-                TaskExecutionKind::ShortRunning as i32
-            }
-        },
     });
 
     match gateway_state
@@ -261,15 +214,15 @@ pub async fn list_tasks(
     let status_filter = params
         .status
         .as_ref()
-        .and_then(|s| parse_task_status(s))
-        .map(|s| FilterState::Value(s as i32))
+        .and_then(|s| parse_task_status_public_str(s))
+        .map(FilterState::Value)
         .unwrap_or(FilterState::None)
         .to_i32();
 
     let priority_filter = params
         .priority
         .as_ref()
-        .map(|p| FilterState::Value(parse_task_priority(p) as i32))
+        .map(|p| FilterState::Value(parse_task_priority_public_str(p)))
         .unwrap_or(FilterState::None)
         .to_i32();
 

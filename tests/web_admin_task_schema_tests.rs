@@ -4,7 +4,7 @@ use spear_next::sms::web_admin::create_admin_router;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
-async fn test_admin_tasks_include_execution_kind() {
+async fn test_admin_tasks_schema_contains_expected_fields() {
     use spear_next::proto::sms::{
         node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
         task_service_server::TaskServiceServer,
@@ -64,14 +64,13 @@ async fn test_admin_tasks_include_execution_kind() {
     let server = TestServer::new(app.into_make_service()).unwrap();
 
     let create_body = serde_json::json!({
-        "name": "ek-task",
+        "name": "task-a",
         "description": "d",
         "priority": "normal",
         "node_uuid": "node-1",
         "endpoint": "http://localhost/task",
         "version": "v1",
-        "capabilities": ["c"],
-        "metadata": {"execution_kind": "long_running"}
+        "capabilities": ["c"]
     });
     let resp = server.post("/admin/api/tasks").json(&create_body).await;
     resp.assert_status_ok();
@@ -80,13 +79,20 @@ async fn test_admin_tasks_include_execution_kind() {
     resp.assert_status_ok();
     let body: serde_json::Value = resp.json();
     let t = body["tasks"].as_array().unwrap()[0].clone();
-    assert_eq!(t["execution_kind"], "long_running");
-
-    let task_id = t["task_id"].as_str().unwrap().to_string();
-    let resp = server.get(&format!("/admin/api/tasks/{}", task_id)).await;
-    resp.assert_status_ok();
-    let detail: serde_json::Value = resp.json();
-    assert_eq!(detail["task"]["execution_kind"], "long_running");
+    let obj = t.as_object().unwrap();
+    for k in [
+        "task_id",
+        "name",
+        "status",
+        "priority",
+        "node_uuid",
+        "endpoint",
+        "version",
+        "registered_at",
+        "last_heartbeat",
+    ] {
+        assert!(obj.contains_key(k));
+    }
 
     handle.abort();
 }

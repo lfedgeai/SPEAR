@@ -158,35 +158,7 @@ impl TaskEventSubscriber {
         task: &Task,
     ) -> crate::spearlet::execution::ExecutionResult<()> {
         let artifact = mgr.ensure_artifact_from_sms(task).await?;
-        use crate::spearlet::execution::task::{ExecutionKind, TaskSpec};
-        let env = if let Some(ex) = &task.executable {
-            ex.env.clone()
-        } else {
-            std::collections::HashMap::new()
-        };
-        let task_spec = TaskSpec {
-            name: task.name.clone(),
-            task_type: crate::spearlet::execution::task::TaskType::HttpHandler,
-            runtime_type: artifact.spec.runtime_type,
-            entry_point: "main".to_string(),
-            handler_config: std::collections::HashMap::new(),
-            task_config: task.config.clone(),
-            environment: env,
-            invocation_type: crate::spearlet::execution::artifact::InvocationType::ExistingTask,
-            min_instances: 1,
-            max_instances: 10,
-            target_concurrency: 100,
-            scaling_config: crate::spearlet::execution::task::ScalingConfig::default(),
-            health_check: crate::spearlet::execution::task::HealthCheckConfig::default(),
-            timeout_config: crate::spearlet::execution::task::TimeoutConfig::default(),
-            execution_kind: match task.execution_kind {
-                x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
-                    ExecutionKind::LongRunning
-                }
-                _ => ExecutionKind::ShortRunning,
-            },
-        };
-        let spear_task = mgr.ensure_task_with_id(task.task_id.clone(), &artifact, task_spec)?;
+        let spear_task = mgr.ensure_task_from_sms(task, &artifact).await?;
         spear_task.set_status(crate::spearlet::execution::task::TaskStatus::Ready);
         Ok(())
     }
@@ -209,7 +181,7 @@ impl TaskEventSubscriber {
 mod tests {
     use super::*;
     use crate::proto::sms::{
-        Task, TaskEvent, TaskEventKind, TaskExecutable, TaskExecutionKind, TaskPriority, TaskStatus,
+        Task, TaskEvent, TaskEventKind, TaskExecutable, TaskPriority, TaskStatus,
     };
     use crate::spearlet::execution::instance;
     use crate::spearlet::execution::runtime::{Runtime, RuntimeCapabilities, RuntimeType};
@@ -347,7 +319,6 @@ mod tests {
             last_result_status: String::new(),
             last_completed_at: 0,
             last_result_metadata: std::collections::HashMap::new(),
-            execution_kind: TaskExecutionKind::ShortRunning as i32,
         };
         let ev = TaskEvent {
             event_id: 1,
@@ -355,7 +326,6 @@ mod tests {
             node_uuid: node_uuid.clone(),
             task_id: "task-x".to_string(),
             kind: TaskEventKind::Create as i32,
-            execution_kind: TaskExecutionKind::ShortRunning as i32,
             execution_id: None,
         };
         sub.handle_event_for_test(ev, Some(sms_task)).await;
@@ -417,7 +387,6 @@ mod tests {
             last_result_status: String::new(),
             last_completed_at: 0,
             last_result_metadata: std::collections::HashMap::new(),
-            execution_kind: TaskExecutionKind::ShortRunning as i32,
         };
         let ev = TaskEvent {
             event_id: 2,
@@ -425,7 +394,6 @@ mod tests {
             node_uuid: node_uuid.clone(),
             task_id: "task-y".to_string(),
             kind: TaskEventKind::Create as i32,
-            execution_kind: TaskExecutionKind::ShortRunning as i32,
             execution_id: None,
         };
         sub.handle_event_for_test(ev, Some(sms_task)).await;

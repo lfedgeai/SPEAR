@@ -335,18 +335,15 @@ Suggested metrics:
 
 ### Handling “task missing on target node” (critical)
 
-Today, if a Spearlet node does not have the task locally, execute_request returns TaskNotFound.
+If a Spearlet node does not have the task locally, it fetches the task/artifact from SMS on-demand, materializes them into the local caches, and then executes.
 
-- See: [execute_request](../src/spearlet/execution/manager.rs#L601-L611)
+- See: [execute_existing_task_invocation](../src/spearlet/execution/manager.rs#L640-L661)
+- Helper used by the on-demand path:
+  - [fetch_and_materialize_task_from_sms](../src/spearlet/execution/manager.rs#L895-L936)
+  - [ensure_artifact_from_sms](../src/spearlet/execution/manager.rs#L752-L804)
+  - [ensure_task_from_sms](../src/spearlet/execution/manager.rs#L861-L893)
 
-To make placement truly able to send an invocation to any node, pick one strategy:
-
-- Recommended: Spearlet fetches the task/artifact from SMS on-demand during invoke and caches it, then executes.
-- TaskExecutionManager already provides helpers to materialize local Artifact/Task from an SMS Task:
-  - [ensure_artifact_from_sms](../src/spearlet/execution/manager.rs#L697-L767)
-  - [ensure_task_from_sms](../src/spearlet/execution/manager.rs#L801-L852)
-- Suggested hook point: in `FunctionServiceImpl::invoke_function`, before entering `handle_*_execution`, if the task is missing locally, call SMS `GetTask`, then `ensure_*`, then execute.
-- Alternative: placement only selects nodes that already “host” the task (weakens the value of two-level scheduling).
+This enables placement to send an invocation to any healthy node without requiring pre-warming of task metadata on every node.
 
 ### Why this does not turn SMS into a gateway
 
@@ -371,7 +368,6 @@ PlaceInvocationRequest {
   string task_id;                  // optional: existing task invocation
   string artifact_id;              // optional: caching/hotness hints
   string runtime_type;             // e.g. wasm/process/k8s
-  string execution_kind;           // e.g. ai/regular (align with TaskSpec.execution_kind)
   map<string,string> node_selector;// label/capability constraints
   ResourceRequirements req;        // optional resource requirements
   SpillbackPolicy spillback;       // suggested retry budget
@@ -459,7 +455,6 @@ Request:
   "task_id": "task-xxx",
   "artifact_id": "artifact-xxx",
   "runtime_type": "wasm|process|kubernetes",
-  "execution_kind": "short_running|long_running",
   "node_selector": {"gpu": "true"},
   "req": {"cpu_cores": 1.0, "memory_bytes": 1073741824},
   "spillback": {"max_attempts": 2, "per_node_timeout_ms": 5000, "allow_requery": false}
@@ -724,5 +719,5 @@ Even though scaling is not implemented now, keep these design properties to avoi
 ## Engineering decisions to finalize before implementation
 
 - Where the Client/SDK entry lives (CLI, HTTP gateway, or a shared library).
-- Minimal field set for placement requests: runtime_type/execution_kind/selector.
+- Minimal field set for placement requests: runtime_type/selector.
 - Standardize Spearlet overload error codes (gRPC Status + details or custom error struct).

@@ -55,13 +55,6 @@ pub enum TaskStatus {
     Error(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum ExecutionKind {
-    LongRunning,
-    #[default]
-    ShortRunning,
-}
-
 /// Task specification / Task 规格
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskSpec {
@@ -92,7 +85,6 @@ pub struct TaskSpec {
     pub health_check: HealthCheckConfig,
     /// Timeout configuration / 超时配置
     pub timeout_config: TimeoutConfig,
-    pub execution_kind: ExecutionKind,
 }
 
 /// Scaling configuration / 扩缩容配置
@@ -507,7 +499,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
 
         let task = Task::new("artifact-123".to_string(), spec);
@@ -534,7 +525,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
 
         let task = Task::new("artifact-123".to_string(), spec);
@@ -565,7 +555,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
 
         spec.scaling_config.scale_up_cpu_threshold = 70.0;
@@ -619,7 +608,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
 
         let task = Task::new("artifact-123".to_string(), spec);

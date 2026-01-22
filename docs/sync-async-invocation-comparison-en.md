@@ -41,7 +41,7 @@ InvokeFunctionRequest {
   invocation_type = INVOCATION_TYPE_EXISTING_TASK;
   execution_mode = EXECUTION_MODE_ASYNC;  // 🔑 Key: Async mode
   task_id = "existing-task-124";         // 🔑 Invoke existing task
-  function_name = "long_running_process";
+  function_name = "process";
   parameters = [
     { name = "dataset", value = "large_data.csv" }
   ];

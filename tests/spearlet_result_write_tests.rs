@@ -129,7 +129,6 @@ async fn test_spearlet_writes_result_on_completion() {
         metadata: std::collections::HashMap::new(),
         config: std::collections::HashMap::new(),
         executable: None,
-        execution_kind: spear_next::proto::sms::TaskExecutionKind::ShortRunning as i32,
     };
     let task_id = client
         .register_task(reg)
@@ -154,7 +153,6 @@ async fn test_spearlet_writes_result_on_completion() {
     sms_task.task_id = task_id.clone();
     sms_task.name = "t".to_string();
     sms_task.version = "v1".to_string();
-    sms_task.execution_kind = spear_next::proto::sms::TaskExecutionKind::ShortRunning as i32;
     sms_task.metadata = std::collections::HashMap::new();
     sms_task.config = std::collections::HashMap::new();
     sms_task.executable = Some(spear_next::proto::sms::TaskExecutable {

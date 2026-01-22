@@ -648,7 +648,7 @@ impl TaskExecutionManager {
             if let Some(t) = self.tasks.get(id) {
                 t.clone()
             } else {
-                self.ensure_task_available_from_sms(id).await?
+                self.fetch_and_materialize_task_from_sms(id).await?
             }
         } else {
             return Err(ExecutionError::NotSupported {
@@ -865,9 +865,7 @@ impl TaskExecutionManager {
     ) -> ExecutionResult<Arc<Task>> {
         // Convert SMS task model into Spearlet TaskSpec.
         // 将 SMS 的 task 模型转换成 Spearlet 侧的 TaskSpec。
-        use super::task::{
-            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TimeoutConfig,
-        };
+        use super::task::{HealthCheckConfig, ScalingConfig, TaskSpec, TimeoutConfig};
         use std::collections::HashMap;
         let env = if let Some(ex) = &sms_task.executable {
             ex.env.clone()
@@ -890,17 +888,14 @@ impl TaskExecutionManager {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: match sms_task.execution_kind {
-                x if x == crate::proto::sms::TaskExecutionKind::LongRunning as i32 => {
-                    ExecutionKind::LongRunning
-                }
-                _ => ExecutionKind::ShortRunning,
-            },
         };
         self.ensure_task_with_id(sms_task.task_id.clone(), artifact, task_spec)
     }
 
-    async fn ensure_task_available_from_sms(&self, task_id: &str) -> ExecutionResult<Arc<Task>> {
+    async fn fetch_and_materialize_task_from_sms(
+        &self,
+        task_id: &str,
+    ) -> ExecutionResult<Arc<Task>> {
         // When an invocation lands on a node that doesn't have the task yet,
         // fetch task metadata from SMS and materialize it locally.
         //
@@ -1137,13 +1132,20 @@ impl TaskExecutionManager {
         loop {
             interval.tick().await;
 
-            for instance_entry in self.instances.iter() {
-                let instance = instance_entry.value();
+            let instances: Vec<Arc<TaskInstance>> =
+                self.instances.iter().map(|e| e.value().clone()).collect();
+
+            for instance in instances {
+                match instance.status() {
+                    InstanceStatus::Ready | InstanceStatus::Running | InstanceStatus::Busy => {}
+                    _ => continue,
+                }
+
                 if let Some(runtime) = self
                     .runtime_manager
                     .get_runtime(&instance.config.runtime_type)
                 {
-                    if let Ok(metrics) = runtime.get_metrics(instance).await {
+                    if let Ok(metrics) = runtime.get_metrics(&instance).await {
                         debug!(
                             "Collected metrics for instance {}: {:?}",
                             instance.id(),
@@ -1202,10 +1204,10 @@ impl TaskExecutionManager {
 
             for task_id in tasks_to_remove {
                 if let Some((_, task)) = self.tasks.remove(&task_id) {
-                    // Publish UNREGISTERED before removal / 移除前上报UNREGISTERED状态
+                    // Publish INACTIVE before removal / 移除前上报INACTIVE状态
                     self.publish_task_status(
                         task.id(),
-                        crate::proto::sms::TaskStatus::Unregistered,
+                        crate::proto::sms::TaskStatus::Inactive,
                         Some("cleanup".to_string()),
                     )
                     .await;
@@ -1612,7 +1614,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_long_running_execution_status_tracking() {
+    async fn test_execution_status_tracking() {
         let mut rm = RuntimeManager::new();
         rm.register_runtime(
             RuntimeType::Process,
@@ -1656,7 +1658,7 @@ mod tests {
             .unwrap();
 
         use crate::spearlet::execution::task::{
-            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+            HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
         };
         let task_spec = TaskSpec {
             name: "task-long".to_string(),
@@ -1673,7 +1675,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::LongRunning,
         };
         manager
             .ensure_task_with_id("task-long".to_string(), &artifact, task_spec)
@@ -1765,7 +1766,7 @@ mod tests {
             .ensure_artifact_with_id("artifact-test".to_string(), spec_local)
             .unwrap();
         use crate::spearlet::execution::task::{
-            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+            HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
         };
         let task_spec = TaskSpec {
             name: "task-test".to_string(),
@@ -1782,7 +1783,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
         let task = manager
             .ensure_task_with_id("task-test".to_string(), &artifact, task_spec)
@@ -1843,7 +1843,7 @@ mod tests {
             .ensure_artifact_with_id("artifact-cleanup".to_string(), spec_local)
             .unwrap();
         use crate::spearlet::execution::task::{
-            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+            HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
         };
         let task_spec = TaskSpec {
             name: "task-cleanup".to_string(),
@@ -1860,7 +1860,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
         let task = manager
             .ensure_task_with_id("task-cleanup".to_string(), &artifact, task_spec)
@@ -1918,7 +1917,7 @@ mod tests {
             .unwrap();
         let desired = "sms-task-123".to_string();
         use crate::spearlet::execution::task::{
-            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+            HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
         };
         let task_spec = TaskSpec {
             name: desired.clone(),
@@ -1935,7 +1934,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
         let task = manager
             .ensure_task_with_id(desired.clone(), &artifact, task_spec)
@@ -2071,7 +2069,7 @@ mod tests {
             .ensure_artifact_with_id("artifact-hc".to_string(), spec_local)
             .unwrap();
         use crate::spearlet::execution::task::{
-            ExecutionKind, HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+            HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
         };
         let task_spec = TaskSpec {
             name: "task-hc".to_string(),
@@ -2088,7 +2086,6 @@ mod tests {
             scaling_config: ScalingConfig::default(),
             health_check: HealthCheckConfig::default(),
             timeout_config: TimeoutConfig::default(),
-            execution_kind: ExecutionKind::ShortRunning,
         };
         let task = manager
             .ensure_task_with_id("task-hc".to_string(), &artifact, task_spec)

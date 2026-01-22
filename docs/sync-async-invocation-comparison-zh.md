@@ -41,7 +41,7 @@ InvokeFunctionRequest {
   invocation_type = INVOCATION_TYPE_EXISTING_TASK;
   execution_mode = EXECUTION_MODE_ASYNC;  // 🔑 关键：异步模式
   task_id = "existing-task-124";         // 🔑 调用已存在任务
-  function_name = "long_running_process";
+  function_name = "process";
   parameters = [
     { name = "dataset", value = "large_data.csv" }
   ];

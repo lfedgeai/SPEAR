@@ -1,10 +1,15 @@
 # WASM 运行时使用说明
 
 ## 概述
-Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制模块字节。若传入的字节不是合法的 WASM，将返回 `InvalidConfiguration: "Invalid WASM module format"`。
+Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制模块字节。若模块字节不合法（例如缺失 WASM 魔数），将返回 `InvalidConfiguration` 并拒绝创建实例。
+
+## 生命周期约定
+- `create_instance`：下载模块字节、校验 WASM 魔数、加载模块并创建实例句柄
+- `start_instance`：将实例推进到可服务状态；在启用 `wasmedge` feature 时启动 WASM worker
+- `stop_instance`：发送 Stop 控制请求并等待确认，确保 worker 退出
 
 ## 实例化要求
-- 实例配置必须能解析到模块字节：通过 `InstanceConfig.runtime_config["module_bytes"]` 或通过任务可执行 `executable.uri` 下载得到
+- 实例配置必须能解析到模块字节：通过 `InstanceConfig.artifact.location` 指向的 URI 下载得到（该字段由任务的 `executable.uri` 在 artifact/materialize 阶段转换而来）
 - 模块字节必须以 WASM 魔数开头：`00 61 73 6d`（`\0asm`）
 - 非法或空内容将导致 `create_instance` 报错
 
@@ -28,7 +33,8 @@ Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制�
   }
 }
 ```
-- 运行时将根据 `executable.uri` 下载内容，并在 `create_wasm_instance` 中严格校验模块格式。
+- 运行时将在 `create_instance` 中根据 artifact 的 `location` 下载内容，并在加载前校验 WASM 魔数；随后创建 WASM 实例句柄。
+- 在启用 `wasmedge` feature 时，`start_instance` 会启动 WASM worker（用于接收并执行后续的函数调用请求）。
 
 ### SMS 文件协议与配置来源
 

@@ -313,7 +313,7 @@ invoke_once(node, req)
 | 节点不可达 | TCP connect 失败 / gRPC UNAVAILABLE | 是 | 优先换节点 |
 | 超时 | gRPC DEADLINE_EXCEEDED | 是（有限次数） | 可能已开始执行；建议仅对“连接前/握手阶段超时”更激进 |
 | 过载拒绝 | 业务 OVERLOADED / RESOURCE_EXHAUSTED | 是 | 目标节点主动拒绝，换节点收益高 |
-| 任务不存在 | TaskNotFound | 否（默认） | 推荐改为 Spearlet 按需从 SMS 拉取任务后再执行 |
+| 任务不存在 | TaskNotFound | 否 | Spearlet 已支持按需从 SMS 拉取任务并 materialize 后再执行 |
 | 参数错误 | INVALID_ARGUMENT | 否 | 重试无意义 |
 | 函数内部错误 | FAILED_PRECONDITION / INTERNAL（业务） | 否 | 通常不应换节点 |
 
@@ -362,7 +362,6 @@ PlaceInvocationRequest {
   string task_id;                  // 可选：现有任务调用
   string artifact_id;              // 可选：用于缓存/冷热策略
   string runtime_type;             // 如 wasm/process/k8s
-  string execution_kind;           // 如 ai/regular（对齐现有 TaskSpec.execution_kind）
   map<string,string> node_selector;// 标签/能力约束（如 gpu=true, arch=x86_64）
   ResourceRequirements req;        // 资源需求（初期可为空）
   SpillbackPolicy spillback;       // 重试预算建议
@@ -450,7 +449,6 @@ ReportInvocationOutcomeRequest {
   "task_id": "task-xxx",
   "artifact_id": "artifact-xxx",
   "runtime_type": "wasm|process|kubernetes",
-  "execution_kind": "short_running|long_running",
   "node_selector": {"gpu": "true"},
   "req": {"cpu_cores": 1.0, "memory_bytes": 1073741824},
   "spillback": {"max_attempts": 2, "per_node_timeout_ms": 5000, "allow_requery": false}
@@ -719,5 +717,5 @@ impl PlacementService {
 ## 需要明确的工程决策（后续落地前）
 
 - Client/SDK 入口在哪里（CLI、HTTP gateway、还是独立库）。
-- placement 请求的字段对齐：runtime_type/execution_kind/selector 的最小集合。
+- placement 请求的字段对齐：runtime_type/selector 的最小集合。
 - Spearlet “快速拒绝”错误码的标准化（gRPC Status + details 或自定义错误结构）。

@@ -156,7 +156,6 @@ async fn test_spearlet_fetches_task_from_sms_when_missing_locally() {
                 uri: "file:///bin/foo".to_string(),
                 ..Default::default()
             }),
-            execution_kind: spear_next::proto::sms::TaskExecutionKind::ShortRunning as i32,
         })
         .await
         .unwrap()

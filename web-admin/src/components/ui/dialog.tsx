@@ -27,13 +27,14 @@ export function DialogContent(
 export function DialogHeader(props: { title: string; description?: string }) {
   return (
     <div className="mb-4">
-      <div className="text-base font-semibold">{props.title}</div>
+      <DialogPrimitive.Title className="text-base font-semibold">
+        {props.title}
+      </DialogPrimitive.Title>
       {props.description ? (
-        <div className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+        <DialogPrimitive.Description className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
           {props.description}
-        </div>
+        </DialogPrimitive.Description>
       ) : null}
     </div>
   )
 }
-

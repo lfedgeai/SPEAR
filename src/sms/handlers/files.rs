@@ -78,6 +78,13 @@ pub async fn upload_file(
 }
 
 pub async fn download_file(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    let id = std::path::Path::new(&id)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let id = Uuid::parse_str(id)
+        .map(|u| u.to_string())
+        .map_err(|_| StatusCode::NOT_FOUND)?;
     let path = std::path::Path::new(FILES_DIR).join(&id);
     let file = fs::File::open(&path)
         .await
@@ -91,20 +98,38 @@ pub async fn download_file(Path(id): Path<String>) -> Result<impl IntoResponse, 
 }
 
 pub async fn delete_file(Path(id): Path<String>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let id = std::path::Path::new(&id)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let id = Uuid::parse_str(id)
+        .map(|u| u.to_string())
+        .map_err(|_| StatusCode::NOT_FOUND)?;
     let path = std::path::Path::new(FILES_DIR).join(&id);
     fs::remove_file(&path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let meta_path = std::path::Path::new(FILES_DIR).join(format!("{}.json", id));
+    let meta_path = std::path::Path::new(FILES_DIR)
+        .join(&id)
+        .with_extension("json");
     let _ = fs::remove_file(&meta_path).await;
     Ok(Json(json!({ "success": true })))
 }
 
 pub async fn get_file_meta(Path(id): Path<String>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let id = std::path::Path::new(&id)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let id = Uuid::parse_str(id)
+        .map(|u| u.to_string())
+        .map_err(|_| StatusCode::NOT_FOUND)?;
     let path = std::path::Path::new(FILES_DIR).join(&id);
     match fs::metadata(&path).await {
         Ok(meta) => {
-            let meta_path = std::path::Path::new(FILES_DIR).join(format!("{}.json", id));
+            let meta_path = std::path::Path::new(FILES_DIR)
+                .join(&id)
+                .with_extension("json");
             let mut obj = json!({ "found": true, "len": meta.len() });
             if let Ok(bytes) = fs::read(&meta_path).await {
                 if let Ok(m) = serde_json::from_slice::<serde_json::Value>(&bytes) {

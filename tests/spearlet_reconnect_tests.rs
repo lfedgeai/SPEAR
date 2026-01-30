@@ -46,6 +46,7 @@ async fn wait_registered(svc: &RegistrationService, max_ms: u64) -> bool {
 fn make_spearlet_config(sms_grpc_addr: String) -> Arc<SpearletConfig> {
     Arc::new(SpearletConfig {
         node_name: "test-node".to_string(),
+        max_blocking_threads: 512,
         grpc: spear_next::config::base::ServerConfig {
             addr: "127.0.0.1:50055".parse().unwrap(),
             ..Default::default()

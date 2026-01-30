@@ -27,18 +27,18 @@
 - 上传：点击 `Upload` 上传到内置对象服务；成功后收到 `Uploaded: <id>` 提示
 - 列表操作：
   - `Download`：直接下载
-  - `Copy URI`：复制 `sms+file://<id>` 到剪贴板
+  - `Copy URI`：复制 `smsfile://<id>` 到剪贴板
   - `Delete`：删除后立即刷新（React Query 失效+本地过滤）
 
 ## 任务创建（Tasks → Create Task）
 
 - 可执行类型：`No Executable | Binary | Script | Container | WASM | Process`
-- Scheme：`sms+file | s3 | minio | https`
-  - 切到 `sms+file` 会自动预填 `sms+file://`
-  - 从非 `sms+file` 切回时不会重置为占位项
+- Scheme：`smsfile | s3 | minio | https`
+  - 切到 `smsfile` 会自动预填 `smsfile://`
+  - 从非 `smsfile` 切回时不会重置为占位项
 - 选择本地 SMS 文件：
   - 点击 `Choose Local` 打开文件选择弹窗
-  - 点击 `Use` 将 `Executable URI = sms+file://<id>` 与 `Executable Name` 带回表单
+  - 点击 `Use` 将 `Executable URI = smsfile://<id>` 与 `Executable Name` 带回表单
 - 参数：`Capabilities`（逗号分隔）、`Args`（逗号分隔）、`Env`（每行 `key=value`）
 
 ## 后端（Backends）
@@ -51,7 +51,7 @@
 ## 常见问题
 
 - 下拉长期悬浮：已移除强制 `open`，恢复默认交互
-- Scheme 重置：当 URI 不包含 `://` 不再重置；`sms+file` 会预填 `sms+file://`
+- Scheme 重置：当 URI 不包含 `://` 不再重置；`smsfile` 会预填 `smsfile://`
 - 文件对话框溢出：设置了固定宽度与列宽，长文本省略显示
 
 ## 相关文档

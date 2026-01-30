@@ -9,10 +9,12 @@ use uuid::Uuid;
 
 use crate::sms::config::SmsConfig;
 use crate::sms::events::TaskEventBus;
+use crate::sms::instance_execution_index::InstanceExecutionIndex;
 use crate::sms::services::{
     node_service::NodeService, resource_service::ResourceService,
     task_service::TaskService as TaskServiceImpl,
 };
+use crate::sms::unified_events::UnifiedEventBus;
 use crate::storage::kv::{create_kv_store_from_config, get_kv_store_factory, KvStoreConfig};
 use anyhow::Context;
 use dashmap::DashMap;
@@ -24,15 +26,29 @@ use tracing::{debug, warn};
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
     backend_registry_service_server::BackendRegistryService as BackendRegistryServiceTrait,
+    events_service_server::EventsService as EventsServiceTrait,
+    execution_index_service_server::ExecutionIndexService as ExecutionIndexServiceTrait,
+    execution_log_ingest_service_server::ExecutionLogIngestService as ExecutionLogIngestServiceTrait,
+    execution_registry_service_server::ExecutionRegistryService as ExecutionRegistryServiceTrait,
+    instance_registry_service_server::InstanceRegistryService as InstanceRegistryServiceTrait,
     mcp_registry_service_server::McpRegistryService as McpRegistryServiceTrait,
     node_service_server::NodeService as NodeServiceTrait,
     placement_service_server::PlacementService as PlacementServiceTrait,
     task_service_server::TaskService as TaskServiceTrait,
+    AppendExecutionLogsRequest,
+    AppendExecutionLogsResponse,
     BackendStatus,
     DeleteMcpServerRequest,
     DeleteMcpServerResponse,
     DeleteNodeRequest,
     DeleteNodeResponse,
+    EventEnvelope,
+    EventOp,
+    Execution,
+    FinalizeExecutionLogsRequest,
+    FinalizeExecutionLogsResponse,
+    GetExecutionRequest,
+    GetExecutionResponse,
     GetNodeBackendsRequest,
     GetNodeBackendsResponse,
     GetNodeRequest,
@@ -45,7 +61,10 @@ use crate::proto::sms::{
     GetTaskResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    Instance,
     InvocationOutcomeClass,
+    ListInstanceExecutionsRequest,
+    ListInstanceExecutionsResponse,
     ListMcpServersRequest,
     ListMcpServersResponse,
     ListNodeBackendSnapshotsRequest,
@@ -54,6 +73,8 @@ use crate::proto::sms::{
     ListNodeResourcesResponse,
     ListNodesRequest,
     ListNodesResponse,
+    ListTaskInstancesRequest,
+    ListTaskInstancesResponse,
     ListTasksRequest,
     ListTasksResponse,
     McpRegistryEvent,
@@ -69,10 +90,13 @@ use crate::proto::sms::{
     // Task service messages / 任务服务消息
     RegisterTaskRequest,
     RegisterTaskResponse,
+    ReportExecutionResponse,
+    ReportInstanceResponse,
     ReportInvocationOutcomeRequest,
     ReportInvocationOutcomeResponse,
     ReportNodeBackendsRequest,
     ReportNodeBackendsResponse,
+    SubscribeEventsRequest,
     UnregisterTaskRequest,
     UnregisterTaskResponse,
     UpdateNodeRequest,
@@ -146,6 +170,8 @@ pub struct SmsServiceImpl {
     config: Arc<SmsConfig>,
     task_service: Arc<RwLock<TaskServiceImpl>>,
     events: Arc<TaskEventBus>,
+    unified_events: Arc<UnifiedEventBus>,
+    instance_execution_index: Arc<InstanceExecutionIndex>,
     placement_state: Arc<PlacementState>,
     mcp_registry: Arc<McpRegistryState>,
     backend_registry: Arc<BackendRegistryState>,
@@ -393,11 +419,31 @@ impl SmsServiceImpl {
             .await
             .expect("Failed to create KV store from config");
         let kv: Arc<dyn crate::storage::kv::KvStore> = Arc::from(kv_box);
-        let events = Arc::new(TaskEventBus::new(kv));
+        let unified_events = Arc::new(UnifiedEventBus::new(kv.clone()));
+        let events = Arc::new(TaskEventBus::new(kv.clone()));
+        let stale_after_ms = (config.heartbeat_timeout as i64).saturating_mul(2_000);
+        let instance_execution_index =
+            Arc::new(InstanceExecutionIndex::new(kv, 256, 1000, stale_after_ms));
+
+        {
+            let idx = instance_execution_index.clone();
+            let bus = unified_events.clone();
+            tokio::spawn(async move {
+                run_instance_projector(idx, bus).await;
+            });
+        }
+        {
+            let idx = instance_execution_index.clone();
+            let bus = unified_events.clone();
+            tokio::spawn(async move {
+                run_execution_projector(idx, bus).await;
+            });
+        }
 
         let cleanup_node_service = node_service.clone();
         let cleanup_resource_service = resource_service.clone();
         let cleanup_config = config.clone();
+        let cleanup_unified_events = unified_events.clone();
         tokio::spawn(async move {
             let mut t = tokio::time::interval(Duration::from_secs(cleanup_config.cleanup_interval));
             loop {
@@ -415,6 +461,17 @@ impl SmsServiceImpl {
                         nodes = ?updated_nodes,
                         "Marked unhealthy nodes offline"
                     );
+                    for mark in updated_nodes.iter() {
+                        if mark.previous_status.to_ascii_lowercase() == "offline" {
+                            continue;
+                        }
+                        if let Err(e) = cleanup_unified_events
+                            .publish_node_event(&mark.node, EventOp::Update)
+                            .await
+                        {
+                            warn!(error = %e, uuid = %mark.uuid, "Publish unified node offline event failed");
+                        }
+                    }
                 }
                 let _ = cleanup_resource_service
                     .cleanup_stale_resources(cleanup_config.heartbeat_timeout)
@@ -428,6 +485,8 @@ impl SmsServiceImpl {
             config,
             task_service,
             events,
+            unified_events,
+            instance_execution_index,
             placement_state: Arc::new(PlacementState::new()),
             mcp_registry: Arc::new(McpRegistryState::new(1024, 1024)),
             backend_registry: Arc::new(BackendRegistryState::new()),
@@ -801,6 +860,13 @@ impl NodeServiceTrait for SmsServiceImpl {
         match node_service.register_node(node.clone()).await {
             Ok(()) => {
                 tracing::info!(uuid = %node.uuid, ip = %node.ip_address, port = %node.port, "SPEARlet registered");
+                if let Err(e) = self
+                    .unified_events
+                    .publish_node_event(&node, EventOp::Create)
+                    .await
+                {
+                    warn!(error = %e, uuid = %node.uuid, "Publish unified node create event failed");
+                }
                 let response = RegisterNodeResponse {
                     node_uuid: node.uuid.clone(),
                     success: true,
@@ -828,12 +894,20 @@ impl NodeServiceTrait for SmsServiceImpl {
         let node = req
             .node
             .ok_or_else(|| Status::invalid_argument("Node is required"))?;
+        let node_for_event = node.clone();
 
         // Use update_node to update the existing node / 使用update_node来更新现有节点
         let mut node_service = self.node_service.write().await;
 
         match node_service.update_node(node).await {
             Ok(_) => {
+                if let Err(e) = self
+                    .unified_events
+                    .publish_node_event(&node_for_event, EventOp::Update)
+                    .await
+                {
+                    warn!(error = %e, uuid = %node_for_event.uuid, "Publish unified node update event failed");
+                }
                 let response = UpdateNodeResponse {
                     success: true,
                     message: "Node updated successfully".to_string(),
@@ -859,6 +933,13 @@ impl NodeServiceTrait for SmsServiceImpl {
             Ok(_) => {
                 let _ = self.resource_service.remove_resource(&node_uuid).await;
                 tracing::info!(uuid = %node_uuid, "SPEARlet unregistered");
+                if let Err(e) = self
+                    .unified_events
+                    .publish_node_deleted(&node_uuid.to_string())
+                    .await
+                {
+                    warn!(error = %e, uuid = %node_uuid, "Publish unified node delete event failed");
+                }
                 let response = DeleteNodeResponse {
                     success: true,
                     message: "Node deleted successfully".to_string(),
@@ -881,7 +962,16 @@ impl NodeServiceTrait for SmsServiceImpl {
             .update_heartbeat(&req.uuid, chrono::Utc::now().timestamp())
             .await
         {
-            Ok(_) => {
+            Ok(changed) => {
+                if let Some(node) = changed {
+                    if let Err(e) = self
+                        .unified_events
+                        .publish_node_event(&node, EventOp::Update)
+                        .await
+                    {
+                        warn!(error = %e, uuid = %node.uuid, "Publish unified node online event failed");
+                    }
+                }
                 tracing::debug!(uuid = %req.uuid, "Heartbeat received");
                 let response = HeartbeatResponse {
                     success: true,
@@ -1126,6 +1216,13 @@ impl TaskServiceTrait for SmsServiceImpl {
                 if let Err(e) = self.events.publish_create(&task).await {
                     warn!(error = %e, "Publish create event failed");
                 }
+                if let Err(e) = self
+                    .unified_events
+                    .publish_task_event(&task, crate::proto::sms::TaskEventKind::Create)
+                    .await
+                {
+                    warn!(error = %e, "Publish unified create event failed");
+                }
                 let response = RegisterTaskResponse {
                     success: true,
                     message: "Task registered successfully".to_string(),
@@ -1327,6 +1424,13 @@ impl TaskServiceTrait for SmsServiceImpl {
                 if let Err(e) = self.events.publish_update(&task).await {
                     warn!(error = %e, task_id = %task.task_id, "Publish update event failed");
                 }
+                if let Err(e) = self
+                    .unified_events
+                    .publish_task_event(&task, crate::proto::sms::TaskEventKind::Update)
+                    .await
+                {
+                    warn!(error = %e, task_id = %task.task_id, "Publish unified update event failed");
+                }
 
                 let resp = UpdateTaskStatusResponse {
                     success: true,
@@ -1382,6 +1486,13 @@ impl TaskServiceTrait for SmsServiceImpl {
                 if let Err(e) = self.events.publish_update(&task).await {
                     warn!(error = %e, task_id = %task.task_id, "Publish update event failed");
                 }
+                if let Err(e) = self
+                    .unified_events
+                    .publish_task_event(&task, crate::proto::sms::TaskEventKind::Update)
+                    .await
+                {
+                    warn!(error = %e, task_id = %task.task_id, "Publish unified update event failed");
+                }
                 let resp = UpdateTaskResultResponse {
                     success: true,
                     message: "Task result updated".to_string(),
@@ -1396,6 +1507,222 @@ impl TaskServiceTrait for SmsServiceImpl {
             })),
             Err(e) => Err(Status::internal(format!("Failed to get task: {}", e))),
         }
+    }
+}
+
+#[tonic::async_trait]
+impl EventsServiceTrait for SmsServiceImpl {
+    type SubscribeEventsStream = std::pin::Pin<
+        Box<dyn tokio_stream::Stream<Item = Result<EventEnvelope, Status>> + Send + 'static>,
+    >;
+
+    async fn subscribe_events(
+        &self,
+        request: Request<SubscribeEventsRequest>,
+    ) -> Result<Response<Self::SubscribeEventsStream>, Status> {
+        let req = request.into_inner();
+        let selector = req
+            .selector
+            .and_then(|s| s.selector)
+            .ok_or_else(|| Status::invalid_argument("selector is required"))?;
+
+        let stream = match selector {
+            crate::proto::sms::subscribe_events_selector::Selector::Stream(s) => {
+                if s.is_empty() {
+                    return Err(Status::invalid_argument("stream is required"));
+                }
+                s
+            }
+            crate::proto::sms::subscribe_events_selector::Selector::NodeUuid(node_uuid) => {
+                if node_uuid.is_empty() {
+                    return Err(Status::invalid_argument("node_uuid is required"));
+                }
+                format!("node.{}", node_uuid)
+            }
+            crate::proto::sms::subscribe_events_selector::Selector::ResourceType(rt) => {
+                let s = match crate::proto::sms::ResourceType::try_from(rt) {
+                    Ok(crate::proto::sms::ResourceType::Task) => "type.task".to_string(),
+                    Ok(crate::proto::sms::ResourceType::Node) => "type.node".to_string(),
+                    Ok(crate::proto::sms::ResourceType::Artifact) => "type.artifact".to_string(),
+                    Ok(crate::proto::sms::ResourceType::Instance) => "type.instance".to_string(),
+                    Ok(crate::proto::sms::ResourceType::Execution) => "type.execution".to_string(),
+                    _ => return Err(Status::invalid_argument("unsupported resource_type")),
+                };
+                s
+            }
+            crate::proto::sms::subscribe_events_selector::Selector::All(_) => "all".to_string(),
+        };
+
+        let replay_limit = if req.replay_limit == 0 {
+            1000usize
+        } else {
+            (req.replay_limit as usize).min(1000)
+        };
+
+        let replay = self
+            .unified_events
+            .replay_since(&stream, req.after_seq, replay_limit)
+            .await
+            .map_err(|e| Status::internal(format!("Replay failed: {}", e)))?;
+        let replay_stream = tokio_stream::iter(replay.into_iter().map(Ok));
+
+        let rx = self.unified_events.subscribe(&stream).await;
+        let live_stream = unfold(rx, |mut r| async move {
+            match r.recv().await {
+                Ok(ev) => Some((Ok(ev), r)),
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    Some((Err(Status::aborted("watch lagged; resync required")), r))
+                }
+                Err(broadcast::error::RecvError::Closed) => None,
+            }
+        });
+        let stream = replay_stream.chain(live_stream);
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+}
+
+#[tonic::async_trait]
+impl InstanceRegistryServiceTrait for SmsServiceImpl {
+    async fn report_instance(
+        &self,
+        request: Request<Instance>,
+    ) -> Result<Response<ReportInstanceResponse>, Status> {
+        let mut inst = request.into_inner();
+        if inst.updated_at_ms == 0 {
+            inst.updated_at_ms = chrono::Utc::now().timestamp_millis();
+        }
+        if inst.last_seen_ms == 0 {
+            inst.last_seen_ms = inst.updated_at_ms;
+        }
+        let (accepted, stored_updated_at_ms) = self
+            .instance_execution_index
+            .upsert_instance(inst.clone())
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        if accepted {
+            if let Err(e) = self
+                .unified_events
+                .publish_instance_event(&inst, EventOp::Upsert)
+                .await
+            {
+                warn!(error = %e, instance_id = %inst.instance_id, "Publish unified instance event failed");
+            }
+        }
+        Ok(Response::new(ReportInstanceResponse {
+            accepted,
+            stored_updated_at_ms,
+        }))
+    }
+}
+
+#[tonic::async_trait]
+impl ExecutionRegistryServiceTrait for SmsServiceImpl {
+    async fn report_execution(
+        &self,
+        request: Request<Execution>,
+    ) -> Result<Response<ReportExecutionResponse>, Status> {
+        let mut exe = request.into_inner();
+        if exe.updated_at_ms == 0 {
+            exe.updated_at_ms = chrono::Utc::now().timestamp_millis();
+        }
+        if exe.started_at_ms == 0 {
+            exe.started_at_ms = exe.updated_at_ms;
+        }
+        if exe.log_ref.is_none() {
+            exe.log_ref = Some(crate::sms::instance_execution_index::make_default_log_ref(
+                &exe.execution_id,
+            ));
+        }
+        let (accepted, stored_updated_at_ms) = self
+            .instance_execution_index
+            .upsert_execution(exe.clone())
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        if accepted {
+            if let Err(e) = self
+                .unified_events
+                .publish_execution_event(&exe, EventOp::Upsert)
+                .await
+            {
+                warn!(error = %e, execution_id = %exe.execution_id, "Publish unified execution event failed");
+            }
+        }
+        Ok(Response::new(ReportExecutionResponse {
+            accepted,
+            stored_updated_at_ms,
+        }))
+    }
+}
+
+#[tonic::async_trait]
+impl ExecutionIndexServiceTrait for SmsServiceImpl {
+    async fn list_task_instances(
+        &self,
+        request: Request<ListTaskInstancesRequest>,
+    ) -> Result<Response<ListTaskInstancesResponse>, Status> {
+        let req = request.into_inner();
+        if req.task_id.is_empty() {
+            return Err(Status::invalid_argument("task_id is required"));
+        }
+        let limit = if req.limit <= 0 {
+            50
+        } else {
+            req.limit as usize
+        };
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let (instances, next_page_token) = self
+            .instance_execution_index
+            .list_task_instances(&req.task_id, now_ms, limit, &req.page_token)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(ListTaskInstancesResponse {
+            instances,
+            next_page_token,
+        }))
+    }
+
+    async fn list_instance_executions(
+        &self,
+        request: Request<ListInstanceExecutionsRequest>,
+    ) -> Result<Response<ListInstanceExecutionsResponse>, Status> {
+        let req = request.into_inner();
+        if req.instance_id.is_empty() {
+            return Err(Status::invalid_argument("instance_id is required"));
+        }
+        let limit = if req.limit <= 0 {
+            50
+        } else {
+            req.limit as usize
+        };
+        let (executions, next_page_token) = self
+            .instance_execution_index
+            .list_instance_executions(&req.instance_id, limit, &req.page_token)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(ListInstanceExecutionsResponse {
+            executions,
+            next_page_token,
+        }))
+    }
+
+    async fn get_execution(
+        &self,
+        request: Request<GetExecutionRequest>,
+    ) -> Result<Response<GetExecutionResponse>, Status> {
+        let req = request.into_inner();
+        if req.execution_id.is_empty() {
+            return Err(Status::invalid_argument("execution_id is required"));
+        }
+        let exe = self
+            .instance_execution_index
+            .get_execution(&req.execution_id)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(GetExecutionResponse {
+            found: exe.is_some(),
+            execution: exe,
+        }))
     }
 }
 
@@ -1568,6 +1895,91 @@ impl PlacementState {
 }
 
 #[tonic::async_trait]
+impl ExecutionLogIngestServiceTrait for SmsServiceImpl {
+    async fn append_execution_logs(
+        &self,
+        request: Request<AppendExecutionLogsRequest>,
+    ) -> Result<Response<AppendExecutionLogsResponse>, Status> {
+        let req = request.into_inner();
+        if req.execution_id.trim().is_empty() {
+            return Err(Status::invalid_argument("execution_id is required"));
+        }
+        if req.lines.is_empty() {
+            return Ok(Response::new(AppendExecutionLogsResponse {
+                execution_id: req.execution_id,
+                acked_seq: 0,
+                truncated: false,
+                next_seq: 1,
+                accepted: 0,
+            }));
+        }
+        let mut lines = Vec::with_capacity(req.lines.len());
+        for l in req.lines {
+            if l.seq == 0 {
+                return Err(Status::invalid_argument("seq must be > 0"));
+            }
+            lines.push(crate::sms::execution_logs::StoredLogLine {
+                ts_ms: l.ts_ms,
+                seq: l.seq,
+                stream: l.stream,
+                level: l.level,
+                message: l.message,
+            });
+        }
+
+        let out = crate::sms::execution_logs::append_logs_with_seq(&req.execution_id, lines).await;
+        match out {
+            Ok(r) => Ok(Response::new(AppendExecutionLogsResponse {
+                execution_id: req.execution_id,
+                acked_seq: r.acked_seq,
+                truncated: r.truncated,
+                next_seq: r.next_seq,
+                accepted: r.accepted,
+            })),
+            Err(crate::sms::execution_logs::AppendWithSeqError::InvalidExecutionId) => {
+                Err(Status::invalid_argument("invalid execution_id"))
+            }
+            Err(crate::sms::execution_logs::AppendWithSeqError::Completed) => {
+                Err(Status::failed_precondition("logs already finalized"))
+            }
+            Err(crate::sms::execution_logs::AppendWithSeqError::Truncated) => {
+                Err(Status::resource_exhausted("logs truncated"))
+            }
+            Err(crate::sms::execution_logs::AppendWithSeqError::InvalidSeq { .. }) => {
+                Err(Status::invalid_argument("invalid seq"))
+            }
+            Err(crate::sms::execution_logs::AppendWithSeqError::OutOfOrder { expected, got }) => {
+                Err(Status::failed_precondition(format!(
+                    "out_of_order: expected_seq={} got_seq={}",
+                    expected, got
+                )))
+            }
+            Err(crate::sms::execution_logs::AppendWithSeqError::Io(e)) => Err(Status::internal(e)),
+        }
+    }
+
+    async fn finalize_execution_logs(
+        &self,
+        request: Request<FinalizeExecutionLogsRequest>,
+    ) -> Result<Response<FinalizeExecutionLogsResponse>, Status> {
+        let req = request.into_inner();
+        if req.execution_id.trim().is_empty() {
+            return Err(Status::invalid_argument("execution_id is required"));
+        }
+        let meta = crate::sms::execution_logs::finalize_execution_logs(&req.execution_id)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(FinalizeExecutionLogsResponse {
+            execution_id: meta.execution_id,
+            truncated: meta.truncated,
+            completed: meta.completed,
+            next_seq: meta.next_seq,
+            updated_at_ms: meta.updated_at_ms as i64,
+        }))
+    }
+}
+
+#[tonic::async_trait]
 impl PlacementServiceTrait for SmsServiceImpl {
     async fn place_invocation(
         &self,
@@ -1691,6 +2103,100 @@ impl PlacementServiceTrait for SmsServiceImpl {
         Ok(Response::new(ReportInvocationOutcomeResponse {
             accepted: true,
         }))
+    }
+}
+
+async fn run_instance_projector(idx: Arc<InstanceExecutionIndex>, bus: Arc<UnifiedEventBus>) {
+    let stream = "type.instance";
+    let checkpoint_name = "type.instance";
+    let replay_limit = 1000usize;
+    let mut last_seq = idx.load_checkpoint(checkpoint_name).await.unwrap_or(0);
+    loop {
+        let batch = bus.replay_since(stream, last_seq, replay_limit).await;
+        let Ok(events) = batch else {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            continue;
+        };
+        if events.is_empty() {
+            break;
+        }
+        for env in events {
+            if env.seq <= last_seq {
+                continue;
+            }
+            if let Some(any) = env.payload {
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let _ = idx.apply_instance_event(env.op, &any, now_ms).await;
+            }
+            last_seq = env.seq;
+            let _ = idx.store_checkpoint(checkpoint_name, last_seq).await;
+        }
+    }
+
+    let mut rx = bus.subscribe(stream).await;
+    loop {
+        match rx.recv().await {
+            Ok(env) => {
+                if env.seq <= last_seq {
+                    continue;
+                }
+                if let Some(any) = env.payload {
+                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    let _ = idx.apply_instance_event(env.op, &any, now_ms).await;
+                }
+                last_seq = env.seq;
+                let _ = idx.store_checkpoint(checkpoint_name, last_seq).await;
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
+async fn run_execution_projector(idx: Arc<InstanceExecutionIndex>, bus: Arc<UnifiedEventBus>) {
+    let stream = "type.execution";
+    let checkpoint_name = "type.execution";
+    let replay_limit = 1000usize;
+    let mut last_seq = idx.load_checkpoint(checkpoint_name).await.unwrap_or(0);
+    loop {
+        let batch = bus.replay_since(stream, last_seq, replay_limit).await;
+        let Ok(events) = batch else {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            continue;
+        };
+        if events.is_empty() {
+            break;
+        }
+        for env in events {
+            if env.seq <= last_seq {
+                continue;
+            }
+            if let Some(any) = env.payload {
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let _ = idx.apply_execution_event(env.op, &any, now_ms).await;
+            }
+            last_seq = env.seq;
+            let _ = idx.store_checkpoint(checkpoint_name, last_seq).await;
+        }
+    }
+
+    let mut rx = bus.subscribe(stream).await;
+    loop {
+        match rx.recv().await {
+            Ok(env) => {
+                if env.seq <= last_seq {
+                    continue;
+                }
+                if let Some(any) = env.payload {
+                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    let _ = idx.apply_execution_event(env.op, &any, now_ms).await;
+                }
+                last_seq = env.seq;
+                let _ = idx.store_checkpoint(checkpoint_name, last_seq).await;
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
     }
 }
 

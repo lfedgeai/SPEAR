@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tracing::info;
 
 // Re-export runtime implementations / 重新导出运行时实现
@@ -123,6 +124,18 @@ pub struct ExecutionContext {
     pub wait: bool,
     /// Additional context data / 额外上下文数据
     pub context_data: HashMap<String, serde_json::Value>,
+    pub completion_tx: Option<mpsc::UnboundedSender<ExecutionCompletionEvent>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionCompletionEvent {
+    pub execution_id: String,
+    pub execution_status: ExecutionStatus,
+    pub completed_at_ms: i64,
+    pub duration_ms: u64,
+    pub output: Vec<u8>,
+    pub error_message: Option<String>,
+    pub runtime_metadata: HashMap<String, serde_json::Value>,
 }
 
 /// Runtime listening configuration / 运行时监听配置

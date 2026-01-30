@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package sms;
+
+message LogRef {
+  string backend = 1;
+  string uri_prefix = 2;
+  string content_type = 3;
+  string compression = 4;
+}
+
+enum InstanceStatus {
+  INSTANCE_STATUS_UNKNOWN = 0;
+  INSTANCE_STATUS_RUNNING = 1;
+  INSTANCE_STATUS_IDLE = 2;
+  INSTANCE_STATUS_TERMINATING = 3;
+  INSTANCE_STATUS_TERMINATED = 4;
+}
+
+message Instance {
+  string instance_id = 1;
+  string task_id = 2;
+  string node_uuid = 3;
+  InstanceStatus status = 4;
+  int64 created_at_ms = 5;
+  int64 updated_at_ms = 6;
+  int64 last_seen_ms = 7;
+  string current_execution_id = 8;
+  map<string, string> metadata = 9;
+}
+
+enum ExecutionStatus {
+  EXECUTION_STATUS_UNKNOWN = 0;
+  EXECUTION_STATUS_PENDING = 1;
+  EXECUTION_STATUS_RUNNING = 2;
+  EXECUTION_STATUS_COMPLETED = 3;
+  EXECUTION_STATUS_FAILED = 4;
+  EXECUTION_STATUS_CANCELLED = 5;
+  EXECUTION_STATUS_TIMEOUT = 6;
+}
+
+message Execution {
+  string execution_id = 1;
+  string invocation_id = 2;
+  string task_id = 3;
+  string function_name = 4;
+  string node_uuid = 5;
+  string instance_id = 6;
+  ExecutionStatus status = 7;
+  int64 started_at_ms = 8;
+  int64 completed_at_ms = 9;
+  LogRef log_ref = 10;
+  map<string, string> metadata = 11;
+  int64 updated_at_ms = 12;
+}
+
+message InstanceSummary {
+  string instance_id = 1;
+  string node_uuid = 2;
+  InstanceStatus status = 3;
+  int64 last_seen_ms = 4;
+  string current_execution_id = 5;
+}
+
+message ExecutionSummary {
+  string execution_id = 1;
+  string task_id = 2;
+  ExecutionStatus status = 3;
+  int64 started_at_ms = 4;
+  int64 completed_at_ms = 5;
+  string function_name = 6;
+}
+
+message ReportInstanceResponse {
+  bool accepted = 1;
+  int64 stored_updated_at_ms = 2;
+}
+
+message ReportExecutionResponse {
+  bool accepted = 1;
+  int64 stored_updated_at_ms = 2;
+}
+
+message ListTaskInstancesRequest {
+  string task_id = 1;
+  int32 limit = 2;
+  string page_token = 3;
+}
+
+message ListTaskInstancesResponse {
+  repeated InstanceSummary instances = 1;
+  string next_page_token = 2;
+}
+
+message ListInstanceExecutionsRequest {
+  string instance_id = 1;
+  int32 limit = 2;
+  string page_token = 3;
+}
+
+message ListInstanceExecutionsResponse {
+  repeated ExecutionSummary executions = 1;
+  string next_page_token = 2;
+}
+
+message GetExecutionRequest {
+  string execution_id = 1;
+}
+
+message GetExecutionResponse {
+  bool found = 1;
+  Execution execution = 2;
+}
+
+service InstanceRegistryService {
+  rpc ReportInstance(Instance) returns (ReportInstanceResponse);
+}
+
+service ExecutionRegistryService {
+  rpc ReportExecution(Execution) returns (ReportExecutionResponse);
+}
+
+service ExecutionIndexService {
+  rpc ListTaskInstances(ListTaskInstancesRequest) returns (ListTaskInstancesResponse);
+  rpc ListInstanceExecutions(ListInstanceExecutionsRequest) returns (ListInstanceExecutionsResponse);
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
+}
+

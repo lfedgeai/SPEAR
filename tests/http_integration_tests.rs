@@ -72,6 +72,18 @@ mod http_test_utils {
             spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
                 channel.clone(),
             );
+        let instance_registry_client =
+            spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+                channel.clone(),
+            );
+        let execution_registry_client =
+            spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+                channel.clone(),
+            );
+        let execution_index_client =
+            spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::new(
+                channel.clone(),
+            );
         let mcp_registry_client =
             spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
                 channel.clone(),
@@ -84,6 +96,9 @@ mod http_test_utils {
             node_client: sms_client,
             task_client,
             placement_client,
+            instance_registry_client,
+            execution_registry_client,
+            execution_index_client,
             mcp_registry_client,
             backend_registry_client,
             cancel_token: CancellationToken::new(),
@@ -234,6 +249,18 @@ async fn test_http_node_lifecycle() {
         spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
             channel_filter.clone(),
         );
+    let instance_registry_client_filter =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+            channel_filter.clone(),
+        );
+    let execution_registry_client_filter =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+            channel_filter.clone(),
+        );
+    let execution_index_client_filter =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::new(
+            channel_filter.clone(),
+        );
     let mcp_registry_client_filter =
         spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
             channel_filter.clone(),
@@ -246,6 +273,9 @@ async fn test_http_node_lifecycle() {
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
+        instance_registry_client: instance_registry_client_filter,
+        execution_registry_client: execution_registry_client_filter,
+        execution_index_client: execution_index_client_filter,
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
         cancel_token: CancellationToken::new(),
@@ -355,6 +385,18 @@ async fn test_http_resource_management() {
         spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
             channel_filter.clone(),
         );
+    let instance_registry_client_filter =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+            channel_filter.clone(),
+        );
+    let execution_registry_client_filter =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+            channel_filter.clone(),
+        );
+    let execution_index_client_filter =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::new(
+            channel_filter.clone(),
+        );
     let mcp_registry_client_filter =
         spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
             channel_filter.clone(),
@@ -367,6 +409,9 @@ async fn test_http_resource_management() {
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
+        instance_registry_client: instance_registry_client_filter,
+        execution_registry_client: execution_registry_client_filter,
+        execution_index_client: execution_index_client_filter,
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
         cancel_token: CancellationToken::new(),

@@ -16,6 +16,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 "proto/sms/backend_registry.proto",
+                "proto/sms/events.proto",
+                "proto/sms/execution.proto",
+                "proto/sms/execution_log_ingest.proto",
                 "proto/sms/node.proto",
                 "proto/sms/task.proto",
                 "proto/sms/placement.proto",

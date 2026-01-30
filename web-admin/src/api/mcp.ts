@@ -58,12 +58,25 @@ export type ListMcpServersResponse = {
   message?: string
 }
 
+export type GetMcpServerResponse = {
+  success: boolean
+  message?: string
+  found?: boolean
+  server?: McpServer
+}
+
 /**
  * List MCP servers.
  * 列出 MCP servers。
  */
 export function listMcpServers() {
   return fetchJson<ListMcpServersResponse>('/admin/api/mcp/servers')
+}
+
+export function getMcpServer(serverId: string) {
+  return fetchJson<GetMcpServerResponse>(
+    `/admin/api/mcp/servers/${encodeURIComponent(serverId)}`,
+  )
 }
 
 export type UpsertMcpServerPayload = {

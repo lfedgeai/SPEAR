@@ -1,14 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Copy, Search, Server } from 'lucide-react'
-import { toast } from 'sonner'
+import { Search, Server } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
-import { getNodeDetail, listNodes } from '@/api/nodes'
-import type { NodeSummary } from '@/api/types'
+import { listNodes } from '@/api/nodes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
@@ -30,39 +28,15 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="destructive">{status || 'unknown'}</Badge>
 }
 
-function CopyButton({ value }: { value: string }) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={async () => {
-        await navigator.clipboard.writeText(value)
-        toast.success('Copied')
-      }}
-    >
-      <Copy className="h-4 w-4" />
-      Copy
-    </Button>
-  )
-}
-
 export default function NodesPage() {
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
-  const [selected, setSelected] = useState<NodeSummary | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
 
   const nodesQuery = useQuery({
     queryKey: ['nodes', q],
     queryFn: () =>
       listNodes({ q, sort_by: 'last_heartbeat', order: 'desc', limit: 200 }),
     refetchInterval: 15_000,
-  })
-
-  const selectedUuid = selected?.uuid
-  const detailQuery = useQuery({
-    queryKey: ['node-detail', selectedUuid],
-    queryFn: () => getNodeDetail(selectedUuid!),
-    enabled: !!selectedUuid && detailOpen,
   })
 
   const rows = nodesQuery.data?.nodes || []
@@ -128,8 +102,7 @@ export default function NodesPage() {
                       key={n.uuid}
                       type="button"
                       onClick={() => {
-                        setSelected(n)
-                        setDetailOpen(true)
+                        navigate(`/nodes/${encodeURIComponent(n.uuid)}`)
                       }}
                       className={cn(
                         'grid w-full grid-cols-12 items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[hsl(var(--accent))]',
@@ -165,93 +138,6 @@ export default function NodesPage() {
           </div>
         </CardContent>
       </Card>
-
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent>
-          <DialogHeader
-            title={selected ? selected.name || 'Node detail' : 'Node detail'}
-            description={selected ? selected.uuid : undefined}
-          />
-          {detailQuery.isLoading ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Loading…</div>
-          ) : detailQuery.isError ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">
-              Failed to load node detail.
-            </div>
-          ) : detailQuery.data?.found ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Summary</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Status</span>
-                      <StatusBadge status={detailQuery.data.node?.status || ''} />
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Address</span>
-                      <span>
-                        {detailQuery.data.node?.ip_address}:{detailQuery.data.node?.port}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Registered</span>
-                      <span>
-                        {detailQuery.data.node?.registered_at
-                          ? formatTs(detailQuery.data.node.registered_at)
-                          : '-'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Last heartbeat</span>
-                      <span>
-                        {detailQuery.data.node?.last_heartbeat
-                          ? formatTs(detailQuery.data.node.last_heartbeat)
-                          : '-'}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Resources</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">CPU</span>
-                      <span>{detailQuery.data.resource?.cpu_usage_percent ?? '-'}%</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Memory</span>
-                      <span>
-                        {detailQuery.data.resource?.memory_usage_percent ?? '-'}%
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Disk</span>
-                      <span>{detailQuery.data.resource?.disk_usage_percent ?? '-'}%</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-[hsl(var(--muted-foreground))]">Raw JSON</div>
-                {selected?.uuid ? <CopyButton value={selected.uuid} /> : null}
-              </div>
-              <pre className="max-h-[260px] overflow-auto rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3 text-xs">
-                {JSON.stringify(detailQuery.data, null, 2)}
-              </pre>
-            </div>
-          ) : (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Not found</div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
-

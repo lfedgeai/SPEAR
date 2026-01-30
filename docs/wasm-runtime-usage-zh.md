@@ -26,7 +26,7 @@ Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制�
   "config": {},
   "executable": {
     "type": "wasm",
-    "uri": "sms+file://<file_id>",
+    "uri": "smsfile://<file_id>",
     "name": "hello.wasm",
     "args": [],
     "env": {}
@@ -38,9 +38,9 @@ Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制�
 
 ### SMS 文件协议与配置来源
 
-- 支持 `sms+file` 下载协议：
-  - 显式覆盖：`sms+file://<host:port>/<file_id>`
-  - 简洁形式：`sms+file://<file_id>`（将使用 `SpearletConfig.sms_http_addr` 作为 HTTP 网关地址）
+- 支持 `smsfile` 下载协议：
+  - 显式覆盖：`smsfile://<host:port>/<file_id>`
+  - 简洁形式：`smsfile://<file_id>`（将使用 `SpearletConfig.sms_http_addr` 作为 HTTP 网关地址）
 - 运行时构造路径 `"/api/v1/files/<file_id>"`。
 - 下载函数签名：
 

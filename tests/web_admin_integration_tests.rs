@@ -89,10 +89,31 @@ async fn test_admin_list_nodes_empty() {
         )
         .await
         .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -159,8 +180,44 @@ async fn test_admin_list_nodes_filter_and_sort() {
         )
         .await
         .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let backend_registry_client =
         spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
             grpc_url.clone(),
         )
         .await
@@ -169,6 +226,9 @@ async fn test_admin_list_nodes_filter_and_sort() {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -254,10 +314,31 @@ async fn test_admin_stats() {
         )
         .await
         .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -300,7 +381,25 @@ async fn test_admin_nodes_stream() {
         .unwrap();
     let backend_registry_client =
         spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::connect(
-            grpc_url,
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
         )
         .await
         .unwrap();
@@ -308,6 +407,9 @@ async fn test_admin_nodes_stream() {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -389,10 +491,31 @@ async fn test_admin_node_detail_includes_resource() {
         )
         .await
         .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -441,11 +564,32 @@ async fn test_admin_mcp_servers_crud() {
         )
         .await
         .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
 
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -522,11 +666,32 @@ async fn test_admin_mcp_servers_validation() {
         )
         .await
         .unwrap();
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            grpc_url.clone(),
+        )
+        .await
+        .unwrap();
 
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),

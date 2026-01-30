@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Copy, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { listBackends, type AggregatedBackend } from '@/api/backends'
+import { listBackends } from '@/api/backends'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
 function StatusBadge({ status }: { status: 'available' | 'unavailable' }) {
@@ -15,27 +15,10 @@ function StatusBadge({ status }: { status: 'available' | 'unavailable' }) {
   return <Badge variant="destructive">{status}</Badge>
 }
 
-function CopyButton({ value }: { value: string }) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={async () => {
-        await navigator.clipboard.writeText(value)
-        toast.success('Copied')
-      }}
-    >
-      <Copy className="h-4 w-4" />
-      Copy
-    </Button>
-  )
-}
-
 export default function BackendsPage() {
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<'available' | 'unavailable' | ''>('')
-  const [selected, setSelected] = useState<AggregatedBackend | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
 
   const query = useQuery({
     queryKey: ['backends', q, status],
@@ -123,8 +106,9 @@ export default function BackendsPage() {
                     key={`${b.name}::${b.kind}`}
                     className="cursor-pointer border-t border-[hsl(var(--border))] hover:bg-[hsl(var(--accent))]"
                     onClick={() => {
-                      setSelected(b)
-                      setDetailOpen(true)
+                      navigate(
+                        `/backends/${encodeURIComponent(b.kind)}/${encodeURIComponent(b.name)}`,
+                      )
                     }}
                   >
                     <td className="px-3 py-2 font-medium">{b.name}</td>
@@ -163,78 +147,6 @@ export default function BackendsPage() {
           </div>
         </CardContent>
       </Card>
-
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent>
-          <DialogHeader
-            title={selected ? selected.name || 'Backend detail' : 'Backend detail'}
-            description={selected ? selected.kind : undefined}
-          />
-          {selected ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Summary</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Available</span>
-                      <span>
-                        {selected.available_nodes}/{selected.total_nodes}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Ops</span>
-                      <span>{selected.operations?.length ?? 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Transports</span>
-                      <span>{selected.transports?.length ?? 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Nodes</span>
-                      <span>{selected.nodes?.length ?? 0}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Routing</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Status</span>
-                      <StatusBadge
-                        status={selected.available_nodes > 0 ? 'available' : 'unavailable'}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Name</span>
-                      <span className="truncate">{selected.name}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[hsl(var(--muted-foreground))]">Kind</span>
-                      <span className="truncate">{selected.kind}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-[hsl(var(--muted-foreground))]">Raw JSON</div>
-                {selected.name ? <CopyButton value={selected.name} /> : null}
-              </div>
-              <pre className="max-h-[260px] overflow-auto rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3 text-xs">
-                {JSON.stringify(selected, null, 2)}
-              </pre>
-            </div>
-          ) : (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Not found</div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -91,7 +91,7 @@ curl -X POST http://localhost:8080/api/v1/tasks \
     },
     "executable": {
       "type": "wasm",
-      "uri": "sms+file://<file_id>",
+      "uri": "smsfile://<file_id>",
       "name": "hello.wasm",
       "args": [],
       "env": {}
@@ -136,7 +136,7 @@ curl -X DELETE http://localhost:8080/api/v1/tasks/{task_id}
 ## 可执行描述（Executable）
 
 - `type`: 可执行类型，支持 `binary|script|container|wasm|process`
-- `uri`: 规范化 URI（如 `sms+file://<id>`、`http://...`、`docker://image:tag`）
+- `uri`: 规范化 URI（如 `smsfile://<id>`、`http://...`、`docker://image:tag`）
 - `name`: 可选本地别名
 - `checksum_sha256`: 可选完整性校验
 - `args` 与 `env`: 运行时默认参数与环境变量

@@ -26,13 +26,13 @@ This document explains how to use the `spear-next` Web Admin, covering nodes, fi
 - Upload: click `Upload`; success toast shows completion
 - Actions:
   - `Download` the object
-  - `Copy URI` copies `sms+file://<id>`
+  - `Copy URI` copies `smsfile://<id>`
   - `Delete` removes and refreshes list (React Query invalidate + local filter)
 
 ## Task Creation (Tasks → Create Task)
 
 - Executable type: `No Executable | Binary | Script | Container | WASM | Process`
-- Executable URI accepts `sms+file://<id>` for embedded file artifacts
+- Executable URI accepts `smsfile://<id>` for embedded file artifacts
 - Parameters: `Capabilities` (comma), `Args` (comma), `Env` (`key=value` per line)
  - MCP tools (optional):
    - Enable MCP tools and pick per-task servers from the MCP registry

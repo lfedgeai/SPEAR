@@ -12,7 +12,7 @@
 
 ## 关键用例
 
-- `task_modal.spec.ts`：选择 `sms+file`，在弹窗中点击 `Use` 填充 URI
+- `task_modal.spec.ts`：选择 `smsfile`，在弹窗中点击 `Use` 填充 URI
 - `task_modal_scheme_prefill.spec.ts`：切换 Scheme 自动预填 `Executable URI`
 - `executable_select_unit.spec.ts`：使用隐藏原生 `select` 验证类型选择（稳定，不受弹层干扰）
 - `files.spec.ts`：上传文件并复制 URI

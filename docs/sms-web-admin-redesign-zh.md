@@ -52,10 +52,10 @@
 - Tasks
   - Tasks Table：搜索、排序、分页
   - Task Detail：弹窗 JSON
-  - Create Task：表单创建 Task，支持 executable 配置、从 Files 中选择 sms+file URI
+  - Create Task：表单创建 Task，支持 executable 配置、从 Files 中选择 smsfile URI
 
 - Files
-  - 文件列表、上传（presign + upload）、下载、复制 sms+file URI、删除
+  - 文件列表、上传（presign + upload）、下载、复制 smsfile URI、删除
   - 支持一次选择多个文件并顺序上传（多请求；后端无需批量接口）
   - 文件 meta 弹窗 JSON
 

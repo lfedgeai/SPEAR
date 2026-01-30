@@ -7,7 +7,7 @@
 - Source: `samples/wasm-js/chat_completion_tool_sum/src/main.rs` (Boa JS runner compiled to WASM; runs `entry.mjs` → Tool calling)
 - Source: `samples/wasm-c/mic_rtasr.c` (realtime mic → realtime ASR)
 - Output: `samples/build/hello.wasm`
-  - WASM-JS outputs: `samples/build/js/*.wasm` (compat: `samples/build/rust/*.wasm`)
+-  - WASM-JS outputs: `samples/build/js/js-*.wasm`
 
 ## mic_rtasr prerequisites
 
@@ -41,6 +41,7 @@ WASM-JS samples:
 - Controlled by Makefile vars:
   - `BUILD_JS_SAMPLES=0` to skip WASM-JS samples (compat: `BUILD_RUST_SAMPLES=0`)
   - `JS_SAMPLES="chat_completion chat_completion_tool_sum"` to select which samples to build (compat: `RUST_SAMPLES=...`)
+  - `JS_WASM_PREFIX="js-"` to set the WASM-JS output filename prefix (default `js-`)
 
 ## clang usage
 - Environment: `WASI_SYSROOT=/opt/wasi-sdk/share/wasi-sysroot` (adjust as needed)
@@ -48,7 +49,7 @@ WASM-JS samples:
 - Without SDK or sysroot, command fails; install `zig` or set `WASI_SYSROOT`
 
 ## Important changes
-- `make samples` builds both WASM-C and WASM-Rust samples and writes artifacts under `samples/build/`
+- `make samples` builds both WASM-C and WASM-JS samples and writes artifacts under `samples/build/`
 
 ## Runtime integration
 - The generated `hello.wasm` can be uploaded via SMS file service and referenced in task registration `executable.uri`

@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package sms;
+
+import "google/protobuf/any.proto";
+
+enum EventOp {
+  EVENT_OP_UNKNOWN = 0;
+  EVENT_OP_CREATE = 1;
+  EVENT_OP_UPDATE = 2;
+  EVENT_OP_DELETE = 3;
+  EVENT_OP_UPSERT = 4;
+  EVENT_OP_CANCEL = 5;
+}
+
+enum ResourceType {
+  RESOURCE_TYPE_UNKNOWN = 0;
+  RESOURCE_TYPE_TASK = 1;
+  RESOURCE_TYPE_NODE = 2;
+  RESOURCE_TYPE_ARTIFACT = 3;
+  RESOURCE_TYPE_INSTANCE = 4;
+  RESOURCE_TYPE_EXECUTION = 5;
+}
+
+message EventEnvelope {
+  string event_id = 1;
+  int64 ts_ms = 2;
+  string stream = 3;
+  uint64 seq = 4;
+  ResourceType resource_type = 5;
+  string resource_id = 6;
+  EventOp op = 7;
+  uint32 schema_version = 8;
+  string node_uuid = 9;
+  string correlation_id = 10;
+  map<string, string> headers = 11;
+  google.protobuf.Any payload = 12;
+  bytes payload_bytes = 13;
+  string content_type = 14;
+}
+
+message AllEventsSelector {}
+
+message SubscribeEventsSelector {
+  oneof selector {
+    string stream = 1;
+    string node_uuid = 2;
+    ResourceType resource_type = 3;
+    AllEventsSelector all = 4;
+  }
+}
+
+message SubscribeEventsRequest {
+  SubscribeEventsSelector selector = 1;
+  uint64 after_seq = 2;
+  uint32 replay_limit = 3;
+}
+
+service EventsService {
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream EventEnvelope);
+}

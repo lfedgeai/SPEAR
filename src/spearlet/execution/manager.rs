@@ -9,7 +9,7 @@ use super::runtime::RuntimeType;
 use super::{
     artifact::{Artifact, ArtifactId},
     instance::{InstanceId, InstanceStatus, TaskInstance},
-    runtime::{ExecutionContext, RuntimeManager},
+    runtime::{ExecutionCompletionEvent, ExecutionContext, RuntimeManager},
     scheduler::{InstanceScheduler, SchedulingPolicy},
     task::{Task, TaskId},
     ExecutionError, ExecutionResult, DEFAULT_ENTRY_FUNCTION_NAME,
@@ -25,6 +25,17 @@ use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::timeout;
 use tonic::transport::Channel;
 use tracing::{debug, info, warn};
+
+#[derive(Debug, Clone)]
+struct PendingAsyncExecution {
+    invocation_id: String,
+    task_id: String,
+    function_name: String,
+    instance_id: String,
+    started_at_ms: i64,
+    log_next_seq: u64,
+    wasm_last_seq: u64,
+}
 
 /// Task execution manager configuration / 任务执行管理器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +96,14 @@ struct ExecutionWorkItem {
     pub response_sender: oneshot::Sender<ExecutionResult<super::ExecutionResponse>>,
     /// Request timestamp / 请求时间戳
     pub timestamp: SystemTime,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SmsAppendLogLine {
+    ts_ms: Option<u64>,
+    stream: Option<String>,
+    level: Option<String>,
+    message: String,
 }
 
 /// Execution statistics / 执行统计
@@ -164,6 +183,8 @@ pub struct TaskExecutionManager {
     request_counter: AtomicU64,
     /// Execution request sender / 执行请求发送器
     work_sender: mpsc::UnboundedSender<ExecutionWorkItem>,
+    completion_sender: mpsc::UnboundedSender<ExecutionCompletionEvent>,
+    pending_async_executions: Arc<DashMap<String, PendingAsyncExecution>>,
     /// Shutdown signal / 关闭信号
     shutdown_sender: Option<oneshot::Sender<()>>,
 }
@@ -180,6 +201,7 @@ impl TaskExecutionManager {
 
         let (work_sender, work_receiver) = mpsc::unbounded_channel();
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+        let (completion_sender, completion_receiver) = mpsc::unbounded_channel();
 
         let manager = Arc::new(Self {
             config: config.clone(),
@@ -194,6 +216,8 @@ impl TaskExecutionManager {
             statistics: Arc::new(RwLock::new(ExecutionStatistics::default())),
             request_counter: AtomicU64::new(0),
             work_sender,
+            completion_sender,
+            pending_async_executions: Arc::new(DashMap::new()),
             shutdown_sender: Some(shutdown_sender),
         });
 
@@ -208,6 +232,13 @@ impl TaskExecutionManager {
         let manager_clone = manager.clone();
         tokio::spawn(async move {
             manager_clone.run_health_check_loop().await;
+        });
+
+        let manager_clone = manager.clone();
+        tokio::spawn(async move {
+            manager_clone
+                .run_async_completion_loop(completion_receiver)
+                .await;
         });
 
         let manager_clone = manager.clone();
@@ -300,6 +331,7 @@ impl TaskExecutionManager {
             execution_mode,
             wait,
             context_data,
+            completion_tx: Some(self.completion_sender.clone()),
         };
 
         let (response_sender, response_receiver) = oneshot::channel();
@@ -667,7 +699,112 @@ impl TaskExecutionManager {
                 message: format!("Runtime not found for type: {:?}", task.spec.runtime_type),
             })?;
         let execution_id = execution_context.execution_id.clone();
-        let runtime_response = runtime.execute(&instance, execution_context).await?;
+        let started_at_ms = chrono::Utc::now().timestamp_millis();
+        let mut log_next_seq: u64 = 1;
+        let mut wasm_last_seq: u64 = 0;
+
+        if instance.config.runtime_type == super::RuntimeType::Wasm {
+            crate::spearlet::execution::host_api::clear_wasm_logs_by_execution(&execution_id);
+        }
+
+        self.report_instance_to_sms(
+            instance.task_id.clone(),
+            instance.id().to_string(),
+            execution_id.clone(),
+            started_at_ms,
+        );
+        self.report_execution_to_sms(
+            invocation_id.clone(),
+            instance.task_id.clone(),
+            function_name.clone(),
+            instance.id().to_string(),
+            execution_id.clone(),
+            crate::proto::sms::ExecutionStatus::Running as i32,
+            started_at_ms,
+            0,
+            std::collections::HashMap::new(),
+        );
+        let _ = self
+            .append_execution_logs_to_sms(
+                &execution_id,
+                &mut log_next_seq,
+                vec![SmsAppendLogLine {
+                    ts_ms: Some(started_at_ms as u64),
+                    stream: Some("system".to_string()),
+                    level: Some("info".to_string()),
+                    message: format!(
+                        "execution_started invocation_id={} task_id={} instance_id={} function_name={}",
+                        invocation_id,
+                        instance.task_id.clone(),
+                        instance.id(),
+                        function_name
+                    ),
+                }],
+            )
+            .await;
+
+        let runtime_response = match runtime.execute(&instance, execution_context).await {
+            Ok(r) => r,
+            Err(e) => {
+                let completed_at_ms = chrono::Utc::now().timestamp_millis();
+                let msg = e.to_string();
+                let _ = self
+                    .append_execution_logs_to_sms(
+                        &execution_id,
+                        &mut log_next_seq,
+                        vec![SmsAppendLogLine {
+                            ts_ms: Some(completed_at_ms as u64),
+                            stream: Some("system".to_string()),
+                            level: Some("error".to_string()),
+                            message: format!("execution_failed error={}", msg),
+                        }],
+                    )
+                    .await;
+
+                if instance.config.runtime_type == super::RuntimeType::Wasm {
+                    let _ = self
+                        .flush_wasm_logs_to_sms(
+                            &execution_id,
+                            &mut log_next_seq,
+                            &mut wasm_last_seq,
+                        )
+                        .await;
+                }
+                let _ = self.finalize_execution_logs_to_sms(&execution_id).await;
+
+                let mut meta = std::collections::HashMap::new();
+                meta.insert("error_message".to_string(), msg);
+                self.report_execution_to_sms(
+                    invocation_id.clone(),
+                    instance.task_id.clone(),
+                    function_name.clone(),
+                    instance.id().to_string(),
+                    execution_id.clone(),
+                    crate::proto::sms::ExecutionStatus::Failed as i32,
+                    started_at_ms,
+                    completed_at_ms,
+                    meta,
+                );
+                self.report_instance_to_sms(
+                    instance.task_id.clone(),
+                    instance.id().to_string(),
+                    execution_id.clone(),
+                    completed_at_ms,
+                );
+                return Err(e);
+            }
+        };
+
+        debug!(
+            execution_id = %execution_id,
+            invocation_id = %invocation_id,
+            instance_id = %instance.id(),
+            runtime_type = ?instance.config.runtime_type,
+            runtime_execution_mode = ?runtime_response.execution_mode,
+            runtime_execution_status = ?runtime_response.execution_status,
+            runtime_duration_ms = runtime_response.duration_ms,
+            "runtime.execute.returned"
+        );
 
         // Convert RuntimeExecutionResponse to ExecutionResponse / 转换运行时响应到执行响应
         let is_successful = runtime_response.is_successful();
@@ -688,6 +825,108 @@ impl TaskExecutionManager {
             .collect();
         let data = runtime_response.data;
 
+        if is_running {
+            self.pending_async_executions.insert(
+                execution_id.clone(),
+                PendingAsyncExecution {
+                    invocation_id: invocation_id.clone(),
+                    task_id: instance.task_id.clone(),
+                    function_name: function_name.clone(),
+                    instance_id: instance.id().to_string(),
+                    started_at_ms,
+                    log_next_seq,
+                    wasm_last_seq: 0,
+                },
+            );
+
+            return Ok(super::ExecutionResponse {
+                execution_id,
+                invocation_id,
+                task_id: desired_task_id.unwrap_or_else(|| instance.task_id.clone()),
+                function_name,
+                instance_id: instance.id().to_string(),
+                status: "running".to_string(),
+                output_data: Vec::new(),
+                execution_time_ms: 0,
+                error_message: None,
+                metadata,
+                timestamp: SystemTime::now(),
+            });
+        }
+
+        let completed_at_ms = chrono::Utc::now().timestamp_millis();
+        let (final_status, final_status_str) = if is_successful {
+            (
+                crate::proto::sms::ExecutionStatus::Completed as i32,
+                "completed",
+            )
+        } else if has_failed {
+            (crate::proto::sms::ExecutionStatus::Failed as i32, "failed")
+        } else {
+            (
+                crate::proto::sms::ExecutionStatus::Pending as i32,
+                "pending",
+            )
+        };
+        let mut final_meta = metadata.clone();
+        final_meta.insert("execution_time_ms".to_string(), duration_ms.to_string());
+        if let Some(err) = &error_message {
+            final_meta.insert("error_message".to_string(), err.clone());
+        }
+        self.report_execution_to_sms(
+            invocation_id.clone(),
+            instance.task_id.clone(),
+            function_name.clone(),
+            instance.id().to_string(),
+            execution_id.clone(),
+            final_status,
+            started_at_ms,
+            completed_at_ms,
+            final_meta,
+        );
+        self.report_instance_to_sms(
+            instance.task_id.clone(),
+            instance.id().to_string(),
+            execution_id.clone(),
+            completed_at_ms,
+        );
+
+        if instance.config.runtime_type == super::RuntimeType::Wasm {
+            debug!(
+                execution_id = %execution_id,
+                invocation_id = %invocation_id,
+                instance_id = %instance.id(),
+                runtime_execution_status = ?runtime_response.execution_status,
+                "manager.wasm.flush.begin"
+            );
+            let _ = self
+                .flush_wasm_logs_to_sms(&execution_id, &mut log_next_seq, &mut wasm_last_seq)
+                .await;
+        }
+        debug!(
+            execution_id = %execution_id,
+            invocation_id = %invocation_id,
+            instance_id = %instance.id(),
+            final_status = final_status,
+            "manager.logs.finalize.plan"
+        );
+        let _ = self
+            .append_execution_logs_to_sms(
+                &execution_id,
+                &mut log_next_seq,
+                vec![SmsAppendLogLine {
+                    ts_ms: Some(completed_at_ms as u64),
+                    stream: Some("system".to_string()),
+                    level: Some(if is_successful { "info" } else { "warn" }.to_string()),
+                    message: format!(
+                        "execution_completed status={} duration_ms={}",
+                        final_status_str, duration_ms
+                    ),
+                }],
+            )
+            .await;
+        let _ = self.finalize_execution_logs_to_sms(&execution_id).await;
+
         Ok(super::ExecutionResponse {
             execution_id,
             invocation_id,
@@ -695,20 +934,138 @@ impl TaskExecutionManager {
             function_name,
             instance_id: instance.id().to_string(),
             output_data: data,
-            status: if is_successful {
-                "completed".to_string()
-            } else if has_failed {
-                "failed".to_string()
-            } else if is_running {
-                "running".to_string()
-            } else {
-                "pending".to_string()
-            },
+            status: final_status_str.to_string(),
             error_message,
             execution_time_ms: duration_ms,
             metadata,
             timestamp: SystemTime::now(),
         })
+    }
+
+    async fn append_execution_logs_to_sms(
+        &self,
+        execution_id: &str,
+        next_seq: &mut u64,
+        lines: Vec<SmsAppendLogLine>,
+    ) -> ExecutionResult<()> {
+        if execution_id.trim().is_empty() || lines.is_empty() {
+            return Ok(());
+        }
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        if addr.trim().is_empty() {
+            return Ok(());
+        }
+        let url = format!("http://{}", addr);
+        let mut client = crate::proto::sms::execution_log_ingest_service_client::ExecutionLogIngestServiceClient::connect(url)
+            .await
+            .map_err(|e| ExecutionError::RuntimeError { message: e.to_string() })?;
+
+        let mut out_lines = Vec::with_capacity(lines.len());
+        for l in lines {
+            let seq = (*next_seq).max(1);
+            *next_seq = (*next_seq).saturating_add(1);
+            out_lines.push(crate::proto::sms::ExecutionLogLine {
+                ts_ms: l
+                    .ts_ms
+                    .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64),
+                seq,
+                stream: l.stream.unwrap_or_else(|| "stdout".to_string()),
+                level: l.level.unwrap_or_else(|| "info".to_string()),
+                message: l.message,
+            });
+        }
+
+        let req = tonic::Request::new(crate::proto::sms::AppendExecutionLogsRequest {
+            execution_id: execution_id.to_string(),
+            lines: out_lines,
+        });
+        let resp = client
+            .append_execution_logs(req)
+            .await
+            .map_err(|e| ExecutionError::RuntimeError {
+                message: e.to_string(),
+            })?
+            .into_inner();
+        if resp.next_seq > 0 {
+            *next_seq = (*next_seq).max(resp.next_seq);
+        }
+        Ok(())
+    }
+
+    async fn finalize_execution_logs_to_sms(&self, execution_id: &str) -> ExecutionResult<()> {
+        if execution_id.trim().is_empty() {
+            return Ok(());
+        }
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        if addr.trim().is_empty() {
+            return Ok(());
+        }
+        let url = format!("http://{}", addr);
+        let mut client = crate::proto::sms::execution_log_ingest_service_client::ExecutionLogIngestServiceClient::connect(url)
+            .await
+            .map_err(|e| ExecutionError::RuntimeError { message: e.to_string() })?;
+        let req = tonic::Request::new(crate::proto::sms::FinalizeExecutionLogsRequest {
+            execution_id: execution_id.to_string(),
+        });
+        let _ = client.finalize_execution_logs(req).await;
+        Ok(())
+    }
+
+    async fn flush_wasm_logs_to_sms(
+        &self,
+        execution_id: &str,
+        next_seq: &mut u64,
+        wasm_last_seq: &mut u64,
+    ) -> ExecutionResult<()> {
+        let logs = crate::spearlet::execution::host_api::get_wasm_logs_by_execution(
+            execution_id,
+            Some(*wasm_last_seq),
+            4096,
+        );
+        debug!(
+            execution_id = %execution_id,
+            count = logs.len(),
+            "wasm_logs.flush_to_sms.called"
+        );
+        if logs.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(last) = logs.last() {
+            *wasm_last_seq = (*wasm_last_seq).max(last.seq);
+        }
+
+        debug!(
+            execution_id = %execution_id,
+            count = logs.len(),
+            logs = ?logs,
+            "wasm_logs.flush_to_sms"
+        );
+
+        let mut batch = Vec::new();
+        for e in logs {
+            batch.push(SmsAppendLogLine {
+                ts_ms: Some(e.ts_ms),
+                stream: Some("wasm".to_string()),
+                level: Some(e.level),
+                message: e.message,
+            });
+            if batch.len() >= 200 {
+                let _ = self
+                    .append_execution_logs_to_sms(
+                        execution_id,
+                        next_seq,
+                        std::mem::take(&mut batch),
+                    )
+                    .await;
+            }
+        }
+        if !batch.is_empty() {
+            let _ = self
+                .append_execution_logs_to_sms(execution_id, next_seq, batch)
+                .await;
+        }
+        Ok(())
     }
 
     pub fn get_artifact_by_id(&self, artifact_id: &str) -> Option<Arc<Artifact>> {
@@ -1084,6 +1441,144 @@ impl TaskExecutionManager {
         }
     }
 
+    async fn run_async_completion_loop(
+        &self,
+        mut receiver: mpsc::UnboundedReceiver<ExecutionCompletionEvent>,
+    ) {
+        while let Some(ev) = receiver.recv().await {
+            let _ = self.handle_async_completion(ev).await;
+        }
+    }
+
+    async fn handle_async_completion(&self, ev: ExecutionCompletionEvent) -> ExecutionResult<()> {
+        let Some((_, pending)) = self.pending_async_executions.remove(&ev.execution_id) else {
+            return Ok(());
+        };
+
+        if let Some(inst) = self.instances.get(&pending.instance_id) {
+            if inst.value().config.runtime_type == super::RuntimeType::Wasm {
+                if let Some(wasm_handle) = inst
+                    .value()
+                    .get_runtime_handle::<crate::spearlet::execution::runtime::wasm::WasmInstanceHandle>(
+                    )
+                {
+                    let mut st = wasm_handle.state.lock().await;
+                    st.is_running = false;
+                    st.current_function = None;
+                }
+            }
+        }
+
+        let completed_at_ms = ev.completed_at_ms;
+        let mut log_next_seq = pending.log_next_seq;
+        let mut wasm_last_seq = pending.wasm_last_seq;
+        if self
+            .instances
+            .get(&pending.instance_id)
+            .map(|inst| inst.value().config.runtime_type == super::RuntimeType::Wasm)
+            .unwrap_or(false)
+        {
+            let _ = self
+                .flush_wasm_logs_to_sms(&ev.execution_id, &mut log_next_seq, &mut wasm_last_seq)
+                .await;
+        }
+
+        let is_successful = matches!(
+            ev.execution_status,
+            crate::spearlet::execution::runtime::ExecutionStatus::Completed
+        );
+        let has_failed = matches!(
+            ev.execution_status,
+            crate::spearlet::execution::runtime::ExecutionStatus::Failed
+        );
+
+        let _ = self
+            .append_execution_logs_to_sms(
+                &ev.execution_id,
+                &mut log_next_seq,
+                vec![SmsAppendLogLine {
+                    ts_ms: Some(completed_at_ms as u64),
+                    stream: Some("system".to_string()),
+                    level: Some(if is_successful { "info" } else { "warn" }.to_string()),
+                    message: format!(
+                        "execution_completed status={} duration_ms={}",
+                        if is_successful {
+                            "completed"
+                        } else if has_failed {
+                            "failed"
+                        } else {
+                            "pending"
+                        },
+                        ev.duration_ms
+                    ),
+                }],
+            )
+            .await;
+        let _ = self.finalize_execution_logs_to_sms(&ev.execution_id).await;
+
+        let final_status = if is_successful {
+            crate::proto::sms::ExecutionStatus::Completed as i32
+        } else if has_failed {
+            crate::proto::sms::ExecutionStatus::Failed as i32
+        } else {
+            crate::proto::sms::ExecutionStatus::Pending as i32
+        };
+
+        let mut meta: std::collections::HashMap<String, String> = ev
+            .runtime_metadata
+            .into_iter()
+            .map(|(k, v)| (k, v.to_string()))
+            .collect();
+        meta.insert("execution_time_ms".to_string(), ev.duration_ms.to_string());
+        if let Some(err) = ev.error_message.as_ref() {
+            meta.insert("error_message".to_string(), err.clone());
+        }
+
+        self.report_execution_to_sms(
+            pending.invocation_id.clone(),
+            pending.task_id.clone(),
+            pending.function_name.clone(),
+            pending.instance_id.clone(),
+            ev.execution_id.clone(),
+            final_status,
+            pending.started_at_ms,
+            completed_at_ms,
+            meta.clone(),
+        );
+        self.report_instance_to_sms(
+            pending.task_id.clone(),
+            pending.instance_id.clone(),
+            ev.execution_id.clone(),
+            completed_at_ms,
+        );
+        crate::spearlet::execution::host_api::clear_wasm_logs_by_execution(&ev.execution_id);
+
+        self.executions.insert(
+            ev.execution_id.clone(),
+            super::ExecutionResponse {
+                execution_id: ev.execution_id.clone(),
+                invocation_id: pending.invocation_id,
+                task_id: pending.task_id,
+                function_name: pending.function_name,
+                instance_id: pending.instance_id,
+                output_data: ev.output,
+                status: if is_successful {
+                    "completed".to_string()
+                } else if has_failed {
+                    "failed".to_string()
+                } else {
+                    "pending".to_string()
+                },
+                error_message: ev.error_message,
+                execution_time_ms: ev.duration_ms,
+                metadata: meta,
+                timestamp: SystemTime::now(),
+            },
+        );
+
+        Ok(())
+    }
+
     async fn process_health_checks_once(&self) {
         let instances: Vec<Arc<TaskInstance>> =
             self.instances.iter().map(|e| e.value().clone()).collect();
@@ -1274,6 +1769,89 @@ impl TaskExecutionManager {
         }
     }
 
+    fn report_instance_to_sms(
+        &self,
+        task_id: String,
+        instance_id: String,
+        current_execution_id: String,
+        ts_ms: i64,
+    ) {
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        let url = format!("http://{}", addr);
+        let node_uuid = self.spearlet_config.compute_node_uuid();
+        let inst = crate::proto::sms::Instance {
+            instance_id,
+            task_id,
+            node_uuid,
+            status: crate::proto::sms::InstanceStatus::Running as i32,
+            created_at_ms: ts_ms,
+            updated_at_ms: ts_ms,
+            last_seen_ms: ts_ms,
+            current_execution_id,
+            metadata: std::collections::HashMap::new(),
+        };
+        tokio::spawn(async move {
+            match Channel::from_shared(url).unwrap().connect().await {
+                Ok(channel) => {
+                    let mut client =
+                        crate::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+                            channel,
+                        );
+                    let _ = client.report_instance(inst).await;
+                }
+                Err(_) => {}
+            }
+        });
+    }
+
+    fn report_execution_to_sms(
+        &self,
+        invocation_id: String,
+        task_id: String,
+        function_name: String,
+        instance_id: String,
+        execution_id: String,
+        status: i32,
+        started_at_ms: i64,
+        completed_at_ms: i64,
+        metadata: std::collections::HashMap<String, String>,
+    ) {
+        let addr = self.spearlet_config.sms_grpc_addr.clone();
+        let url = format!("http://{}", addr);
+        let node_uuid = self.spearlet_config.compute_node_uuid();
+        let updated_at_ms = if completed_at_ms > 0 {
+            completed_at_ms
+        } else {
+            started_at_ms
+        };
+        let exe = crate::proto::sms::Execution {
+            execution_id,
+            invocation_id,
+            task_id,
+            function_name,
+            node_uuid,
+            instance_id,
+            status,
+            started_at_ms,
+            completed_at_ms,
+            log_ref: None,
+            metadata,
+            updated_at_ms,
+        };
+        tokio::spawn(async move {
+            match Channel::from_shared(url).unwrap().connect().await {
+                Ok(channel) => {
+                    let mut client =
+                        crate::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+                            channel,
+                        );
+                    let _ = client.report_execution(exe).await;
+                }
+                Err(_) => {}
+            }
+        });
+    }
+
     async fn publish_task_status(
         &self,
         task_id: &str,
@@ -1402,6 +1980,8 @@ impl Clone for TaskExecutionManager {
             statistics: self.statistics.clone(),
             request_counter: AtomicU64::new(self.request_counter.load(Ordering::SeqCst)),
             work_sender: self.work_sender.clone(),
+            completion_sender: self.completion_sender.clone(),
+            pending_async_executions: self.pending_async_executions.clone(),
             shutdown_sender: None, // Clone doesn't get shutdown sender / 克隆不获取关闭发送器
         }
     }

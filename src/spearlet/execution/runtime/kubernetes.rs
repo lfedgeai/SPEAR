@@ -851,6 +851,7 @@ mod tests {
             execution_mode: crate::spearlet::execution::runtime::ExecutionMode::Sync,
             wait: true,
             context_data: HashMap::new(),
+            completion_tx: None,
         };
 
         let manifest =

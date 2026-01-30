@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Download, Trash2, Upload } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { deleteFile, getFileMeta, listFiles, uploadFile } from '@/api/files'
+import { deleteFile, listFiles, uploadFile } from '@/api/files'
 import type { FileItem } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 function formatTs(ts: number) {
@@ -34,23 +34,16 @@ async function copyText(v: string) {
 }
 
 export default function FilesPage() {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
-  const [detailId, setDetailId] = useState<string | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
 
   const filesQuery = useQuery({
     queryKey: ['files'],
     queryFn: () => listFiles(),
     staleTime: 5_000,
-  })
-
-  const detailQuery = useQuery({
-    queryKey: ['file-meta', detailId],
-    queryFn: () => getFileMeta(detailId!),
-    enabled: !!detailId && detailOpen,
   })
 
   const rows = useMemo(() => filesQuery.data?.files || [], [filesQuery.data])
@@ -181,8 +174,7 @@ export default function FilesPage() {
                       type="button"
                       className="col-span-4 min-w-0 text-left"
                       onClick={() => {
-                        setDetailId(f.id)
-                        setDetailOpen(true)
+                        navigate(`/files/${encodeURIComponent(f.id)}`)
                       }}
                     >
                       <div className="truncate font-medium">{f.name || '(unknown)'}</div>
@@ -211,7 +203,7 @@ export default function FilesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => copyText(`sms+file://${f.id}`)}
+                        onClick={() => copyText(`smsfile://${f.id}`)}
                         data-testid={`files-copy-uri-${f.id}`}
                       >
                         <Copy className="h-4 w-4" />
@@ -242,23 +234,6 @@ export default function FilesPage() {
           </div>
         </CardContent>
       </Card>
-
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent>
-          <DialogHeader title="File meta" description={detailId || undefined} />
-          {detailQuery.isLoading ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Loading…</div>
-          ) : detailQuery.isError ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">
-              Failed to load meta.
-            </div>
-          ) : (
-            <pre className="max-h-[520px] overflow-auto rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3 text-xs">
-              {JSON.stringify(detailQuery.data, null, 2)}
-            </pre>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

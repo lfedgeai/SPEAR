@@ -226,7 +226,7 @@ async fn get_health(&self) -> Result<Response<GetHealthResponse>, Status> {
 
 ### 4. WASM Artifact Download Path / WASM 制品下载路径
 
-- WASM runtime supports `sms+file://<file_id>` scheme only.
+- WASM runtime supports `smsfile://<file_id>` scheme.
 - It resolves `SpearletConfig.sms_grpc_addr` from `RuntimeConfig.spearlet_config` and uses:
 
 ```rust

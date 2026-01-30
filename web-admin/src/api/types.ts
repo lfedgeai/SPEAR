@@ -103,3 +103,63 @@ export type FileItem = {
   /** Modified time (epoch seconds) / 修改时间（秒） */
   modified_at: number
 }
+
+export type InstanceSummary = {
+  instance_id: string
+  node_uuid: string
+  status: string
+  last_seen_ms: number
+  current_execution_id: string
+}
+
+export type ExecutionSummary = {
+  execution_id: string
+  task_id: string
+  status: string
+  started_at_ms: number
+  completed_at_ms: number
+  function_name: string
+}
+
+export type LogRef = {
+  backend: string
+  uri_prefix: string
+  content_type: string
+  compression: string
+}
+
+export type ExecutionDetail = {
+  execution_id: string
+  invocation_id: string
+  task_id: string
+  function_name: string
+  node_uuid: string
+  instance_id: string
+  status: string
+  started_at_ms: number
+  completed_at_ms: number
+  updated_at_ms: number
+  metadata: Record<string, string>
+  log_ref?: LogRef | null
+}
+
+export type ListTaskInstancesResponse = {
+  success: boolean
+  message?: string
+  instances?: InstanceSummary[]
+  next_page_token?: string
+}
+
+export type ListInstanceExecutionsResponse = {
+  success: boolean
+  message?: string
+  executions?: ExecutionSummary[]
+  next_page_token?: string
+}
+
+export type GetExecutionResponse = {
+  success: boolean
+  message?: string
+  found?: boolean
+  execution?: ExecutionDetail
+}

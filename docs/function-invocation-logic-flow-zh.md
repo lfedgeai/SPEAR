@@ -138,7 +138,7 @@ async fn handle_new_task_creation(request: &InvokeFunctionRequest) -> Result<Tas
     let task_name = &request.task_name;
     let artifact_spec = request.artifact_spec.as_ref().unwrap();
     // 要求：artifact_id 为稳定外部ID，系统内部直接复用该ID
-    // WASM 制品：必须提供有效的 location，例如 sms+file://<file_id>；建议提供 checksum 以校验完整性
+    // WASM 制品：必须提供有效的 location，例如 smsfile://<file_id>；建议提供 checksum 以校验完整性
     
     // 检查任务是否已存在
     if let Some(existing_task) = task_manager.find_task_by_name(task_name) {

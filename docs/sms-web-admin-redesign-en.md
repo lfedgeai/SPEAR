@@ -52,10 +52,10 @@ The frontend (source under `web-admin/`) currently contains 4 main pages:
 - Tasks
   - Tasks Table: search/sort/pagination
   - Task Detail: JSON dialog
-  - Create Task: form-based creation; supports executable config; can pick `sms+file://` URIs from Files
+  - Create Task: form-based creation; supports executable config; can pick `smsfile://` URIs from Files
 
 - Files
-  - List/upload (presign + upload)/download/copy `sms+file://` URI/delete
+  - List/upload (presign + upload)/download/copy `smsfile://` URI/delete
   - Multi-select uploads executed sequentially (no backend batch APIs required)
   - File meta JSON dialog
 

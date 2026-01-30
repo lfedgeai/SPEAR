@@ -24,6 +24,6 @@ test.describe('Files page', () => {
     const clip = await page.evaluate(async () => {
       try { return await navigator.clipboard.readText(); } catch { return ''; }
     });
-    expect(clip).toBe(`sms+file://${id}`);
+    expect(clip).toBe(`smsfile://${id}`);
   });
 });

@@ -66,6 +66,51 @@ fn cast_ptr_len(bytes: &[u8]) -> (i32, i32) {
     (ptr, len)
 }
 
+pub const LOG_TRACE: i32 = 0;
+pub const LOG_DEBUG: i32 = 1;
+pub const LOG_INFO: i32 = 2;
+pub const LOG_WARN: i32 = 3;
+pub const LOG_ERROR: i32 = 4;
+
+pub fn log_write(level: i32, msg: &str) -> Result<(), SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let b = msg.as_bytes();
+        let (ptr, len) = cast_ptr_len(b);
+        let rc = unsafe { spear_wasm_sys::log(level, ptr, len) };
+        rc_to_unit(rc, "log")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match level {
+            LOG_ERROR | LOG_WARN => eprintln!("{msg}"),
+            _ => println!("{msg}"),
+        }
+        Ok(())
+    }
+}
+
+pub fn log_trace(msg: &str) -> Result<(), SpearError> {
+    log_write(LOG_TRACE, msg)
+}
+
+pub fn log_debug(msg: &str) -> Result<(), SpearError> {
+    log_write(LOG_DEBUG, msg)
+}
+
+pub fn log_info(msg: &str) -> Result<(), SpearError> {
+    log_write(LOG_INFO, msg)
+}
+
+pub fn log_warn(msg: &str) -> Result<(), SpearError> {
+    log_write(LOG_WARN, msg)
+}
+
+pub fn log_error(msg: &str) -> Result<(), SpearError> {
+    log_write(LOG_ERROR, msg)
+}
+
 fn recv_alloc_with<F>(
     op: &'static str,
     mut call: F,

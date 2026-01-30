@@ -6,6 +6,8 @@
 
 pub mod common;
 pub mod docs;
+pub mod execution_index;
+pub mod execution_logs;
 pub mod files;
 pub mod health;
 pub mod node;
@@ -16,6 +18,8 @@ pub mod task;
 // Re-export all public items from each module / 重新导出每个模块的所有公共项
 pub use common::*;
 pub use docs::*;
+pub use execution_index::*;
+pub use execution_logs::*;
 pub use files::*;
 pub use health::*;
 pub use node::*;

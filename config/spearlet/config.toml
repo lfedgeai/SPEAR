@@ -5,7 +5,7 @@
 node_name = ""
 # SMS gRPC address / SMS gRPC地址
 sms_grpc_addr = "127.0.0.1:50051"
-# SMS HTTP gateway address (for sms+file downloads) / SMS HTTP网关地址（用于sms+file下载）
+# SMS HTTP gateway address (for smsfile downloads) / SMS HTTP网关地址（用于smsfile下载）
 sms_http_addr = "127.0.0.1:8080"
 # Auto register with SMS / 自动向SMS注册
 auto_register = true

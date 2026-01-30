@@ -7,7 +7,7 @@
 - 源码：`samples/wasm-js/chat_completion/src/main.rs`（Boa JS runner 编译为 WASM；内部执行 `entry.mjs` → Chat Completion）
 - 源码：`samples/wasm-js/chat_completion_tool_sum/src/main.rs`（Boa JS runner 编译为 WASM；内部执行 `entry.mjs` → tool calling）
 - 产物：`samples/build/hello.wasm`
-  - WASM-JS 产物：`samples/build/js/*.wasm`（兼容：`samples/build/rust/*.wasm`）
+  - WASM-JS 产物：`samples/build/js/js-*.wasm`（兼容：`samples/build/rust/*.wasm`）
 
 ## mic_rtasr 示例运行前提
 
@@ -41,6 +41,7 @@ WASM-JS 示例：
 - 可通过 Makefile 变量控制：
   - `BUILD_JS_SAMPLES=0` 跳过 WASM-JS 示例构建（兼容：`BUILD_RUST_SAMPLES=0`）
   - `JS_SAMPLES="chat_completion chat_completion_tool_sum"` 指定要构建的示例列表（兼容：`RUST_SAMPLES=...`）
+  - `JS_WASM_PREFIX="js-"` 配置 JS 产物文件名前缀（默认 `js-`）
 
 ## clang 使用说明
 - 环境变量：`WASI_SYSROOT=/opt/wasi-sdk/share/wasi-sysroot`（按实际路径）

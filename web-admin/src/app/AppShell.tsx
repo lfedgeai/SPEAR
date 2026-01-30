@@ -8,11 +8,18 @@ import { cn } from '@/lib/utils'
 import { useThemeMode } from '@/app/useThemeMode'
 import DashboardPage from '@/features/dashboard/DashboardPage'
 import NodesPage from '@/features/nodes/NodesPage'
+import NodeDetailPage from '@/features/nodes/NodeDetailPage'
 import TasksPage from '@/features/tasks/TasksPage'
+import TaskDetailPage from '@/features/tasks/TaskDetailPage'
 import FilesPage from '@/features/files/FilesPage'
+import FileDetailPage from '@/features/files/FileDetailPage'
 import BackendsPage from '@/features/backends/BackendsPage'
+import BackendDetailPage from '@/features/backends/BackendDetailPage'
 import McpPage from '@/features/mcp/McpPage'
+import McpServerDetailPage from '@/features/mcp/McpServerDetailPage'
 import SettingsPage from '@/features/settings/SettingsPage'
+import InstanceDetailPage from '@/features/instances/InstanceDetailPage'
+import ExecutionDetailPage from '@/features/executions/ExecutionDetailPage'
 
 function Shell() {
   const { mode, setMode } = useThemeMode()
@@ -118,10 +125,17 @@ function Shell() {
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/nodes" element={<NodesPage />} />
+                <Route path="/nodes/:uuid" element={<NodeDetailPage />} />
                 <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
+                <Route path="/instances/:instanceId" element={<InstanceDetailPage />} />
+                <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
                 <Route path="/files" element={<FilesPage />} />
+                <Route path="/files/:id" element={<FileDetailPage />} />
                 <Route path="/backends" element={<BackendsPage />} />
+                <Route path="/backends/:kind/:name" element={<BackendDetailPage />} />
                 <Route path="/mcp" element={<McpPage />} />
+                <Route path="/mcp/:serverId" element={<McpServerDetailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>
             </div>

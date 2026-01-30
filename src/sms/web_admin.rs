@@ -7,7 +7,6 @@ use axum::response::IntoResponse;
 use axum::{
     extract::{Path, Query},
     response::{Html, Json},
-    routing::{delete, get, post},
     Router,
 };
 use futures::StreamExt;
@@ -27,15 +26,17 @@ use crate::proto::sms::{
     placement_service_client::PlacementServiceClient, ListNodesRequest,
 };
 use crate::sms::gateway::GatewayState;
-use crate::sms::handlers::{
-    delete_file, download_file, get_file_meta, list_files, presign_upload, upload_file,
-};
+pub use router::create_admin_router;
+use types::{ListQuery, PageTokenQuery, StreamQuery};
 
 use crate::proto::spearlet::{
     invocation_service_client::InvocationServiceClient, ExecutionMode, ExecutionStatus,
     InvokeRequest, Payload,
 };
 use crate::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
+
+mod router;
+mod types;
 
 pub struct WebAdminServer {
     addr: SocketAddr,
@@ -83,12 +84,27 @@ impl WebAdminServer {
         let task_client =
             crate::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
         let placement_client = PlacementServiceClient::new(channel.clone());
+        let instance_registry_client =
+            crate::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+                channel.clone(),
+            );
+        let execution_registry_client =
+            crate::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+                channel.clone(),
+            );
+        let execution_index_client =
+            crate::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::new(
+                channel.clone(),
+            );
         let mcp_registry_client = McpRegistryServiceClient::new(channel.clone());
         let backend_registry_client = BackendRegistryServiceClient::new(channel);
         let state = GatewayState {
             node_client,
             task_client,
             placement_client,
+            instance_registry_client,
+            execution_registry_client,
+            execution_index_client,
             mcp_registry_client,
             backend_registry_client,
             cancel_token: cancel_token.clone(),
@@ -118,144 +134,6 @@ impl WebAdminServer {
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
         Ok((listener, app))
     }
-}
-
-#[derive(Deserialize)]
-struct ListQuery {
-    status: Option<String>,
-    limit: Option<usize>,
-    offset: Option<usize>,
-    sort: Option<String>,
-    sort_by: Option<String>,
-    order: Option<String>,
-    q: Option<String>,
-}
-
-pub fn create_admin_router(state: GatewayState) -> Router {
-    Router::new()
-        .route("/", get(admin_index))
-        .route("/admin", get(admin_index))
-        .route("/admin/", get(admin_index))
-        .route("/admin/static/{*path}", get(admin_static))
-        .route(
-            "/admin/api/nodes",
-            get({
-                let state = state.clone();
-                move |q: Query<ListQuery>| list_nodes(state.clone(), q)
-            }),
-        )
-        .route(
-            "/admin/api/nodes/{uuid}",
-            get({
-                let state = state.clone();
-                move |p: Path<String>| get_node_detail(state.clone(), p)
-            }),
-        )
-        .route(
-            "/admin/api/nodes/stream",
-            get({
-                let state = state.clone();
-                move |q: Query<StreamQuery>| nodes_stream(state.clone(), q)
-            }),
-        )
-        .route(
-            "/admin/api/stats",
-            get({
-                let state = state.clone();
-                move || get_stats(state.clone())
-            }),
-        )
-        .route(
-            "/admin/api/backends",
-            get({
-                let state = state.clone();
-                move |q: Query<ListQuery>| list_backends(state.clone(), q)
-            }),
-        )
-        .route(
-            "/admin/api/nodes/{uuid}/backends",
-            get({
-                let state = state.clone();
-                move |p: Path<String>| get_node_backends(state.clone(), p)
-            }),
-        )
-        .route(
-            "/admin/api/mcp/servers",
-            get({
-                let state = state.clone();
-                move || list_mcp_servers(state.clone())
-            }),
-        )
-        .route(
-            "/admin/api/mcp/servers",
-            post({
-                let state = state.clone();
-                move |body: Json<McpServerUpsertBody>| upsert_mcp_server(state.clone(), body)
-            }),
-        )
-        .route(
-            "/admin/api/mcp/servers/{server_id}",
-            delete({
-                let state = state.clone();
-                move |p: Path<String>| delete_mcp_server(state.clone(), p)
-            }),
-        )
-        .route(
-            "/admin/api/tasks",
-            get({
-                let state = state.clone();
-                move |q: Query<ListQuery>| list_tasks(state.clone(), q)
-            }),
-        )
-        .route(
-            "/admin/api/tasks",
-            post({
-                let state = state.clone();
-                move |payload: axum::extract::Json<CreateTaskBody>| {
-                    create_task(state.clone(), payload)
-                }
-            }),
-        )
-        .route(
-            "/admin/api/tasks/{task_id}",
-            get({
-                let state = state.clone();
-                move |p: Path<String>| get_task_detail(state.clone(), p)
-            }),
-        )
-        .route(
-            "/admin/api/invocations",
-            post({
-                let state = state.clone();
-                move |payload: axum::extract::Json<CreateExecutionBody>| {
-                    create_invocation(state.clone(), payload)
-                }
-            }),
-        )
-        .route(
-            "/admin/api/executions",
-            post({
-                let state = state.clone();
-                move |payload: axum::extract::Json<CreateExecutionBody>| {
-                    create_invocation(state.clone(), payload)
-                }
-            }),
-        )
-        // Embedded file storage API / 内嵌文件存储API
-        .route("/admin/api/files", get(list_files))
-        .route("/admin/api/files/presign-upload", post(presign_upload))
-        .route(
-            "/admin/api/files",
-            post({
-                let state = state.clone();
-                move |req: axum::http::Request<axum::body::Body>| {
-                    upload_file(axum::extract::State(state.clone()), req)
-                }
-            }),
-        )
-        .route("/admin/api/files/{id}", get(download_file))
-        .route("/admin/api/files/{id}", delete(delete_file))
-        .route("/admin/api/files/{id}/meta", get(get_file_meta))
 }
 
 #[derive(Deserialize)]
@@ -422,6 +300,122 @@ async fn list_backends(state: GatewayState, Query(q): Query<ListQuery>) -> Json<
     Json(json!({"success": true, "backends": list, "total_count": resp.total_count}))
 }
 
+async fn get_backend_detail(
+    state: GatewayState,
+    p: Path<(String, String)>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::{BackendStatus, ListNodeBackendSnapshotsRequest};
+
+    let (kind, name) = p.0;
+    if kind.trim().is_empty() || name.trim().is_empty() {
+        return Json(json!({"success": true, "found": false}));
+    }
+
+    #[derive(Default)]
+    struct Agg {
+        name: String,
+        kind: String,
+        operations: std::collections::BTreeSet<String>,
+        features: std::collections::BTreeSet<String>,
+        transports: std::collections::BTreeSet<String>,
+        available_nodes: i64,
+        total_nodes: i64,
+        nodes: Vec<serde_json::Value>,
+    }
+
+    let mut client = state.backend_registry_client.clone();
+
+    let mut offset: u32 = 0;
+    let limit: u32 = 500;
+    let mut agg = Agg {
+        name: name.clone(),
+        kind: kind.clone(),
+        ..Default::default()
+    };
+
+    loop {
+        let resp = match client
+            .list_node_backend_snapshots(ListNodeBackendSnapshotsRequest { limit, offset })
+            .await
+        {
+            Ok(r) => r.into_inner(),
+            Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+        };
+        let total_count = resp.total_count;
+
+        if resp.snapshots.is_empty() {
+            break;
+        }
+
+        for snap in resp.snapshots.into_iter() {
+            let node_uuid = snap.node_uuid.clone();
+            for b in snap.backends.into_iter() {
+                if b.name != name || b.kind != kind {
+                    continue;
+                }
+                let status = if b.status == BackendStatus::Available as i32 {
+                    "available"
+                } else {
+                    "unavailable"
+                };
+
+                for op in b.operations.iter() {
+                    if !op.trim().is_empty() {
+                        agg.operations.insert(op.clone());
+                    }
+                }
+                for f in b.features.iter() {
+                    if !f.trim().is_empty() {
+                        agg.features.insert(f.clone());
+                    }
+                }
+                for t in b.transports.iter() {
+                    if !t.trim().is_empty() {
+                        agg.transports.insert(t.clone());
+                    }
+                }
+
+                agg.nodes.push(json!({
+                    "node_uuid": node_uuid,
+                    "status": status,
+                    "status_reason": b.status_reason,
+                    "weight": b.weight,
+                    "priority": b.priority,
+                    "base_url": b.base_url,
+                }));
+                agg.total_nodes += 1;
+                if status == "available" {
+                    agg.available_nodes += 1;
+                }
+            }
+        }
+
+        offset = offset.saturating_add(limit);
+        if offset >= total_count {
+            break;
+        }
+    }
+
+    if agg.total_nodes == 0 {
+        return Json(json!({"success": true, "found": false}));
+    }
+
+    Json(json!({
+        "success": true,
+        "found": true,
+        "backend": {
+            "name": agg.name,
+            "kind": agg.kind,
+            "operations": agg.operations.into_iter().collect::<Vec<_>>(),
+            "features": agg.features.into_iter().collect::<Vec<_>>(),
+            "transports": agg.transports.into_iter().collect::<Vec<_>>(),
+            "available_nodes": agg.available_nodes,
+            "total_nodes": agg.total_nodes,
+            "nodes": agg.nodes,
+        }
+    }))
+}
+
 async fn get_node_backends(state: GatewayState, p: Path<String>) -> Json<serde_json::Value> {
     use crate::proto::sms::GetNodeBackendsRequest;
 
@@ -536,6 +530,70 @@ async fn list_mcp_servers(state: GatewayState) -> Json<serde_json::Value> {
         }
         Err(e) => Json(json!({"success": false, "message": e.to_string()})),
     }
+}
+
+async fn get_mcp_server(state: GatewayState, p: Path<String>) -> Json<serde_json::Value> {
+    let server_id = p.0;
+    if server_id.trim().is_empty() {
+        return Json(json!({"success": true, "found": false}));
+    }
+    let mut client = state.mcp_registry_client.clone();
+    let resp = match client
+        .list_mcp_servers(crate::proto::sms::ListMcpServersRequest { since_revision: 0 })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    for s in resp.servers.into_iter() {
+        if s.server_id != server_id {
+            continue;
+        }
+        let stdio = s.stdio.as_ref().map(|x| {
+            json!({
+                "command": x.command,
+                "args": x.args,
+                "env": x.env,
+                "cwd": x.cwd,
+            })
+        });
+        let http = s.http.as_ref().map(|x| {
+            json!({
+                "url": x.url,
+                "headers": x.headers,
+                "auth_ref": x.auth_ref,
+            })
+        });
+        let approval_policy = s.approval_policy.as_ref().map(|x| {
+            json!({
+                "default_policy": x.default_policy,
+                "per_tool": x.per_tool,
+            })
+        });
+        let budgets = s.budgets.as_ref().map(|x| {
+            json!({
+                "tool_timeout_ms": x.tool_timeout_ms,
+                "max_concurrency": x.max_concurrency,
+                "max_tool_output_bytes": x.max_tool_output_bytes,
+            })
+        });
+        let server = json!({
+            "server_id": s.server_id,
+            "display_name": s.display_name,
+            "transport": s.transport,
+            "stdio": stdio,
+            "http": http,
+            "tool_namespace": s.tool_namespace,
+            "allowed_tools": s.allowed_tools,
+            "approval_policy": approval_policy,
+            "budgets": budgets,
+            "updated_at_ms": s.updated_at_ms,
+        });
+        return Json(json!({"success": true, "found": true, "server": server}));
+    }
+
+    Json(json!({"success": true, "found": false}))
 }
 
 async fn upsert_mcp_server(
@@ -1081,6 +1139,165 @@ async fn list_tasks(state: GatewayState, Query(q): Query<ListQuery>) -> Json<ser
     Json(json!({ "tasks": list, "total_count": total }))
 }
 
+fn instance_status_to_public_str(v: i32) -> &'static str {
+    use crate::proto::sms::InstanceStatus;
+    match InstanceStatus::try_from(v).unwrap_or(InstanceStatus::Unknown) {
+        InstanceStatus::Running => "running",
+        InstanceStatus::Idle => "idle",
+        InstanceStatus::Terminating => "terminating",
+        InstanceStatus::Terminated => "terminated",
+        InstanceStatus::Unknown => "unknown",
+    }
+}
+
+fn execution_status_to_public_str(v: i32) -> &'static str {
+    use crate::proto::sms::ExecutionStatus;
+    match ExecutionStatus::try_from(v).unwrap_or(ExecutionStatus::Unknown) {
+        ExecutionStatus::Pending => "pending",
+        ExecutionStatus::Running => "running",
+        ExecutionStatus::Completed => "completed",
+        ExecutionStatus::Failed => "failed",
+        ExecutionStatus::Cancelled => "cancelled",
+        ExecutionStatus::Timeout => "timeout",
+        ExecutionStatus::Unknown => "unknown",
+    }
+}
+
+async fn list_task_instances_admin(
+    state: GatewayState,
+    Path(task_id): Path<String>,
+    Query(q): Query<PageTokenQuery>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::ListTaskInstancesRequest;
+    let mut client = state.execution_index_client.clone();
+    let limit = q.limit.unwrap_or(50).max(1);
+    let page_token = q.page_token.unwrap_or_default();
+    let resp = client
+        .list_task_instances(tonic::Request::new(ListTaskInstancesRequest {
+            task_id,
+            limit,
+            page_token,
+        }))
+        .await;
+    match resp {
+        Ok(r) => {
+            let inner = r.into_inner();
+            let instances = inner
+                .instances
+                .into_iter()
+                .map(|i| {
+                    let s = instance_status_to_public_str(i.status).to_string();
+                    json!({
+                        "instance_id": i.instance_id,
+                        "node_uuid": i.node_uuid,
+                        "status": s,
+                        "last_seen_ms": i.last_seen_ms,
+                        "current_execution_id": i.current_execution_id,
+                    })
+                })
+                .collect::<Vec<_>>();
+            Json(json!({
+                "success": true,
+                "instances": instances,
+                "next_page_token": inner.next_page_token,
+            }))
+        }
+        Err(e) => Json(json!({ "success": false, "message": e.to_string() })),
+    }
+}
+
+async fn list_instance_executions_admin(
+    state: GatewayState,
+    Path(instance_id): Path<String>,
+    Query(q): Query<PageTokenQuery>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::ListInstanceExecutionsRequest;
+    let mut client = state.execution_index_client.clone();
+    let limit = q.limit.unwrap_or(50).max(1);
+    let page_token = q.page_token.unwrap_or_default();
+    let resp = client
+        .list_instance_executions(tonic::Request::new(ListInstanceExecutionsRequest {
+            instance_id,
+            limit,
+            page_token,
+        }))
+        .await;
+    match resp {
+        Ok(r) => {
+            let inner = r.into_inner();
+            let executions = inner
+                .executions
+                .into_iter()
+                .map(|e| {
+                    let s = execution_status_to_public_str(e.status).to_string();
+                    json!({
+                        "execution_id": e.execution_id,
+                        "task_id": e.task_id,
+                        "status": s,
+                        "started_at_ms": e.started_at_ms,
+                        "completed_at_ms": e.completed_at_ms,
+                        "function_name": e.function_name,
+                    })
+                })
+                .collect::<Vec<_>>();
+            Json(json!({
+                "success": true,
+                "executions": executions,
+                "next_page_token": inner.next_page_token,
+            }))
+        }
+        Err(e) => Json(json!({ "success": false, "message": e.to_string() })),
+    }
+}
+
+async fn get_execution_admin(
+    state: GatewayState,
+    Path(execution_id): Path<String>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::GetExecutionRequest;
+    let mut client = state.execution_index_client.clone();
+    let resp = client
+        .get_execution(tonic::Request::new(GetExecutionRequest { execution_id }))
+        .await;
+    match resp {
+        Ok(r) => {
+            let inner = r.into_inner();
+            if !inner.found {
+                return Json(json!({ "success": true, "found": false }));
+            }
+            let e = inner.execution.unwrap();
+            let status = execution_status_to_public_str(e.status).to_string();
+            let log_ref = e.log_ref.map(|lr| {
+                json!({
+                    "backend": lr.backend,
+                    "uri_prefix": lr.uri_prefix,
+                    "content_type": lr.content_type,
+                    "compression": lr.compression,
+                })
+            });
+            Json(json!({
+                "success": true,
+                "found": true,
+                "execution": {
+                    "execution_id": e.execution_id,
+                    "invocation_id": e.invocation_id,
+                    "task_id": e.task_id,
+                    "function_name": e.function_name,
+                    "node_uuid": e.node_uuid,
+                    "instance_id": e.instance_id,
+                    "status": status,
+                    "started_at_ms": e.started_at_ms,
+                    "completed_at_ms": e.completed_at_ms,
+                    "updated_at_ms": e.updated_at_ms,
+                    "metadata": e.metadata,
+                    "log_ref": log_ref,
+                }
+            }))
+        }
+        Err(e) => Json(json!({ "success": false, "message": e.to_string() })),
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct CreateExecutableBody {
     r#type: Option<String>,
@@ -1383,11 +1600,6 @@ async fn admin_static(headers: HeaderMap, Path(path): Path<String>) -> impl Into
             .insert(axum::http::header::CONTENT_ENCODING, ce.parse().unwrap());
     }
     resp
-}
-
-#[derive(Deserialize)]
-struct StreamQuery {
-    once: Option<bool>,
 }
 
 async fn nodes_stream(

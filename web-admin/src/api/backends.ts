@@ -27,6 +27,13 @@ export type ListBackendsResponse = {
   total_count?: number
 }
 
+export type GetBackendDetailResponse = {
+  success: boolean
+  message?: string
+  found?: boolean
+  backend?: AggregatedBackend
+}
+
 export function listBackends(params: {
   q?: string
   status?: 'available' | 'unavailable'
@@ -42,3 +49,8 @@ export function listBackends(params: {
   return fetchJson<ListBackendsResponse>(path)
 }
 
+export function getBackendDetail(params: { kind: string; name: string }) {
+  return fetchJson<GetBackendDetailResponse>(
+    `/admin/api/backends/${encodeURIComponent(params.kind)}/${encodeURIComponent(params.name)}`,
+  )
+}

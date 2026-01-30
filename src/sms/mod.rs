@@ -40,14 +40,17 @@
 
 pub mod config;
 pub mod events;
+pub mod execution_logs;
 pub mod gateway;
 pub mod grpc_server;
 pub mod handlers;
 pub mod http_gateway;
+pub mod instance_execution_index;
 pub mod routes;
 pub mod service;
 pub mod services;
 pub mod types;
+pub mod unified_events;
 pub mod web_admin;
 
 #[cfg(test)]
@@ -71,7 +74,11 @@ pub mod routes_test;
 #[cfg(test)]
 pub mod service_event_kv_test;
 #[cfg(test)]
+pub mod service_unified_events_test;
+#[cfg(test)]
 pub mod task_status_test;
+#[cfg(test)]
+pub mod unified_events_test;
 
 // Re-export commonly used types / 重新导出常用类型
 pub use grpc_server::GrpcServer;

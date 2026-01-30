@@ -6,6 +6,9 @@ use tonic::transport::Channel;
 
 use crate::proto::sms::{
     backend_registry_service_client::BackendRegistryServiceClient,
+    execution_index_service_client::ExecutionIndexServiceClient,
+    execution_registry_service_client::ExecutionRegistryServiceClient,
+    instance_registry_service_client::InstanceRegistryServiceClient,
     mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
     placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
 };
@@ -21,6 +24,9 @@ async fn create_mock_gateway_state() -> GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
         placement_client: PlacementServiceClient::new(channel.clone()),
+        instance_registry_client: InstanceRegistryServiceClient::new(channel.clone()),
+        execution_registry_client: ExecutionRegistryServiceClient::new(channel.clone()),
+        execution_index_client: ExecutionIndexServiceClient::new(channel.clone()),
         mcp_registry_client: McpRegistryServiceClient::new(channel.clone()),
         backend_registry_client: BackendRegistryServiceClient::new(channel),
         cancel_token: CancellationToken::new(),
@@ -90,7 +96,7 @@ async fn test_gateway_state_memory_usage() {
 
     // Gateway state should not use excessive memory / 网关状态不应使用过多内存
     assert!(
-        state_size < 1024,
+        state_size < 2048,
         "Gateway state uses too much memory: {} bytes",
         state_size
     );
@@ -143,6 +149,9 @@ async fn test_gateway_state_with_different_endpoints() {
         let node_client = NodeServiceClient::new(channel.clone());
         let task_client = TaskServiceClient::new(channel.clone());
         let placement_client = PlacementServiceClient::new(channel.clone());
+        let instance_registry_client = InstanceRegistryServiceClient::new(channel.clone());
+        let execution_registry_client = ExecutionRegistryServiceClient::new(channel.clone());
+        let execution_index_client = ExecutionIndexServiceClient::new(channel.clone());
         let mcp_registry_client = McpRegistryServiceClient::new(channel.clone());
         let backend_registry_client = BackendRegistryServiceClient::new(channel);
 
@@ -150,6 +159,9 @@ async fn test_gateway_state_with_different_endpoints() {
             node_client,
             task_client,
             placement_client,
+            instance_registry_client,
+            execution_registry_client,
+            execution_index_client,
             mcp_registry_client,
             backend_registry_client,
             cancel_token: CancellationToken::new(),

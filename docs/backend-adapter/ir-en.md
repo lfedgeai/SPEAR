@@ -84,7 +84,7 @@ Multimodal operations frequently carry large binary data. Use `MediaRef` to indi
 - `inline_base64`: good for small data and debugging
   - `{ "kind": "inline_base64", "mime": "audio/wav", "data": "..." }`
 - `sms_file`: recommended production default for large data
-  - `{ "kind": "sms_file", "uri": "sms+file://<id>", "mime": "image/png" }`
+  - `{ "kind": "sms_file", "uri": "smsfile://<id>", "mime": "image/png" }`
 - `http_url`: only if explicitly allowed by host security policy
   - `{ "kind": "http_url", "url": "https://...", "mime": "image/jpeg" }`
 
@@ -125,7 +125,7 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
     "model": "whisper-1",
     "audio": {
       "kind": "sms_file",
-      "uri": "sms+file://01JFK...ABCD",
+      "uri": "smsfile://01JFK...ABCD",
       "mime": "audio/wav"
     },
     "language": "zh",
@@ -145,7 +145,7 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
   "result": {
     "payload": {
       "images": [
-        { "kind": "sms_file", "uri": "sms+file://01JFK...WXYZ", "mime": "image/png" }
+        { "kind": "sms_file", "uri": "smsfile://01JFK...WXYZ", "mime": "image/png" }
       ]
     }
   }
@@ -166,7 +166,7 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
           { "type": "text", "text": "Describe this image" },
           {
             "type": "image",
-            "image": { "kind": "sms_file", "uri": "sms+file://01J...", "mime": "image/jpeg" }
+            "image": { "kind": "sms_file", "uri": "smsfile://01J...", "mime": "image/jpeg" }
           }
         ]
       }

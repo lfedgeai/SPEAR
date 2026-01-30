@@ -170,9 +170,15 @@ pub struct WasmInstanceHandle {
 #[derive(Debug)]
 pub enum WasmWorkerRequest {
     Invoke {
+        execution_id: String,
         function_name: String,
         timeout_ms: Option<u64>,
         context_data: std::collections::HashMap<String, serde_json::Value>,
+        completion_tx: Option<
+            tokio::sync::mpsc::UnboundedSender<
+                crate::spearlet::execution::runtime::ExecutionCompletionEvent,
+            >,
+        >,
         reply_tx: std::sync::mpsc::Sender<ExecutionResult<Vec<u8>>>,
     },
     Stop {
@@ -372,18 +378,23 @@ impl WasmRuntime {
         let runtime_config = self.runtime_config.clone();
         let handle_module_name = wasm_handle.module_handle.module_name.clone();
         let task_id = instance.task_id.clone();
+        let instance_id = instance.id().to_string();
         let task_policy = std::sync::Arc::new(
             crate::spearlet::mcp::task_subset::parse_task_config(&instance.config.task_config),
         );
 
-        std::thread::spawn(move || {
+        let worker = move || {
             let mut wasi_module = WasiModule::create(None, None, None).unwrap();
             let mut instances: HashMap<String, &mut dyn SyncInst> = HashMap::new();
             instances.insert(wasi_module.name().to_string(), wasi_module.as_mut());
 
-            let mut spear_import =
-                build_spear_import_with_api(runtime_config, task_id.clone(), task_policy.clone())
-                    .unwrap();
+            let mut spear_import = build_spear_import_with_api(
+                runtime_config,
+                task_id.clone(),
+                task_policy.clone(),
+                instance_id.clone(),
+            )
+            .unwrap();
             let spear_name = "spear".to_string();
             let spear_inst: &mut dyn SyncInst = &mut spear_import;
             instances.insert(spear_name, spear_inst);
@@ -401,11 +412,28 @@ impl WasmRuntime {
                         break;
                     }
                     WasmWorkerRequest::Invoke {
+                        execution_id,
                         function_name,
                         timeout_ms,
-                        context_data: _,
+                        context_data,
+                        completion_tx,
                         reply_tx,
                     } => {
+                        let start = std::time::Instant::now();
+                        let ctx_key_preview =
+                            context_data.keys().take(10).cloned().collect::<Vec<_>>();
+                        tracing::debug!(
+                            instance_id = %instance_id,
+                            module_name = %handle_module_name,
+                            function_name = %function_name,
+                            timeout_ms = timeout_ms.unwrap_or(0),
+                            ctx_keys_len = context_data.len(),
+                            ctx_keys = ?ctx_key_preview,
+                            "wasm.worker.invoke.start"
+                        );
+                        crate::spearlet::execution::host_api::set_current_wasm_execution_id(Some(
+                            execution_id.clone(),
+                        ));
                         let res = {
                             let out = if let Some(_timeout_ms) = timeout_ms {
                                 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
@@ -437,11 +465,53 @@ impl WasmRuntime {
                                 }),
                             }
                         };
+                        crate::spearlet::execution::host_api::set_current_wasm_execution_id(None);
+                        let elapsed_ms = start.elapsed().as_millis() as u64;
+                        tracing::debug!(
+                            execution_id = %execution_id,
+                            instance_id = %instance_id,
+                            module_name = %handle_module_name,
+                            function_name = %function_name,
+                            elapsed_ms = elapsed_ms,
+                            ok = res.is_ok(),
+                            "wasm.worker.invoke.done"
+                        );
+                        if let Some(tx) = completion_tx {
+                            let (status, output, error_message) = match &res {
+                                Ok(v) => (
+                                    crate::spearlet::execution::runtime::ExecutionStatus::Completed,
+                                    v.clone(),
+                                    None,
+                                ),
+                                Err(e) => (
+                                    crate::spearlet::execution::runtime::ExecutionStatus::Failed,
+                                    Vec::new(),
+                                    Some(e.to_string()),
+                                ),
+                            };
+                            let _ = tx.send(
+                                crate::spearlet::execution::runtime::ExecutionCompletionEvent {
+                                    execution_id: execution_id.clone(),
+                                    execution_status: status,
+                                    completed_at_ms: chrono::Utc::now().timestamp_millis(),
+                                    duration_ms: elapsed_ms,
+                                    output,
+                                    error_message,
+                                    runtime_metadata: std::collections::HashMap::new(),
+                                },
+                            );
+                        }
                         let _ = reply_tx.send(res);
                     }
                 }
             }
-        });
+        };
+
+        let handle =
+            tokio::runtime::Handle::try_current().map_err(|_| ExecutionError::RuntimeError {
+                message: "tokio runtime is required to start wasm worker".to_string(),
+            })?;
+        let _ = handle.spawn_blocking(worker);
 
         Ok(())
     }
@@ -450,6 +520,7 @@ impl WasmRuntime {
     async fn execute_wasm_function(
         &self,
         instance_handle: &WasmInstanceHandle,
+        execution_id: &str,
         function_name: &str,
         timeout_ms: Option<u64>,
         context_data: &std::collections::HashMap<String, serde_json::Value>,
@@ -475,9 +546,11 @@ impl WasmRuntime {
             }
             let (tx, rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
             let req = WasmWorkerRequest::Invoke {
+                execution_id: execution_id.to_string(),
                 function_name: function_name.to_string(),
                 timeout_ms,
                 context_data: context_data.clone(),
+                completion_tx: None,
                 reply_tx: tx,
             };
             let send_res = instance_handle.req_tx.send(req);
@@ -634,7 +707,7 @@ impl Runtime for WasmRuntime {
 
         let module_bytes_vec: Vec<u8> = if let Some(snapshot) = &config.artifact {
             if let Some(uri) = &snapshot.location {
-                if let Some(rest) = uri.strip_prefix("sms+file://") {
+                if let Some(rest) = uri.strip_prefix("smsfile://") {
                     let (override_host_port, id_part) = match rest.find('/') {
                         Some(pos) => (Some(rest[..pos].to_string()), rest[pos + 1..].to_string()),
                         None => (None, rest.to_string()),
@@ -823,6 +896,16 @@ impl Runtime for WasmRuntime {
                 crate::spearlet::execution::runtime::ExecutionMode::Async
             );
 
+        debug!(
+            instance_id = %instance.id(),
+            execution_id = %context.execution_id,
+            wait = context.wait,
+            execution_mode = ?context.execution_mode,
+            no_wait = no_wait,
+            function_name = %function_name,
+            "wasm.execute.plan"
+        );
+
         if no_wait {
             {
                 let state = wasm_handle.state.lock().await;
@@ -842,9 +925,11 @@ impl Runtime for WasmRuntime {
 
             let (tx, _rx) = std::sync::mpsc::channel::<ExecutionResult<Vec<u8>>>();
             let req = WasmWorkerRequest::Invoke {
+                execution_id: context.execution_id.clone(),
                 function_name: function_name.clone(),
                 timeout_ms: None,
                 context_data: context.context_data.clone(),
+                completion_tx: context.completion_tx.clone(),
                 reply_tx: tx,
             };
             wasm_handle
@@ -857,6 +942,13 @@ impl Runtime for WasmRuntime {
             let duration = start_time.elapsed();
             let duration_ms = duration.as_millis() as u64;
             instance.record_request_completion(true, duration_ms as f64);
+            debug!(
+                instance_id = %instance.id(),
+                execution_id = %context.execution_id,
+                function_name = %function_name,
+                duration_ms = duration_ms,
+                "wasm.no_wait.dispatched"
+            );
 
             return Ok(RuntimeExecutionResponse {
                 data: Vec::new(),
@@ -875,6 +967,7 @@ impl Runtime for WasmRuntime {
         let result = self
             .execute_wasm_function(
                 &wasm_handle,
+                &context.execution_id,
                 &function_name,
                 Some(context.timeout_ms),
                 &context.context_data,
@@ -1201,6 +1294,58 @@ mod wasm_runtime_thread_tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_blocking_pool_saturation_does_not_starve_async() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Condvar, Mutex};
+        use std::time::Duration;
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .max_blocking_threads(2)
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let gate = Arc::new((Mutex::new(false), Condvar::new()));
+            let mut joins = Vec::new();
+            for _ in 0..64 {
+                let gate = gate.clone();
+                joins.push(tokio::task::spawn_blocking(move || {
+                    let (mu, cv) = &*gate;
+                    let mut open = mu.lock().unwrap();
+                    while !*open {
+                        open = cv.wait(open).unwrap();
+                    }
+                }));
+            }
+
+            let ticks = Arc::new(AtomicUsize::new(0));
+            let ticks2 = ticks.clone();
+            let handle = tokio::spawn(async move {
+                for _ in 0..50 {
+                    ticks2.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            });
+
+            let res = tokio::time::timeout(Duration::from_secs(2), handle).await;
+            assert!(res.is_ok());
+            assert_eq!(ticks.load(Ordering::SeqCst), 50);
+
+            {
+                let (mu, cv) = &*gate;
+                let mut open = mu.lock().unwrap();
+                *open = true;
+                cv.notify_all();
+            }
+            for j in joins {
+                let _ = j.await;
+            }
+        });
+    }
+
     #[cfg(feature = "wasmedge")]
     fn link_wat(wat: &str) {
         use super::super::wasm_hostcalls::build_spear_import;
@@ -1430,6 +1575,7 @@ mod wasm_runtime_tests {
         let out = rt
             .execute_wasm_function(
                 &handle,
+                "exec-test",
                 "main",
                 Some(30_000),
                 &std::collections::HashMap::new(),
@@ -1501,6 +1647,7 @@ mod wasm_runtime_tests {
         let h2 = rt
             .execute_wasm_function(
                 &handle,
+                "exec-test",
                 "main",
                 Some(30_000),
                 &std::collections::HashMap::new(),

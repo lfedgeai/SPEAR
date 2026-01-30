@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Search } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { createTask, getTaskDetail, listTasks } from '@/api/tasks'
+import { createTask, listTasks } from '@/api/tasks'
 import { createExecution } from '@/api/executions'
 import { listNodes } from '@/api/nodes'
 import { listFiles } from '@/api/files'
@@ -56,13 +57,13 @@ function endpointFromName(name: string) {
   return s ? `/tasks/${s}` : ''
 }
 
-type UriScheme = 'sms+file' | 'https' | 's3' | 'minio'
+type UriScheme = 'smsfile' | 'https' | 's3' | 'minio'
 
 function schemePrefix(s: UriScheme) {
   if (s === 'https') return 'https://'
   if (s === 's3') return 's3://'
   if (s === 'minio') return 'minio://'
-  return 'sms+file://'
+  return 'smsfile://'
 }
 
 function parseCsv(v: string) {
@@ -106,7 +107,7 @@ function CreateTaskDialog(props: {
     staleTime: 10_000,
   })
 
-  const [scheme, setScheme] = useState<UriScheme>('sms+file')
+  const [scheme, setScheme] = useState<UriScheme>('smsfile')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [fileQ, setFileQ] = useState('')
   const [fileOffset, setFileOffset] = useState(0)
@@ -483,12 +484,15 @@ function CreateTaskDialog(props: {
                     setForm((f) => {
                       const nextPrefix = schemePrefix(next)
                       const knownPrefixes = [
-                        schemePrefix('sms+file'),
+                        schemePrefix('smsfile'),
                         schemePrefix('https'),
                         schemePrefix('s3'),
                         schemePrefix('minio'),
                       ]
-                      if (!f.executable_uri || knownPrefixes.includes(f.executable_uri)) {
+                      if (
+                        !f.executable_uri ||
+                        knownPrefixes.includes(f.executable_uri)
+                      ) {
                         return { ...f, executable_uri: nextPrefix }
                       }
                       return f
@@ -498,7 +502,7 @@ function CreateTaskDialog(props: {
                   data-testid="task-uri-scheme"
                   aria-label="Scheme"
                 >
-                  <option value="sms+file">sms+file</option>
+                  <option value="smsfile">smsfile</option>
                   <option value="https">https</option>
                   <option value="s3">s3</option>
                   <option value="minio">minio</option>
@@ -515,11 +519,11 @@ function CreateTaskDialog(props: {
                 </div>
               </div>
 
-              {scheme === 'sms+file' ? (
+              {scheme === 'smsfile' ? (
                 <div className="col-span-2">
                   <div className="flex items-center justify-between rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2">
                     <div className="text-xs text-[hsl(var(--muted-foreground))]">
-                      Pick an embedded file and insert sms+file:// URI
+                      Pick an embedded file and insert smsfile:// URI
                     </div>
                     <Button
                       variant="secondary"
@@ -583,7 +587,7 @@ function CreateTaskDialog(props: {
                                   onClick={() => {
                                     setForm((cur) => ({
                                       ...cur,
-                                      executable_uri: `sms+file://${f.id}`,
+                                      executable_uri: `smsfile://${f.id}`,
                                       executable_name: f.name || cur.executable_name,
                                     }))
                                     setPickerOpen(false)
@@ -743,23 +747,15 @@ function CreateTaskDialog(props: {
 }
 
 export default function TasksPage() {
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
-  const [selected, setSelected] = useState<TaskSummary | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null)
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', q],
     queryFn: () => listTasks({ q, sort_by: 'registered_at', order: 'desc', limit: 200 }),
     refetchInterval: 15_000,
-  })
-
-  const selectedId = selected?.task_id
-  const detailQuery = useQuery({
-    queryKey: ['task-detail', selectedId],
-    queryFn: () => getTaskDetail(selectedId!),
-    enabled: !!selectedId && detailOpen,
   })
 
   const rows = tasksQuery.data?.tasks || []
@@ -853,8 +849,7 @@ export default function TasksPage() {
                   <div
                     key={t.task_id}
                     onClick={() => {
-                      setSelected(t)
-                      setDetailOpen(true)
+                      navigate(`/tasks/${encodeURIComponent(t.task_id)}`)
                     }}
                     className={cn(
                       'grid w-full grid-cols-12 items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[hsl(var(--accent))]',
@@ -865,8 +860,7 @@ export default function TasksPage() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        setSelected(t)
-                        setDetailOpen(true)
+                        navigate(`/tasks/${encodeURIComponent(t.task_id)}`)
                       }
                     }}
                     data-testid={`task-row-${t.task_id}`}
@@ -918,28 +912,6 @@ export default function TasksPage() {
         onOpenChange={setCreating}
         onCreated={() => tasksQuery.refetch()}
       />
-
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent>
-          <DialogHeader
-            title={selected ? selected.name : 'Task detail'}
-            description={selected ? selected.task_id : undefined}
-          />
-          {detailQuery.isLoading ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Loading…</div>
-          ) : detailQuery.isError ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">
-              Failed to load task detail.
-            </div>
-          ) : detailQuery.data?.found ? (
-            <pre className="max-h-[520px] overflow-auto rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3 text-xs">
-              {JSON.stringify(detailQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Not found</div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -26,7 +26,7 @@ The Spearlet WASM runtime requires a valid WASM binary at instance creation. If 
   "config": {},
   "executable": {
     "type": "wasm",
-    "uri": "sms+file://<file_id>",
+    "uri": "smsfile://<file_id>",
     "name": "hello.wasm",
     "args": [],
     "env": {}
@@ -38,9 +38,9 @@ The Spearlet WASM runtime requires a valid WASM binary at instance creation. If 
 
 ### SMS File Scheme and Config Source
 
-- Supported `sms+file` forms:
-  - Explicit override: `sms+file://<host:port>/<file_id>`
-  - Short form: `sms+file://<file_id>` (runtime uses `SpearletConfig.sms_http_addr` for the HTTP gateway)
+- Supported `smsfile` forms:
+  - Explicit override: `smsfile://<host:port>/<file_id>`
+  - Short form: `smsfile://<file_id>` (runtime uses `SpearletConfig.sms_http_addr` for the HTTP gateway)
 - The runtime constructs path `"/api/v1/files/<file_id>"`.
 - Download function:
 

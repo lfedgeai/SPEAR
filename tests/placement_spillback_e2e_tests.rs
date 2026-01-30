@@ -376,10 +376,32 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         .await
         .unwrap();
 
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+
     let state = GatewayState {
         node_client,
         task_client,
         placement_client: placement_client.clone(),
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),
@@ -524,10 +546,32 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         .await
         .unwrap();
 
+    let instance_registry_client =
+        spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_registry_client =
+        spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+    let execution_index_client =
+        spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
+
     let state = GatewayState {
         node_client,
         task_client,
         placement_client,
+        instance_registry_client,
+        execution_registry_client,
+        execution_index_client,
         mcp_registry_client,
         backend_registry_client,
         cancel_token: CancellationToken::new(),

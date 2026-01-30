@@ -73,7 +73,7 @@ pub async fn upload_file(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(
-        json!({ "success": true, "id": id, "name": headers.file_name, "uri": format!("sms+file://{}", id) }),
+        json!({ "success": true, "id": id, "name": headers.file_name, "uri": format!("smsfile://{}", id) }),
     ))
 }
 

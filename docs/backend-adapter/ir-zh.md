@@ -84,7 +84,7 @@ CanonicalRequestEnvelope
 - `inline_base64`：适合小数据、调试、兼容性强
   - `{ "kind": "inline_base64", "mime": "audio/wav", "data": "..." }`
 - `sms_file`：推荐生产默认（大数据）
-  - `{ "kind": "sms_file", "uri": "sms+file://<id>", "mime": "image/png" }`
+  - `{ "kind": "sms_file", "uri": "smsfile://<id>", "mime": "image/png" }`
 - `http_url`：仅在明确允许时使用（受 host 安全策略约束）
   - `{ "kind": "http_url", "url": "https://...", "mime": "image/jpeg" }`
 
@@ -125,7 +125,7 @@ CanonicalRequestEnvelope
     "model": "whisper-1",
     "audio": {
       "kind": "sms_file",
-      "uri": "sms+file://01JFK...ABCD",
+      "uri": "smsfile://01JFK...ABCD",
       "mime": "audio/wav"
     },
     "language": "zh",
@@ -145,7 +145,7 @@ CanonicalRequestEnvelope
   "result": {
     "payload": {
       "images": [
-        { "kind": "sms_file", "uri": "sms+file://01JFK...WXYZ", "mime": "image/png" }
+        { "kind": "sms_file", "uri": "smsfile://01JFK...WXYZ", "mime": "image/png" }
       ]
     }
   }
@@ -166,7 +166,7 @@ CanonicalRequestEnvelope
           { "type": "text", "text": "描述这张图片" },
           {
             "type": "image",
-            "image": { "kind": "sms_file", "uri": "sms+file://01J...", "mime": "image/jpeg" }
+            "image": { "kind": "sms_file", "uri": "smsfile://01J...", "mime": "image/jpeg" }
           }
         ]
       }

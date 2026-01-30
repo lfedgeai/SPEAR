@@ -11,11 +11,12 @@ use axum::{
 
 use super::gateway::GatewayState;
 use super::handlers::{
-    delete_file, delete_node, download_file, get_file_meta, get_node, get_node_resource,
-    get_node_with_resource, get_task, health_check, heartbeat, list_files, list_node_resources,
-    list_nodes, list_tasks, openapi_spec, place_invocation, presign_upload, register_node,
-    register_task, report_invocation_outcome, swagger_ui, swagger_ui_assets, unregister_task,
-    update_node, update_node_resource, upload_file,
+    delete_file, delete_node, download_file, get_execution, get_file_meta, get_node,
+    get_node_resource, get_node_with_resource, get_task, health_check, heartbeat, list_files,
+    list_instance_executions, list_node_resources, list_nodes, list_task_instances, list_tasks,
+    openapi_spec, place_invocation, presign_upload, register_node, register_task,
+    report_invocation_outcome, swagger_ui, swagger_ui_assets, unregister_task, update_node,
+    update_node_resource, upload_file,
 };
 
 /// Create HTTP routes / 创建HTTP路由
@@ -41,6 +42,15 @@ pub(crate) fn create_routes(state: GatewayState) -> Router {
         .route("/api/v1/tasks", get(list_tasks))
         .route("/api/v1/tasks/{task_id}", get(get_task))
         .route("/api/v1/tasks/{task_id}", delete(unregister_task))
+        .route(
+            "/api/v1/tasks/{task_id}/instances",
+            get(list_task_instances),
+        )
+        .route(
+            "/api/v1/instances/{instance_id}/executions",
+            get(list_instance_executions),
+        )
+        .route("/api/v1/executions/{execution_id}", get(get_execution))
         .route(
             "/api/v1/placement/invocations/place",
             post(place_invocation),

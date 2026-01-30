@@ -12,7 +12,7 @@
 
 ## Key Specs
 
-- `task_modal.spec.ts`: select `sms+file`, click `Use` in picker to fill URI
+- `task_modal.spec.ts`: select `smsfile`, click `Use` in picker to fill URI
 - `task_modal_scheme_prefill.spec.ts`: scheme selection pre-fills `Executable URI`
 - `executable_select_unit.spec.ts`: uses hidden native `select` for stable type selection
 - `files.spec.ts`: upload a small file and copy URI

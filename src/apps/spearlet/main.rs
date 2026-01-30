@@ -13,22 +13,29 @@ use spear_next::spearlet::registration::RegistrationService;
 
 use std::sync::Arc;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Parse command line arguments / 解析命令行参数
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = CliArgs::parse();
-
-    // Store args values for logging before they are moved / 在参数被移动之前存储参数值用于日志记录
     let log_args = format!("{:?}", args);
 
-    // Load configuration with home-first, then CLI override /
-    // 先从主目录加载配置，其次使用命令行覆盖
     let app_cfg = spear_next::spearlet::config::AppConfig::load_with_cli(&args)?;
-    let mut spearlet_cfg = app_cfg.spearlet;
+    let spearlet_cfg = app_cfg.spearlet;
 
-    // Initialize logging with configuration / 使用配置初始化日志
     init_tracing(&spearlet_cfg.logging.to_logging_config()).unwrap();
 
+    let max_blocking_threads = spearlet_cfg.max_blocking_threads.max(1);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(max_blocking_threads)
+        .build()?;
+
+    runtime.block_on(run(args, log_args, spearlet_cfg))
+}
+
+async fn run(
+    args: CliArgs,
+    log_args: String,
+    mut spearlet_cfg: spear_next::spearlet::config::SpearletConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if spearlet_cfg.llm.discovery.ollama.enabled {
         match maybe_import_ollama_serving_models(&mut spearlet_cfg).await {
             Ok(n) => {
@@ -56,9 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     global_mcp_registry_sync(config.clone());
 
-    // Initialize gRPC server / 初始化gRPC服务器
     let grpc_server = GrpcServer::new(config.clone()).await?;
-    // Shutdown channels / 关闭通道
     let (shutdown_tx_grpc, shutdown_rx_grpc) = tokio::sync::oneshot::channel::<()>();
 
     let object_service = grpc_server.get_object_service();
@@ -79,7 +84,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // Initialize HTTP gateway / 初始化HTTP网关
     let http_gateway = HttpGateway::new(config.clone(), Arc::new(health_service));
     let (shutdown_tx_http, shutdown_rx_http) = tokio::sync::oneshot::channel::<()>();
     let http_handle = tokio::spawn(async move {
@@ -93,7 +97,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // CLI/env-gated SMS registration & heartbeat / 通过CLI或环境变量控制注册与心跳
     let connect_requested = config.auto_register
         || args.sms_grpc_addr.is_some()
         || std::env::var("SPEARLET_SMS_GRPC_ADDR")
@@ -121,13 +124,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         backend_reporter.start();
     }
 
-    // Wait for shutdown signal / 等待关闭信号
     tokio::signal::ctrl_c().await?;
     tracing::info!("SPEARlet shutting down");
-    // Graceful shutdown / 优雅关闭
     let _ = shutdown_tx_grpc.send(());
     let _ = shutdown_tx_http.send(());
-    // Wait tasks to finish / 等待任务结束
     let _ = grpc_handle.await;
     let _ = http_handle.await;
 

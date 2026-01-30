@@ -338,7 +338,8 @@ samples:
 	@if [ "$(BUILD_JS_SAMPLES)" = "1" ]; then \
 		if command -v cargo >/dev/null 2>&1; then \
 			echo -e "$(BLUE)🟨 Building WASM-JS samples... / 构建WASM-JS示例...$(NC)"; \
-			mkdir -p "$(SAMPLES_JS_BUILD)" "$(SAMPLES_RUST_BUILD)"; \
+			rm -rf "$(SAMPLES_BUILD)/rust"; \
+			mkdir -p "$(SAMPLES_JS_BUILD)"; \
 			for name in $(JS_SAMPLES); do \
 				dir="$(REPO_ROOT)/$(SAMPLES_JS_DIR)/$$name"; \
 				if [ ! -f "$$dir/Cargo.toml" ]; then \
@@ -347,11 +348,9 @@ samples:
 				fi; \
 				( cd "$$dir" && cargo build --release --target wasm32-wasip1 ) || (echo -e "$(RED)❌ wasm-js build failed: $$name (need rustup target wasm32-wasip1) / WASM-JS构建失败（需要安装wasm32-wasip1目标）$(NC)"; exit 1); \
 				in="$$dir/target/wasm32-wasip1/release/$$name.wasm"; \
-				out_js="$(SAMPLES_JS_BUILD)/$$name.wasm"; \
-				out_rust="$(SAMPLES_RUST_BUILD)/$$name.wasm"; \
+				out_js="$(SAMPLES_JS_BUILD)/$(JS_WASM_PREFIX)$$name.wasm"; \
 				if [ -f "$$in" ]; then \
 					cp "$$in" "$$out_js"; \
-					cp "$$in" "$$out_rust"; \
 					echo -e "$(GREEN)✅ Built WASM-JS sample: $$out_js$(NC)"; \
 				else \
 					echo -e "$(RED)❌ WASM-JS output missing: $$in$(NC)"; exit 1; \
@@ -439,10 +438,10 @@ SAMPLES_BUILD := samples/build
 SAMPLES_CFLAGS ?=
 SAMPLES_JS_DIR ?= samples/wasm-js
 SAMPLES_JS_BUILD ?= $(SAMPLES_BUILD)/js
+JS_WASM_PREFIX ?= js-
 JS_SAMPLES ?= chat_completion chat_completion_tool_sum
 BUILD_JS_SAMPLES ?= 1
 SAMPLES_RUST_DIR ?= $(SAMPLES_JS_DIR)
-SAMPLES_RUST_BUILD ?= $(SAMPLES_BUILD)/rust
 RUST_SAMPLES ?= $(JS_SAMPLES)
 BUILD_RUST_SAMPLES ?= $(BUILD_JS_SAMPLES)
 

@@ -14,7 +14,7 @@ Related docs:
 ## Goals
 
 - Persist logs for each invocation (across retries/spillback executions).
-- Let users quickly view logs from Web Admin: list → detail → tail → download.
+- Let users quickly view logs from Web Admin: list → detail → follow → download.
 - Support filtering (stream, level) and pagination/seek with stable cursors.
 - Enforce safe defaults: retention, size limits, backpressure, redaction.
 - Keep Spearlet service logs (control-plane) separate from user invocation logs.
@@ -39,7 +39,7 @@ Related docs:
 ### Functional
 
 - Persist logs per **execution**; aggregate at **invocation** level.
-- Provide **tail** (near real-time) and **history** (pagination) reads.
+- Provide **follow** (near real-time) and **history** (pagination) reads.
 - Provide **download** of a whole execution log as a file.
 - Provide consistent correlation keys in every log line:
   - `invocation_id`, `execution_id`, `task_id`, `function_name`, `node_uuid`, `instance_id`.
@@ -62,12 +62,12 @@ Related docs:
    - Flushes to central storage in chunks.
 
 2. **SMS Log Storage (central)**
-   - **Blob store** for log chunks (append-only): object storage in production; the existing `sms+file://` store can be a dev/default backend.
+   - **Blob store** for log chunks (append-only): object storage in production; the existing `smsfile://` store can be a dev/default backend.
    - **Metadata store** for indices/cursors/retention: KV store (RocksDB/Sled) already exists in the project.
 
 3. **SMS Web Admin BFF**
    - Lists invocations/executions and serves log history.
-   - Provides SSE tail streaming for “Follow” mode.
+   - Provides polling-friendly history APIs (short term: no SSE).
 
 4. **Web Admin UI**
    - Executions list and log viewer.
@@ -78,7 +78,27 @@ Related docs:
 1. User triggers execution in Web Admin → SMS BFF spills back to a Spearlet node.
 2. Spearlet starts execution and emits log events into the log collector.
 3. Collector flushes chunk files + metadata updates to SMS Log Storage.
-4. UI reads history via SMS BFF; tails via SSE.
+4. UI reads history via SMS BFF; follow mode uses short polling for incremental reads (later: SSE/WebSocket).
+
+## Async Execution & Log Lifecycle (Key)
+
+### Problem
+
+For `execution_mode=async`, the semantics are: acknowledge submission and return `running` immediately, while the actual work continues in the background. If we flush/finalize logs at submission time (as if sync), we get:
+
+- flush reads empty (logs not produced yet);
+- finalize closes the stream too early, so later logs can no longer be appended.
+
+### Recommended best practice
+
+- Treat execution logs as an append-only stream keyed by `execution_id`, with a server-enforced lifecycle:
+  - `open` → `finalizing` → `finalized` (finalized rejects writes; finalize is idempotent)
+- Only when an execution reaches a terminal status (completed/failed/timeout/cancelled) do we:
+  - write `execution_completed/failed` system logs,
+  - flush remaining runtime logs,
+  - finalize the stream.
+- Async runtimes must emit a completion signal back to the orchestration layer (TaskExecutionManager), which triggers the final flush/finalize.
+- Follow mode should prefer cursor-based incremental polling first; SSE/WebSocket is an optional optimization and should not change storage semantics.
 
 ## Storage Design
 
@@ -177,7 +197,8 @@ Response:
   "execution_id": "...",
   "lines": [ {"ts_ms":..., "seq":..., "stream":"stdout", "message":"..."} ],
   "next_cursor": "...",
-  "truncated": false
+  "truncated": false,
+  "completed": false
 }
 ```
 
@@ -186,18 +207,7 @@ Cursor recommendation:
 - Use an opaque cursor encoded from `(seq, chunk_seq, offset)`.
 - Support `direction=backward|forward` for “scroll up” behavior.
 
-### 5) Tail logs (SSE)
-
-`GET /admin/api/executions/{execution_id}/logs/stream`
-
-SSE event payload:
-
-- `event: log`
-- `data: { line... }`
-
-And an `event: eof` when the execution is completed and all flushes are done.
-
-### 6) Download
+### 5) Download
 
 `GET /admin/api/executions/{execution_id}/logs/download`
 
@@ -219,6 +229,15 @@ And an `event: eof` when the execution is completed and all flushes are done.
   - size threshold reached
   - time threshold (e.g., every 1s)
   - execution completion
+
+### Async (no_wait) strategy
+
+- For `execution_mode=async|console|stream`, Spearlet returns `execution_status=running`. The orchestration layer must not finalize logs at this point.
+- When the runtime actually finishes, it must emit a completion signal to the orchestration layer, which performs:
+  - flush (including WASM hostcall logs),
+  - `execution_completed/failed` system log,
+  - finalize.
+- To avoid log mixing under instance reuse, WASM hostcall logs should be attributed to `execution_id` (or carry `execution_id` and be filtered at flush time).
 
 Drop policy (configurable):
 
@@ -259,7 +278,7 @@ Target codebase: `web-admin/` (React + TanStack Query). The UI already calls `PO
 - Add `src/api/logs.ts`:
   - `getExecution(execution_id)`
   - `getExecutionLogs(execution_id, cursor, limit, filters)`
-  - `streamExecutionLogs(execution_id)` (EventSource)
+  - follow mode via short polling (short term: no EventSource)
 
 ### UX details (best practices)
 
@@ -278,6 +297,45 @@ Target codebase: `web-admin/` (React + TanStack Query). The UI already calls `PO
   - Future: add per-tenant RBAC and audit.
 - Downloads:
   - Content-Disposition attachment; limit size; protect against path traversal by using IDs only.
+
+## Implementation Plan (Function-level)
+
+Phase the rollout to keep semantics correct first, then improve UX.
+
+### Phase 1: Fix async log lifecycle (no premature finalize)
+
+- [TaskExecutionManager::execute_existing_task_invocation](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/manager.rs#L658-L882)
+  - If `runtime_response.execution_status == Running`:
+    - do not call `append_wasm_logs_to_sms`
+    - do not write `execution_completed`
+    - do not call `finalize_execution_logs_to_sms`
+    - optionally write a `system` log like `execution_dispatched mode=async`
+
+### Phase 2: Add completion signal for async runtimes
+
+- [WasmWorkerRequest](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs)
+  - Extend `Invoke` to carry `execution_id` and a completion sender (tokio mpsc/oneshot).
+- [WasmRuntime::execute](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs#L790-L927)
+  - In no_wait mode, enqueue `Invoke(execution_id, ...)` and register a completion handler.
+- [TaskExecutionManager](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/manager.rs)
+  - Add a background listener for completion events:
+    - `append_wasm_logs_to_sms(execution_id, ...)`
+    - write `execution_completed/failed`
+    - `finalize_execution_logs_to_sms(execution_id)`
+    - update execution index state + timestamps (Completed/Failed)
+
+### Phase 3: Attribute WASM hostcall logs by execution_id
+
+- [DefaultHostApi::wasm_log_write](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/core.rs#L151-L213)
+  - Introduce a “current execution_id” context (set/clear by worker around each invoke), and attach `execution_id` to each log entry.
+- [get_wasm_logs / clear_wasm_logs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/core.rs#L99-L126)
+  - Add `get_wasm_logs_by_execution(execution_id, cursor, limit)` for flushing.
+- [append_wasm_logs_to_sms](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/manager.rs#L952-L1000)
+  - Switch from “read by instance_id” to “incremental read by execution_id + cursor”.
+
+### Phase 4: Improve follow UX (optional)
+
+- Periodically flush running executions (e.g., every 500ms–1s); UI follows by polling `/logs?cursor=...`.
 
 ## Observability
 

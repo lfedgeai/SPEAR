@@ -311,6 +311,7 @@ async fn test_connect_fails_with_unreachable_sms() {
 
     let cfg = SpearletConfig {
         node_name: "test-node".to_string(),
+        max_blocking_threads: 512,
         grpc: ServerConfig {
             addr: "127.0.0.1:0".parse().unwrap(),
             ..Default::default()

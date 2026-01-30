@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package sms;
+
+message ExecutionLogLine {
+  uint64 ts_ms = 1;
+  uint64 seq = 2;
+  string stream = 3;
+  string level = 4;
+  string message = 5;
+}
+
+message AppendExecutionLogsRequest {
+  string execution_id = 1;
+  repeated ExecutionLogLine lines = 2;
+}
+
+message AppendExecutionLogsResponse {
+  string execution_id = 1;
+  uint64 acked_seq = 2;
+  bool truncated = 3;
+  uint64 next_seq = 4;
+  uint64 accepted = 5;
+}
+
+message FinalizeExecutionLogsRequest {
+  string execution_id = 1;
+}
+
+message FinalizeExecutionLogsResponse {
+  string execution_id = 1;
+  bool truncated = 2;
+  bool completed = 3;
+  uint64 next_seq = 4;
+  int64 updated_at_ms = 5;
+}
+
+service ExecutionLogIngestService {
+  rpc AppendExecutionLogs(AppendExecutionLogsRequest) returns (AppendExecutionLogsResponse);
+  rpc FinalizeExecutionLogs(FinalizeExecutionLogsRequest) returns (FinalizeExecutionLogsResponse);
+}
+

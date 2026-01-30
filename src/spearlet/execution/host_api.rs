@@ -11,5 +11,8 @@ mod util;
 mod tests;
 
 pub use cchat::ChatSessionSnapshot;
-pub use core::DefaultHostApi;
+pub use core::{
+    clear_wasm_logs_by_execution, get_wasm_logs_by_execution, set_current_wasm_execution_id,
+    DefaultHostApi, WasmLogEntry,
+};
 pub use iface::{HttpCallResult, SpearHostApi};

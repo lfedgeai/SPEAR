@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdarg.h>
 
 #define SPEAR_IMPORT(name) __attribute__((import_module("spear"), import_name(name)))
 
@@ -349,5 +350,175 @@ static inline uint8_t *sp_mic_read_alloc(int32_t fd, uint32_t *out_len) {
     free(buf);
     return NULL;
 }
+
+enum {
+    SP_LOG_TRACE = 0,
+    SP_LOG_DEBUG = 1,
+    SP_LOG_INFO = 2,
+    SP_LOG_WARN = 3,
+    SP_LOG_ERROR = 4,
+};
+
+SPEAR_IMPORT("log")
+int32_t sp_log(int32_t level, int32_t msg_ptr, int32_t msg_len);
+
+static inline int32_t sp_log_write(int32_t level, const void *msg, size_t msg_len) {
+    if (!msg && msg_len != 0) {
+        return SPEAR_CCHAT_ERR_INVALID_PTR;
+    }
+    if (msg_len > (size_t)(16 * 1024)) {
+        msg_len = (size_t)(16 * 1024);
+    }
+    return sp_log(level, (int32_t)(uintptr_t)msg, (int32_t)msg_len);
+}
+
+static inline int32_t sp_log_str(int32_t level, const char *msg) {
+    if (!msg) {
+        return SPEAR_CCHAT_ERR_INVALID_PTR;
+    }
+    return sp_log_write(level, msg, strlen(msg));
+}
+
+static inline int sp_logf(int32_t level, const char *fmt, ...) {
+    if (!fmt) {
+        return SPEAR_CCHAT_ERR_INVALID_PTR;
+    }
+
+    char stack_buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(stack_buf, sizeof(stack_buf), fmt, ap);
+    va_end(ap);
+
+    if (n < 0) {
+        return n;
+    }
+
+    size_t need = (size_t)n;
+    if (need < sizeof(stack_buf)) {
+        int32_t rc = sp_log_write(level, stack_buf, need);
+        return (rc == 0) ? n : rc;
+    }
+
+    size_t cap = need + 1;
+    if (cap > (size_t)(16 * 1024) + 1) {
+        cap = (size_t)(16 * 1024) + 1;
+    }
+
+    char *heap_buf = (char *)malloc(cap);
+    if (!heap_buf) {
+        int32_t rc = sp_log_write(level, stack_buf, sizeof(stack_buf) - 1);
+        return (rc == 0) ? (int)(sizeof(stack_buf) - 1) : rc;
+    }
+
+    va_start(ap, fmt);
+    (void)vsnprintf(heap_buf, cap, fmt, ap);
+    va_end(ap);
+
+    size_t wrote = strnlen(heap_buf, cap - 1);
+    int32_t rc = sp_log_write(level, heap_buf, wrote);
+    free(heap_buf);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_tracef(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return n;
+    size_t wrote = (size_t)n < sizeof(buf) ? (size_t)n : (sizeof(buf) - 1);
+    int32_t rc = sp_log_write(SP_LOG_TRACE, buf, wrote);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_debugf(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return n;
+    size_t wrote = (size_t)n < sizeof(buf) ? (size_t)n : (sizeof(buf) - 1);
+    int32_t rc = sp_log_write(SP_LOG_DEBUG, buf, wrote);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_infof(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return n;
+    size_t wrote = (size_t)n < sizeof(buf) ? (size_t)n : (sizeof(buf) - 1);
+    int32_t rc = sp_log_write(SP_LOG_INFO, buf, wrote);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_warnf(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return n;
+    size_t wrote = (size_t)n < sizeof(buf) ? (size_t)n : (sizeof(buf) - 1);
+    int32_t rc = sp_log_write(SP_LOG_WARN, buf, wrote);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_errorf(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return n;
+    size_t wrote = (size_t)n < sizeof(buf) ? (size_t)n : (sizeof(buf) - 1);
+    int32_t rc = sp_log_write(SP_LOG_ERROR, buf, wrote);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_fprintf(FILE *stream, const char *fmt, ...) {
+    int32_t level = SP_LOG_INFO;
+    if (stream == stderr) {
+        level = SP_LOG_ERROR;
+    } else if (stream != stdout && stream != NULL) {
+        level = SP_LOG_DEBUG;
+    }
+
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return n;
+    size_t wrote = (size_t)n < sizeof(buf) ? (size_t)n : (sizeof(buf) - 1);
+    int32_t rc = sp_log_write(level, buf, wrote);
+    return (rc == 0) ? (int)wrote : rc;
+}
+
+static inline int sp_puts_log(const char *s) {
+    if (!s) {
+        return SPEAR_CCHAT_ERR_INVALID_PTR;
+    }
+    return sp_infof("%s\n", s);
+}
+
+#if !defined(SPEAR_DISABLE_STDIO_REDIRECT_TO_LOG)
+#if !defined(SPEAR_REDIRECT_STDIO_TO_LOG)
+#if defined(__wasm32__) || defined(__wasi__)
+#define SPEAR_REDIRECT_STDIO_TO_LOG 1
+#endif
+#endif
+#endif
+
+#if defined(SPEAR_REDIRECT_STDIO_TO_LOG)
+#define printf(...) sp_infof(__VA_ARGS__)
+#define fprintf(stream, ...) sp_fprintf((stream), __VA_ARGS__)
+#define puts(s) sp_puts_log((s))
+#endif
 
 #endif

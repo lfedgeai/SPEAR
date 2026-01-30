@@ -9,6 +9,9 @@ use tower_http::cors::CorsLayer;
 use super::routes::create_routes;
 use crate::proto::sms::{
     backend_registry_service_client::BackendRegistryServiceClient,
+    execution_index_service_client::ExecutionIndexServiceClient,
+    execution_registry_service_client::ExecutionRegistryServiceClient,
+    instance_registry_service_client::InstanceRegistryServiceClient,
     mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
     placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
 };
@@ -25,6 +28,9 @@ pub struct GatewayState {
     pub node_client: NodeServiceClient<tonic::transport::Channel>,
     pub task_client: TaskServiceClient<tonic::transport::Channel>,
     pub placement_client: PlacementServiceClient<tonic::transport::Channel>,
+    pub instance_registry_client: InstanceRegistryServiceClient<tonic::transport::Channel>,
+    pub execution_registry_client: ExecutionRegistryServiceClient<tonic::transport::Channel>,
+    pub execution_index_client: ExecutionIndexServiceClient<tonic::transport::Channel>,
     pub mcp_registry_client: McpRegistryServiceClient<tonic::transport::Channel>,
     pub backend_registry_client: BackendRegistryServiceClient<tonic::transport::Channel>,
     pub cancel_token: CancellationToken,

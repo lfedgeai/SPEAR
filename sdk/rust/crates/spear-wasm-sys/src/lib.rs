@@ -56,6 +56,8 @@ extern "C" {
     pub fn sleep_ms(ms: i32);
     pub fn random_i64() -> i64;
 
+    pub fn log(level: i32, msg_ptr: i32, msg_len: i32) -> i32;
+
     pub fn cchat_create() -> i32;
     pub fn cchat_write_msg(fd: i32, role_ptr: i32, role_len: i32, content_ptr: i32, content_len: i32) -> i32;
     pub fn cchat_write_fn(fd: i32, fn_offset: i32, fn_ptr: i32, fn_len: i32) -> i32;
@@ -82,4 +84,3 @@ extern "C" {
 
     pub fn spear_fd_ctl(fd: i32, cmd: i32, arg_ptr: i32, arg_len_ptr: i32) -> i32;
 }
-

@@ -312,7 +312,7 @@ pub fn install_native_bindings(context: &mut Context) {
             .unwrap_or(JsValue::Undefined)
             .to_string(ctx)?
             .to_std_string_escaped();
-        println!("{}", s);
+        let _ = spear_wasm::log_info(&s);
         Ok(JsValue::Undefined)
     });
     let _ = context.register_global_builtin_callable(js_string!("__spear_print"), 1, print);

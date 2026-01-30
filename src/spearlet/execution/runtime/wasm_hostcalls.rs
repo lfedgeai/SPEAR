@@ -25,6 +25,8 @@ const SPEAR_ERR_BUFFER_TOO_SMALL: i32 = -ENOSPC;
 const SPEAR_ERR_INVALID_CMD: i32 = -EINVAL;
 const SPEAR_ERR_INTERNAL: i32 = -EIO;
 
+const SPEAR_LOG_MAX_BYTES: i32 = 16 * 1024;
+
 const CTL_SET_PARAM: i32 = 1;
 const CTL_GET_METRICS: i32 = 2;
 
@@ -942,6 +944,41 @@ pub fn spear_random_i64(
     Ok(vec![WasmValue::from_i64(acc)])
 }
 
+pub fn spear_log(
+    host_data: &mut DefaultHostApi,
+    instance: &mut Instance,
+    _frame: &mut CallingFrame,
+    input: Vec<WasmValue>,
+) -> Result<Vec<WasmValue>, CoreError> {
+    if input.len() != 3 {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INTERNAL)]);
+    }
+    let level = get_i32_arg(&input, 0).unwrap_or(2);
+    let ptr = get_i32_arg(&input, 1).unwrap_or(-1);
+    let len = get_i32_arg(&input, 2).unwrap_or(-1);
+
+    if len < 0 || len > SPEAR_LOG_MAX_BYTES {
+        return Ok(vec![WasmValue::from_i32(SPEAR_ERR_INVALID_CMD)]);
+    }
+
+    let bytes = match mem_read(instance, ptr, len) {
+        Ok(b) => b,
+        Err(e) => return Ok(vec![WasmValue::from_i32(e)]),
+    };
+    let msg = String::from_utf8_lossy(&bytes).to_string();
+
+    let level_str = match level {
+        0 => "trace",
+        1 => "debug",
+        2 => "info",
+        3 => "warn",
+        4 => "error",
+        _ => "info",
+    };
+    host_data.wasm_log_write(level_str, &msg);
+    Ok(vec![WasmValue::from_i32(SPEAR_OK)])
+}
+
 pub fn build_spear_import() -> Result<ImportObject<DefaultHostApi>, ExecutionError> {
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
@@ -969,6 +1006,11 @@ pub fn build_spear_import() -> Result<ImportObject<DefaultHostApi>, ExecutionErr
         .with_func::<(), i64>("random_i64", spear_random_i64)
         .map_err(|e| ExecutionError::RuntimeError {
             message: format!("add random_i64 function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("log", spear_log)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add log function error: {}", e),
         })?;
     builder
         .with_func::<i32, ()>("sleep_ms", spear_sleep_ms)
@@ -1093,8 +1135,11 @@ pub fn build_spear_import_with_api(
     runtime_config: RuntimeConfig,
     task_id: String,
     mcp_task_policy: std::sync::Arc<McpTaskPolicy>,
+    instance_id: String,
 ) -> Result<ImportObject<DefaultHostApi>, ExecutionError> {
-    let api = DefaultHostApi::new(runtime_config).with_task_policy(task_id, mcp_task_policy);
+    let api = DefaultHostApi::new(runtime_config)
+        .with_task_policy(task_id, mcp_task_policy)
+        .with_instance_id(instance_id);
     let mut builder =
         ImportObjectBuilder::new("spear", api).map_err(|e| ExecutionError::RuntimeError {
             message: format!("create import builder error: {}", e),
@@ -1114,6 +1159,11 @@ pub fn build_spear_import_with_api(
         .with_func::<(), i64>("random_i64", spear_random_i64)
         .map_err(|e| ExecutionError::RuntimeError {
             message: format!("add random_i64 function error: {}", e),
+        })?;
+    builder
+        .with_func::<(i32, i32, i32), i32>("log", spear_log)
+        .map_err(|e| ExecutionError::RuntimeError {
+            message: format!("add log function error: {}", e),
         })?;
     builder
         .with_func::<i32, ()>("sleep_ms", spear_sleep_ms)
@@ -1310,5 +1360,83 @@ mod tests {
         let out = vm.run_func(None, "run", params!()).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].to_i32(), 0);
+    }
+
+    #[cfg(feature = "wasmedge")]
+    #[test]
+    fn test_call_log_and_buffer() {
+        static INIT: std::sync::Once = std::sync::Once::new();
+        INIT.call_once(|| {
+            let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("spear_next=debug"));
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_test_writer()
+                .try_init();
+        });
+
+        use crate::spearlet::execution::host_api::{
+            clear_wasm_logs_by_execution, get_wasm_logs_by_execution, set_current_wasm_execution_id,
+        };
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use wasmedge_sdk::config::{CommonConfigOptions, ConfigBuilder};
+        use wasmedge_sdk::wasi::WasiModule;
+        use wasmedge_sdk::{params, vm::SyncInst, wat2wasm, Module, Store, Vm};
+
+        let instance_id = "inst-test-log".to_string();
+        let task_id = "task-test-log".to_string();
+        let execution_id = "exec-test-log".to_string();
+        clear_wasm_logs_by_execution(&execution_id);
+
+        let wat = r#"(module
+            (type $log_t (func (param i32 i32 i32) (result i32)))
+            (import "spear" "log" (func $log (type $log_t)))
+            (memory (export "memory") 1)
+            (data (i32.const 0) "hello")
+
+            (func (export "run") (result i32)
+                (call $log (i32.const 2) (i32.const 0) (i32.const 5))
+            )
+        )"#;
+
+        let bytes = wat2wasm(wat.as_bytes()).unwrap();
+        let c = ConfigBuilder::new(CommonConfigOptions::default())
+            .build()
+            .unwrap();
+        let mut imports: HashMap<String, &mut dyn SyncInst> = HashMap::new();
+        let mut wasi_module = WasiModule::create(None, None, None).unwrap();
+        imports.insert(wasi_module.name().to_string(), wasi_module.as_mut());
+
+        let runtime_config = RuntimeConfig {
+            runtime_type: RuntimeType::Wasm,
+            settings: std::collections::HashMap::new(),
+            global_environment: std::collections::HashMap::new(),
+            spearlet_config: None,
+            resource_pool: ResourcePoolConfig::default(),
+        };
+        let spear_import = build_spear_import_with_api(
+            runtime_config,
+            task_id,
+            Arc::new(McpTaskPolicy::default()),
+            instance_id.clone(),
+        )
+        .unwrap();
+        let spear_static = Box::leak(Box::new(spear_import));
+        imports.insert("spear".to_string(), spear_static);
+
+        let store = Store::new(Some(&c), imports).unwrap();
+        let mut vm = Vm::new(store);
+        let module = Module::from_bytes(None, bytes).unwrap();
+        vm.register_module(None, module).unwrap();
+
+        set_current_wasm_execution_id(Some(execution_id.clone()));
+        let out = vm.run_func(None, "run", params!()).unwrap();
+        set_current_wasm_execution_id(None);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].to_i32(), 0);
+
+        let logs = get_wasm_logs_by_execution(&execution_id, None, 10);
+        assert!(logs.iter().any(|e| e.message.contains("hello")));
     }
 }

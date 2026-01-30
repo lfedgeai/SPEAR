@@ -14,7 +14,7 @@
 ## 目标
 
 - 为每次 invocation 保存可查看的日志（支持 spillback/retry 产生的多次 execution）。
-- Web Admin 可快速定位并查看：列表 → 详情 → 实时追尾（tail）→ 下载。
+- Web Admin 可快速定位并查看：列表 → 详情 → 跟随（follow）→ 下载。
 - 支持按 stream/level 过滤，并支持稳定 cursor 的分页/定位。
 - 安全与成本的合理默认值：保留周期、大小限制、背压、脱敏。
 - 明确区分：Spearlet 服务日志（控制面） vs 用户 invocation 日志（数据面）。
@@ -62,12 +62,12 @@
    - 按 chunk 刷写到中心存储。
 
 2. **SMS Log Storage（中心存储）**
-   - **Blob 存储**保存日志分片（append-only）：生产建议对象存储；开发/默认可复用现有 `sms+file://` 文件存储。
+   - **Blob 存储**保存日志分片（append-only）：生产建议对象存储；开发/默认可复用现有 `smsfile://` 文件存储。
    - **元数据存储**保存索引与 cursor：复用项目已有 KV（RocksDB/Sled）。
 
 3. **SMS Web Admin BFF**
    - 提供 execution/invocation 列表与日志读取接口。
-   - 提供 SSE tail 接口用于“跟随模式”。
+   - 提供轮询友好的分页读取接口（短期不做 SSE）。
 
 4. **Web Admin UI**
    - 增加 Execution 列表与日志查看器。
@@ -78,7 +78,24 @@
 1. 用户在 Web Admin 触发执行 → SMS BFF 选点并 spillback 调用 Spearlet。
 2. Spearlet 开始执行并把日志事件写入 collector。
 3. collector 将 chunk + 元数据写入 SMS Log Storage。
-4. UI 通过 SMS BFF 拉取历史、通过 SSE 追尾。
+4. UI 通过 SMS BFF 分页拉取历史；follow 模式通过短轮询增量拉取（后续可演进为 SSE/WebSocket）。
+
+## 异步执行与日志生命周期（关键）
+
+### 问题背景
+
+异步执行（`execution_mode=async`）的语义是：**提交成功后立即返回 `running`**，真实执行在后台继续进行。此时如果按同步路径在“提交后”就 flush/finalize 日志，会导致：
+
+- flush 时日志尚未产生，读到空；
+- finalize 过早关闭写入窗口，后续日志无法落盘。
+
+### 业界 best practice（推荐）
+
+- **日志流以 `execution_id` 为主键**（append-only），并由服务端维护日志状态机：
+  - `open`（可写）→ `finalizing`（仅做最后 flush）→ `finalized`（拒绝写入，幂等）
+- **只有当 execution 进入终态**（completed/failed/timeout/cancelled）后，才允许写入 “execution_completed/failed” 系统日志并 finalize。
+- **异步执行必须有 completion signal**：后台执行完成后向编排层（TaskExecutionManager）发送完成事件，触发最后 flush + finalize。
+- **follow**（近实时查看）优先用“增量轮询 + cursor”实现；SSE/WebSocket 可作为后续优化，不影响存储与语义。
 
 ## 存储设计
 
@@ -177,7 +194,8 @@ UI 仅调用 SMS（避免浏览器直接连 Spearlet）。
   "execution_id": "...",
   "lines": [ {"ts_ms":..., "seq":..., "stream":"stdout", "message":"..."} ],
   "next_cursor": "...",
-  "truncated": false
+  "truncated": false,
+  "completed": false
 }
 ```
 
@@ -186,16 +204,7 @@ cursor 建议：
 - 使用不透明 cursor，内部编码 `(seq, chunk_seq, offset)`。
 - 支持 `direction=backward|forward` 以满足“向上翻历史”的体验。
 
-### 5）实时追尾（SSE）
-
-`GET /admin/api/executions/{execution_id}/logs/stream`
-
-SSE payload：
-
-- `event: log` + `data: {line...}`
-- 当 execution 结束且 flush 完成后发送 `event: eof`
-
-### 6）下载
+### 5）下载
 
 `GET /admin/api/executions/{execution_id}/logs/download`
 
@@ -217,6 +226,13 @@ SSE payload：
   - 达到大小阈值
   - 达到时间阈值（例如每 1s）
   - 执行结束
+
+### 异步执行（no_wait）策略
+
+- `execution_mode=async|console|stream` 时，Spearlet 返回 `execution_status=running`，但不应在编排层立即 finalize 日志。
+- 需要在运行时（WASM worker / Process 子进程 / K8s job）结束后，向编排层上报 completion signal：
+  - 由编排层统一做：flush（含 wasm ring）→ 写 `execution_completed/failed` → finalize。
+- 为避免 instance 复用导致日志串扰，WASM hostcall 日志应按 `execution_id` 归属（或至少携带 `execution_id` 并在 flush 时过滤）。
 
 丢弃策略（可配置）：
 
@@ -257,7 +273,7 @@ SSE payload：
 - 新增 `src/api/logs.ts`：
   - `getExecution(execution_id)`
   - `getExecutionLogs(execution_id, cursor, limit, filters)`
-  - `streamExecutionLogs(execution_id)`（EventSource）
+  - follow 模式通过短轮询实现（短期不接 EventSource）
 
 ### 交互细节（best practice）
 
@@ -267,6 +283,45 @@ SSE payload：
 - Follow/filters 通过 query 参数持久化，便于分享链接与复现。
 
 ## 安全考虑
+
+## 改造计划（函数级）
+
+按“先修语义，再演进能力”的顺序分期，确保架构清晰且可扩展：
+
+### Phase 1：修正异步路径的日志生命周期（不再过早 finalize）
+
+- [TaskExecutionManager::execute_existing_task_invocation](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/manager.rs#L658-L882)
+  - 当 `runtime_response.execution_status == Running`（异步提交成功）：
+    - 不调用 `append_wasm_logs_to_sms`
+    - 不写 `execution_completed`
+    - 不调用 `finalize_execution_logs_to_sms`
+    - 可选：写一条 `system` 日志 `execution_dispatched mode=async`
+
+### Phase 2：为异步执行补齐 completion signal（完成后再 flush/finalize）
+
+- [WasmWorkerRequest](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs)
+  - 扩展 `Invoke` payload：携带 `execution_id`，并增加一个完成回传通道（tokio mpsc/oneshot）。
+- [WasmRuntime::execute](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/runtime/wasm.rs#L790-L927)
+  - no_wait 分支发送 `Invoke(execution_id, ...)` 给 worker，并注册 completion handler。
+- [TaskExecutionManager](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/manager.rs)
+  - 新增一个后台 listener（或复用现有 work loop）消费 completion events：
+    - `append_wasm_logs_to_sms(execution_id, ...)`
+    - `append_execution_logs_to_sms(... execution_completed/failed ...)`
+    - `finalize_execution_logs_to_sms(execution_id)`
+    - 更新 execution index 状态与时间戳（Completed/Failed）
+
+### Phase 3：WASM hostcall 日志按 execution_id 归属（避免串扰，支持并发/重试）
+
+- [DefaultHostApi::wasm_log_write](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/core.rs#L151-L213)
+  - 引入“当前 execution_id”的上下文（由 worker 在 invoke 开始/结束设置/清理），写入 log entry 时带上 `execution_id`。
+- [get_wasm_logs / clear_wasm_logs](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/host_api/core.rs#L99-L126)
+  - 增加 `get_wasm_logs_by_execution(execution_id, cursor, limit)`，供 flush 使用。
+- [append_wasm_logs_to_sms](file:///Users/bytedance/Documents/GitHub/bge/spear/src/spearlet/execution/manager.rs#L952-L1000)
+  - 从“按 instance_id 全量读取”改为“按 execution_id 增量读取 + cursor”。
+
+### Phase 4：follow 模式体验增强（可选）
+
+- 编排层对 running execution 周期性 flush（例如 500ms–1s），UI 通过 `/logs?cursor=` 短轮询近实时刷新。
 
 - 不在 UI 中暴露敏感信息：
   - 在 SMS 侧对常见模式进行脱敏（API key、Bearer token 等）。

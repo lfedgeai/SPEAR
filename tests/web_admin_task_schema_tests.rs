@@ -49,6 +49,18 @@ async fn test_admin_tasks_schema_contains_expected_fields() {
             spear_next::proto::sms::placement_service_client::PlacementServiceClient::new(
                 channel.clone(),
             ),
+        instance_registry_client:
+            spear_next::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+                channel.clone(),
+            ),
+        execution_registry_client:
+            spear_next::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+                channel.clone(),
+            ),
+        execution_index_client:
+            spear_next::proto::sms::execution_index_service_client::ExecutionIndexServiceClient::new(
+                channel.clone(),
+            ),
         mcp_registry_client:
             spear_next::proto::sms::mcp_registry_service_client::McpRegistryServiceClient::new(
                 channel.clone(),

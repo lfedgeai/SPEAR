@@ -238,14 +238,17 @@ impl AppConfig {
                     .join(".spear")
                     .join("config.toml");
                 if home_path.exists() {
-                    let cfg = std::fs::read_to_string(&home_path)?;
-                    match toml::from_str::<AppConfig>(&cfg) {
-                        Ok(c) => {
-                            config = c;
-                        }
+                    match std::fs::read_to_string(&home_path) {
+                        Ok(cfg) => match toml::from_str::<AppConfig>(&cfg) {
+                            Ok(c) => {
+                                config = c;
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to parse home config: {}", e);
+                            }
+                        },
                         Err(e) => {
-                            tracing::warn!("Failed to parse home config: {}", e);
-                            // fall back to defaults / 回退到默认值
+                            tracing::warn!("Failed to read home config: {}", e);
                         }
                     }
                 }
@@ -337,6 +340,7 @@ impl AppConfig {
 pub struct SpearletConfig {
     /// Node name / 节点名称
     pub node_name: String,
+    pub max_blocking_threads: usize,
     /// gRPC server configuration / gRPC服务器配置
     pub grpc: ServerConfig,
     /// HTTP gateway configuration / HTTP网关配置
@@ -537,6 +541,7 @@ impl Default for SpearletConfig {
     fn default() -> Self {
         Self {
             node_name: "spearlet-node".to_string(),
+            max_blocking_threads: 512,
             grpc: ServerConfig {
                 addr: "0.0.0.0:50052".parse().unwrap(),
                 ..Default::default()

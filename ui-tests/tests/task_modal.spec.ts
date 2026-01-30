@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Task create modal', () => {
-  test('selects sms+file and inserts URI from picker', async ({ page }) => {
+  test('selects smsfile and inserts URI from picker', async ({ page }) => {
     await page.goto('/admin');
 
     await page.getByTestId('nav-files').click();
@@ -27,13 +27,13 @@ test.describe('Task create modal', () => {
     expect(body.success).toBeTruthy()
     expect(body.id).toBeTruthy()
     const id = body.id as string
-    const uri = `sms+file://${id}`
+    const uri = `smsfile://${id}`
 
     await page.getByTestId('nav-tasks').click();
     await page.getByTestId('tasks-open-create').click();
 
     await page.getByTestId('task-executable-type').selectOption('wasm');
-    await page.getByTestId('task-uri-scheme').selectOption('sms+file');
+    await page.getByTestId('task-uri-scheme').selectOption('smsfile');
 
     await page.getByTestId('task-choose-local').click();
     await expect(page.getByTestId(`task-use-file-${id}`)).toBeVisible({ timeout: 10_000 });

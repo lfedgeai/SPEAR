@@ -19,7 +19,7 @@ cargo run --bin sms -- [选项]
 | `--config <文件>` | String | 配置文件路径 | 无 |
 | `--grpc-addr <地址>` | String | gRPC服务器地址 | 0.0.0.0:50051 |
 | `--http-addr <地址>` | String | HTTP网关地址 | 0.0.0.0:8080 |
-| `--sms-http-addr <地址>` | String | SMS HTTP网关地址（供 spearlet 访问 sms+file） | 127.0.0.1:8080 |
+| `--sms-http-addr <地址>` | String | SMS HTTP网关地址（供 spearlet 访问 smsfile） | 127.0.0.1:8080 |
 | `--heartbeat-timeout <秒数>` | u64 | 节点心跳超时时间 | 120 |
 | `--cleanup-interval <秒数>` | u64 | 节点清理间隔 | 300 |
 | `--enable-swagger` | 标志 | 启用Swagger UI | false |
@@ -153,7 +153,7 @@ cargo run --features sled --bin sms
 ### 默认值与空值处理（SPEARlet）
 
 - `sms_http_addr` 默认值为 `127.0.0.1:8080`。
-- 若配置文件或环境变量提供了空字符串，加载时会自动归一化为默认值，避免在 `sms+file://<id>` 下载时出现空基址导致的错误。
+- 若配置文件或环境变量提供了空字符串，加载时会自动归一化为默认值，避免在 `smsfile://<id>` 下载时出现空基址导致的错误。
 
 ## 示例
 

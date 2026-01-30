@@ -13,6 +13,7 @@ pub struct NodeOfflineMark {
     pub last_heartbeat: i64,
     pub age_seconds: i64,
     pub previous_status: String,
+    pub node: Node,
 }
 
 /// Node service for managing cluster nodes / 管理集群节点的服务
@@ -50,14 +51,19 @@ impl NodeService {
     }
 
     /// Update node heartbeat / 更新节点心跳
-    pub async fn update_heartbeat(&mut self, uuid: &str, timestamp: i64) -> SmsResult<()> {
+    pub async fn update_heartbeat(
+        &mut self,
+        uuid: &str,
+        timestamp: i64,
+    ) -> SmsResult<Option<Node>> {
         let mut nodes = self.nodes.write().await;
         if let Some(node) = nodes.get_mut(uuid) {
             node.last_heartbeat = timestamp;
             if node.status.to_ascii_lowercase() != "online" {
                 node.status = "online".to_string();
+                return Ok(Some(node.clone()));
             }
-            Ok(())
+            Ok(None)
         } else {
             Err(SmsError::NotFound(format!(
                 "Node with UUID {} not found",
@@ -86,6 +92,7 @@ impl NodeService {
                     last_heartbeat: node.last_heartbeat,
                     age_seconds: current_time - node.last_heartbeat,
                     previous_status,
+                    node: node.clone(),
                 });
             }
         }

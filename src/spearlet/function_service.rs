@@ -595,8 +595,8 @@ mod tests {
     async fn test_function_service_initializes_runtimes() {
         let svc =
             FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default()), None)
-            .await
-            .unwrap();
+                .await
+                .unwrap();
         let mgr = svc.get_execution_manager();
         let types = mgr.list_runtime_types();
         assert!(types.contains(&crate::spearlet::execution::RuntimeType::Process));

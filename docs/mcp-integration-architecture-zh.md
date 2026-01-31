@@ -1,27 +1,29 @@
-# MCP 集成架构（注册中心 + Tool 注入 + Hostcall）
+# MCP 集成架构（当前实现）
 
 ## 概述
 
-本文档给出一套将外部 MCP（Model Context Protocol）Server 集成到 Spear 的设计方案，并对齐业界常见 best practice：
+本文基于本仓库当前代码，说明 Spear 中 MCP（Model Context Protocol）集成的现状：
 
 - Spear 侧保存所有“允许连接”的 MCP Server 注册信息（含策略与凭证引用）。
 - 在 Agent 层，将 MCP tools 以标准 `tools` 形式注入 Chat Completion，使 Agent 无需感知 MCP。
-- 同时提供一组 `mcp_*` hostcall，使 WASM workload 可以显式、可编程地调用 MCP tool。
+- MCP tools 会以标准 `tools` 形式注入 Chat Completion，并由 host 侧 auto tool-call loop 执行。
 
-该方案复用 Spear 现有 fd 风格的 hostcall 抽象，以及已有的 Chat Completion 自动 tool-call 闭环。
+说明：当前实现没有单独的 `mcp_*` hostcall 接口；MCP 访问目前只通过 `cchat` 集成。
 
 ## 目标
 
 - 将外部 MCP Server 的配置、策略、凭证统一沉淀在 Spear。
 - 让 MCP tools 可被 Chat Completion 的 tool calling 直接使用，Agent 无感知。
-- 提供 fd 风格的 MCP hostcall API，支持 WASM 显式调用。
 - 默认安全（默认拒绝、allowlist、命名空间、预算限制、可审计）。
-- 支持多种传输（本地 stdio 子进程；远程 Streamable HTTP）。
+- 端到端支持 stdio transport（本地子进程）。
+  - Registry schema 也允许 `streamable_http`，但 Spearlet 侧当前只支持 stdio 执行。
 
 ## 非目标
 
 - 不在第一阶段实现“对外的通用 MCP 网关”（供 Spear 外部第三方客户端连接）。
 - 不在第一阶段实现全部 MCP 能力（resources/prompts 可分期落地）。
+- 不实现独立的 `mcp_open/list_tools/call_tool/close` hostcall API（后续工作）。
+- 不在 Spearlet 侧执行 Streamable HTTP transport（后续工作）。
 - 不允许绕过注册中心的任意子进程启动与任意网络连接。
 
 ## 可复用的 Spear 现有基础
@@ -39,39 +41,32 @@
 - **MCP Server**：对外提供 `tools/list` 与 `tools/call` 的外部进程/服务。
 - **Spear MCP 注册中心**：Spear 管理的 MCP Server 列表与治理策略。
 - **Tool 注入**：将 MCP tools 转换为 OpenAI 兼容的 `tools`，参与 Chat Completion。
-- **命名空间工具名**：避免冲突的稳定命名，如 `mcp.<server_id>.<tool_name>`。
+- **命名空间工具名**：对外暴露给模型的稳定 tool name。
+  - 注入形态（当前）：`mcp__<base64(server_id)>__<base64(tool_name)>`
+  - 路由兼容形态：`mcp.<server_id>.<tool_name>`
 
 ## 高层架构
 
 ### 组件
 
-1. **MCP 注册中心服务（控制面）**
-   - 由 SMS 统一实现，作为唯一可信数据源。
-   - 保存 MCP Server 的注册、策略与凭证引用。
-   - Spearlet 通过请求 SMS 拉取并缓存注册数据（基于 revision/version）。
+1. **MCP Registry（SMS，控制面）**
+   - SMS 维护一份内存态的 MCP server registry。
+   - SMS 支持从目录扫描 `*.toml`/`*.json` 启动加载（bootstrap）。
+   - Spearlet 通过 gRPC 从 SMS 拉取 registry，并在本地缓存快照。
 
-2. **MCP Client 连接池（数据面，Spearlet 内）**
-   - 维护到 MCP Server 的连接（或子进程）。
-   - 提供：
-     - tools discovery（带缓存）
-     - 工具调用（timeout/并发/输出上限）
+2. **Registry 同步（Spearlet，数据面）**
+   - Spearlet 使用 watch+poll 的方式保持 registry 快照最新。
 
-3. **Chat Completion Tool Bridge（数据面，会话内）**
-   - 决定当前 chat session 启用哪些 MCP Server。
-   - 将 MCP tools 注入上游请求。
-   - 将模型返回的 tool call 路由到 WASM 工具或 MCP 工具。
+3. **Stdio MCP client（Spearlet，数据面）**
+   - 每次 `tools/list` 与 `tools/call` 会按配置通过 stdio spawn MCP server 子进程，并使用 `rmcp` 进行通信。
+   - 当前限制：仅支持 stdio（尽管 registry schema 允许 `streamable_http`）。
 
-4. **MCP Hostcall（数据面，供 WASM 显式调用）**
-   - 提供 fd 风格的 connect/list/call API。
+4. **Chat Completion 注入与执行（Spearlet，会话内）**
+   - `cchat` host API 在 auto tool-call loop 内注入 MCP tools（`tools/list`）并执行 MCP tool call（`tools/call`）。
 
-### 两种使用模式
+### 使用模式（当前）
 
-- **Agent 无感模式（推荐默认）**
-  - Agent 只使用 Chat Completion 的 tool calling。
-  - Spear 负责注入 MCP tools 并自动执行。
-
-- **可编程 hostcall 模式**
-  - WASM 通过 `mcp_*` hostcall 显式调用工具。
+- MCP tools 的注入与执行仅通过 `cchat` 的 auto tool-call loop 完成。
 
 ## MCP Server 注册中心
 
@@ -116,10 +111,10 @@
 
 ## Tool 命名与冲突规避
 
-业界最佳实践是避免“平铺工具名空间”。Spear 对模型暴露的 MCP 工具应使用确定性命名空间：
+业界最佳实践是避免“平铺工具名空间”。Spear 对模型暴露的 MCP 工具使用稳定命名空间：
 
-- 对模型暴露的工具名：`mcp.<server_id>.<tool_name>`
-- 内部路由：解析前缀，映射到 `(server_id, tool_name)`
+- 对模型暴露的工具名（注入后）：`mcp__<base64(server_id)>__<base64(tool_name)>`
+- 内部路由：反解析为 `(server_id, tool_name)`；同时兼容 `mcp.<server_id>.<tool_name>` 形态。
 
 这能显著降低重名冲突风险，并让审计与策略判断更直观。
 
@@ -163,7 +158,7 @@
 
 - `tool_choice = "none"`：用户显式禁止本次请求调用任何工具。
 - `tool_choice = "auto"`：默认；模型只能在“已过滤后的工具集合”里选择。
-- `tool_choice = {"type":"function","function":{"name":"mcp.<server_id>.<tool_name>"}}`：用户点选了具体工具，强制模型使用该工具。
+- `tool_choice = {"type":"function","function":{"name":"mcp__...__..."}}`：用户点选了具体工具，强制模型使用该工具（tool name 需与本次注入的名称一致）。
 
 产品交互建议：
 
@@ -181,6 +176,10 @@
     - 会话级 allowlist
     - 全局治理策略
 
+补充（当前代码）：
+
+- `mcp.*` 会话参数属于 host 内部控制参数，会被写入会话参数 map，但不会透传到上游模型请求 body。
+
 ### 执行 tool calls
 
 复用现有的自动 tool-call 闭环：
@@ -189,7 +188,7 @@
 2. 若模型返回 `tool_calls`：
    - 逐个调用：
      - 命中 WASM 工具：根据 `fn_offset` 调用 WASM。
-     - 命中 `mcp.<server_id>.<tool_name>`：调用 MCP `tools/call`。
+     - 命中 `mcp__...__...`（或兼容形态 `mcp.<server_id>.<tool_name>`）：调用 MCP `tools/call`。
    - 将结果以 `role=tool` 且携带正确 `tool_call_id` 的消息追加回会话。
 3. 循环直到模型不再请求工具或触发预算上限。
 
@@ -202,51 +201,7 @@
 
 ## MCP hostcall（可编程 API）
 
-### 设计原则
-
-- fd 风格，保持与现有 `cchat_*` 一致的 syscall-like 模型。
-- 不暴露可绕过注册中心的“任意 spawn / 任意网络连接”。
-- 优先基于 `server_id` 使用已注册的 MCP Server。
-
-### 建议的 hostcall 集合
-
-#### 1) `mcp_open(server_id) -> mcp_fd`
-
-- 打开到某个已注册 MCP Server 的 handle。
-- `server_id` 通过注册中心解析。
-- host 建立（或复用）连接池中的连接。
-
-#### 2) `mcp_list_tools(mcp_fd, out_buf, out_len_ptr) -> rc`
-
-- 输出 JSON（建议稳定 schema）：
-
-```json
-{
-  "server_id": "fs",
-  "tools": [
-    {"name": "read_file", "description": "...", "inputSchema": {"type":"object", "properties":{}}}
-  ]
-}
-```
-
-#### 3) `mcp_call_tool(mcp_fd, tool_name, args_json, out_buf, out_len_ptr) -> rc`
-
-- `tool_name` 为 MCP 原生工具名（不带 `mcp.<server_id>.` 前缀）。
-- `args_json` 为 UTF-8 JSON 字符串。
-- 执行结果（成功或失败）以 JSON 字符串写入 `out_buf`。
-
-#### 4) `mcp_close(mcp_fd) -> rc`
-
-- 释放 handle；host 可选择保持连接池连接存活。
-
-### 可选 hostcall
-
-若 WASM 需要发现“有哪些已注册 MCP Server”：
-
-- `mcp_registry_list(out_buf, out_len_ptr) -> rc`
-- `mcp_registry_get(server_id, out_buf, out_len_ptr) -> rc`
-
-注册中心的写操作（register/update/delete）建议留在控制面管理 API，而不是 hostcall。
+本节为后续扩展预留。当前实现并未暴露 `mcp_*` hostcall 接口；MCP 访问目前只通过 `cchat` 集成。
 
 ## 安全与治理
 
@@ -293,32 +248,20 @@
 
 本节面向“准备开始实现”的工程化落地，给出推荐的代码结构、数据结构、关键流程、并发与预算控制、错误模型、测试与可观测等细节。
 
-### 代码结构（建议）
+### 代码结构（当前）
 
-推荐把 MCP 集成拆成三个相互独立的模块：注册中心（控制面，放在 SMS）、MCP client（数据面，放在 Spearlet）、Chat tool bridge/hostcall（接入面，放在 Spearlet）。
+当前实现主要分布在以下位置（code map）：
 
-- `src/sms/mcp/registry/`
-  - `types.rs`：注册记录、策略与预算结构体
-  - `store.rs`：持久化存储 + revision
-  - `service.rs`：注册中心业务逻辑（CRUD + 校验）
-  - `http.rs`：对外 API（`/api/v1/mcp/*`）与管理 API（`/admin/api/mcp/*`）
-- `src/spearlet/mcp/registry_client/`
-  - `client.rs`：从 SMS 拉取注册中心数据（revision 感知）
-  - `cache.rs`：本地内存缓存（TTL + revision）
-- `src/spearlet/mcp/client/`
-  - `transport/mod.rs`：`McpTransport` trait
-  - `transport/stdio.rs`：stdio 子进程 transport
-  - `transport/http_streamable.rs`：Streamable HTTP transport
-  - `jsonrpc.rs`：JSON-RPC 2.0 message 编解码
-  - `types.rs`：MCP `Tool`/`CallResult` 等数据结构
-  - `pool.rs`：连接池、并发控制、重连与健康状态
-  - `cache.rs`：tools/list 缓存（TTL + 版本）
-- `src/spearlet/mcp/bridge/`
-  - `tool_injection.rs`：MCP tools -> OpenAI tools 映射与过滤
-  - `router.rs`：`mcp.<server_id>.<tool_name>` 路由解析与分发
-  - `policy.rs`：会话级 allowlist/denylist 与审批策略执行
-- `src/spearlet/execution/host_api/mcp.rs`
-  - MCP fd API（`mcp_open/list_tools/call_tool/close`）实现，复用连接池
+- SMS
+  - 从目录 bootstrap MCP configs：[`src/apps/sms/main.rs`](../src/apps/sms/main.rs) 与 [`src/sms/service.rs`](../src/sms/service.rs)（`bootstrap_mcp_from_dir`）
+  - MCP registry gRPC service：[`src/sms/service.rs`](../src/sms/service.rs)（`McpRegistryService`）
+  - Web Admin MCP 接口：[`src/sms/web_admin.rs`](../src/sms/web_admin.rs)
+- Spearlet
+  - Registry 同步（watch + 定期 refresh）：[`src/spearlet/mcp/registry_sync.rs`](../src/spearlet/mcp/registry_sync.rs)
+  - Stdio MCP client 封装（rmcp）：[`src/spearlet/mcp/client.rs`](../src/spearlet/mcp/client.rs)
+  - Tool 命名/过滤/路由解析：[`src/spearlet/mcp/policy.rs`](../src/spearlet/mcp/policy.rs)
+  - Task 级子集策略解析：[`src/spearlet/mcp/task_subset.rs`](../src/spearlet/mcp/task_subset.rs)
+  - cchat 注入与执行：[`src/spearlet/execution/host_api/cchat.rs`](../src/spearlet/execution/host_api/cchat.rs)
 
 ### 配置与注册中心存储
 
@@ -342,9 +285,9 @@ SMS 启动时加载 registry file，并将内容 upsert 到注册中心。
 推荐配置项命名（示例）：
 
 - SMS：
-  - CLI：`--mcp-registry-dir <DIR>`
-  - ENV：`SMS_MCP_REGISTRY_DIR=<DIR>`
-  - Config：`mcp.registry_dir = "..."`
+  - CLI：`--mcp-dir <DIR>`
+  - ENV：`SMS_MCP_DIR=<DIR>`
+  - 配置文件：`[mcp]\ndir = "..."`（sms 配置）
 
 目录扫描规则建议：
 
@@ -358,19 +301,18 @@ SMS 启动时加载 registry file，并将内容 upsert 到注册中心。
 示例（TOML，单文件单 server）：
 
 ```toml
-version = 1
 server_id = "fs"
 display_name = "Filesystem"
 transport = "stdio"
-tool_namespace = "mcp.fs"
+tool_namespace = ""
 allowed_tools = ["read_*", "search_*"]
 
 [stdio]
-command = "uvx"
-args = ["xxx@latest"]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "./"]
 
 [budgets]
-tool_timeout_ms = 8000
+tool_timeout_ms = 30000
 max_concurrency = 8
 max_tool_output_bytes = 65536
 ```
@@ -510,15 +452,12 @@ Spearlet 缓存更新流程建议：
 - 工具预览（可选）：展示经过 allowlist 过滤后的 tools 列表（含命名空间后的名称）
 - 从文件导入（可选）：上传 registry 文件，服务端校验后 upsert
 
-后端接口建议沿用 `/admin/api` 体系，并复用现有可选鉴权：
+当前实现中，后端接口沿用 `/admin/api` 体系（在 sms Web Admin gateway 内实现）：
 
 - `GET /admin/api/mcp/servers`
 - `GET /admin/api/mcp/servers/{server_id}`
-- `POST /admin/api/mcp/servers`（创建）
-- `PUT /admin/api/mcp/servers/{server_id}`（更新）
+- `POST /admin/api/mcp/servers`（upsert）
 - `DELETE /admin/api/mcp/servers/{server_id}`（删除）
-- `POST /admin/api/mcp/servers/{server_id}/test`（可选：连接测试）
-- `POST /admin/api/mcp/servers/import`（可选：上传文件导入）
 
 ### 函数/方法级细节（建议）
 
@@ -665,7 +604,7 @@ best practice：不要每次 `cchat_send` 都去 list_tools。
 2. 对每个 server_id：
    - 读取 registry record
    - list_tools（走缓存）
-   - 将工具名映射为 `mcp.<server_id>.<tool_name>`
+   - 将工具名映射为注入后的 OpenAI tool name：`mcp__<base64(server_id)>__<base64(tool_name)>`
    - 用 registry allowlist + session allowlist/denylist 过滤
 3. 将过滤后的 MCP tools 追加到 `tools`（与 WASM tools 合并）。
 
@@ -674,18 +613,18 @@ best practice：不要每次 `cchat_send` 都去 list_tools。
 在现有 auto tool-call loop 中加入一个统一分发器：
 
 - `tool_name` 如果命中 WASM 工具：走 `fn_offset`
-- `tool_name` 如果匹配 `mcp.<server_id>.<tool_name>`：
+- `tool_name` 如果匹配 `mcp__...__...`（或兼容形态 `mcp.<server_id>.<tool_name>`）：
   - 解析出 `server_id/tool_name`
   - 解析 `arguments` 为 JSON object（若解析失败返回结构化错误）
   - 调用 MCP `tools/call`
 
 输出建议统一为 JSON 字符串（成功或失败），再以 `role=tool` 追加到 messages。
 
-### MCP hostcall：fd 模型与 ABI
+### MCP hostcall：fd 模型与 ABI（后续工作）
 
 #### fd 类型
 
-建议为 MCP 引入新的 `FdKind::McpSession`（或复用 `FdKind::Generic` + tag），内部状态保存：
+当前代码尚未实现 `mcp_*` hostcall。若后续引入，可考虑为 MCP 引入新的 `FdKind::McpSession`（或复用 `FdKind::Generic` + tag），内部状态保存：
 
 - `server_id`
 - 可选：连接句柄引用（连接池 key）
@@ -746,12 +685,12 @@ stdio 子进程建议加入：
 ### 测试计划（建议最小集）
 
 - 单元测试
-  - tool 名称路由解析（`mcp.<server_id>.<tool_name>`）
+  - tool 名称路由解析（`mcp__...__...`，以及兼容形态 `mcp.<server_id>.<tool_name>`）
   - allowlist/denylist pattern 匹配
   - tool 注入过滤算法
 - 集成测试（tokio）
   - stdio：用一个“假 MCP server”子进程模拟 `tools/list` 与 `tools/call`
-  - HTTP：用本地 axum 启动一个 Streamable HTTP mock
+  - Streamable HTTP：若后续实现该 transport，再补齐本地 mock
   - cchat auto tool-call loop：注入 MCP tools，确保循环能 append `role=tool`
 - 回归测试
   - MCP 不启用时行为不变

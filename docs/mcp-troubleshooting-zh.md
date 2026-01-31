@@ -23,26 +23,44 @@
 
 ## 必需的 session 参数
 
-MCP 工具注入受 session 参数控制：
+MCP 工具注入受 chat session 的 MCP 参数控制：
 
 - `mcp.enabled`：bool，必须为 `true`
 - `mcp.server_ids`：string 数组，必须包含 server id（例如 `"fs"`）
+- `mcp.tool_allowlist` / `mcp.tool_denylist`：可选的会话级工具过滤
 - `mcp.task_tool_allowlist` / `mcp.task_tool_denylist`：task 级工具过滤（如配置）；由 host 从 `Task.config` 注入；WASM 侧不可写
 
-解析逻辑见：`session_policy_from_params`，[policy.rs](../src/spearlet/mcp/policy.rs)
+这些参数的来源（当前代码）：
+
+- WASM/Guest 通过 `cchat_ctl_set_param` 写入会话级参数，见 [cchat.rs](../src/spearlet/execution/host_api/cchat.rs)
+- Host 在创建会话时通过 `cchat_create` → `cchat_apply_task_mcp_defaults` 应用 task 缺省值，见 [cchat.rs](../src/spearlet/execution/host_api/cchat.rs)
+- Host 禁止 Guest 写入 `mcp.task_*` key（task 级参数只读）
 
 任何一个缺失，都会导致 MCP 工具不注入，模型就会像“没有工具”一样回答。
 
 补充：在当前实现中，如果 task 配置了 `Task.config` 的 MCP 策略，`cchat_create` 会自动写入 `mcp.enabled` / `mcp.server_ids` 等缺省值，你未必需要手工 set_param。
 
+## 你应该看到的 tool 名字形态
+
+为避免冲突并保证稳定性，注入到 OpenAI 的 tool name 采用编码形式：
+
+- 注入后的 tool name：`mcp__<base64(server_id)>__<base64(tool_name)>`
+- 路由解析同时兼容：
+  - `mcp__...__...`（注入形态）
+  - `mcp.<server_id>.<tool_name>`（兼容形态）
+
+见 [policy.rs](../src/spearlet/mcp/policy.rs)（`filter_and_namespace_openai_tools` / `parse_namespaced_mcp_tool_name`）。
+
 ## 常见根因
 
 1. **params 没有开启 MCP**（缺少 `mcp.enabled` / `mcp.server_ids`）
-2. **Spearlet 没有成功启动 MCP registry 同步**（未连上 SMS 或 SMS 没提供 registry）
+2. **SMS registry 里没有 server**（SMS 没有加载 `--mcp-dir` / `SMS_MCP_DIR`，或目录为空）
+3. **Spearlet 没有成功启动 MCP registry 同步**（未连上 SMS 或 SMS 没提供 registry）
 3. **server_id 不匹配**（registry 里找不到对应 server）
 4. **server policy 禁止工具**（allowed_tools 为空或过严）
 5. **list_tools 超时/失败**，导致拿到的工具列表为空
 6. **task policy 拒绝**：task 未启用 MCP 或你试图设置超出 task allowed 的 server_ids（会被 hostcall 拒绝）
+7. **Node MCP server 报 EPIPE**：host 侧超时/取消后关闭了 stdio，MCP server 再写回响应就会触发（常见于 `tools/list` 很慢时）
 
 ## 建议检查点
 

@@ -7,9 +7,11 @@ use spear_next::spearlet::backend_reporter::BackendReporterService;
 use spear_next::spearlet::config::CliArgs;
 use spear_next::spearlet::grpc_server::GrpcServer;
 use spear_next::spearlet::http_gateway::HttpGateway;
-use spear_next::spearlet::mcp::registry_sync::global_mcp_registry_sync;
+use spear_next::spearlet::mcp::registry_sync::global_mcp_registry_sync_with_channel;
 use spear_next::spearlet::ollama_discovery::maybe_import_ollama_serving_models;
 use spear_next::spearlet::registration::RegistrationService;
+use spear_next::spearlet::sms_connector::sms_channel_lazy;
+use tonic::transport::Channel;
 
 use std::sync::Arc;
 
@@ -61,9 +63,15 @@ async fn run(
     tracing::info!("  - Storage backend: {:?}", config.storage.backend);
     tracing::info!("  - Auto register: {}", config.auto_register);
 
-    global_mcp_registry_sync(config.clone());
+    let sms_channel = if config.sms_grpc_addr.trim().is_empty() {
+        None
+    } else {
+        Some(sms_channel_lazy(&config)?)
+    };
 
-    let grpc_server = GrpcServer::new(config.clone()).await?;
+    global_mcp_registry_sync_with_channel(config.clone(), sms_channel.clone());
+
+    let grpc_server = GrpcServer::new(config.clone(), sms_channel.clone()).await?;
     let (shutdown_tx_grpc, shutdown_rx_grpc) = tokio::sync::oneshot::channel::<()>();
 
     let object_service = grpc_server.get_object_service();
@@ -84,7 +92,22 @@ async fn run(
         }
     });
 
-    let http_gateway = HttpGateway::new(config.clone(), Arc::new(health_service));
+    let grpc_channel = Channel::from_shared(format!("http://{}", config.grpc.addr))?.connect_lazy();
+
+    let http_gateway = HttpGateway::new(
+        config.clone(),
+        Arc::new(health_service),
+        function_service.clone(),
+        spear_next::proto::spearlet::object_service_client::ObjectServiceClient::new(
+            grpc_channel.clone(),
+        ),
+        spear_next::proto::spearlet::invocation_service_client::InvocationServiceClient::new(
+            grpc_channel.clone(),
+        ),
+        spear_next::proto::spearlet::execution_service_client::ExecutionServiceClient::new(
+            grpc_channel,
+        ),
+    );
     let (shutdown_tx_http, shutdown_rx_http) = tokio::sync::oneshot::channel::<()>();
     let http_handle = tokio::spawn(async move {
         if let Err(e) = http_gateway
@@ -104,7 +127,7 @@ async fn run(
             .map(|v| !v.is_empty())
             .unwrap_or(false);
     if connect_requested {
-        let registration_service = RegistrationService::new(config.clone());
+        let registration_service = RegistrationService::new(config.clone(), sms_channel.clone());
         if let Err(e) = registration_service.start().await {
             tracing::error!("Registration service start failed: {}", e);
             return Err(e);
@@ -116,11 +139,12 @@ async fn run(
         let execution_manager = function_service.get_execution_manager();
         let subscriber = spear_next::spearlet::task_events::TaskEventSubscriber::new(
             config.clone(),
+            sms_channel.clone(),
             execution_manager,
         );
         subscriber.start().await;
 
-        let backend_reporter = BackendReporterService::new(config.clone());
+        let backend_reporter = BackendReporterService::new(config.clone(), sms_channel.clone());
         backend_reporter.start();
     }
 

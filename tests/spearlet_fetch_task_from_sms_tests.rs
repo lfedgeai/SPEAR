@@ -178,6 +178,7 @@ async fn test_spearlet_fetches_task_from_sms_when_missing_locally() {
         TaskExecutionManagerConfig::default(),
         Arc::new(rm),
         Arc::new(cfg),
+        None,
     )
     .await
     .unwrap();

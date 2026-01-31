@@ -1,6 +1,0 @@
-
-namespace spear.proto.io;
-
-table SpeakResponse {
-    data: string (required);
-}

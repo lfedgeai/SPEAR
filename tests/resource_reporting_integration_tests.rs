@@ -8,6 +8,7 @@ use spear_next::proto::sms::{
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::spearlet::config::SpearletConfig;
 use spear_next::spearlet::registration::RegistrationService;
+use spear_next::spearlet::sms_connector::sms_channel_lazy;
 use tokio::net::TcpListener;
 use tonic::transport::Server;
 
@@ -46,7 +47,8 @@ async fn test_spearlet_reports_node_resource_on_heartbeat() {
     cfg.reconnect_total_timeout_ms = 300_000;
     cfg.node_name = node_name.clone();
 
-    let reg = RegistrationService::new(Arc::new(cfg.clone()));
+    let cfg = Arc::new(cfg.clone());
+    let reg = RegistrationService::new(cfg.clone(), sms_channel_lazy(&cfg).ok());
     reg.start().await.unwrap();
 
     let mut client = NodeServiceClient::connect(format!("http://{}", addr))

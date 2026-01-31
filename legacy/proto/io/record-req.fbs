@@ -1,9 +1,0 @@
-namespace spear.proto.io;
-
-table RecordRequest {
-    prompt: string (required);
-    model: string;
-    dryrun: bool=false;
-}
-
-root_type RecordRequest;

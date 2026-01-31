@@ -16,13 +16,15 @@ use crate::spearlet::config::{LlmBackendConfig, SpearletConfig};
 #[derive(Debug)]
 pub struct BackendReporterService {
     config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
     cancel: CancellationToken,
 }
 
 impl BackendReporterService {
-    pub fn new(config: Arc<SpearletConfig>) -> Self {
+    pub fn new(config: Arc<SpearletConfig>, sms_channel: Option<Channel>) -> Self {
         Self {
             config,
+            sms_channel,
             cancel: CancellationToken::new(),
         }
     }
@@ -33,10 +35,11 @@ impl BackendReporterService {
 
     pub fn start(&self) {
         let config = self.config.clone();
+        let sms_channel = self.sms_channel.clone();
         let cancel = self.cancel.clone();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                report_loop(config, cancel).await;
+                report_loop(config, sms_channel, cancel).await;
             });
             return;
         }
@@ -47,26 +50,11 @@ impl BackendReporterService {
                 .build();
             if let Ok(rt) = rt {
                 rt.block_on(async move {
-                    report_loop(config, cancel).await;
+                    report_loop(config, sms_channel, cancel).await;
                 });
             }
         });
     }
-}
-
-async fn connect_sms(
-    config: &SpearletConfig,
-) -> Result<BackendRegistryServiceClient<Channel>, tonic::Status> {
-    let sms_url = format!("http://{}", config.sms_grpc_addr);
-    let connect_fut = BackendRegistryServiceClient::connect(sms_url);
-    let client = timeout(
-        Duration::from_millis(config.sms_connect_timeout_ms),
-        connect_fut,
-    )
-    .await
-    .map_err(|_| tonic::Status::deadline_exceeded("connect sms timeout"))?
-    .map_err(|e| tonic::Status::unavailable(format!("connect sms failed: {}", e)))?;
-    Ok(client)
 }
 
 fn backend_requires_api_key(kind: &str) -> bool {
@@ -156,11 +144,19 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
     out
 }
 
-async fn report_loop(config: Arc<SpearletConfig>, cancel: CancellationToken) {
+async fn report_loop(
+    config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
+    cancel: CancellationToken,
+) {
     let mut backoff_ms = config.sms_connect_retry_ms.max(200);
     let mut ticker = interval(Duration::from_secs(30));
     let node_uuid = config.compute_node_uuid();
     let mut revision: u64 = 0;
+
+    let Some(channel) = sms_channel else {
+        return;
+    };
 
     loop {
         if cancel.is_cancelled() {
@@ -168,19 +164,7 @@ async fn report_loop(config: Arc<SpearletConfig>, cancel: CancellationToken) {
         }
         ticker.tick().await;
 
-        let mut client = match connect_sms(&config).await {
-            Ok(c) => c,
-            Err(e) => {
-                warn!(error = %e, "backend reporter connect failed");
-                tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(Duration::from_millis(backoff_ms)) => {}
-                }
-                backoff_ms = (backoff_ms * 2).min(10_000);
-                continue;
-            }
-        };
-        backoff_ms = config.sms_connect_retry_ms.max(200);
+        let mut client = BackendRegistryServiceClient::new(channel.clone());
 
         revision = revision.saturating_add(1);
         let backends = build_backend_info_list(&config);
@@ -193,17 +177,28 @@ async fn report_loop(config: Arc<SpearletConfig>, cancel: CancellationToken) {
         let req = ReportNodeBackendsRequest {
             snapshot: Some(snapshot),
         };
-        match client.report_node_backends(req).await {
-            Ok(resp) => {
+        let per_attempt = Duration::from_millis(config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        match timeout(per_attempt, client.report_node_backends(req)).await {
+            Ok(Ok(resp)) => {
                 let inner = resp.into_inner();
                 debug!(
                     node_uuid = %node_uuid,
                     accepted_revision = inner.accepted_revision,
                     "backend snapshot reported"
                 );
+                backoff_ms = config.sms_connect_retry_ms.max(200);
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!(error = %e, "backend snapshot report failed");
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(10_000);
+            }
+            Err(_) => {
+                warn!("backend snapshot report timeout");
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(10_000);
             }
         }
     }

@@ -32,7 +32,7 @@ fn create_test_config() -> SpearletConfig {
 async fn test_grpc_server_creation() {
     // Test gRPC server creation / 测试gRPC服务器创建
     let config = Arc::new(create_test_config());
-    let server = GrpcServer::new(config.clone()).await.unwrap();
+    let server = GrpcServer::new(config.clone(), None).await.unwrap();
 
     // Verify server has object service / 验证服务器有对象服务
     let object_service = server.get_object_service();
@@ -47,7 +47,7 @@ async fn test_grpc_server_config() {
     config.grpc.addr = "0.0.0.0:8080".parse().unwrap();
     config.storage.max_object_size = 2 * 1024 * 1024; // 2MB
 
-    let server = GrpcServer::new(Arc::new(config)).await.unwrap();
+    let server = GrpcServer::new(Arc::new(config), None).await.unwrap();
     let object_service = server.get_object_service();
 
     // Verify object service is created / 验证对象服务已创建
@@ -58,7 +58,7 @@ async fn test_grpc_server_config() {
 async fn test_health_service_creation() {
     // Test health service creation / 测试健康服务创建
     let config = Arc::new(create_test_config());
-    let server = GrpcServer::new(config).await.unwrap();
+    let server = GrpcServer::new(config, None).await.unwrap();
     let object_service = server.get_object_service();
     let function_service = server.get_function_service();
 
@@ -105,7 +105,7 @@ async fn test_grpc_server_invalid_address() {
     let mut config = create_test_config();
     config.grpc.addr = "0.0.0.0:8080".parse().unwrap();
 
-    let server = GrpcServer::new(Arc::new(config)).await.unwrap();
+    let server = GrpcServer::new(Arc::new(config), None).await.unwrap();
 
     // Server should start but fail when trying to bind to invalid address
     // 服务器应该启动但在尝试绑定到无效地址时失败
@@ -121,8 +121,8 @@ async fn test_multiple_grpc_servers() {
     let config1 = Arc::new(create_test_config());
     let config2 = Arc::new(create_test_config());
 
-    let server1 = GrpcServer::new(config1).await.unwrap();
-    let server2 = GrpcServer::new(config2).await.unwrap();
+    let server1 = GrpcServer::new(config1, None).await.unwrap();
+    let server2 = GrpcServer::new(config2, None).await.unwrap();
 
     let service1 = server1.get_object_service();
     let service2 = server2.get_object_service();
@@ -139,7 +139,7 @@ async fn test_grpc_server_tls_config() {
     config.grpc.cert_path = Some("/path/to/cert.pem".to_string());
     config.grpc.key_path = Some("/path/to/key.pem".to_string());
 
-    let server = GrpcServer::new(Arc::new(config)).await.unwrap();
+    let server = GrpcServer::new(Arc::new(config), None).await.unwrap();
     let object_service = server.get_object_service();
 
     // Verify object service is created even with TLS config / 验证即使有TLS配置也能创建对象服务
@@ -155,8 +155,8 @@ async fn test_grpc_server_different_ports() {
     let mut config2 = create_test_config();
     config2.grpc.addr = "127.0.0.1:50054".parse().unwrap();
 
-    let server1 = GrpcServer::new(Arc::new(config1)).await.unwrap();
-    let server2 = GrpcServer::new(Arc::new(config2)).await.unwrap();
+    let server1 = GrpcServer::new(Arc::new(config1), None).await.unwrap();
+    let server2 = GrpcServer::new(Arc::new(config2), None).await.unwrap();
 
     let service1 = server1.get_object_service();
     let service2 = server2.get_object_service();
@@ -169,7 +169,7 @@ async fn test_grpc_server_different_ports() {
 async fn test_health_service_with_data() {
     // Test health service with simulated data / 测试带模拟数据的健康服务
     let config = Arc::new(create_test_config());
-    let server = GrpcServer::new(config).await.unwrap();
+    let server = GrpcServer::new(config, None).await.unwrap();
     let object_service = server.get_object_service();
 
     // Add some test objects to the service / 向服务添加一些测试对象
@@ -206,7 +206,7 @@ async fn test_grpc_server_edge_cases() {
     let mut config = create_test_config();
     config.grpc.addr = "127.0.0.1:0".parse().unwrap();
 
-    let server = GrpcServer::new(Arc::new(config)).await.unwrap();
+    let server = GrpcServer::new(Arc::new(config), None).await.unwrap();
     let object_service = server.get_object_service();
     assert!(Arc::strong_count(&object_service) > 0);
 
@@ -214,7 +214,7 @@ async fn test_grpc_server_edge_cases() {
     let mut config2 = create_test_config();
     config2.grpc.addr = "127.0.0.1:65535".parse().unwrap();
 
-    let server2 = GrpcServer::new(Arc::new(config2)).await.unwrap();
+    let server2 = GrpcServer::new(Arc::new(config2), None).await.unwrap();
     let object_service2 = server2.get_object_service();
     assert!(Arc::strong_count(&object_service2) > 0);
 }
@@ -253,7 +253,7 @@ async fn test_grpc_server_concurrent_creation() {
         config.grpc.addr = format!("127.0.0.1:{}", 50060 + i).parse().unwrap();
 
         join_set.spawn(async move {
-            let server = GrpcServer::new(Arc::new(config)).await.unwrap();
+            let server = GrpcServer::new(Arc::new(config), None).await.unwrap();
             let object_service = server.get_object_service();
             Arc::strong_count(&object_service) > 0
         });
@@ -279,7 +279,7 @@ mod integration_tests {
     async fn test_grpc_server_lifecycle() {
         // Test complete gRPC server lifecycle / 测试完整的gRPC服务器生命周期
         let config = Arc::new(create_test_config());
-        let server = GrpcServer::new(config).await.unwrap();
+        let server = GrpcServer::new(config, None).await.unwrap();
 
         // Get object service before starting server / 在启动服务器前获取对象服务
         let object_service = server.get_object_service();
@@ -302,7 +302,7 @@ mod integration_tests {
 
         // Create and destroy servers rapidly / 快速创建和销毁服务器
         for _ in 0..100 {
-            let server = GrpcServer::new(config.clone()).await.unwrap();
+            let server = GrpcServer::new(config.clone(), None).await.unwrap();
             let object_service = server.get_object_service();
             assert!(Arc::strong_count(&object_service) > 0);
             // Server goes out of scope and is dropped / 服务器超出作用域并被丢弃
@@ -313,7 +313,7 @@ mod integration_tests {
     async fn test_health_service_performance() {
         // Test health service performance / 测试健康服务性能
         let config = Arc::new(create_test_config());
-        let server = GrpcServer::new(config).await.unwrap();
+        let server = GrpcServer::new(config, None).await.unwrap();
         let object_service = server.get_object_service();
         let function_service = server.get_function_service();
         let health_service = HealthService::new(object_service, function_service);

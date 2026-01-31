@@ -15,6 +15,7 @@ use super::{
     ExecutionError, ExecutionResult, DEFAULT_ENTRY_FUNCTION_NAME,
 };
 use crate::proto::spearlet::{ExecutionMode as ProtoExecutionMode, InvokeRequest};
+use crate::spearlet::sms_connector::sms_channel_lazy;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -185,6 +186,7 @@ pub struct TaskExecutionManager {
     work_sender: mpsc::UnboundedSender<ExecutionWorkItem>,
     completion_sender: mpsc::UnboundedSender<ExecutionCompletionEvent>,
     pending_async_executions: Arc<DashMap<String, PendingAsyncExecution>>,
+    sms_channel: Option<Channel>,
     /// Shutdown signal / 关闭信号
     shutdown_sender: Option<oneshot::Sender<()>>,
 }
@@ -195,6 +197,7 @@ impl TaskExecutionManager {
         config: TaskExecutionManagerConfig,
         runtime_manager: Arc<RuntimeManager>,
         spearlet_config: Arc<crate::spearlet::config::SpearletConfig>,
+        sms_channel: Option<Channel>,
     ) -> ExecutionResult<Arc<Self>> {
         let scheduler = Arc::new(InstanceScheduler::new(SchedulingPolicy::RoundRobin));
         let execution_semaphore = Arc::new(Semaphore::new(config.max_concurrent_executions));
@@ -202,6 +205,18 @@ impl TaskExecutionManager {
         let (work_sender, work_receiver) = mpsc::unbounded_channel();
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (completion_sender, completion_receiver) = mpsc::unbounded_channel();
+
+        let sms_channel = if let Some(ch) = sms_channel {
+            Some(ch)
+        } else if spearlet_config.sms_grpc_addr.trim().is_empty() {
+            None
+        } else {
+            Some(
+                sms_channel_lazy(&spearlet_config).map_err(|e| ExecutionError::RuntimeError {
+                    message: e.to_string(),
+                })?,
+            )
+        };
 
         let manager = Arc::new(Self {
             config: config.clone(),
@@ -218,6 +233,7 @@ impl TaskExecutionManager {
             work_sender,
             completion_sender,
             pending_async_executions: Arc::new(DashMap::new()),
+            sms_channel,
             shutdown_sender: Some(shutdown_sender),
         });
 
@@ -951,14 +967,11 @@ impl TaskExecutionManager {
         if execution_id.trim().is_empty() || lines.is_empty() {
             return Ok(());
         }
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        if addr.trim().is_empty() {
-            return Ok(());
-        }
-        let url = format!("http://{}", addr);
-        let mut client = crate::proto::sms::execution_log_ingest_service_client::ExecutionLogIngestServiceClient::connect(url)
-            .await
-            .map_err(|e| ExecutionError::RuntimeError { message: e.to_string() })?;
+        let channel = match self.sms_channel.clone() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+        let mut client = crate::proto::sms::execution_log_ingest_service_client::ExecutionLogIngestServiceClient::new(channel);
 
         let mut out_lines = Vec::with_capacity(lines.len());
         for l in lines {
@@ -979,9 +992,14 @@ impl TaskExecutionManager {
             execution_id: execution_id.to_string(),
             lines: out_lines,
         });
-        let resp = client
-            .append_execution_logs(req)
+        let per_attempt = Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        let resp = timeout(per_attempt, client.append_execution_logs(req))
             .await
+            .map_err(|_| ExecutionError::RuntimeError {
+                message: "sms append_execution_logs timeout".to_string(),
+            })?
             .map_err(|e| ExecutionError::RuntimeError {
                 message: e.to_string(),
             })?
@@ -996,18 +1014,19 @@ impl TaskExecutionManager {
         if execution_id.trim().is_empty() {
             return Ok(());
         }
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        if addr.trim().is_empty() {
-            return Ok(());
-        }
-        let url = format!("http://{}", addr);
-        let mut client = crate::proto::sms::execution_log_ingest_service_client::ExecutionLogIngestServiceClient::connect(url)
-            .await
-            .map_err(|e| ExecutionError::RuntimeError { message: e.to_string() })?;
+        let channel = match self.sms_channel.clone() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+        let mut client =
+            crate::proto::sms::execution_log_ingest_service_client::ExecutionLogIngestServiceClient::new(channel);
         let req = tonic::Request::new(crate::proto::sms::FinalizeExecutionLogsRequest {
             execution_id: execution_id.to_string(),
         });
-        let _ = client.finalize_execution_logs(req).await;
+        let per_attempt = Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        let _ = timeout(per_attempt, client.finalize_execution_logs(req)).await;
         Ok(())
     }
 
@@ -1257,30 +1276,42 @@ impl TaskExecutionManager {
         // fetch task metadata from SMS and materialize it locally.
         //
         // 当调用落到一个尚未持有该 task 的节点时，从 SMS 拉取 task 元数据并在本地补齐。
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        let url = format!("http://{}", addr);
-        let mut client = crate::proto::sms::task_service_client::TaskServiceClient::new(
-            Channel::from_shared(url)
-                .map_err(|e| ExecutionError::RuntimeError {
-                    message: e.to_string(),
-                })?
-                .connect()
-                .await
-                .map_err(|e| ExecutionError::RuntimeError {
-                    message: e.to_string(),
-                })?,
-        );
+        let channel = self
+            .sms_channel
+            .clone()
+            .ok_or_else(|| ExecutionError::RuntimeError {
+                message: "sms_grpc_addr is empty".to_string(),
+            })?;
+        let deadline =
+            Instant::now() + Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms);
+        let mut last_err: Option<String> = None;
+        let resp = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break Err(ExecutionError::RuntimeError {
+                    message: last_err.unwrap_or_else(|| "connect sms timeout".to_string()),
+                });
+            }
+            let per_attempt = remaining
+                .min(Duration::from_secs(5))
+                .max(Duration::from_millis(1));
+            let mut client =
+                crate::proto::sms::task_service_client::TaskServiceClient::new(channel.clone());
+            let fut = client.get_task(crate::proto::sms::GetTaskRequest {
+                task_id: task_id.to_string(),
+            });
+            match timeout(per_attempt, fut).await {
+                Ok(Ok(r)) => break Ok(r.into_inner()),
+                Ok(Err(e)) => last_err = Some(e.to_string()),
+                Err(_) => last_err = Some("sms get_task timeout".to_string()),
+            }
+            tokio::time::sleep(Duration::from_millis(
+                self.spearlet_config.sms_connect_retry_ms,
+            ))
+            .await;
+        }?;
         // Query SMS for the task definition.
         // 向 SMS 查询 task 定义。
-        let resp = client
-            .get_task(crate::proto::sms::GetTaskRequest {
-                task_id: task_id.to_string(),
-            })
-            .await
-            .map_err(|e| ExecutionError::RuntimeError {
-                message: e.to_string(),
-            })?
-            .into_inner();
         if !resp.found {
             return Err(ExecutionError::TaskNotFound {
                 id: task_id.to_string(),
@@ -1776,8 +1807,13 @@ impl TaskExecutionManager {
         current_execution_id: String,
         ts_ms: i64,
     ) {
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        let url = format!("http://{}", addr);
+        let channel = match self.sms_channel.clone() {
+            Some(c) => c,
+            None => return,
+        };
+        let per_attempt = Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
         let node_uuid = self.spearlet_config.compute_node_uuid();
         let inst = crate::proto::sms::Instance {
             instance_id,
@@ -1791,16 +1827,11 @@ impl TaskExecutionManager {
             metadata: std::collections::HashMap::new(),
         };
         tokio::spawn(async move {
-            match Channel::from_shared(url).unwrap().connect().await {
-                Ok(channel) => {
-                    let mut client =
-                        crate::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
-                            channel,
-                        );
-                    let _ = client.report_instance(inst).await;
-                }
-                Err(_) => {}
-            }
+            let mut client =
+                crate::proto::sms::instance_registry_service_client::InstanceRegistryServiceClient::new(
+                    channel,
+                );
+            let _ = timeout(per_attempt, client.report_instance(inst)).await;
         });
     }
 
@@ -1816,8 +1847,13 @@ impl TaskExecutionManager {
         completed_at_ms: i64,
         metadata: std::collections::HashMap<String, String>,
     ) {
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        let url = format!("http://{}", addr);
+        let channel = match self.sms_channel.clone() {
+            Some(c) => c,
+            None => return,
+        };
+        let per_attempt = Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
         let node_uuid = self.spearlet_config.compute_node_uuid();
         let updated_at_ms = if completed_at_ms > 0 {
             completed_at_ms
@@ -1839,16 +1875,11 @@ impl TaskExecutionManager {
             updated_at_ms,
         };
         tokio::spawn(async move {
-            match Channel::from_shared(url).unwrap().connect().await {
-                Ok(channel) => {
-                    let mut client =
-                        crate::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
-                            channel,
-                        );
-                    let _ = client.report_execution(exe).await;
-                }
-                Err(_) => {}
-            }
+            let mut client =
+                crate::proto::sms::execution_registry_service_client::ExecutionRegistryServiceClient::new(
+                    channel,
+                );
+            let _ = timeout(per_attempt, client.report_execution(exe)).await;
         });
     }
 
@@ -1858,8 +1889,13 @@ impl TaskExecutionManager {
         status: crate::proto::sms::TaskStatus,
         reason: Option<String>,
     ) {
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        let url = format!("http://{}", addr);
+        let channel = match self.sms_channel.clone() {
+            Some(c) => c,
+            None => return,
+        };
+        let per_attempt = Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
         let node_uuid = {
             let cfg = &self.spearlet_config;
             let base = format!(
@@ -1878,26 +1914,10 @@ impl TaskExecutionManager {
             updated_at: chrono::Utc::now().timestamp(),
             reason: reason.unwrap_or_default(),
         };
-        debug!(task_id = %req.task_id, node_uuid = %req.node_uuid, status = req.status, updated_at = req.updated_at, reason = %req.reason, url = %url, "publish_task_status: sending request");
         tokio::spawn(async move {
-            match Channel::from_shared(url).unwrap().connect().await {
-                Ok(channel) => {
-                    let mut client =
-                        crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
-                    match client.update_task_status(req).await {
-                        Ok(resp) => {
-                            let inner = resp.into_inner();
-                            debug!(success = inner.success, message = %inner.message, "publish_task_status: response received");
-                        }
-                        Err(e) => {
-                            warn!(error = %e.to_string(), "publish_task_status: rpc call failed");
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(error = %e.to_string(), "publish_task_status: connect failed");
-                }
-            }
+            let mut client =
+                crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
+            let _ = timeout(per_attempt, client.update_task_status(req)).await;
         });
     }
 
@@ -1909,8 +1929,13 @@ impl TaskExecutionManager {
         completed_at: i64,
         result_metadata: std::collections::HashMap<String, String>,
     ) {
-        let addr = self.spearlet_config.sms_grpc_addr.clone();
-        let url = format!("http://{}", addr);
+        let channel = match self.sms_channel.clone() {
+            Some(c) => c,
+            None => return,
+        };
+        let per_attempt = Duration::from_millis(self.spearlet_config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
         let req = crate::proto::sms::UpdateTaskResultRequest {
             task_id: task_id.to_string(),
             result_uri,
@@ -1919,18 +1944,9 @@ impl TaskExecutionManager {
             result_metadata,
         };
         tokio::spawn(async move {
-            match Channel::from_shared(url).unwrap().connect().await {
-                Ok(channel) => {
-                    let mut client =
-                        crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
-                    if let Err(e) = client.update_task_result(req).await {
-                        warn!(error = %e.to_string(), "publish_task_result: rpc call failed");
-                    }
-                }
-                Err(e) => {
-                    warn!(error = %e.to_string(), "publish_task_result: connect failed");
-                }
-            }
+            let mut client =
+                crate::proto::sms::task_service_client::TaskServiceClient::new(channel);
+            let _ = timeout(per_attempt, client.update_task_result(req)).await;
         });
     }
 
@@ -1982,6 +1998,7 @@ impl Clone for TaskExecutionManager {
             work_sender: self.work_sender.clone(),
             completion_sender: self.completion_sender.clone(),
             pending_async_executions: self.pending_async_executions.clone(),
+            sms_channel: self.sms_channel.clone(),
             shutdown_sender: None, // Clone doesn't get shutdown sender / 克隆不获取关闭发送器
         }
     }
@@ -2161,6 +2178,7 @@ mod tests {
             config,
             runtime_manager,
             Arc::new(crate::spearlet::config::SpearletConfig::default()),
+            None,
         )
         .await;
         assert!(manager.is_ok());
@@ -2215,6 +2233,7 @@ mod tests {
             cfg,
             rm,
             Arc::new(crate::spearlet::config::SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();
@@ -2324,6 +2343,7 @@ mod tests {
             config,
             rm,
             Arc::new(crate::spearlet::config::SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();
@@ -2401,6 +2421,7 @@ mod tests {
             cfg,
             rm,
             Arc::new(crate::spearlet::config::SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();
@@ -2474,6 +2495,7 @@ mod tests {
             TaskExecutionManagerConfig::default(),
             rm,
             Arc::new(crate::spearlet::config::SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();
@@ -2627,6 +2649,7 @@ mod tests {
             cfg,
             rm,
             Arc::new(crate::spearlet::config::SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();

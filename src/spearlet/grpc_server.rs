@@ -3,6 +3,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tonic::transport::Channel;
 use tonic::transport::Server;
 
 use tracing::{error, info};
@@ -28,11 +29,13 @@ impl GrpcServer {
     /// Create new gRPC server / 创建新的gRPC服务器
     pub async fn new(
         config: Arc<SpearletConfig>,
+        sms_channel: Option<Channel>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(
             config.storage.max_object_size,
         ));
-        let function_service = Arc::new(FunctionServiceImpl::new(config.clone()).await?);
+        let function_service =
+            Arc::new(FunctionServiceImpl::new(config.clone(), sms_channel).await?);
 
         Ok(Self {
             config,

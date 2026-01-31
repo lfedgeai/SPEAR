@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tokio::time::{interval, Instant};
+use tokio::time::{interval, timeout, Instant};
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use tracing::{debug, error, info, warn};
@@ -66,6 +66,7 @@ impl RegistrationState {
 pub struct RegistrationService {
     /// Configuration / 配置
     config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
     /// Node service client / 节点服务客户端
     node_client: Arc<RwLock<Option<NodeServiceClient<Channel>>>>,
     /// Current registration state / 当前注册状态
@@ -77,9 +78,10 @@ pub struct RegistrationService {
 
 impl RegistrationService {
     /// Create new registration service / 创建新的注册服务
-    pub fn new(config: Arc<SpearletConfig>) -> Self {
+    pub fn new(config: Arc<SpearletConfig>, sms_channel: Option<Channel>) -> Self {
         Self {
             config,
+            sms_channel,
             node_client: Arc::new(RwLock::new(None)),
             state: Arc::new(RwLock::new(RegistrationState::NotRegistered)),
             disconnect_since: Arc::new(RwLock::new(None)),
@@ -104,28 +106,14 @@ impl RegistrationService {
 
     /// Connect to SMS service / 连接到SMS服务
     pub async fn connect_to_sms(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let sms_url = format!("http://{}", self.config.sms_grpc_addr);
-        debug!("Connecting to SMS at: {}", sms_url);
-
-        let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
-        let deadline = Instant::now() + Duration::from_millis(self.config.sms_connect_timeout_ms);
-        while Instant::now() < deadline {
-            match Channel::from_shared(sms_url.clone())?.connect().await {
-                Ok(channel) => {
-                    let client = NodeServiceClient::new(channel);
-                    *self.node_client.write().await = Some(client);
-                    info!("Connected to SMS successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    last_err = Some(Box::new(e));
-                    warn!("Retrying SMS connection...");
-                    tokio::time::sleep(Duration::from_millis(self.config.sms_connect_retry_ms))
-                        .await;
-                }
-            }
-        }
-        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::other("unknown error"))))
+        debug!("Connecting to SMS at: {}", self.config.sms_grpc_addr);
+        let channel = self
+            .sms_channel
+            .clone()
+            .ok_or_else(|| std::io::Error::other("sms_channel is not initialized"))?;
+        *self.node_client.write().await = Some(NodeServiceClient::new(channel));
+        info!("Connected to SMS successfully");
+        Ok(())
     }
 
     // kept for clarity: start() already calls connect_to_sms() / start()已调用connect_to_sms()
@@ -133,6 +121,7 @@ impl RegistrationService {
     /// Start registration task / 启动注册任务
     async fn start_registration_task(&self) {
         let config = self.config.clone();
+        let sms_channel = self.sms_channel.clone();
         let node_client = self.node_client.clone();
         let state = self.state.clone();
         let disconnect_since = self.disconnect_since.clone();
@@ -164,7 +153,9 @@ impl RegistrationService {
                         // Attempt registration / 尝试注册
                         // Ensure client is connected / 确保客户端已连接
                         if node_client.read().await.is_none() {
-                            if let Err(e) = Self::attempt_reconnect(&config, &node_client).await {
+                            if let Err(e) =
+                                Self::attempt_reconnect(&sms_channel, &node_client).await
+                            {
                                 warn!("Reconnect to SMS failed: {}", e);
                                 *state.write().await = RegistrationState::Failed {
                                     error: e.to_string(),
@@ -196,7 +187,9 @@ impl RegistrationService {
                         if let Err(e) = Self::send_heartbeat(&config, &node_client, &state).await {
                             warn!("Heartbeat failed: {}", e);
                             // Try reconnect immediately / 立即尝试重连
-                            if let Err(re) = Self::attempt_reconnect(&config, &node_client).await {
+                            if let Err(re) =
+                                Self::attempt_reconnect(&sms_channel, &node_client).await
+                            {
                                 warn!("Reconnect to SMS failed after heartbeat error: {}", re);
                                 *state.write().await = RegistrationState::Failed {
                                     error: re.to_string(),
@@ -259,8 +252,12 @@ impl RegistrationService {
         };
 
         let request = tonic::Request::new(RegisterNodeRequest { node: Some(node) });
-
-        client.register_node(request).await?;
+        let per_attempt = Duration::from_millis(config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        timeout(per_attempt, client.register_node(request))
+            .await
+            .map_err(|_| std::io::Error::other("register_node timeout"))??;
 
         if let Err(e) = Self::send_resource_report(client, config).await {
             warn!("Resource report failed: {}", e);
@@ -297,7 +294,12 @@ impl RegistrationService {
             health_info: std::collections::HashMap::new(),
         });
 
-        let resp = client.heartbeat(request).await?;
+        let per_attempt = Duration::from_millis(config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        let resp = timeout(per_attempt, client.heartbeat(request))
+            .await
+            .map_err(|_| std::io::Error::other("heartbeat timeout"))??;
         let server_ts = resp.get_ref().server_timestamp;
         debug!("Heartbeat ACK: uuid={}, server_ts={}", node_uuid, server_ts);
 
@@ -328,7 +330,12 @@ impl RegistrationService {
         let req = tonic::Request::new(UpdateNodeResourceRequest {
             resource: Some(resource),
         });
-        let _ = client.update_node_resource(req).await?;
+        let per_attempt = Duration::from_millis(config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        let _ = timeout(per_attempt, client.update_node_resource(req))
+            .await
+            .map_err(|_| std::io::Error::other("update_node_resource timeout"))??;
         Ok(())
     }
 
@@ -501,27 +508,15 @@ impl RegistrationService {
 
     /// Attempt to reconnect to SMS / 尝试重新连接SMS
     async fn attempt_reconnect(
-        config: &SpearletConfig,
+        sms_channel: &Option<Channel>,
         node_client: &Arc<RwLock<Option<NodeServiceClient<Channel>>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let sms_url = format!("http://{}", config.sms_grpc_addr);
-        let deadline = Instant::now() + Duration::from_millis(config.sms_connect_timeout_ms);
-        let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
-        while Instant::now() < deadline {
-            match Channel::from_shared(sms_url.clone())?.connect().await {
-                Ok(channel) => {
-                    let client = NodeServiceClient::new(channel);
-                    *node_client.write().await = Some(client);
-                    info!("Reconnected to SMS successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    last_err = Some(Box::new(e));
-                    tokio::time::sleep(Duration::from_millis(config.sms_connect_retry_ms)).await;
-                }
-            }
-        }
-        Err(last_err.unwrap_or_else(|| Box::new(std::io::Error::other("reconnect failed"))))
+        let channel = sms_channel
+            .clone()
+            .ok_or_else(|| std::io::Error::other("sms_channel is not initialized"))?;
+        *node_client.write().await = Some(NodeServiceClient::new(channel));
+        info!("Reconnected to SMS successfully");
+        Ok(())
     }
 
     /// Get current registration state / 获取当前注册状态

@@ -13,15 +13,21 @@ use tracing::{debug, info, warn};
 
 pub struct TaskEventSubscriber {
     config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
     last_event_id: Arc<RwLock<i64>>,
     execution_manager: Arc<TaskExecutionManager>,
 }
 
 impl TaskEventSubscriber {
-    pub fn new(config: Arc<SpearletConfig>, execution_manager: Arc<TaskExecutionManager>) -> Self {
+    pub fn new(
+        config: Arc<SpearletConfig>,
+        sms_channel: Option<Channel>,
+        execution_manager: Arc<TaskExecutionManager>,
+    ) -> Self {
         let last = Self::load_cursor(&config);
         Self {
             config,
+            sms_channel,
             last_event_id: Arc::new(RwLock::new(last)),
             execution_manager,
         }
@@ -50,36 +56,41 @@ impl TaskEventSubscriber {
 
     pub async fn start(self) {
         let cfg = self.config.clone();
+        let sms_channel = self.sms_channel.clone();
         let exec_mgr = self.execution_manager.clone();
         let last_event_id = self.last_event_id.clone();
         tokio::spawn(async move {
             let node_uuid = cfg.compute_node_uuid();
             info!(node_uuid = %node_uuid, sms_grpc_addr = %cfg.sms_grpc_addr, "TaskEventSubscriber starting");
+            let Some(channel) = sms_channel else {
+                warn!("TaskEventSubscriber disabled: sms_channel is not initialized");
+                return;
+            };
             loop {
-                let sms_grpc_url = format!("http://{}", cfg.sms_grpc_addr);
-                let channel = match Channel::from_shared(sms_grpc_url.clone())
-                    .unwrap()
-                    .connect()
-                    .await
-                {
-                    Ok(c) => c,
-                    Err(e) => {
-                        warn!(error = %e, "SMS channel connect failed, retrying");
-                        tokio::time::sleep(Duration::from_millis(cfg.sms_connect_retry_ms)).await;
-                        continue;
-                    }
-                };
-                let mut client = TaskServiceClient::new(channel);
+                let mut client = TaskServiceClient::new(channel.clone());
                 let last = *last_event_id.read().await;
                 let req = SubscribeTaskEventsRequest {
                     node_uuid: node_uuid.clone(),
                     last_event_id: last,
                 };
                 debug!(node_uuid = %node_uuid, last_event_id = last, "Subscribing to task events");
-                let mut stream = match client.subscribe_task_events(req).await {
-                    Ok(r) => r.into_inner(),
-                    Err(e) => {
+                let per_attempt = Duration::from_millis(cfg.sms_connect_timeout_ms)
+                    .min(Duration::from_secs(5))
+                    .max(Duration::from_millis(1));
+                let mut stream = match tokio::time::timeout(
+                    per_attempt,
+                    client.subscribe_task_events(req),
+                )
+                .await
+                {
+                    Ok(Ok(r)) => r.into_inner(),
+                    Ok(Err(e)) => {
                         warn!(error = %e, "SubscribeTaskEvents RPC failed, retrying");
+                        tokio::time::sleep(Duration::from_millis(cfg.sms_connect_retry_ms)).await;
+                        continue;
+                    }
+                    Err(_) => {
+                        warn!("SubscribeTaskEvents RPC timeout, retrying");
                         tokio::time::sleep(Duration::from_millis(cfg.sms_connect_retry_ms)).await;
                         continue;
                     }
@@ -281,13 +292,14 @@ mod tests {
             TaskExecutionManagerConfig::default(),
             rm,
             Arc::new(SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();
 
         let mut cfg = SpearletConfig::default();
         cfg.node_name = uuid::Uuid::new_v4().to_string();
-        let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), mgr.clone());
+        let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), None, mgr.clone());
         let node_uuid = cfg.compute_node_uuid();
 
         let mut meta = std::collections::HashMap::new();
@@ -350,13 +362,14 @@ mod tests {
             TaskExecutionManagerConfig::default(),
             rm,
             Arc::new(SpearletConfig::default()),
+            None,
         )
         .await
         .unwrap();
 
         let mut cfg = SpearletConfig::default();
         cfg.node_name = uuid::Uuid::new_v4().to_string();
-        let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), mgr.clone());
+        let sub = TaskEventSubscriber::new(Arc::new(cfg.clone()), None, mgr.clone());
         let node_uuid = cfg.compute_node_uuid();
 
         let uri = "http://example/abc";

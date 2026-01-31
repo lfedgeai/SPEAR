@@ -95,7 +95,7 @@ async fn test_existing_task_invocation_allowed() {
     let rm = Arc::new(rm);
 
     let cfg = Arc::new(spear_next::spearlet::config::SpearletConfig::default());
-    let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), rm, cfg)
+    let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), rm, cfg, None)
         .await
         .unwrap();
 

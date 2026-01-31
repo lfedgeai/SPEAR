@@ -10,4 +10,4 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "./"]
 cwd = ""
 
 [budgets]
-tool_timeout_ms = 8000
+tool_timeout_ms = 30000

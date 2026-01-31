@@ -69,7 +69,7 @@ async fn test_registration_state_failed() {
 async fn test_registration_service_creation() {
     // Test registration service creation / 测试注册服务创建
     let config = Arc::new(create_test_config());
-    let service = RegistrationService::new(config.clone());
+    let service = RegistrationService::new(config.clone(), None);
 
     // Verify initial state / 验证初始状态
     let state = service.get_state().await;
@@ -84,7 +84,7 @@ async fn test_registration_service_with_auto_register_disabled() {
     let mut config = create_test_config();
     config.auto_register = false;
 
-    let service = RegistrationService::new(Arc::new(config));
+    let service = RegistrationService::new(Arc::new(config), None);
 
     // Verify initial state / 验证初始状态
     let state = service.get_state().await;
@@ -105,7 +105,7 @@ async fn test_registration_service_with_different_node_ids() {
         let mut config = create_test_config();
         config.node_name = node_id.clone();
 
-        let service = RegistrationService::new(Arc::new(config));
+        let service = RegistrationService::new(Arc::new(config), None);
         let state = service.get_state().await;
 
         assert!(!state.is_registered());
@@ -122,7 +122,7 @@ async fn test_registration_service_with_different_sms_configs() {
         let mut config = create_test_config();
         config.sms_grpc_addr = format!("{}:{}", address, port);
 
-        let service = RegistrationService::new(Arc::new(config));
+        let service = RegistrationService::new(Arc::new(config), None);
         let state = service.get_state().await;
 
         assert!(!state.is_registered());
@@ -134,7 +134,7 @@ async fn test_registration_service_with_different_sms_configs() {
 async fn test_registration_state_transitions() {
     // Test registration state transitions / 测试注册状态转换
     let config = Arc::new(create_test_config());
-    let service = RegistrationService::new(config);
+    let service = RegistrationService::new(config, None);
 
     // Initial state should be NotRegistered / 初始状态应该是未注册
     let initial_state = service.get_state().await;
@@ -154,7 +154,7 @@ async fn test_multiple_registration_services() {
         .map(|i| {
             let mut config = create_test_config();
             config.node_name = format!("test-node-{:03}", i);
-            RegistrationService::new(Arc::new(config))
+            RegistrationService::new(Arc::new(config), None)
         })
         .collect::<Vec<_>>();
 
@@ -170,7 +170,7 @@ async fn test_multiple_registration_services() {
 async fn test_registration_service_disconnect() {
     // Test registration service disconnect / 测试注册服务断开连接
     let config = Arc::new(create_test_config());
-    let service = RegistrationService::new(config);
+    let service = RegistrationService::new(config, None);
 
     // Disconnect should not panic / 断开连接不应该panic
     service.disconnect().await;
@@ -253,7 +253,7 @@ mod integration_tests {
     async fn test_registration_service_lifecycle() {
         // Test complete registration service lifecycle / 测试完整的注册服务生命周期
         let config = Arc::new(create_test_config());
-        let service = RegistrationService::new(config.clone());
+        let service = RegistrationService::new(config.clone(), None);
 
         // 1. Initial state / 初始状态
         let initial_state = service.get_state().await;
@@ -291,7 +291,7 @@ mod integration_tests {
         ];
 
         for config in configs {
-            let service = RegistrationService::new(Arc::new(config));
+            let service = RegistrationService::new(Arc::new(config), None);
             let state = service.get_state().await;
 
             assert!(!state.is_registered());
@@ -307,6 +307,7 @@ async fn test_connect_fails_with_unreachable_sms() {
     use super::RegistrationService;
     use crate::config::base::ServerConfig;
     use crate::spearlet::config::SpearletConfig;
+    use crate::spearlet::sms_connector::sms_channel_lazy;
     use std::sync::Arc;
 
     let cfg = SpearletConfig {
@@ -330,8 +331,10 @@ async fn test_connect_fails_with_unreachable_sms() {
         llm: crate::spearlet::config::LlmConfig::default(),
     };
 
-    let svc = RegistrationService::new(Arc::new(cfg));
-    let res = svc.connect_to_sms().await;
+    let cfg = Arc::new(cfg);
+    let svc = RegistrationService::new(cfg.clone(), sms_channel_lazy(&cfg).ok());
+    let _ = svc.connect_to_sms().await;
+    let res = svc.force_register().await;
     assert!(res.is_err());
 }
 
@@ -345,6 +348,7 @@ async fn test_connect_and_register_to_sms() {
     use crate::sms::services::node_service::NodeService;
     use crate::sms::services::resource_service::ResourceService;
     use crate::spearlet::config::SpearletConfig;
+    use crate::spearlet::sms_connector::sms_channel_lazy;
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -385,7 +389,8 @@ async fn test_connect_and_register_to_sms() {
     spear_cfg.sms_grpc_addr = format!("127.0.0.1:{}", port);
     spear_cfg.auto_register = false;
 
-    let reg = RegistrationService::new(Arc::new(spear_cfg));
+    let spear_cfg = Arc::new(spear_cfg);
+    let reg = RegistrationService::new(spear_cfg.clone(), sms_channel_lazy(&spear_cfg).ok());
     // Wait server to start / 等待服务器启动
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     // Connect to SMS / 连接到SMS

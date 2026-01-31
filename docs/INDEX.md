@@ -11,6 +11,8 @@
 | Task Execution Model | [task-execution-model-en.md](./task-execution-model-en.md) | [task-execution-model-zh.md](./task-execution-model-zh.md) | Task 执行模型与方案 A 约定 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
 | ObjectRef API Removal | [objectref-api-removal-en.md](./objectref-api-removal-en.md) | [objectref-api-removal-zh.md](./objectref-api-removal-zh.md) | ObjectRef API移除文档 |
+| MCP Integration Architecture | [mcp-integration-architecture-en.md](./mcp-integration-architecture-en.md) | [mcp-integration-architecture-zh.md](./mcp-integration-architecture-zh.md) | MCP 注册中心、注入与执行链路 |
+| Task-level MCP Subset Design | [mcp-task-subset-design-en.md](./mcp-task-subset-design-en.md) | [mcp-task-subset-design-zh.md](./mcp-task-subset-design-zh.md) | Task 级 MCP 子集选择与治理 |
 
 ### 💾 Storage Layer / 存储层
 
@@ -85,6 +87,7 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | gRPC Transport Error | [grpc-transport-error-troubleshooting-en.md](./grpc-transport-error-troubleshooting-en.md) | [grpc-transport-error-troubleshooting-zh.md](./grpc-transport-error-troubleshooting-zh.md) | gRPC传输错误故障排除指南 |
+| MCP Troubleshooting | [mcp-troubleshooting-en.md](./mcp-troubleshooting-en.md) | [mcp-troubleshooting-zh.md](./mcp-troubleshooting-zh.md) | MCP 工具注入与执行排障 |
 | Ollama Model Discovery | [ollama-discovery-en.md](./ollama-discovery-en.md) | [ollama-discovery-zh.md](./ollama-discovery-zh.md) | Ollama 模型导入与排障 |
 | API Usage Guide | [api-usage-guide-en.md](./api-usage-guide-en.md) | [api-usage-guide-zh.md](./api-usage-guide-zh.md) | RESTful API使用指南 |
 | WASM Runtime Usage | [wasm-runtime-usage-en.md](./wasm-runtime-usage-en.md) | [wasm-runtime-usage-zh.md](./wasm-runtime-usage-zh.md) | WASM运行时使用与错误行为说明 |

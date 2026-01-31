@@ -18,11 +18,12 @@ We need a task-level MCP subset selection mechanism that stays aligned with the 
 Spearlet injects MCP tools before sending Chat Completions:
 
 - Injection: [`src/spearlet/execution/host_api/cchat.rs`](../src/spearlet/execution/host_api/cchat.rs)
-  - `cchat_inject_mcp_tools`: reads `snapshot.params`, parses the session MCP policy, calls `tools/list` for selected servers, and injects tools
-- Policy parsing: [`src/spearlet/mcp/policy.rs`](../src/spearlet/mcp/policy.rs)
-  - `session_policy_from_params`: parses `mcp.enabled`, `mcp.server_ids`, `mcp.tool_allowlist`, `mcp.tool_denylist`
+  - `cchat_inject_mcp_tools`: reads `snapshot.mcp` (the in-memory `McpSessionParams`), calls `tools/list` for selected servers, and injects tools
+- Policy helpers: [`src/spearlet/mcp/policy.rs`](../src/spearlet/mcp/policy.rs)
+  - `filter_and_namespace_openai_tools`: applies allow/deny filters and generates namespaced OpenAI tool defs
+  - `parse_namespaced_mcp_tool_name`: routes tool calls back to `(server_id, tool_name)` (accepts both `mcp__...__...` and `mcp.<server_id>.<tool_name>`)
 
-This means subset selection is already supported at runtime; what’s missing is a control-plane-to-data-plane bridge that populates `snapshot.params` from task intent.
+This means subset selection is already supported at runtime; what’s missing is a clean way to populate the chat session’s `McpSessionParams` from task intent.
 
 ### Current implementation scope (important)
 
@@ -67,7 +68,7 @@ This is the basis for platform governance.
 2. Layered narrowing: each layer can only reduce permissions, never expand them
 3. Stable namespacing for tools to avoid collisions and improve auditability (you already use `mcp__...__...`)
 4. Observability-first: injection/execution should emit structured logs/metrics
-5. Minimize changes: reuse the existing `snapshot.params` control path
+5. Minimize changes: reuse the existing `cchat_ctl_set_param` + `cchat_create` control path
 
 ## Core design: three-layer policy + subset composition
 
@@ -160,16 +161,15 @@ Recommended semantics:
 
 #### Phase A integration points (aligned with the existing code)
 
-The injection path depends on `ChatSessionState.params` (`snapshot.params`), typically populated via `cchat_ctl_set_param`. Phase A needs an automatic bridge:
+The injection path depends on `ChatSessionState.mcp` (`snapshot.mcp`), typically populated via `cchat_ctl_set_param`. Phase A needs an automatic bridge:
 
 - Before the first chat send, parse task.config into a structured `McpTaskPolicy`
 - Compute the effective subset from task policy only (invocation-level override is deferred)
-- Populate chat session params defaults:
-  - `mcp.enabled`
-  - `mcp.server_ids` (= task default subset)
-  - `mcp.task_tool_allowlist` / `mcp.task_tool_denylist` (if configured)
+- Populate chat session defaults:
+  - `cchat_create` applies task defaults via `cchat_apply_task_mcp_defaults`
+  - Guest can further narrow via `cchat_ctl_set_param` (but cannot expand beyond task policy)
 
-Implementation detail: the exact “where chat session is created” depends on your runtime integration (WASM hostcalls, etc.). This document defines behavior; the code should hook into the earliest unified point near session creation.
+Implementation detail: task config parsing and enforcement is implemented in [`src/spearlet/mcp/task_subset.rs`](../src/spearlet/mcp/task_subset.rs) and enforced in [`src/spearlet/execution/host_api/cchat.rs`](../src/spearlet/execution/host_api/cchat.rs).
 
 ### Phase B: Profiles/Bundles and server tags
 

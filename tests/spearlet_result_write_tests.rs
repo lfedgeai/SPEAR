@@ -144,9 +144,14 @@ async fn test_spearlet_writes_result_on_completion() {
     let rm = Arc::new(rm);
     let mut cfg = spear_next::spearlet::config::SpearletConfig::default();
     cfg.sms_grpc_addr = addr.to_string();
-    let mgr = TaskExecutionManager::new(TaskExecutionManagerConfig::default(), rm, Arc::new(cfg))
-        .await
-        .unwrap();
+    let mgr = TaskExecutionManager::new(
+        TaskExecutionManagerConfig::default(),
+        rm,
+        Arc::new(cfg),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Pre-register task locally using SMS-like details
     let mut sms_task = spear_next::proto::sms::Task::default();

@@ -1,28 +1,29 @@
-# MCP Integration Architecture (Registry + Tool Injection + Hostcalls)
+# MCP Integration Architecture (Current Implementation)
 
 ## Overview
 
-This document proposes how to integrate external MCP (Model Context Protocol) servers into Spear, aligned with common industry practices:
+This document describes the current MCP (Model Context Protocol) integration in Spear, based on the code in this repository:
 
 - Spear stores a registry of MCP servers that are allowed to connect.
 - At the agent layer, MCP tools are exposed to Chat Completions as standard `tools` so the agent can be unaware of MCP.
-- Additionally, a dedicated set of MCP hostcalls is provided so WASM workloads can call MCP tools programmatically.
+- MCP tools are injected into Chat Completions as standard `tools` entries and executed by the host auto tool-call loop.
 
-The design is intended to reuse Spear’s existing fd-based hostcall model and its existing “auto tool call loop” for Chat Completion.
+Note: there is no separate `mcp_*` hostcall surface in the current implementation; MCP access is currently integrated via `cchat` only.
 
 ## Goals
 
 - Centralize external MCP server configuration, policy, and credentials in Spear.
 - Make MCP tools available to Chat Completion tool-calling without requiring agent-side MCP awareness.
-- Provide an fd-based MCP hostcall API for explicit tool calls from WASM.
 - Ensure safety by default (deny-by-default, allowlists, namespacing, budgets, auditability).
-- Support multiple transports (stdio for local subprocess; Streamable HTTP for remote).
+- Support stdio-based MCP servers (local subprocess) end-to-end.
+  - The registry schema also allows `streamable_http`, but Spearlet-side execution currently supports stdio only.
 
 ## Non-goals
 
 - Implementing a full MCP gateway for third-party clients outside Spear.
-- Implementing every MCP capability category on day one (resources/prompts can be phased in).
-- Allowing arbitrary, user-provided subprocess spawning without policy controls.
+- Implementing a dedicated `mcp_open/list_tools/call_tool/close` hostcall API (future work).
+- Executing Streamable HTTP MCP servers in Spearlet (future work).
+- Allowing arbitrary, user-provided subprocess spawning without registry policy controls.
 
 ## Current Spear foundations to reuse
 
@@ -39,39 +40,32 @@ References:
 - **MCP Server**: an external process/service exposing `tools/list` and `tools/call`.
 - **Spear MCP Registry**: Spear-managed list of allowed MCP servers and policies.
 - **Tool injection**: converting MCP tools into OpenAI-compatible `tools` entries used by Chat Completions.
-- **Namespaced tool name**: a stable name that avoids collisions, e.g. `mcp.<server_id>.<tool_name>`.
+- **Namespaced tool name**: a stable tool name exposed to the model.
+  - Injected form (current): `mcp__<base64(server_id)>__<base64(tool_name)>`
+  - Accepted for routing (compat): `mcp.<server_id>.<tool_name>`
 
 ## High-level architecture
 
 ### Components
 
-1. **MCP Registry Service (control plane)**
-   - Implemented in SMS as the single source of truth.
-   - Stores MCP server registrations, policy, and credential references.
-   - Spearlets fetch and cache registry data from SMS (revision-based).
+1. **MCP Registry (SMS, control plane)**
+   - SMS keeps an in-memory registry of MCP server records.
+   - SMS can bootstrap records from a directory of `*.toml`/`*.json` config files.
+   - Spearlet fetches registry records from SMS via gRPC and keeps a local snapshot.
 
-2. **MCP Client Pool (data plane, per Spearlet)**
-   - Maintains connections to MCP servers.
-   - Provides:
-     - tools discovery (with caching)
-     - tool execution with timeouts, concurrency limits, output caps
+2. **Registry sync (Spearlet, data plane)**
+   - Spearlet runs a watch+poll sync loop to keep the registry snapshot fresh.
 
-3. **Chat Completion Tool Bridge (data plane, per chat session)**
-   - Determines which MCP servers are enabled for the current chat session.
-   - Injects MCP tools into the upstream chat request.
-   - Routes tool calls returned by the model to either WASM tools or MCP tools.
+3. **Stdio MCP client (Spearlet, data plane)**
+   - For each `tools/list` and `tools/call`, Spearlet spawns the configured MCP server subprocess via stdio and speaks MCP using `rmcp`.
+   - Current limitation: stdio only (even though the registry schema includes `streamable_http`).
 
-4. **MCP Hostcall Surface (data plane, for WASM workloads)**
-   - Exposes an fd-based API to connect/list/call MCP tools explicitly.
+4. **Chat Completion injection + execution (Spearlet, per chat session)**
+   - The `cchat` host API injects MCP tools (via `tools/list`) and executes MCP tool calls (via `tools/call`) inside the existing auto tool-call loop.
 
-### Two usage modes
+### Usage mode (current)
 
-- **Agent-unaware mode (recommended default)**
-  - The agent only uses Chat Completions tool calling.
-  - Spear injects MCP tools and executes them automatically.
-
-- **Programmable hostcall mode**
-  - WASM code calls MCP tools directly via `mcp_*` hostcalls.
+- MCP tools are injected and executed only through the `cchat` auto tool-call loop.
 
 ## MCP Server Registry
 
@@ -118,8 +112,8 @@ Data-plane access patterns:
 
 Best practice is to avoid flat namespaces. Spear should expose MCP tools to the model using a deterministic namespace.
 
-- External tool name presented to the model: `mcp.<server_id>.<tool_name>`
-- Internal routing: parse prefix, map to `(server_id, tool_name)`
+- External tool name presented to the model (injected): `mcp__<base64(server_id)>__<base64(tool_name)>`
+- Internal routing: decode to `(server_id, tool_name)`; routing also accepts `mcp.<server_id>.<tool_name>` for compatibility.
 
 This makes audit logs and policy enforcement straightforward and avoids tool name conflicts across servers.
 
@@ -161,7 +155,7 @@ Recommended tool calling policy (passed to the upstream model as request params)
 
 - `tool_choice = "none"`: user explicitly disables tool calling for this request.
 - `tool_choice = "auto"`: default; model may choose among the already-filtered tools.
-- `tool_choice = {"type":"function","function":{"name":"mcp.<server_id>.<tool_name>"}}`: user selected a specific tool; force the model to use it.
+- `tool_choice = {"type":"function","function":{"name":"mcp__...__..."}}`: user selected a specific tool; force the model to use it (the exact name must match an injected tool).
 
 Product UX guideline:
 
@@ -179,6 +173,10 @@ When building the Chat Completions request, Spear constructs:
     - per-session allowlist overrides
     - global governance policies
 
+Notes (current code):
+
+- MCP session params (`mcp.*`) are internal host-side controls. They are materialized into the session param map, but are not forwarded to the upstream model request body.
+
 ### Executing tool calls
 
 Spear reuses the existing auto tool-call loop:
@@ -187,7 +185,7 @@ Spear reuses the existing auto tool-call loop:
 2. If the model returns `tool_calls`:
    - For each call:
      - If name matches a WASM tool, invoke WASM function by `fn_offset`.
-     - If name matches `mcp.<server_id>.<tool_name>`, call MCP `tools/call`.
+     - If name matches `mcp__...__...` (or the compat `mcp.<server_id>.<tool_name>`), call MCP `tools/call`.
    - Append each tool result as `role=tool` with the correct `tool_call_id`.
 3. Repeat until no more tool calls or budgets are exceeded.
 
@@ -200,51 +198,7 @@ Budgets and safety limits should be enforced exactly the same way for both WASM 
 
 ## MCP hostcalls (programmable API)
 
-### Design principles
-
-- fd-based, syscall-like API consistent with existing `cchat_*`.
-- Avoid exposing raw spawning capabilities without registry policy.
-- Prefer calling registered servers by `server_id`.
-
-### Proposed hostcall set
-
-#### 1) `mcp_open(server_id) -> mcp_fd`
-
-- Opens a session/connection handle to a registered MCP server.
-- `server_id` is resolved via the registry.
-- The host establishes (or reuses) a connection from the client pool.
-
-#### 2) `mcp_list_tools(mcp_fd, out_buf, out_len_ptr) -> rc`
-
-- Returns JSON with a stable schema:
-
-```json
-{
-  "server_id": "fs",
-  "tools": [
-    {"name": "read_file", "description": "...", "inputSchema": {"type":"object", "properties":{}}}
-  ]
-}
-```
-
-#### 3) `mcp_call_tool(mcp_fd, tool_name, args_json, out_buf, out_len_ptr) -> rc`
-
-- `tool_name` is the MCP-native name (without the `mcp.<server_id>.` prefix).
-- `args_json` is a UTF-8 JSON string.
-- Returns JSON string output (success or error) in `out_buf`.
-
-#### 4) `mcp_close(mcp_fd) -> rc`
-
-- Releases the handle; the host may keep pooled connections alive.
-
-### Optional hostcalls
-
-If WASM needs discovery of registered servers:
-
-- `mcp_registry_list(out_buf, out_len_ptr) -> rc`
-- `mcp_registry_get(server_id, out_buf, out_len_ptr) -> rc`
-
-Registry mutation (register/update/delete) is recommended to remain in control-plane APIs, not hostcalls.
+This section describes potential future work. The current implementation does not expose `mcp_*` hostcalls; MCP access is integrated via `cchat` only.
 
 ## Security and governance
 
@@ -293,30 +247,18 @@ This section is implementation-oriented. It proposes concrete module boundaries,
 
 ### Code layout (recommended)
 
-Split the MCP integration into three independent parts: registry (in SMS, control plane), client (in Spearlet, data plane), and bridge/hostcalls (in Spearlet, integration plane).
+Current code map:
 
-- `src/sms/mcp/registry/`
-  - `types.rs`: registry record, policy, budgets
-  - `store.rs`: persistent store + revision
-  - `service.rs`: registry business logic (CRUD + validation)
-  - `http.rs`: public API (`/api/v1/mcp/*`) and admin API (`/admin/api/mcp/*`)
-- `src/spearlet/mcp/registry_client/`
-  - `client.rs`: fetch registry from SMS (revision-aware)
-  - `cache.rs`: in-memory cache (TTL + revision)
-- `src/spearlet/mcp/client/`
-  - `transport/mod.rs`: `McpTransport` trait
-  - `transport/stdio.rs`: stdio subprocess transport
-  - `transport/http_streamable.rs`: Streamable HTTP transport
-  - `jsonrpc.rs`: JSON-RPC 2.0 encode/decode
-  - `types.rs`: MCP Tool/CallResult structs
-  - `pool.rs`: connection pool, concurrency, reconnect, health
-  - `cache.rs`: tools/list cache (TTL + revision)
-- `src/spearlet/mcp/bridge/`
-  - `tool_injection.rs`: MCP tools -> OpenAI tools mapping + filtering
-  - `router.rs`: parse and route `mcp.<server_id>.<tool_name>`
-  - `policy.rs`: session allow/deny + approval policy enforcement
-- `src/spearlet/execution/host_api/mcp.rs`
-  - MCP fd API (`mcp_open/list_tools/call_tool/close`) using the shared pool
+- SMS
+  - Bootstrap MCP configs from a directory: [`src/apps/sms/main.rs`](../src/apps/sms/main.rs) and [`src/sms/service.rs`](../src/sms/service.rs) (`bootstrap_mcp_from_dir`)
+  - MCP registry gRPC service: [`src/sms/service.rs`](../src/sms/service.rs) (`McpRegistryService`)
+  - Web Admin MCP endpoints: [`src/sms/web_admin.rs`](../src/sms/web_admin.rs)
+- Spearlet
+  - Registry sync (watch + periodic refresh): [`src/spearlet/mcp/registry_sync.rs`](../src/spearlet/mcp/registry_sync.rs)
+  - Stdio MCP client wrapper (rmcp): [`src/spearlet/mcp/client.rs`](../src/spearlet/mcp/client.rs)
+  - Tool naming + allow/deny policy + routing helpers: [`src/spearlet/mcp/policy.rs`](../src/spearlet/mcp/policy.rs)
+  - Task-level subset policy parsing: [`src/spearlet/mcp/task_subset.rs`](../src/spearlet/mcp/task_subset.rs)
+  - Tool injection + execution in cchat: [`src/spearlet/execution/host_api/cchat.rs`](../src/spearlet/execution/host_api/cchat.rs)
 
 ### Configuration and registry persistence
 
@@ -340,9 +282,9 @@ Suggested behavior:
 Suggested config naming (examples):
 
 - SMS:
-  - CLI: `--mcp-registry-dir <DIR>`
-  - ENV: `SMS_MCP_REGISTRY_DIR=<DIR>`
-  - Config: `mcp.registry_dir = "..."`
+  - CLI: `--mcp-dir <DIR>`
+  - ENV: `SMS_MCP_DIR=<DIR>`
+  - Config file: `[mcp]\ndir = "..."` (in `sms` config)
 
 Directory scan rules (recommended):
 
@@ -356,19 +298,18 @@ File schema: prefer “one file per server record”.
 Example (TOML, single server per file):
 
 ```toml
-version = 1
 server_id = "fs"
 display_name = "Filesystem"
 transport = "stdio"
-tool_namespace = "mcp.fs"
+tool_namespace = ""
 allowed_tools = ["read_*", "search_*"]
 
 [stdio]
-command = "uvx"
-args = ["xxx@latest"]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "./"]
 
 [budgets]
-tool_timeout_ms = 8000
+tool_timeout_ms = 30000
 max_concurrency = 8
 max_tool_output_bytes = 65536
 ```
@@ -508,15 +449,12 @@ Recommended UI capabilities:
 - Tool preview (optional): show the post-filter tool list (including namespaced names)
 - Import from file (optional): upload a registry file, validate, then upsert
 
-Recommended backend endpoints under the existing `/admin/api` prefix, reusing current optional auth:
+Current backend endpoints under the existing `/admin/api` prefix (implemented in `sms` Web Admin gateway):
 
 - `GET /admin/api/mcp/servers`
 - `GET /admin/api/mcp/servers/{server_id}`
-- `POST /admin/api/mcp/servers`
-- `PUT /admin/api/mcp/servers/{server_id}`
+- `POST /admin/api/mcp/servers` (upsert)
 - `DELETE /admin/api/mcp/servers/{server_id}`
-- `POST /admin/api/mcp/servers/{server_id}/test` (optional)
-- `POST /admin/api/mcp/servers/import` (optional)
 
 ### Function/method-level details (recommended)
 
@@ -663,7 +601,7 @@ Input: `session_params + registry_records + cached_tools`.
 2. For each server_id:
    - load registry record
    - list_tools (via cache)
-   - map tool name to `mcp.<server_id>.<tool_name>`
+   - map tool name to injected OpenAI tool name `mcp__<base64(server_id)>__<base64(tool_name)>`
    - filter by registry allowlist + session allow/deny
 3. Append MCP tools to the `tools` array (merge with WASM tools).
 
@@ -672,18 +610,18 @@ Input: `session_params + registry_records + cached_tools`.
 Extend the existing auto tool-call loop with a unified dispatcher:
 
 - if tool name matches a WASM tool: call by `fn_offset`
-- if tool name matches `mcp.<server_id>.<tool_name>`:
+- if tool name matches `mcp__...__...` (or compat `mcp.<server_id>.<tool_name>`):
   - parse `server_id/tool_name`
   - parse `arguments` into a JSON object (return structured error on failure)
   - call MCP `tools/call`
 
 Return tool output as a JSON string (success or error) and append as `role=tool`.
 
-### MCP hostcalls: fd model and ABI
+### MCP hostcalls: fd model and ABI (future work)
 
 #### fd kind
 
-Introduce `FdKind::McpSession` (or a tagged generic) with internal state:
+Not implemented in the current codebase. If added later, a possible direction is to introduce `FdKind::McpSession` (or a tagged generic) with internal state:
 
 - `server_id`
 - optional: pool handle reference
@@ -744,12 +682,12 @@ Audit logs should include `request_id/session_id/server_id/tool_name/status` wit
 ### Minimal test plan
 
 - Unit tests
-  - route parsing for `mcp.<server_id>.<tool_name>`
+  - route parsing for `mcp__...__...` (and compat `mcp.<server_id>.<tool_name>`)
   - allow/deny pattern matching
   - injection filtering
 - Integration tests (tokio)
   - stdio: spawn a fake MCP server subprocess for `tools/list` and `tools/call`
-  - HTTP: start a local axum mock for Streamable HTTP
+  - Streamable HTTP: add a local mock when/if the transport is implemented
   - cchat auto tool-call loop: inject MCP tools and verify `role=tool` append behavior
 - Regression
   - behavior unchanged when MCP is disabled

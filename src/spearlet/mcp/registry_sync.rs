@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use tokio::time::{interval, timeout};
+use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use tracing::{debug, warn};
@@ -35,15 +35,17 @@ impl McpRegistryCache {
 #[derive(Debug)]
 pub struct McpRegistrySyncService {
     config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
     cache: Arc<McpRegistryCache>,
     cancel: CancellationToken,
     started: AtomicBool,
 }
 
 impl McpRegistrySyncService {
-    pub fn new(config: Arc<SpearletConfig>) -> Self {
+    pub fn new(config: Arc<SpearletConfig>, sms_channel: Option<Channel>) -> Self {
         Self {
             config,
+            sms_channel,
             cache: Arc::new(McpRegistryCache::default()),
             cancel: CancellationToken::new(),
             started: AtomicBool::new(false),
@@ -77,11 +79,12 @@ impl McpRegistrySyncService {
         }
 
         let config = self.config.clone();
+        let sms_channel = self.sms_channel.clone();
         let cache = self.cache.clone();
         let cancel = self.cancel.clone();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                sync_loop(config, cache, cancel).await;
+                sync_loop(config, sms_channel, cache, cancel).await;
             });
             return;
         }
@@ -92,36 +95,28 @@ impl McpRegistrySyncService {
                 .build();
             if let Ok(rt) = rt {
                 rt.block_on(async move {
-                    sync_loop(config, cache, cancel).await;
+                    sync_loop(config, sms_channel, cache, cancel).await;
                 });
             }
         });
     }
 }
 
-async fn connect_sms(
-    config: &SpearletConfig,
-) -> Result<McpRegistryServiceClient<Channel>, tonic::Status> {
-    let sms_url = format!("http://{}", config.sms_grpc_addr);
-    let connect_fut = McpRegistryServiceClient::connect(sms_url);
-    let client = timeout(
-        Duration::from_millis(config.sms_connect_timeout_ms),
-        connect_fut,
-    )
-    .await
-    .map_err(|_| tonic::Status::deadline_exceeded("connect sms timeout"))?
-    .map_err(|e| tonic::Status::unavailable(format!("connect sms failed: {}", e)))?;
-    Ok(client)
-}
-
 async fn refresh_once(
+    config: &SpearletConfig,
     client: &mut McpRegistryServiceClient<Channel>,
     cache: &McpRegistryCache,
 ) -> Result<u64, tonic::Status> {
-    let resp = client
-        .list_mcp_servers(ListMcpServersRequest { since_revision: 0 })
-        .await?
-        .into_inner();
+    let per_attempt = Duration::from_millis(config.sms_connect_timeout_ms)
+        .min(Duration::from_secs(5))
+        .max(Duration::from_millis(1));
+    let resp = tokio::time::timeout(
+        per_attempt,
+        client.list_mcp_servers(ListMcpServersRequest { since_revision: 0 }),
+    )
+    .await
+    .map_err(|_| tonic::Status::deadline_exceeded("list_mcp_servers timeout"))??
+    .into_inner();
     let server_ids = resp
         .servers
         .iter()
@@ -146,7 +141,20 @@ static GLOBAL_MCP_REGISTRY_SYNC: OnceLock<Arc<McpRegistrySyncService>> = OnceLoc
 pub fn global_mcp_registry_sync(config: Arc<SpearletConfig>) -> Arc<McpRegistrySyncService> {
     GLOBAL_MCP_REGISTRY_SYNC
         .get_or_init(|| {
-            let svc = Arc::new(McpRegistrySyncService::new(config));
+            let svc = Arc::new(McpRegistrySyncService::new(config, None));
+            svc.start();
+            svc
+        })
+        .clone()
+}
+
+pub fn global_mcp_registry_sync_with_channel(
+    config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
+) -> Arc<McpRegistrySyncService> {
+    GLOBAL_MCP_REGISTRY_SYNC
+        .get_or_init(|| {
+            let svc = Arc::new(McpRegistrySyncService::new(config, sms_channel));
             svc.start();
             svc
         })
@@ -155,6 +163,7 @@ pub fn global_mcp_registry_sync(config: Arc<SpearletConfig>) -> Arc<McpRegistryS
 
 async fn sync_loop(
     config: Arc<SpearletConfig>,
+    sms_channel: Option<Channel>,
     cache: Arc<McpRegistryCache>,
     cancel: CancellationToken,
 ) {
@@ -162,29 +171,22 @@ async fn sync_loop(
     let mut revision: Option<u64> = None;
     let mut poll = interval(Duration::from_secs(60));
 
+    let Some(channel) = sms_channel else {
+        return;
+    };
+
     loop {
         if cancel.is_cancelled() {
             return;
         }
 
-        let mut client = match connect_sms(&config).await {
-            Ok(c) => c,
-            Err(e) => {
-                warn!(error = %e, "MCP registry connect failed");
-                tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(Duration::from_millis(backoff_ms)) => {}
-                }
-                backoff_ms = (backoff_ms * 2).min(10_000);
-                continue;
-            }
-        };
-        backoff_ms = config.sms_connect_retry_ms.max(200);
+        let mut client = McpRegistryServiceClient::new(channel.clone());
 
-        match refresh_once(&mut client, &cache).await {
+        match refresh_once(&config, &mut client, &cache).await {
             Ok(r) => {
                 revision = Some(r);
                 debug!(revision, "MCP registry snapshot refreshed");
+                backoff_ms = config.sms_connect_retry_ms.max(200);
             }
             Err(e) => {
                 warn!(error = %e, "MCP registry list failed");
@@ -192,19 +194,29 @@ async fn sync_loop(
                     _ = cancel.cancelled() => return,
                     _ = tokio::time::sleep(Duration::from_millis(backoff_ms)) => {}
                 }
+                backoff_ms = (backoff_ms * 2).min(10_000);
                 continue;
             }
         }
 
-        let mut watch_stream = match client
-            .watch_mcp_servers(WatchMcpServersRequest {
+        let per_attempt = Duration::from_millis(config.sms_connect_timeout_ms)
+            .min(Duration::from_secs(5))
+            .max(Duration::from_millis(1));
+        let mut watch_stream = match tokio::time::timeout(
+            per_attempt,
+            client.watch_mcp_servers(WatchMcpServersRequest {
                 since_revision: revision.unwrap_or(0),
-            })
-            .await
+            }),
+        )
+        .await
         {
-            Ok(r) => r.into_inner(),
-            Err(e) => {
+            Ok(Ok(r)) => r.into_inner(),
+            Ok(Err(e)) => {
                 warn!(error = %e, "MCP registry watch start failed");
+                continue;
+            }
+            Err(_) => {
+                warn!("MCP registry watch start timeout");
                 continue;
             }
         };
@@ -213,7 +225,7 @@ async fn sync_loop(
             tokio::select! {
                 _ = cancel.cancelled() => return,
                 _ = poll.tick() => {
-                    if let Ok(r) = refresh_once(&mut client, &cache).await {
+                    if let Ok(r) = refresh_once(&config, &mut client, &cache).await {
                         revision = Some(r);
                     }
                 }
@@ -222,7 +234,7 @@ async fn sync_loop(
                         Ok(Some(resp)) => {
                             if let Some(event) = resp.event {
                                 if event.revision > revision.unwrap_or(0) {
-                                    if let Ok(r) = refresh_once(&mut client, &cache).await {
+                                    if let Ok(r) = refresh_once(&config, &mut client, &cache).await {
                                         revision = Some(r);
                                     }
                                 }

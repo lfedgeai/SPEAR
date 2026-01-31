@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio_stream::Stream;
+use tonic::transport::Channel;
 use tonic::{Request, Response, Status};
 use tracing::debug;
 use uuid::Uuid;
@@ -97,7 +98,10 @@ pub struct FunctionServiceImpl {
 
 impl FunctionServiceImpl {
     /// Create new function service / 创建新的函数服务
-    pub async fn new(config: Arc<SpearletConfig>) -> Result<Self, ExecutionError> {
+    pub async fn new(
+        config: Arc<SpearletConfig>,
+        sms_channel: Option<Channel>,
+    ) -> Result<Self, ExecutionError> {
         let mut rm = RuntimeManager::new();
         let global_environment = collect_llm_global_environment(&config);
         let default_configs: Vec<RuntimeConfig> = RuntimeFactory::available_runtimes()
@@ -116,7 +120,8 @@ impl FunctionServiceImpl {
         // Create execution manager / 创建执行管理器
         let manager_config = TaskExecutionManagerConfig::default();
         let execution_manager =
-            TaskExecutionManager::new(manager_config, runtime_manager, config.clone()).await?;
+            TaskExecutionManager::new(manager_config, runtime_manager, config.clone(), sms_channel)
+                .await?;
 
         // Create instance pool / 创建实例池
         let pool_config = InstancePoolConfig::default();
@@ -588,9 +593,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_function_service_initializes_runtimes() {
-        let svc = FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default()))
-            .await
-            .unwrap();
+        let svc =
+            FunctionServiceImpl::new(Arc::new(crate::spearlet::SpearletConfig::default()), None)
+                .await
+                .unwrap();
         let mgr = svc.get_execution_manager();
         let types = mgr.list_runtime_types();
         assert!(types.contains(&crate::spearlet::execution::RuntimeType::Process));

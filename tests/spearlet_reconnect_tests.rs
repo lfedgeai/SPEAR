@@ -2,6 +2,7 @@ use spear_next::proto::sms::node_service_server::NodeServiceServer;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::spearlet::config::SpearletConfig;
 use spear_next::spearlet::registration::RegistrationService;
+use spear_next::spearlet::sms_connector::sms_channel_lazy;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::time::{sleep, timeout, Duration};
@@ -74,7 +75,7 @@ fn make_spearlet_config(sms_grpc_addr: String) -> Arc<SpearletConfig> {
 async fn test_attempt_reconnect_and_register() {
     let (_h, sms_grpc_addr) = start_sms_server(None).await;
     let cfg = make_spearlet_config(sms_grpc_addr);
-    let svc = RegistrationService::new(cfg.clone());
+    let svc = RegistrationService::new(cfg.clone(), sms_channel_lazy(&cfg).ok());
     svc.start().await.unwrap();
     assert!(wait_registered(&svc, 1200).await);
 }
@@ -83,7 +84,7 @@ async fn test_attempt_reconnect_and_register() {
 async fn test_reconnect_after_server_restart() {
     let (h1, sms_grpc_addr) = start_sms_server(None).await;
     let cfg = make_spearlet_config(sms_grpc_addr.clone());
-    let svc = RegistrationService::new(cfg.clone());
+    let svc = RegistrationService::new(cfg.clone(), sms_channel_lazy(&cfg).ok());
     svc.start().await.unwrap();
     assert!(wait_registered(&svc, 1200).await);
 

@@ -703,9 +703,9 @@ impl DefaultHostApi {
                 .budgets
                 .as_ref()
                 .map(|b| b.tool_timeout_ms)
-                .unwrap_or(8000)
+                .unwrap_or(12000)
                 .max(100)
-                .min(120_000);
+                .min(180_000);
             let tools_res = self.block_on(async {
                 tokio::time::timeout(
                     Duration::from_millis(timeout_ms),

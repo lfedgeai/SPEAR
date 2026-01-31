@@ -20,7 +20,7 @@ async fn start_test_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let addr = listener.local_addr().unwrap();
 
     let svc = Arc::new(
-        FunctionServiceImpl::new(Arc::new(SpearletConfig::default()))
+        FunctionServiceImpl::new(Arc::new(SpearletConfig::default()), None)
             .await
             .unwrap(),
     );

@@ -18,11 +18,12 @@
 当前 Spearlet 在 ChatCompletion 发送前会执行 MCP tools 注入，核心逻辑在：
 
 - 注入：[`src/spearlet/execution/host_api/cchat.rs`](../src/spearlet/execution/host_api/cchat.rs)
-  - `cchat_inject_mcp_tools`：读取 `snapshot.params`，解析会话 MCP 策略，然后对指定 server 执行 `tools/list` 并注入工具
-- 会话策略解析：[`src/spearlet/mcp/policy.rs`](../src/spearlet/mcp/policy.rs)
-  - `session_policy_from_params`：解析 `mcp.enabled` / `mcp.server_ids` / `mcp.tool_allowlist` / `mcp.tool_denylist`
+  - `cchat_inject_mcp_tools`：读取 `snapshot.mcp`（内存中的 `McpSessionParams`），对指定 server 执行 `tools/list` 并注入工具
+- 策略与路由辅助：[`src/spearlet/mcp/policy.rs`](../src/spearlet/mcp/policy.rs)
+  - `filter_and_namespace_openai_tools`：按 allow/deny 过滤并生成带命名空间的 OpenAI tool 定义
+  - `parse_namespaced_mcp_tool_name`：将 tool call 反解析为 `(server_id, tool_name)`（兼容 `mcp__...__...` 与 `mcp.<server_id>.<tool_name>`）
 
-这意味着：**subset 选择已经天然支持**，只缺一个“把 task 意图写入 `snapshot.params`”的控制面到数据面的衔接。
+这意味着：**subset 选择已经天然支持**，只缺一个“把 task 意图写入 chat session 的 `McpSessionParams`”的控制面到数据面的衔接。
 
 ### 当前实现范围（重要）
 
@@ -67,7 +68,7 @@
 2. **分层收敛**：每一层只能进一步缩小权限集合，不能放大。
 3. **稳定命名空间**：对外暴露的 tool 名带命名空间，便于审计与避免冲突（你们已有 `mcp__...__...` 方案）。
 4. **可观测**：注入/执行需要暴露指标与日志，包含 server 维度的失败原因。
-5. **最小改动落地**：优先复用当前 `snapshot.params` 路径。
+5. **最小改动落地**：优先复用现有 `cchat_create` + `cchat_ctl_set_param` 的路径。
 
 ## 核心方案：三层策略 + 子集合成算法
 
@@ -170,21 +171,18 @@ UI 建议映射（便于治理）：
 
 #### Phase A 的关键改造点（与现有代码对齐）
 
-现有注入逻辑依赖 `ChatSessionState.params`（`snapshot.params`），写入入口是 `cchat_ctl_set_param`。Phase A 需要补齐“自动写入默认 params”的路径：
+现有注入逻辑依赖 `ChatSessionState.mcp`（`snapshot.mcp`），写入入口是 `cchat_ctl_set_param`。Phase A 需要补齐“自动写入默认值”的路径：
 
-- 在“创建 chat session 并开始发送消息”之前，将 task.config 中的 MCP 策略写入 `ChatSessionState.params`
-- 覆盖规则：会话侧显式参数优先（但必须经过 task_allowed 校验）
+- 在创建 chat session 时，根据 task.config 计算缺省的 `McpSessionParams` 并写入 session state
+- 覆盖规则：会话侧显式参数优先（但必须经过 task allowed 校验，且只能收窄不能扩大）
 
 落地点（示例）：
 
 - 在创建 WASM import/host API 时，将 task.config 解析为结构化 `McpTaskPolicy` 并绑定到 host API（task 级上下文）。
-- 在 `cchat_create` 时自动写入缺省会话参数：
-  - `mcp.enabled`
-  - `mcp.server_ids`（= task default subset）
-  - `mcp.task_tool_allowlist` / `mcp.task_tool_denylist`（如配置）
-- 在 `cchat_ctl_set_param` 时对 `mcp.enabled` / `mcp.server_ids` 做越权校验（不可超出 task allowed）。
+- 在 `cchat_create` 时通过 `cchat_apply_task_mcp_defaults` 自动写入缺省值（包括 task tool allow/deny）。
+- 在 `cchat_ctl_set_param` 时对 `mcp.enabled` / `mcp.server_ids` 做越权校验（不可超出 task allowed），并禁止写入 `mcp.task_*` key。
 
-注：具体“哪里创建 chat session”取决于 wasm/hostcall 的路径；该文档先定义接口与行为，落地时选择最接近 `cchat_create` 的统一入口最合适。
+注：task config 的解析逻辑在 [`src/spearlet/mcp/task_subset.rs`](../src/spearlet/mcp/task_subset.rs)，越权校验与默认应用在 [`src/spearlet/execution/host_api/cchat.rs`](../src/spearlet/execution/host_api/cchat.rs)。
 
 ### Phase B：引入 Profiles/Bundles 与 server tags
 

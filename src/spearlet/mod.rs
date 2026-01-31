@@ -38,6 +38,7 @@ pub mod object_service;
 pub mod ollama_discovery;
 pub mod param_keys;
 pub mod registration;
+pub mod sms_connector;
 pub mod task_events;
 
 #[cfg(test)]

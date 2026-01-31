@@ -1,9 +1,0 @@
-include "common.fbs";
-
-namespace spear.proto.speech;
-
-table ASRResponse {
-    text: string;
-}
-
-root_type ASRResponse;

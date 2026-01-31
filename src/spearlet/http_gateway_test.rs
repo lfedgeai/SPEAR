@@ -9,6 +9,7 @@ use axum::{
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tonic::transport::Channel;
 use tower::ServiceExt;
 
 use crate::config::base::ServerConfig;
@@ -44,17 +45,45 @@ fn create_test_config() -> SpearletConfig {
     }
 }
 
+fn create_dummy_grpc_clients(
+    addr: std::net::SocketAddr,
+) -> (
+    crate::proto::spearlet::object_service_client::ObjectServiceClient<Channel>,
+    crate::proto::spearlet::invocation_service_client::InvocationServiceClient<Channel>,
+    crate::proto::spearlet::execution_service_client::ExecutionServiceClient<Channel>,
+) {
+    let channel = Channel::from_shared(format!("http://{}", addr))
+        .unwrap()
+        .connect_lazy();
+    (
+        crate::proto::spearlet::object_service_client::ObjectServiceClient::new(channel.clone()),
+        crate::proto::spearlet::invocation_service_client::InvocationServiceClient::new(
+            channel.clone(),
+        ),
+        crate::proto::spearlet::execution_service_client::ExecutionServiceClient::new(channel),
+    )
+}
+
 /// Create test HTTP gateway / 创建测试HTTP网关
 async fn create_test_gateway() -> HttpGateway {
     let config = Arc::new(create_test_config());
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let function_service = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
-    let health_service = Arc::new(HealthService::new(object_service, function_service));
-    HttpGateway::new(config, health_service)
+    let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+    let (object_client, invocation_client, execution_client) =
+        create_dummy_grpc_clients(config.grpc.addr);
+    HttpGateway::new(
+        config,
+        health_service,
+        function_service,
+        object_client,
+        invocation_client,
+        execution_client,
+    )
 }
 
 #[tokio::test]
@@ -76,12 +105,22 @@ async fn test_gateway_config() {
 
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let function_service = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
-    let health_service = Arc::new(HealthService::new(object_service, function_service));
-    let gateway = HttpGateway::new(Arc::new(config), health_service);
+    let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+    let config = Arc::new(config);
+    let (object_client, invocation_client, execution_client) =
+        create_dummy_grpc_clients(config.grpc.addr);
+    let gateway = HttpGateway::new(
+        config,
+        health_service,
+        function_service,
+        object_client,
+        invocation_client,
+        execution_client,
+    );
 
     // Gateway should be created with custom config / 网关应该使用自定义配置创建
 }
@@ -97,12 +136,22 @@ async fn test_gateway_with_different_storage_sizes() {
 
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(size));
         let function_service = Arc::new(
-            FunctionServiceImpl::new(Arc::new(create_test_config()))
+            FunctionServiceImpl::new(Arc::new(create_test_config()), None)
                 .await
                 .unwrap(),
         );
-        let health_service = Arc::new(HealthService::new(object_service, function_service));
-        let gateway = HttpGateway::new(Arc::new(config), health_service);
+        let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+        let config = Arc::new(config);
+        let (object_client, invocation_client, execution_client) =
+            create_dummy_grpc_clients(config.grpc.addr);
+        let gateway = HttpGateway::new(
+            config,
+            health_service,
+            function_service,
+            object_client,
+            invocation_client,
+            execution_client,
+        );
 
         // Gateway should be created with different storage sizes / 网关应该使用不同存储大小创建
     }
@@ -116,12 +165,22 @@ async fn test_gateway_swagger_enabled() {
 
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let function_service = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
-    let health_service = Arc::new(HealthService::new(object_service, function_service));
-    let gateway = HttpGateway::new(Arc::new(config), health_service);
+    let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+    let config = Arc::new(config);
+    let (object_client, invocation_client, execution_client) =
+        create_dummy_grpc_clients(config.grpc.addr);
+    let gateway = HttpGateway::new(
+        config,
+        health_service,
+        function_service,
+        object_client,
+        invocation_client,
+        execution_client,
+    );
 
     // Gateway should be created with Swagger enabled / 网关应该启用Swagger创建
 }
@@ -134,12 +193,22 @@ async fn test_gateway_swagger_disabled() {
 
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let function_service = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
-    let health_service = Arc::new(HealthService::new(object_service, function_service));
-    let gateway = HttpGateway::new(Arc::new(config), health_service);
+    let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+    let config = Arc::new(config);
+    let (object_client, invocation_client, execution_client) =
+        create_dummy_grpc_clients(config.grpc.addr);
+    let gateway = HttpGateway::new(
+        config,
+        health_service,
+        function_service,
+        object_client,
+        invocation_client,
+        execution_client,
+    );
 
     // Gateway should be created with Swagger disabled / 网关应该禁用Swagger创建
 }
@@ -152,12 +221,22 @@ async fn test_invalid_http_address() {
 
     let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
     let function_service = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
-    let health_service = Arc::new(HealthService::new(object_service, function_service));
-    let gateway = HttpGateway::new(Arc::new(config), health_service);
+    let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+    let config = Arc::new(config);
+    let (object_client, invocation_client, execution_client) =
+        create_dummy_grpc_clients(config.grpc.addr);
+    let gateway = HttpGateway::new(
+        config,
+        health_service,
+        function_service,
+        object_client,
+        invocation_client,
+        execution_client,
+    );
 
     // Gateway creation should succeed, but start() would fail
     // 网关创建应该成功，但start()会失败
@@ -175,21 +254,45 @@ async fn test_multiple_gateways() {
     let object_service2 = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
 
     let function_service1 = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
     let function_service2 = Arc::new(
-        FunctionServiceImpl::new(Arc::new(create_test_config()))
+        FunctionServiceImpl::new(Arc::new(create_test_config()), None)
             .await
             .unwrap(),
     );
 
-    let health_service1 = Arc::new(HealthService::new(object_service1, function_service1));
-    let health_service2 = Arc::new(HealthService::new(object_service2, function_service2));
+    let health_service1 = Arc::new(HealthService::new(
+        object_service1,
+        function_service1.clone(),
+    ));
+    let health_service2 = Arc::new(HealthService::new(
+        object_service2,
+        function_service2.clone(),
+    ));
 
-    let gateway1 = HttpGateway::new(config1, health_service1);
-    let gateway2 = HttpGateway::new(config2, health_service2);
+    let (object_client1, invocation_client1, execution_client1) =
+        create_dummy_grpc_clients(config1.grpc.addr);
+    let (object_client2, invocation_client2, execution_client2) =
+        create_dummy_grpc_clients(config2.grpc.addr);
+    let gateway1 = HttpGateway::new(
+        config1,
+        health_service1,
+        function_service1,
+        object_client1,
+        invocation_client1,
+        execution_client1,
+    );
+    let gateway2 = HttpGateway::new(
+        config2,
+        health_service2,
+        function_service2,
+        object_client2,
+        invocation_client2,
+        execution_client2,
+    );
 
     // Both gateways should be created successfully / 两个网关都应该成功创建
 }
@@ -304,381 +407,283 @@ mod request_body_tests {
 #[cfg(test)]
 mod new_endpoints_tests {
     use super::*;
-    use axum::body::to_bytes;
-    use axum::{
-        body::Body,
-        extract::Path,
-        http::{Method, Request, StatusCode},
-        routing::{get, post},
-    };
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Method, Request, StatusCode};
+    use base64::{engine::general_purpose, Engine as _};
+    use futures::Stream;
+    use std::pin::Pin;
+    use tonic::transport::{Endpoint, Server};
+    use tonic::{Request as TonicRequest, Response as TonicResponse, Status};
     use tower::ServiceExt;
 
-    /// Create test router for endpoint testing / 创建用于端点测试的测试路由器
-    async fn create_test_router() -> Router {
-        let gateway = create_test_gateway().await;
+    use crate::proto::spearlet::execution_service_server::{
+        ExecutionService, ExecutionServiceServer,
+    };
+    use crate::proto::spearlet::invocation_service_server::{
+        InvocationService, InvocationServiceServer,
+    };
+    use crate::proto::spearlet::{
+        CancelExecutionRequest, CancelExecutionResponse, ConsoleClientMessage,
+        ConsoleServerMessage, Execution, ExecutionStatus, GetExecutionRequest, InvokeRequest,
+        InvokeResponse, InvokeStreamChunk, ListExecutionsRequest, ListExecutionsResponse, Payload,
+    };
+    use crate::spearlet::execution::artifact::{InvocationType, ResourceLimits};
+    use crate::spearlet::execution::task::{
+        HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig,
+    };
+    use crate::spearlet::execution::RuntimeType;
 
-        // Create a simple test router with the endpoints we want to test
-        // 创建一个简单的测试路由器，包含我们要测试的端点
-        // Note: This is a simplified approach for testing the endpoint handlers
-        // 注意：这是测试端点处理程序的简化方法
-        Router::new()
-            .route(
-                "/functions/execute",
-                post(|_body: axum::extract::Json<serde_json::Value>| async {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "success": true,
-                        "message": "Function execution endpoint - Test response",
-                        "execution_id": "test-execution-123"
-                    })))
-                }),
+    async fn create_router_for_task_monitoring() -> Router {
+        let config = Arc::new(create_test_config());
+        let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
+        let function_service = Arc::new(
+            FunctionServiceImpl::new(config.clone(), None)
+                .await
+                .unwrap(),
+        );
+        let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+
+        let mgr = function_service.get_execution_manager();
+        let artifact = mgr
+            .ensure_artifact_with_id(
+                "artifact-1".to_string(),
+                crate::spearlet::execution::artifact::ArtifactSpec {
+                    name: "a1".to_string(),
+                    version: "v1".to_string(),
+                    description: None,
+                    runtime_type: RuntimeType::Process,
+                    runtime_config: HashMap::new(),
+                    location: None,
+                    checksum_sha256: None,
+                    environment: HashMap::new(),
+                    resource_limits: ResourceLimits::default(),
+                    invocation_type: InvocationType::ExistingTask,
+                    max_execution_timeout_ms: 30_000,
+                    labels: HashMap::new(),
+                },
             )
-            .route(
-                "/functions/executions/{execution_id}",
-                get(|Path(execution_id): Path<String>| async move {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "execution_id": execution_id,
-                        "status": "pending",
-                        "message": "Execution status endpoint - Test response"
-                    })))
+            .unwrap();
+
+        let task_spec = TaskSpec {
+            name: "fn1".to_string(),
+            task_type: TaskType::HttpHandler,
+            runtime_type: RuntimeType::Process,
+            entry_point: "main".to_string(),
+            handler_config: HashMap::new(),
+            task_config: HashMap::new(),
+            environment: HashMap::new(),
+            invocation_type: InvocationType::ExistingTask,
+            min_instances: 0,
+            max_instances: 1,
+            target_concurrency: 1,
+            scaling_config: ScalingConfig::default(),
+            health_check: HealthCheckConfig::default(),
+            timeout_config: TimeoutConfig::default(),
+        };
+
+        let _ = mgr
+            .ensure_task_with_id("task-1".to_string(), &artifact, task_spec)
+            .unwrap();
+
+        let channel = Endpoint::from_static("http://127.0.0.1:50051").connect_lazy();
+        let state = crate::spearlet::http_gateway::new_app_state(
+            crate::proto::spearlet::object_service_client::ObjectServiceClient::new(
+                channel.clone(),
+            ),
+            crate::proto::spearlet::invocation_service_client::InvocationServiceClient::new(
+                channel.clone(),
+            ),
+            crate::proto::spearlet::execution_service_client::ExecutionServiceClient::new(channel),
+            health_service,
+            function_service,
+            config,
+        );
+        crate::spearlet::http_gateway::build_router(state, true)
+    }
+
+    #[derive(Clone)]
+    struct FakeFunctionGrpc;
+
+    #[tonic::async_trait]
+    impl InvocationService for FakeFunctionGrpc {
+        async fn invoke(
+            &self,
+            request: TonicRequest<InvokeRequest>,
+        ) -> Result<TonicResponse<InvokeResponse>, Status> {
+            let req = request.into_inner();
+            Ok(TonicResponse::new(InvokeResponse {
+                invocation_id: if req.invocation_id.is_empty() {
+                    "inv-1".to_string()
+                } else {
+                    req.invocation_id
+                },
+                execution_id: if req.execution_id.is_empty() {
+                    "exec-1".to_string()
+                } else {
+                    req.execution_id
+                },
+                instance_id: "inst-1".to_string(),
+                status: ExecutionStatus::Completed as i32,
+                output: Some(Payload {
+                    content_type: "application/octet-stream".to_string(),
+                    data: b"ok".to_vec(),
                 }),
-            )
-            .route(
-                "/functions/executions/{execution_id}/cancel",
-                post(|Path(execution_id): Path<String>| async move {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "success": true,
-                        "execution_id": execution_id,
-                        "message": "Execution cancellation endpoint - Test response"
-                    })))
+                error: None,
+                started_at: None,
+                completed_at: None,
+            }))
+        }
+
+        type InvokeStreamStream =
+            Pin<Box<dyn Stream<Item = Result<InvokeStreamChunk, Status>> + Send>>;
+
+        async fn invoke_stream(
+            &self,
+            _request: TonicRequest<InvokeRequest>,
+        ) -> Result<TonicResponse<Self::InvokeStreamStream>, Status> {
+            Err(Status::unimplemented(
+                "invoke_stream not implemented in test",
+            ))
+        }
+
+        type OpenConsoleStream =
+            Pin<Box<dyn Stream<Item = Result<ConsoleServerMessage, Status>> + Send>>;
+
+        async fn open_console(
+            &self,
+            _request: TonicRequest<tonic::Streaming<ConsoleClientMessage>>,
+        ) -> Result<TonicResponse<Self::OpenConsoleStream>, Status> {
+            Err(Status::unimplemented(
+                "open_console not implemented in test",
+            ))
+        }
+    }
+
+    #[tonic::async_trait]
+    impl ExecutionService for FakeFunctionGrpc {
+        async fn get_execution(
+            &self,
+            request: TonicRequest<GetExecutionRequest>,
+        ) -> Result<TonicResponse<Execution>, Status> {
+            let req = request.into_inner();
+            if req.execution_id == "missing" {
+                return Err(Status::not_found("execution not found"));
+            }
+            Ok(TonicResponse::new(Execution {
+                invocation_id: "inv-1".to_string(),
+                execution_id: req.execution_id,
+                task_id: "task-1".to_string(),
+                function_name: "fn1".to_string(),
+                instance_id: "inst-1".to_string(),
+                status: ExecutionStatus::Running as i32,
+                output: Some(Payload {
+                    content_type: "application/octet-stream".to_string(),
+                    data: if req.include_output {
+                        b"out".to_vec()
+                    } else {
+                        Vec::new()
+                    },
                 }),
-            )
-            .route(
-                "/tasks",
-                get(|| async {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "tasks": [],
-                        "has_more": false,
-                        "message": "Task listing endpoint - Test response"
-                    })))
-                }),
-            )
-            .route(
-                "/tasks/{task_id}",
-                get(|Path(task_id): Path<String>| async move {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "task_id": task_id,
-                        "name": "example-task",
-                        "status": "active",
-                        "message": "Task details endpoint - Test response"
-                    })))
-                }),
-            )
-            .route(
-                "/tasks/{task_id}/executions",
-                get(|Path(task_id): Path<String>| async move {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "task_id": task_id,
-                        "executions": [],
-                        "message": "Task executions endpoint - Test response"
-                    })))
-                }),
-            )
-            .route(
-                "/monitoring/stats",
-                get(|| async {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "total_executions": 0,
-                        "successful_executions": 0,
-                        "failed_executions": 0,
-                        "active_executions": 0,
-                        "message": "Statistics endpoint - Test response"
-                    })))
-                }),
-            )
-            .route(
-                "/monitoring/health",
-                get(|| async {
-                    Ok::<_, StatusCode>(axum::Json(serde_json::json!({
-                        "status": "healthy",
-                        "timestamp": chrono::Utc::now().to_rfc3339(),
-                        "message": "Health status endpoint - Test response"
-                    })))
-                }),
-            )
+                error: None,
+                started_at: None,
+                completed_at: None,
+            }))
+        }
+
+        async fn cancel_execution(
+            &self,
+            request: TonicRequest<CancelExecutionRequest>,
+        ) -> Result<TonicResponse<CancelExecutionResponse>, Status> {
+            let req = request.into_inner();
+            Ok(TonicResponse::new(CancelExecutionResponse {
+                success: true,
+                final_status: ExecutionStatus::Cancelled as i32,
+                message: format!("cancelled {}", req.execution_id),
+            }))
+        }
+
+        async fn list_executions(
+            &self,
+            _request: TonicRequest<ListExecutionsRequest>,
+        ) -> Result<TonicResponse<ListExecutionsResponse>, Status> {
+            Ok(TonicResponse::new(ListExecutionsResponse {
+                executions: Vec::new(),
+                next_page_token: String::new(),
+            }))
+        }
+    }
+
+    async fn create_router_with_fake_grpc() -> Router {
+        let config = Arc::new(create_test_config());
+        let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
+        let function_service = Arc::new(
+            FunctionServiceImpl::new(config.clone(), None)
+                .await
+                .unwrap(),
+        );
+        let health_service = Arc::new(HealthService::new(object_service, function_service.clone()));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(InvocationServiceServer::new(FakeFunctionGrpc))
+                .add_service(ExecutionServiceServer::new(FakeFunctionGrpc))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+
+        let channel = Endpoint::from_shared(format!("http://{}", addr))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+
+        let state = crate::spearlet::http_gateway::new_app_state(
+            crate::proto::spearlet::object_service_client::ObjectServiceClient::new(
+                channel.clone(),
+            ),
+            crate::proto::spearlet::invocation_service_client::InvocationServiceClient::new(
+                channel.clone(),
+            ),
+            crate::proto::spearlet::execution_service_client::ExecutionServiceClient::new(channel),
+            health_service,
+            function_service,
+            config,
+        );
+        crate::spearlet::http_gateway::build_router(state, true)
     }
 
     #[tokio::test]
-    async fn test_execute_function_endpoint() {
-        // Test function execution endpoint / 测试函数执行端点
-        let router = create_test_router().await;
+    async fn test_execute_function_endpoint_success() {
+        let router = create_router_with_fake_grpc().await;
 
         let request = Request::builder()
             .method(Method::POST)
             .uri("/functions/execute")
             .header("Content-Type", "application/json")
-            .body(Body::from(r#"{"function_name":"test","parameters":{}}"#))
+            .body(Body::from(
+                r#"{"task_id":"task-1","mode":"sync","input_base64":"aGVsbG8="}"#,
+            ))
             .unwrap();
 
         let response = router.oneshot(request).await.unwrap();
-
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
-
         assert!(json["success"].as_bool().unwrap());
-        assert!(json["execution_id"].is_string());
-        assert!(json["message"].is_string());
+        assert_eq!(json["status"], "COMPLETED");
+        assert_eq!(
+            json["output_base64"],
+            general_purpose::STANDARD.encode(b"ok")
+        );
     }
 
     #[tokio::test]
-    async fn test_get_execution_status_endpoint() {
-        // Test execution status endpoint / 测试执行状态端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/functions/executions/test-execution-123")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(json["execution_id"], "test-execution-123");
-        assert_eq!(json["status"], "pending");
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_cancel_execution_endpoint() {
-        // Test execution cancellation endpoint / 测试执行取消端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::POST)
-            .uri("/functions/executions/test-execution-123/cancel")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert!(json["success"].as_bool().unwrap());
-        assert_eq!(json["execution_id"], "test-execution-123");
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_list_tasks_endpoint() {
-        // Test task listing endpoint / 测试任务列表端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/tasks")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert!(json["tasks"].is_array());
-        assert!(!json["has_more"].as_bool().unwrap());
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_get_task_endpoint() {
-        // Test task details endpoint / 测试任务详情端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/tasks/test-task-456")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(json["task_id"], "test-task-456");
-        assert_eq!(json["name"], "example-task");
-        assert_eq!(json["status"], "active");
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_get_task_executions_endpoint() {
-        // Test task executions endpoint / 测试任务执行记录端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/tasks/test-task-456/executions")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(json["task_id"], "test-task-456");
-        assert!(json["executions"].is_array());
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_get_stats_endpoint() {
-        // Test statistics endpoint / 测试统计信息端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/monitoring/stats")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(json["total_executions"], 0);
-        assert_eq!(json["successful_executions"], 0);
-        assert_eq!(json["failed_executions"], 0);
-        assert_eq!(json["active_executions"], 0);
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_get_health_status_endpoint() {
-        // Test health status endpoint / 测试健康状态端点
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/monitoring/health")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(json["status"], "healthy");
-        assert!(json["timestamp"].is_string());
-        assert!(json["message"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_invalid_execution_id_format() {
-        // Test invalid execution ID format / 测试无效的执行ID格式
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/functions/executions/invalid@id")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        // Should still return 200 with placeholder response
-        // 应该仍然返回200和占位符响应
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn test_invalid_task_id_format() {
-        // Test invalid task ID format / 测试无效的任务ID格式
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/tasks/invalid@task")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        // Should still return 200 with placeholder response
-        // 应该仍然返回200和占位符响应
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn test_query_parameters_for_task_listing() {
-        // Test query parameters for task listing / 测试任务列表的查询参数
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/tasks?limit=10&offset=5")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert!(json["tasks"].is_array());
-        assert!(!json["has_more"].as_bool().unwrap());
-    }
-
-    #[tokio::test]
-    async fn test_query_parameters_for_task_executions() {
-        // Test query parameters for task executions / 测试任务执行记录的查询参数
-        let router = create_test_router().await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/tasks/test-task-456/executions?limit=20&offset=0")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(json["task_id"], "test-task-456");
-        assert!(json["executions"].is_array());
-    }
-
-    #[tokio::test]
-    async fn test_function_execution_with_invalid_json() {
-        // Test function execution with invalid JSON / 测试使用无效JSON的函数执行
-        let router = create_test_router().await;
+    async fn test_execute_function_endpoint_invalid_json() {
+        let router = create_router_with_fake_grpc().await;
 
         let request = Request::builder()
             .method(Method::POST)
@@ -688,29 +693,172 @@ mod new_endpoints_tests {
             .unwrap();
 
         let response = router.oneshot(request).await.unwrap();
-
-        // Should return 400 Bad Request for invalid JSON
-        // 对于无效JSON应该返回400 Bad Request
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
-    async fn test_function_execution_with_missing_fields() {
-        // Test function execution with missing required fields / 测试缺少必需字段的函数执行
-        let router = create_test_router().await;
+    async fn test_execute_function_endpoint_missing_task_id() {
+        let router = create_router_with_fake_grpc().await;
 
         let request = Request::builder()
             .method(Method::POST)
             .uri("/functions/execute")
             .header("Content-Type", "application/json")
-            .body(Body::from(r#"{"optional_field":"value"}"#))
+            .body(Body::from(r#"{"mode":"sync"}"#))
             .unwrap();
 
         let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 
-        // Should still return 200 with placeholder response
-        // 应该仍然返回200和占位符响应
+    #[tokio::test]
+    async fn test_get_execution_status_endpoint_success() {
+        let router = create_router_with_fake_grpc().await;
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/functions/executions/exec-123?include_output=true")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["execution_id"], "exec-123");
+        assert_eq!(json["status"], "RUNNING");
+        assert_eq!(
+            json["output_base64"],
+            general_purpose::STANDARD.encode(b"out")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_execution_status_endpoint_not_found() {
+        let router = create_router_with_fake_grpc().await;
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/functions/executions/missing")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_execution_endpoint_success() {
+        let router = create_router_with_fake_grpc().await;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/functions/executions/exec-123/cancel")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"reason":"test"}"#))
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["success"].as_bool().unwrap());
+        assert_eq!(json["final_status"], "CANCELLED");
+    }
+
+    #[tokio::test]
+    async fn test_list_tasks_endpoint_includes_created_task() {
+        let router = create_router_for_task_monitoring().await;
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/tasks")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["task_id"] == "task-1"));
+        assert_eq!(json["total"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_task_endpoint_not_found() {
+        let router = create_router_for_task_monitoring().await;
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/tasks/does-not-exist")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_get_task_executions_endpoint_empty() {
+        let router = create_router_for_task_monitoring().await;
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/tasks/task-1/executions")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["task_id"], "task-1");
+        assert!(json["executions"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_stats_and_health_endpoints() {
+        let router = create_router_for_task_monitoring().await;
+
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/monitoring/stats")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["task_count"], 1);
+
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/monitoring/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["timestamp"].is_string());
+        assert_eq!(json["details"]["task_count"], 1);
     }
 }
 
@@ -724,14 +872,26 @@ mod integration_tests {
         let config = Arc::new(create_test_config());
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
         let function_service = Arc::new(
-            FunctionServiceImpl::new(Arc::new(create_test_config()))
+            FunctionServiceImpl::new(Arc::new(create_test_config()), None)
                 .await
                 .unwrap(),
         );
-        let health_service = Arc::new(HealthService::new(object_service.clone(), function_service));
+        let health_service = Arc::new(HealthService::new(
+            object_service.clone(),
+            function_service.clone(),
+        ));
 
         // Create gateway / 创建网关
-        let gateway = HttpGateway::new(config.clone(), health_service.clone());
+        let (object_client, invocation_client, execution_client) =
+            create_dummy_grpc_clients(config.grpc.addr);
+        let gateway = HttpGateway::new(
+            config.clone(),
+            health_service.clone(),
+            function_service,
+            object_client,
+            invocation_client,
+            execution_client,
+        );
 
         // Verify initial state / 验证初始状态
         let stats = object_service.get_stats().await;
@@ -803,12 +963,23 @@ mod integration_tests {
                 config.storage.max_object_size,
             ));
             let function_service = Arc::new(
-                FunctionServiceImpl::new(Arc::new(create_test_config()))
+                FunctionServiceImpl::new(Arc::new(create_test_config()), None)
                     .await
                     .unwrap(),
             );
-            let health_service = Arc::new(HealthService::new(object_service, function_service));
-            let gateway = HttpGateway::new(Arc::new(config), health_service);
+            let health_service =
+                Arc::new(HealthService::new(object_service, function_service.clone()));
+            let config = Arc::new(config);
+            let (object_client, invocation_client, execution_client) =
+                create_dummy_grpc_clients(config.grpc.addr);
+            let gateway = HttpGateway::new(
+                config,
+                health_service,
+                function_service,
+                object_client,
+                invocation_client,
+                execution_client,
+            );
 
             // Each gateway should be created successfully / 每个网关都应该成功创建
         }

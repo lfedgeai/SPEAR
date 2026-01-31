@@ -13,20 +13,20 @@ jobs:
         fetch-depth: 0 # 拉取完整提交历史
         fetch-tags: true # 关键：拉取所有标签
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23' # 请根据需要选择合适的 Go 版本
+    # - name: Set up Go
+    #   uses: actions/setup-go@v4
+    #   with:
+    #     go-version: '1.23' # 请根据需要选择合适的 Go 版本
 
-    - name: Install Flatbuffers
-      run: |
-        wget -q https://github.com/google/flatbuffers/releases/download/v24.12.23/Linux.flatc.binary.clang++-18.zip
-        unzip Linux.flatc.binary.clang++-18.zip
-        sudo cp flatc /usr/local/bin
-        rm flatc Linux.flatc.binary.clang++-18.zip
+    # - name: Install Flatbuffers
+    #   run: |
+    #     wget -q https://github.com/google/flatbuffers/releases/download/v24.12.23/Linux.flatc.binary.clang++-18.zip
+    #     unzip Linux.flatc.binary.clang++-18.zip
+    #     sudo cp flatc /usr/local/bin
+    #     rm flatc Linux.flatc.binary.clang++-18.zip
 
-    - name: Verify Go Version
-      run: go version
+    # - name: Verify Go Version
+    #   run: go version
 
     - name: Set up Python
       uses: actions/setup-python@v4

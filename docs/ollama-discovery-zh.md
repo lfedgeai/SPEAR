@@ -1,6 +1,6 @@
 # Ollama 模型自动导入（Discovery）
 
-本文档说明 SPEARlet 如何从 Ollama 自动导入模型并在 Web Admin 的 Backends 页面展示。
+本文档说明 SPEARlet 如何从 Ollama 自动导入模型，并在 Web Admin 的 AI Models（Local）页面展示。
 
 ## 背景
 
@@ -63,8 +63,8 @@ default_transports = ["http"]
 
 ## Web Admin 查看
 
-- Backends 页面会展示聚合后的 backends。
-- 点击某一行会弹出详情 Dialog，展示 Raw JSON（用于排查路由能力、节点分布等）。
+- AI Models（Local）页面会展示聚合后的模型（provider=ollama）。
+- 点击某一行进入详情页，可查看该模型在各节点上的实例分布与 Raw JSON（用于排查路由能力、节点分布等）。
 
 ## 常见问题
 
@@ -76,7 +76,7 @@ default_transports = ["http"]
 
 ### Web Admin 里显示 available，但调用失败
 
-Backends 可用性不做网络探测；需要检查：
+可用性不做网络探测；需要检查：
 
 - Ollama 是否在对应 `base_url` 监听
 - SPEARlet 进程是否可访问该地址

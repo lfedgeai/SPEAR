@@ -13,8 +13,10 @@ use crate::proto::sms::{
     execution_index_service_client::ExecutionIndexServiceClient,
     execution_registry_service_client::ExecutionRegistryServiceClient,
     instance_registry_service_client::InstanceRegistryServiceClient,
-    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
-    placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
+    mcp_registry_service_client::McpRegistryServiceClient,
+    model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use crate::sms::routes::create_routes;
@@ -33,7 +35,10 @@ fn create_mock_gateway_state() -> GatewayState {
         execution_registry_client: ExecutionRegistryServiceClient::new(channel.clone()),
         execution_index_client: ExecutionIndexServiceClient::new(channel.clone()),
         mcp_registry_client: McpRegistryServiceClient::new(channel.clone()),
-        backend_registry_client: BackendRegistryServiceClient::new(channel),
+        backend_registry_client: BackendRegistryServiceClient::new(channel.clone()),
+        model_deployment_registry_client: ModelDeploymentRegistryServiceClient::new(
+            channel.clone(),
+        ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     }

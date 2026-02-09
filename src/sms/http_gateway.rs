@@ -12,8 +12,10 @@ use crate::proto::sms::{
     execution_index_service_client::ExecutionIndexServiceClient,
     execution_registry_service_client::ExecutionRegistryServiceClient,
     instance_registry_service_client::InstanceRegistryServiceClient,
-    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
-    placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
+    mcp_registry_service_client::McpRegistryServiceClient,
+    model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -97,7 +99,9 @@ impl HttpGateway {
         let execution_registry_client = ExecutionRegistryServiceClient::new(channel.clone());
         let execution_index_client = ExecutionIndexServiceClient::new(channel.clone());
         let mcp_registry_client = McpRegistryServiceClient::new(channel.clone());
-        let backend_registry_client = BackendRegistryServiceClient::new(channel);
+        let backend_registry_client = BackendRegistryServiceClient::new(channel.clone());
+        let model_deployment_registry_client =
+            ModelDeploymentRegistryServiceClient::new(channel.clone());
 
         let state = GatewayState {
             node_client,
@@ -108,6 +112,7 @@ impl HttpGateway {
             execution_index_client,
             mcp_registry_client,
             backend_registry_client,
+            model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: self.max_upload_bytes,
         };

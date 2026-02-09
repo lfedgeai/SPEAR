@@ -9,22 +9,29 @@ use tracing::{debug, warn};
 
 use crate::proto::sms::backend_registry_service_client::BackendRegistryServiceClient;
 use crate::proto::sms::{
-    BackendInfo, BackendStatus, NodeBackendSnapshot, ReportNodeBackendsRequest,
+    BackendHosting, BackendInfo, BackendStatus, NodeBackendSnapshot, ReportNodeBackendsRequest,
 };
 use crate::spearlet::config::{LlmBackendConfig, SpearletConfig};
+use crate::spearlet::local_models::ManagedBackendRegistry;
 
 #[derive(Debug)]
 pub struct BackendReporterService {
     config: Arc<SpearletConfig>,
     sms_channel: Option<Channel>,
+    managed_backends: Option<ManagedBackendRegistry>,
     cancel: CancellationToken,
 }
 
 impl BackendReporterService {
-    pub fn new(config: Arc<SpearletConfig>, sms_channel: Option<Channel>) -> Self {
+    pub fn new(
+        config: Arc<SpearletConfig>,
+        sms_channel: Option<Channel>,
+        managed_backends: Option<ManagedBackendRegistry>,
+    ) -> Self {
         Self {
             config,
             sms_channel,
+            managed_backends,
             cancel: CancellationToken::new(),
         }
     }
@@ -36,10 +43,11 @@ impl BackendReporterService {
     pub fn start(&self) {
         let config = self.config.clone();
         let sms_channel = self.sms_channel.clone();
+        let managed_backends = self.managed_backends.clone();
         let cancel = self.cancel.clone();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                report_loop(config, sms_channel, cancel).await;
+                report_loop(config, sms_channel, managed_backends, cancel).await;
             });
             return;
         }
@@ -50,7 +58,7 @@ impl BackendReporterService {
                 .build();
             if let Ok(rt) = rt {
                 rt.block_on(async move {
-                    report_loop(config, sms_channel, cancel).await;
+                    report_loop(config, sms_channel, managed_backends, cancel).await;
                 });
             }
         });
@@ -59,6 +67,28 @@ impl BackendReporterService {
 
 fn backend_requires_api_key(kind: &str) -> bool {
     matches!(kind, "openai_chat_completion" | "openai_realtime_ws")
+}
+
+fn infer_provider(kind: &str) -> String {
+    match kind {
+        "openai_chat_completion" | "openai_realtime_ws" => "openai".to_string(),
+        "ollama_chat" => "ollama".to_string(),
+        "stub" => "internal".to_string(),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn infer_hosting(kind: &str, base_url: &str) -> i32 {
+    if matches!(kind, "ollama_chat" | "stub") {
+        return BackendHosting::NodeLocal as i32;
+    }
+    if kind.starts_with("openai_") {
+        return BackendHosting::Remote as i32;
+    }
+    if base_url.contains("127.0.0.1") || base_url.contains("localhost") {
+        return BackendHosting::NodeLocal as i32;
+    }
+    BackendHosting::Unspecified as i32
 }
 
 fn credential_env_map(cfg: &SpearletConfig) -> HashMap<String, String> {
@@ -104,6 +134,9 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
         base_url: String::new(),
         status: BackendStatus::Available as i32,
         status_reason: String::new(),
+        provider: "internal".to_string(),
+        model: String::new(),
+        hosting: BackendHosting::NodeLocal as i32,
     });
 
     for b in cfg.llm.backends.iter() {
@@ -138,6 +171,9 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
             base_url: b.base_url.clone(),
             status,
             status_reason: reason,
+            provider: infer_provider(&b.kind),
+            model: b.model.clone().unwrap_or_default(),
+            hosting: infer_hosting(&b.kind, &b.base_url),
         });
     }
 
@@ -147,6 +183,7 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
 async fn report_loop(
     config: Arc<SpearletConfig>,
     sms_channel: Option<Channel>,
+    managed_backends: Option<ManagedBackendRegistry>,
     cancel: CancellationToken,
 ) {
     let mut backoff_ms = config.sms_connect_retry_ms.max(200);
@@ -167,7 +204,10 @@ async fn report_loop(
         let mut client = BackendRegistryServiceClient::new(channel.clone());
 
         revision = revision.saturating_add(1);
-        let backends = build_backend_info_list(&config);
+        let mut backends = build_backend_info_list(&config);
+        if let Some(m) = managed_backends.as_ref() {
+            backends.extend(m.list().await);
+        }
         let snapshot = NodeBackendSnapshot {
             node_uuid: node_uuid.clone(),
             revision,

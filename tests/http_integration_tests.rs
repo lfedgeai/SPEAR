@@ -92,6 +92,7 @@ mod http_test_utils {
             spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::new(
                 channel.clone(),
             );
+        let model_deployment_registry_client = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel.clone());
         let state = GatewayState {
             node_client: sms_client,
             task_client,
@@ -101,6 +102,7 @@ mod http_test_utils {
             execution_index_client,
             mcp_registry_client,
             backend_registry_client,
+            model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -269,6 +271,7 @@ async fn test_http_node_lifecycle() {
         spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::new(
             channel_filter.clone(),
         );
+    let model_deployment_registry_client_filter = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel_filter.clone());
     let filter_state = GatewayState {
         node_client: sms_client_filter,
         task_client: task_client_filter,
@@ -278,6 +281,7 @@ async fn test_http_node_lifecycle() {
         execution_index_client: execution_index_client_filter,
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
+        model_deployment_registry_client: model_deployment_registry_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -405,6 +409,7 @@ async fn test_http_resource_management() {
         spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::new(
             channel_filter.clone(),
         );
+    let model_deployment_registry_client_filter = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel_filter.clone());
     let state = GatewayState {
         node_client: sms_client_filter,
         task_client: task_client_filter,
@@ -414,6 +419,7 @@ async fn test_http_resource_management() {
         execution_index_client: execution_index_client_filter,
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
+        model_deployment_registry_client: model_deployment_registry_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

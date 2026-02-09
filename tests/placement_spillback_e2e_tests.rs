@@ -394,6 +394,12 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         )
         .await
         .unwrap();
+    let model_deployment_registry_client =
+        spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
 
     let state = GatewayState {
         node_client,
@@ -404,6 +410,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         execution_index_client,
         mcp_registry_client,
         backend_registry_client,
+        model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };
@@ -564,6 +571,12 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         )
         .await
         .unwrap();
+    let model_deployment_registry_client =
+        spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::connect(
+            sms_url.clone(),
+        )
+        .await
+        .unwrap();
 
     let state = GatewayState {
         node_client,
@@ -574,6 +587,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         execution_index_client,
         mcp_registry_client,
         backend_registry_client,
+        model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

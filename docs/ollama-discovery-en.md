@@ -63,8 +63,8 @@ With “route by model” enabled, guests can set `model = "<model_name>"` and d
 
 ## Web Admin
 
-- Backends tab shows aggregated backends across nodes.
-- Click a row to open a detail dialog with Raw JSON.
+- AI Models (Local) shows aggregated models (provider=ollama) across nodes.
+- Click a row to navigate to the model detail page and inspect per-node instances and Raw JSON.
 
 ## Troubleshooting
 

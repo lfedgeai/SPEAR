@@ -1,8 +1,8 @@
 use tonic::Request;
 
 use spear_next::proto::sms::{
-    backend_registry_service_server::BackendRegistryService, BackendInfo, BackendStatus,
-    GetNodeBackendsRequest, ListNodeBackendSnapshotsRequest, NodeBackendSnapshot,
+    backend_registry_service_server::BackendRegistryService, BackendHosting, BackendInfo,
+    BackendStatus, GetNodeBackendsRequest, ListNodeBackendSnapshotsRequest, NodeBackendSnapshot,
     ReportNodeBackendsRequest,
 };
 use spear_next::sms::service::SmsServiceImpl;
@@ -30,6 +30,9 @@ async fn backend_snapshot_report_and_query_works() {
             base_url: "https://api.openai.com/v1".to_string(),
             status: BackendStatus::Available as i32,
             status_reason: String::new(),
+            provider: "openai".to_string(),
+            model: String::new(),
+            hosting: BackendHosting::Remote as i32,
         }],
     };
 

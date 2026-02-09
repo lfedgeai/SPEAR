@@ -6,7 +6,8 @@ This document summarizes the new Web Admin in `spear-next`.
 
 - Independent port (default `127.0.0.1:8081`) with Axum router
 - Nodes list with search, sort, pagination
-- Backends list (aggregated view; includes a detail dialog with Raw JSON)
+- AI Models list (aggregated view; split into Local/Remote with a model detail page)
+- Local AI Models: create/delete model deployments on a node, with provisioning status
 - Stats cards (total, online, offline, recent 60s)
 - SSE stream `GET /admin/api/nodes/stream`
   - For testing: `?once=true` returns a single snapshot event
@@ -32,7 +33,14 @@ This document summarizes the new Web Admin in `spear-next`.
 - `GET /admin/api/nodes/:uuid` → Node + optional resource info
 - `GET /admin/api/stats` → counts (total/online/offline/recent_60s)
 - `GET /admin/api/nodes/stream[?once=true]` → SSE snapshot events
-- `GET /admin/api/backends` → aggregated backend list (capabilities + per-node availability)
+- `GET /admin/api/ai-models` → aggregated AI models list (provider/model/hosting + per-node availability)
+- `GET /admin/api/ai-models/:provider/:model` → AI model detail (includes instances)
+
+### Local AI Models (Model Deployments)
+
+- `POST /admin/api/nodes/:node_uuid/ai-models` → create a node-local model deployment (body: `{ provider, model, params }`)
+- `GET /admin/api/nodes/:node_uuid/ai-models/deployments` → list deployments for the node (phase/message)
+- `DELETE /admin/api/nodes/:node_uuid/ai-models/deployments/:deployment_id` → delete a deployment (Spearlet stops the process on next reconcile)
 
 ### Tasks Endpoints
 

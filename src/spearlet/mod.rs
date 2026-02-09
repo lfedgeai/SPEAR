@@ -33,6 +33,7 @@ pub mod execution;
 pub mod function_service;
 pub mod grpc_server;
 pub mod http_gateway;
+pub mod local_models;
 pub mod mcp;
 pub mod object_service;
 pub mod ollama_discovery;

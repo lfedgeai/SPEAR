@@ -109,10 +109,10 @@ SPEARlet can import models from a local Ollama on startup and materialize them a
 
 ## Web Admin
 
-Web Admin provides Nodes/Tasks/Files/Backends pages.
+Web Admin provides Nodes/Tasks/Files/AI Models pages.
 
-- Backends supports an aggregated view across nodes.
-- Clicking a backend row opens a detail dialog with Raw JSON.
+- AI Models provides an aggregated view across nodes, split into Local/Remote.
+- Local AI Models supports creating/deleting model deployments on a node.
 
 Docs:
 

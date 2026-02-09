@@ -68,6 +68,10 @@ async fn test_admin_tasks_include_result_fields() {
             spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::new(
                 channel.clone(),
             ),
+        model_deployment_registry_client:
+            spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(
+                channel.clone(),
+            ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
     };

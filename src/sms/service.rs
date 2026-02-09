@@ -1,8 +1,9 @@
 //! SMS Service Implementation / SMS服务实现
-use std::collections::{HashMap, VecDeque};
-use std::sync::{atomic::AtomicU64, atomic::Ordering, Arc};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use tonic::{Request, Response, Status};
 
 use uuid::Uuid;
@@ -23,6 +24,8 @@ use tokio::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::{debug, warn};
 
+use crate::sms::registry_watch::RegistryWatchHub;
+
 // Import proto types / 导入proto类型
 use crate::proto::sms::{
     backend_registry_service_server::BackendRegistryService as BackendRegistryServiceTrait,
@@ -32,6 +35,7 @@ use crate::proto::sms::{
     execution_registry_service_server::ExecutionRegistryService as ExecutionRegistryServiceTrait,
     instance_registry_service_server::InstanceRegistryService as InstanceRegistryServiceTrait,
     mcp_registry_service_server::McpRegistryService as McpRegistryServiceTrait,
+    model_deployment_registry_service_server::ModelDeploymentRegistryService as ModelDeploymentRegistryServiceTrait,
     node_service_server::NodeService as NodeServiceTrait,
     placement_service_server::PlacementService as PlacementServiceTrait,
     task_service_server::TaskService as TaskServiceTrait,
@@ -40,6 +44,8 @@ use crate::proto::sms::{
     BackendStatus,
     DeleteMcpServerRequest,
     DeleteMcpServerResponse,
+    DeleteModelDeploymentRequest,
+    DeleteModelDeploymentResponse,
     DeleteNodeRequest,
     DeleteNodeResponse,
     EventEnvelope,
@@ -67,6 +73,8 @@ use crate::proto::sms::{
     ListInstanceExecutionsResponse,
     ListMcpServersRequest,
     ListMcpServersResponse,
+    ListModelDeploymentsRequest,
+    ListModelDeploymentsResponse,
     ListNodeBackendSnapshotsRequest,
     ListNodeBackendSnapshotsResponse,
     ListNodeResourcesRequest,
@@ -80,6 +88,9 @@ use crate::proto::sms::{
     McpRegistryEvent,
     McpServerRecord,
     McpTransport,
+    ModelDeploymentEvent,
+    ModelDeploymentRecord,
+    ModelDeploymentStatus,
     NodeBackendSnapshot,
     NodeCandidate,
     PlaceInvocationRequest,
@@ -94,6 +105,8 @@ use crate::proto::sms::{
     ReportInstanceResponse,
     ReportInvocationOutcomeRequest,
     ReportInvocationOutcomeResponse,
+    ReportModelDeploymentStatusRequest,
+    ReportModelDeploymentStatusResponse,
     ReportNodeBackendsRequest,
     ReportNodeBackendsResponse,
     SubscribeEventsRequest,
@@ -109,16 +122,35 @@ use crate::proto::sms::{
     UpdateTaskStatusResponse,
     UpsertMcpServerRequest,
     UpsertMcpServerResponse,
+    UpsertModelDeploymentRequest,
+    UpsertModelDeploymentResponse,
     WatchMcpServersRequest,
     WatchMcpServersResponse,
+    WatchModelDeploymentsRequest,
+    WatchModelDeploymentsResponse,
 };
 
 #[derive(Debug)]
 struct McpRegistryState {
-    revision: AtomicU64,
     records: RwLock<HashMap<String, McpServerRecord>>,
-    recent_events: Mutex<VecDeque<McpRegistryEvent>>,
-    event_tx: broadcast::Sender<McpRegistryEvent>,
+    watch: RegistryWatchHub<McpRegistryEvent>,
+}
+
+#[derive(Debug)]
+struct ModelDeploymentRegistryState {
+    records: RwLock<HashMap<String, ModelDeploymentRecord>>,
+    watch: RegistryWatchHub<ModelDeploymentEvent>,
+    id_to_node: RwLock<HashMap<String, String>>,
+}
+
+impl ModelDeploymentRegistryState {
+    fn new(event_buffer_size: usize, broadcast_buffer_size: usize) -> Self {
+        Self {
+            records: RwLock::new(HashMap::new()),
+            watch: RegistryWatchHub::new(event_buffer_size, broadcast_buffer_size),
+            id_to_node: RwLock::new(HashMap::new()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -136,21 +168,22 @@ impl BackendRegistryState {
 
 impl McpRegistryState {
     fn new(event_buffer_size: usize, broadcast_buffer_size: usize) -> Self {
-        let (event_tx, _rx) = broadcast::channel(broadcast_buffer_size);
         Self {
-            revision: AtomicU64::new(0),
             records: RwLock::new(HashMap::new()),
-            recent_events: Mutex::new(VecDeque::with_capacity(event_buffer_size)),
-            event_tx,
+            watch: RegistryWatchHub::new(event_buffer_size, broadcast_buffer_size),
         }
     }
 
     fn current_revision(&self) -> u64 {
-        self.revision.load(Ordering::Relaxed)
+        self.watch.current_revision()
     }
 
     fn bump_revision(&self) -> u64 {
-        self.revision.fetch_add(1, Ordering::Relaxed) + 1
+        self.watch.bump_revision()
+    }
+
+    async fn push_event(&self, event: McpRegistryEvent) {
+        self.watch.push_event(event).await;
     }
 }
 
@@ -175,6 +208,7 @@ pub struct SmsServiceImpl {
     placement_state: Arc<PlacementState>,
     mcp_registry: Arc<McpRegistryState>,
     backend_registry: Arc<BackendRegistryState>,
+    model_deployment_registry: Arc<ModelDeploymentRegistryState>,
 }
 
 impl SmsServiceImpl {
@@ -223,20 +257,13 @@ impl SmsServiceImpl {
         }
 
         let revision = self.mcp_registry.bump_revision();
-        let event = McpRegistryEvent {
-            revision,
-            upserts: vec![server_id],
-            deletes: vec![],
-        };
-
-        {
-            let mut events = self.mcp_registry.recent_events.lock().await;
-            if events.len() >= 1024 {
-                events.pop_front();
-            }
-            events.push_back(event.clone());
-        }
-        let _ = self.mcp_registry.event_tx.send(event);
+        self.mcp_registry
+            .push_event(McpRegistryEvent {
+                revision,
+                upserts: vec![server_id],
+                deletes: vec![],
+            })
+            .await;
 
         Ok(revision)
     }
@@ -490,6 +517,7 @@ impl SmsServiceImpl {
             placement_state: Arc::new(PlacementState::new()),
             mcp_registry: Arc::new(McpRegistryState::new(1024, 1024)),
             backend_registry: Arc::new(BackendRegistryState::new()),
+            model_deployment_registry: Arc::new(ModelDeploymentRegistryState::new(1024, 1024)),
         }
     }
 
@@ -653,44 +681,12 @@ impl McpRegistryServiceTrait for SmsServiceImpl {
         request: Request<WatchMcpServersRequest>,
     ) -> Result<Response<Self::WatchMcpServersStream>, Status> {
         let since_revision = request.into_inner().since_revision;
-
-        let mut pending = VecDeque::new();
-        {
-            let events = self.mcp_registry.recent_events.lock().await;
-            if let Some(oldest) = events.front().map(|e| e.revision) {
-                if since_revision != 0 && since_revision < oldest {
-                    return Err(Status::failed_precondition(
-                        "since_revision too old; resync required",
-                    ));
-                }
-            }
-            for e in events.iter() {
-                if e.revision > since_revision {
-                    pending.push_back(e.clone());
-                }
-            }
-        }
-
-        let rx = self.mcp_registry.event_tx.subscribe();
-
-        struct WatchState {
-            pending: VecDeque<McpRegistryEvent>,
-            rx: broadcast::Receiver<McpRegistryEvent>,
-        }
-
-        let stream = unfold(WatchState { pending, rx }, |mut st| async move {
-            if let Some(event) = st.pending.pop_front() {
-                return Some((Ok(WatchMcpServersResponse { event: Some(event) }), st));
-            }
-
-            match st.rx.recv().await {
-                Ok(event) => Some((Ok(WatchMcpServersResponse { event: Some(event) }), st)),
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    Some((Err(Status::aborted("watch lagged; resync required")), st))
-                }
-                Err(broadcast::error::RecvError::Closed) => None,
-            }
-        });
+        let stream = self
+            .mcp_registry
+            .watch
+            .watch(since_revision, |e| e.revision)
+            .await?
+            .map(|r| r.map(|event| WatchMcpServersResponse { event: Some(event) }));
 
         Ok(Response::new(Box::pin(stream)))
     }
@@ -726,22 +722,309 @@ impl McpRegistryServiceTrait for SmsServiceImpl {
         }
 
         let revision = self.mcp_registry.bump_revision();
-        let event = McpRegistryEvent {
-            revision,
-            upserts: vec![],
-            deletes: vec![server_id],
-        };
-
-        {
-            let mut events = self.mcp_registry.recent_events.lock().await;
-            if events.len() >= 1024 {
-                events.pop_front();
-            }
-            events.push_back(event.clone());
-        }
-        let _ = self.mcp_registry.event_tx.send(event);
+        self.mcp_registry
+            .push_event(McpRegistryEvent {
+                revision,
+                upserts: vec![],
+                deletes: vec![server_id],
+            })
+            .await;
 
         Ok(Response::new(DeleteMcpServerResponse { revision }))
+    }
+}
+
+#[tonic::async_trait]
+impl ModelDeploymentRegistryServiceTrait for SmsServiceImpl {
+    type WatchModelDeploymentsStream = std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<WatchModelDeploymentsResponse, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn list_model_deployments(
+        &self,
+        request: Request<ListModelDeploymentsRequest>,
+    ) -> Result<Response<ListModelDeploymentsResponse>, Status> {
+        let req = request.into_inner();
+        let limit = if req.limit == 0 {
+            200
+        } else {
+            req.limit.min(500)
+        };
+        let offset = req.offset;
+        let filter_node = req.target_node_uuid.trim().to_string();
+        let filter_provider = req.provider.trim().to_string();
+
+        let registry_revision = self.model_deployment_registry.watch.current_revision();
+        let guard = self.model_deployment_registry.records.read().await;
+        let mut list = guard
+            .values()
+            .cloned()
+            .filter(|r| {
+                if !filter_node.is_empty() {
+                    r.spec
+                        .as_ref()
+                        .map(|s| s.target_node_uuid == filter_node)
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .filter(|r| {
+                if !filter_provider.is_empty() {
+                    r.spec
+                        .as_ref()
+                        .map(|s| s.provider == filter_provider)
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .collect::<Vec<_>>();
+        list.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+
+        let total_count = list.len() as u32;
+        let start = offset as usize;
+        let end = start.saturating_add(limit as usize);
+        let page = if start >= list.len() {
+            Vec::new()
+        } else {
+            list[start..list.len().min(end)].to_vec()
+        };
+
+        Ok(Response::new(ListModelDeploymentsResponse {
+            revision: registry_revision,
+            records: page,
+            total_count,
+        }))
+    }
+
+    async fn watch_model_deployments(
+        &self,
+        request: Request<WatchModelDeploymentsRequest>,
+    ) -> Result<Response<Self::WatchModelDeploymentsStream>, Status> {
+        let req = request.into_inner();
+        if req.target_node_uuid.trim().is_empty() {
+            return Err(Status::invalid_argument("target_node_uuid is required"));
+        }
+        let node_filter = req.target_node_uuid.clone();
+        let registry = self.model_deployment_registry.clone();
+        let watch_cursor_revision = req.since_revision;
+
+        let base = self
+            .model_deployment_registry
+            .watch
+            .watch(watch_cursor_revision, |e| e.revision)
+            .await?;
+        let stream = base
+            .then(move |r| {
+                let node_filter = node_filter.clone();
+                let registry = registry.clone();
+                async move {
+                    match r {
+                        Ok(mut event) => {
+                            let map = registry.id_to_node.read().await;
+                            event.upserts.retain(|id| {
+                                map.get(id).map(|n| n == &node_filter).unwrap_or(false)
+                            });
+                            event.deletes.retain(|id| {
+                                map.get(id).map(|n| n == &node_filter).unwrap_or(true)
+                            });
+                            if event.upserts.is_empty() && event.deletes.is_empty() {
+                                None
+                            } else {
+                                Some(Ok(WatchModelDeploymentsResponse { event: Some(event) }))
+                            }
+                        }
+                        Err(e) => Some(Err(e)),
+                    }
+                }
+            })
+            .filter_map(|x| x);
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn upsert_model_deployment(
+        &self,
+        request: Request<UpsertModelDeploymentRequest>,
+    ) -> Result<Response<UpsertModelDeploymentResponse>, Status> {
+        let mut record = request
+            .into_inner()
+            .record
+            .ok_or_else(|| Status::invalid_argument("record is required"))?;
+        let target_node_uuid = {
+            let spec = record
+                .spec
+                .as_ref()
+                .ok_or_else(|| Status::invalid_argument("spec is required"))?;
+            if spec.target_node_uuid.trim().is_empty() {
+                return Err(Status::invalid_argument(
+                    "spec.target_node_uuid is required",
+                ));
+            }
+            if spec.provider.trim().is_empty() {
+                return Err(Status::invalid_argument("spec.provider is required"));
+            }
+            if spec.model.trim().is_empty() {
+                return Err(Status::invalid_argument("spec.model is required"));
+            }
+            spec.target_node_uuid.clone()
+        };
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let deployment_id = if record.deployment_id.trim().is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            record.deployment_id.clone()
+        };
+
+        let mut guard = self.model_deployment_registry.records.write().await;
+        let created_at_ms = guard
+            .get(&deployment_id)
+            .map(|r| r.created_at_ms)
+            .filter(|v| *v > 0)
+            .unwrap_or(now_ms);
+
+        let new_registry_revision = self.model_deployment_registry.watch.bump_revision();
+        record.deployment_id = deployment_id.clone();
+        record.revision = new_registry_revision;
+        record.created_at_ms = created_at_ms;
+        record.updated_at_ms = now_ms;
+        if record.status.is_none() {
+            record.status = Some(ModelDeploymentStatus {
+                phase: crate::proto::sms::ModelDeploymentPhase::Pending as i32,
+                message: String::new(),
+                updated_at_ms: now_ms,
+            });
+        }
+
+        guard.insert(deployment_id.clone(), record);
+        drop(guard);
+
+        self.model_deployment_registry
+            .id_to_node
+            .write()
+            .await
+            .insert(deployment_id.clone(), target_node_uuid);
+
+        self.model_deployment_registry
+            .watch
+            .push_event(ModelDeploymentEvent {
+                revision: new_registry_revision,
+                upserts: vec![deployment_id.clone()],
+                deletes: Vec::new(),
+            })
+            .await;
+
+        Ok(Response::new(UpsertModelDeploymentResponse {
+            revision: new_registry_revision,
+            deployment_id,
+        }))
+    }
+
+    async fn delete_model_deployment(
+        &self,
+        request: Request<DeleteModelDeploymentRequest>,
+    ) -> Result<Response<DeleteModelDeploymentResponse>, Status> {
+        let deployment_id = request.into_inner().deployment_id;
+        if deployment_id.trim().is_empty() {
+            return Err(Status::invalid_argument("deployment_id is required"));
+        }
+        let existed = {
+            let mut guard = self.model_deployment_registry.records.write().await;
+            guard.remove(&deployment_id).is_some()
+        };
+        if !existed {
+            return Err(Status::not_found("deployment not found"));
+        }
+
+        {
+            let mut map = self.model_deployment_registry.id_to_node.write().await;
+            map.remove(&deployment_id);
+        }
+
+        let new_registry_revision = self.model_deployment_registry.watch.bump_revision();
+        self.model_deployment_registry
+            .watch
+            .push_event(ModelDeploymentEvent {
+                revision: new_registry_revision,
+                upserts: Vec::new(),
+                deletes: vec![deployment_id],
+            })
+            .await;
+
+        Ok(Response::new(DeleteModelDeploymentResponse {
+            revision: new_registry_revision,
+        }))
+    }
+
+    async fn report_model_deployment_status(
+        &self,
+        request: Request<ReportModelDeploymentStatusRequest>,
+    ) -> Result<Response<ReportModelDeploymentStatusResponse>, Status> {
+        let req = request.into_inner();
+        if req.deployment_id.trim().is_empty() {
+            return Err(Status::invalid_argument("deployment_id is required"));
+        }
+        if req.node_uuid.trim().is_empty() {
+            return Err(Status::invalid_argument("node_uuid is required"));
+        }
+        let mut status = req
+            .status
+            .ok_or_else(|| Status::invalid_argument("status is required"))?;
+        if status.updated_at_ms == 0 {
+            status.updated_at_ms = chrono::Utc::now().timestamp_millis();
+        }
+
+        let mut guard = self.model_deployment_registry.records.write().await;
+        let Some(mut rec) = guard.get(&req.deployment_id).cloned() else {
+            return Err(Status::not_found("deployment not found"));
+        };
+        let target_node_uuid = {
+            let Some(spec) = rec.spec.as_ref() else {
+                return Err(Status::failed_precondition("spec missing"));
+            };
+            if spec.target_node_uuid != req.node_uuid {
+                return Err(Status::permission_denied("node_uuid mismatch"));
+            }
+            spec.target_node_uuid.clone()
+        };
+        let observed_record_revision = req.observed_revision;
+        let current_record_revision = rec.revision;
+        if observed_record_revision > 0 && observed_record_revision < current_record_revision {
+            return Ok(Response::new(ReportModelDeploymentStatusResponse {
+                success: false,
+            }));
+        }
+
+        let new_registry_revision = self.model_deployment_registry.watch.bump_revision();
+        rec.updated_at_ms = status.updated_at_ms;
+        rec.status = Some(status);
+        guard.insert(req.deployment_id.clone(), rec);
+        drop(guard);
+
+        self.model_deployment_registry
+            .id_to_node
+            .write()
+            .await
+            .insert(req.deployment_id.clone(), target_node_uuid);
+
+        self.model_deployment_registry
+            .watch
+            .push_event(ModelDeploymentEvent {
+                revision: new_registry_revision,
+                upserts: vec![req.deployment_id],
+                deletes: Vec::new(),
+            })
+            .await;
+
+        Ok(Response::new(ReportModelDeploymentStatusResponse {
+            success: true,
+        }))
     }
 }
 

@@ -6,7 +6,8 @@
 
 - 独立端口（默认 `127.0.0.1:8081`），Axum 路由提供接口
 - 节点列表（搜索、排序、分页）
-- 后端列表（Backends，聚合视图；支持详情弹窗 Raw JSON）
+- AI Models 列表（聚合视图；区分 Local/Remote，并支持详情页）
+- Local AI Models：创建/删除 model deployment，并展示 provisioning 状态
 - 统计卡片（总数、在线、离线、最近 60s 心跳）
 - SSE 流 `GET /admin/api/nodes/stream`
   - 测试友好：`?once=true` 返回单次快照事件后结束
@@ -32,7 +33,14 @@
 - `GET /admin/api/nodes/:uuid` → 返回节点与（可选）资源信息
 - `GET /admin/api/stats` → 统计总数/在线/离线/最近 60s
 - `GET /admin/api/nodes/stream[?once=true]` → SSE 快照事件
-- `GET /admin/api/backends` → 返回聚合后的后端列表（按名称/类型/能力汇总，并包含各节点可用性）
+- `GET /admin/api/ai-models` → 返回聚合后的 AI Models 列表（按 provider/model/hosting 汇总，并包含各节点可用性）
+- `GET /admin/api/ai-models/:provider/:model` → 返回单个 AI Model 的详情（包含各节点实例）
+
+### Local AI Models（Model Deployments）
+
+- `POST /admin/api/nodes/:node_uuid/ai-models` → 创建本地 model deployment（body: `{ provider, model, params }`）
+- `GET /admin/api/nodes/:node_uuid/ai-models/deployments` → 列出该节点相关的 deployments（含 phase/message）
+- `DELETE /admin/api/nodes/:node_uuid/ai-models/deployments/:deployment_id` → 删除 deployment（Spearlet 下一轮 reconcile 停止进程并移除 backend）
 
 ### 任务接口
 

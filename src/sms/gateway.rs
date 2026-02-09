@@ -12,8 +12,10 @@ use crate::proto::sms::{
     execution_index_service_client::ExecutionIndexServiceClient,
     execution_registry_service_client::ExecutionRegistryServiceClient,
     instance_registry_service_client::InstanceRegistryServiceClient,
-    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
-    placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
+    mcp_registry_service_client::McpRegistryServiceClient,
+    model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    task_service_client::TaskServiceClient,
 };
 
 /// Embedded static files for Swagger UI / Swagger UI的嵌入式静态文件
@@ -33,6 +35,8 @@ pub struct GatewayState {
     pub execution_index_client: ExecutionIndexServiceClient<tonic::transport::Channel>,
     pub mcp_registry_client: McpRegistryServiceClient<tonic::transport::Channel>,
     pub backend_registry_client: BackendRegistryServiceClient<tonic::transport::Channel>,
+    pub model_deployment_registry_client:
+        ModelDeploymentRegistryServiceClient<tonic::transport::Channel>,
     pub cancel_token: CancellationToken,
     pub max_upload_bytes: usize,
 }

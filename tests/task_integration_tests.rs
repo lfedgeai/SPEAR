@@ -107,6 +107,7 @@ mod task_test_utils {
             spear_next::proto::sms::backend_registry_service_client::BackendRegistryServiceClient::new(
                 channel.clone(),
             );
+        let model_deployment_registry_client = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel.clone());
 
         let state = GatewayState {
             node_client: sms_client,
@@ -117,6 +118,7 @@ mod task_test_utils {
             execution_index_client,
             mcp_registry_client,
             backend_registry_client,
+            model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
         };

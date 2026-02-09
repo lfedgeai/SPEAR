@@ -46,6 +46,7 @@ pub mod grpc_server;
 pub mod handlers;
 pub mod http_gateway;
 pub mod instance_execution_index;
+pub mod registry_watch;
 pub mod routes;
 pub mod service;
 pub mod services;

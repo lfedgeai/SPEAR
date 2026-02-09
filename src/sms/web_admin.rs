@@ -22,12 +22,14 @@ use uuid::Uuid;
 
 use crate::proto::sms::{
     backend_registry_service_client::BackendRegistryServiceClient,
-    mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
-    placement_service_client::PlacementServiceClient, ListNodesRequest,
+    mcp_registry_service_client::McpRegistryServiceClient,
+    model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient,
+    node_service_client::NodeServiceClient, placement_service_client::PlacementServiceClient,
+    ListNodesRequest,
 };
 use crate::sms::gateway::GatewayState;
 pub use router::create_admin_router;
-use types::{ListQuery, PageTokenQuery, StreamQuery};
+use types::{AiModelsQuery, ListQuery, PageTokenQuery, StreamQuery};
 
 use crate::proto::spearlet::{
     invocation_service_client::InvocationServiceClient, ExecutionMode, ExecutionStatus,
@@ -97,7 +99,9 @@ impl WebAdminServer {
                 channel.clone(),
             );
         let mcp_registry_client = McpRegistryServiceClient::new(channel.clone());
-        let backend_registry_client = BackendRegistryServiceClient::new(channel);
+        let backend_registry_client = BackendRegistryServiceClient::new(channel.clone());
+        let model_deployment_registry_client =
+            ModelDeploymentRegistryServiceClient::new(channel.clone());
         let state = GatewayState {
             node_client,
             task_client,
@@ -107,6 +111,7 @@ impl WebAdminServer {
             execution_index_client,
             mcp_registry_client,
             backend_registry_client,
+            model_deployment_registry_client,
             cancel_token: cancel_token.clone(),
             max_upload_bytes: 64 * 1024 * 1024,
         };
@@ -259,6 +264,9 @@ async fn list_backends(state: GatewayState, Query(q): Query<ListQuery>) -> Json<
                 "weight": b.weight,
                 "priority": b.priority,
                 "base_url": b.base_url,
+                "provider": b.provider,
+                "model": b.model,
+                "hosting": b.hosting,
             }));
             entry.total_nodes += 1;
             if status == "available" {
@@ -382,6 +390,9 @@ async fn get_backend_detail(
                     "weight": b.weight,
                     "priority": b.priority,
                     "base_url": b.base_url,
+                    "provider": b.provider,
+                    "model": b.model,
+                    "hosting": b.hosting,
                 }));
                 agg.total_nodes += 1;
                 if status == "available" {
@@ -456,6 +467,9 @@ async fn get_node_backends(state: GatewayState, p: Path<String>) -> Json<serde_j
                                 "base_url": b.base_url,
                                 "status": b.status,
                                 "status_reason": b.status_reason,
+                                "provider": b.provider,
+                                "model": b.model,
+                                "hosting": b.hosting,
                             })
                         })
                         .collect::<Vec<_>>()
@@ -470,6 +484,367 @@ async fn get_node_backends(state: GatewayState, p: Path<String>) -> Json<serde_j
         }
         Err(e) => Json(json!({"found": false, "message": e.to_string()})),
     }
+}
+
+async fn list_ai_models(
+    state: GatewayState,
+    Query(q): Query<AiModelsQuery>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::{BackendHosting, BackendStatus, ListNodeBackendSnapshotsRequest};
+
+    #[derive(Default)]
+    struct Agg {
+        provider: String,
+        model: String,
+        hosting: String,
+        operations: std::collections::BTreeSet<String>,
+        features: std::collections::BTreeSet<String>,
+        transports: std::collections::BTreeSet<String>,
+        available_nodes: i64,
+        total_nodes: i64,
+        instances: Vec<serde_json::Value>,
+    }
+
+    fn hosting_str(v: i32) -> &'static str {
+        if v == BackendHosting::Remote as i32 {
+            "remote"
+        } else if v == BackendHosting::NodeLocal as i32 {
+            "local"
+        } else {
+            "unknown"
+        }
+    }
+
+    fn status_str(v: i32) -> &'static str {
+        if v == BackendStatus::Available as i32 {
+            "available"
+        } else {
+            "unavailable"
+        }
+    }
+
+    let mut client = state.backend_registry_client.clone();
+    let limit = q.limit.unwrap_or(500) as u32;
+    let offset = q.offset.unwrap_or(0) as u32;
+    let resp = match client
+        .list_node_backend_snapshots(ListNodeBackendSnapshotsRequest { limit, offset })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    let provider_filter = q.provider.as_deref().map(|s| s.to_ascii_lowercase());
+    let hosting_filter = q.hosting.as_deref().map(|s| s.to_ascii_lowercase());
+    let needle = q.q.as_deref().map(|s| s.to_ascii_lowercase());
+
+    let mut agg: std::collections::HashMap<(String, String, String), Agg> =
+        std::collections::HashMap::new();
+
+    for snap in resp.snapshots.into_iter() {
+        let node_uuid = snap.node_uuid.clone();
+        for b in snap.backends.into_iter() {
+            let provider = if !b.provider.trim().is_empty() {
+                b.provider.clone()
+            } else if b.kind.starts_with("openai_") {
+                "openai".to_string()
+            } else if b.kind == "ollama_chat" {
+                "ollama".to_string()
+            } else if b.kind == "stub" {
+                "internal".to_string()
+            } else {
+                "unknown".to_string()
+            };
+
+            let mut model = b.model.clone();
+            if model.trim().is_empty() {
+                model = "(dynamic)".to_string();
+                if b.kind == "ollama_chat" && b.name.contains('/') {
+                    if let Some((_, rest)) = b.name.split_once('/') {
+                        if !rest.trim().is_empty() {
+                            model = rest.to_string();
+                        }
+                    }
+                }
+            }
+
+            let hosting = hosting_str(b.hosting).to_string();
+            let status = status_str(b.status);
+
+            if let Some(pf) = provider_filter.as_ref() {
+                if provider.to_ascii_lowercase() != *pf {
+                    continue;
+                }
+            }
+            if let Some(hf) = hosting_filter.as_ref() {
+                if hosting.to_ascii_lowercase() != *hf {
+                    continue;
+                }
+            }
+            if let Some(n) = needle.as_ref() {
+                let hay = format!(
+                    "{} {} {} {} {}",
+                    provider, model, b.name, b.kind, b.base_url
+                )
+                .to_ascii_lowercase();
+                if !hay.contains(n) {
+                    continue;
+                }
+            }
+
+            let key = (provider.clone(), model.clone(), hosting.clone());
+            let entry = agg.entry(key).or_insert_with(|| Agg {
+                provider: provider.clone(),
+                model: model.clone(),
+                hosting: hosting.clone(),
+                ..Default::default()
+            });
+
+            for op in b.operations.iter() {
+                if !op.trim().is_empty() {
+                    entry.operations.insert(op.clone());
+                }
+            }
+            for f in b.features.iter() {
+                if !f.trim().is_empty() {
+                    entry.features.insert(f.clone());
+                }
+            }
+            for t in b.transports.iter() {
+                if !t.trim().is_empty() {
+                    entry.transports.insert(t.clone());
+                }
+            }
+
+            entry.instances.push(json!({
+                "node_uuid": node_uuid,
+                "backend_name": b.name,
+                "kind": b.kind,
+                "base_url": b.base_url,
+                "status": status,
+                "status_reason": b.status_reason,
+                "weight": b.weight,
+                "priority": b.priority,
+                "provider": provider,
+                "model": model,
+                "hosting": hosting,
+            }));
+            entry.total_nodes += 1;
+            if status == "available" {
+                entry.available_nodes += 1;
+            }
+        }
+    }
+
+    let mut list = agg
+        .into_values()
+        .map(|a| {
+            json!({
+                "provider": a.provider,
+                "model": a.model,
+                "hosting": a.hosting,
+                "operations": a.operations.into_iter().collect::<Vec<_>>(),
+                "features": a.features.into_iter().collect::<Vec<_>>(),
+                "transports": a.transports.into_iter().collect::<Vec<_>>(),
+                "available_nodes": a.available_nodes,
+                "total_nodes": a.total_nodes,
+                "instances": a.instances,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    list.sort_by(|a, b| {
+        let ap = a.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+        let bp = b.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+        let am = a.get("model").and_then(|v| v.as_str()).unwrap_or("");
+        let bm = b.get("model").and_then(|v| v.as_str()).unwrap_or("");
+        ap.cmp(bp).then_with(|| am.cmp(bm))
+    });
+
+    Json(json!({"success": true, "models": list, "total_count": resp.total_count}))
+}
+
+async fn get_ai_model_detail(
+    state: GatewayState,
+    p: Path<(String, String)>,
+    Query(q_in): Query<AiModelsQuery>,
+) -> Json<serde_json::Value> {
+    let (provider, model) = p.0;
+    if provider.trim().is_empty() || model.trim().is_empty() {
+        return Json(json!({"success": true, "found": false}));
+    }
+
+    let q = AiModelsQuery {
+        hosting: q_in.hosting.clone(),
+        provider: Some(provider.clone()),
+        limit: Some(500),
+        offset: Some(0),
+        q: Some(model.clone()),
+    };
+
+    let resp = list_ai_models(state, Query(q)).await;
+    let mut found = None;
+    if let Some(models) = resp.0.get("models").and_then(|v| v.as_array()) {
+        for m in models.iter() {
+            let p = m.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+            let md = m.get("model").and_then(|v| v.as_str()).unwrap_or("");
+            if p == provider && md == model {
+                found = Some(m.clone());
+                break;
+            }
+        }
+    }
+    match found {
+        Some(m) => Json(json!({"success": true, "found": true, "model": m})),
+        None => Json(json!({"success": true, "found": false})),
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateNodeModelDeploymentBody {
+    provider: String,
+    model: String,
+    params: Option<std::collections::HashMap<String, String>>,
+}
+
+async fn list_node_model_deployments(
+    state: GatewayState,
+    p: Path<String>,
+    Query(q): Query<ListQuery>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::ListModelDeploymentsRequest;
+    let node_uuid = p.0;
+    if node_uuid.trim().is_empty() {
+        return Json(json!({"success": false, "message": "node_uuid is required"}));
+    }
+
+    let limit = q.limit.unwrap_or(200) as u32;
+    let offset = q.offset.unwrap_or(0) as u32;
+    let mut client = state.model_deployment_registry_client.clone();
+    let resp = match client
+        .list_model_deployments(ListModelDeploymentsRequest {
+            limit,
+            offset,
+            target_node_uuid: node_uuid.clone(),
+            provider: String::new(),
+        })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    let records = resp
+        .records
+        .into_iter()
+        .map(|r| {
+            json!({
+                "deployment_id": r.deployment_id,
+                "revision": r.revision,
+                "created_at_ms": r.created_at_ms,
+                "updated_at_ms": r.updated_at_ms,
+                "spec": r.spec.as_ref().map(|s| json!({
+                    "target_node_uuid": s.target_node_uuid,
+                    "provider": s.provider,
+                    "model": s.model,
+                    "params": s.params,
+                })),
+                "status": r.status.as_ref().map(|s| json!({
+                    "phase": s.phase,
+                    "message": s.message,
+                    "updated_at_ms": s.updated_at_ms,
+                })),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Json(json!({
+        "success": true,
+        "revision": resp.revision,
+        "total_count": resp.total_count,
+        "deployments": records,
+    }))
+}
+
+async fn create_node_model_deployment(
+    state: GatewayState,
+    p: Path<String>,
+    body: Json<CreateNodeModelDeploymentBody>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::{
+        ModelDeploymentRecord, ModelDeploymentSpec, UpsertModelDeploymentRequest,
+    };
+    let node_uuid = p.0;
+    if node_uuid.trim().is_empty() {
+        return Json(json!({"success": false, "message": "node_uuid is required"}));
+    }
+    if body.provider.trim().is_empty() || body.model.trim().is_empty() {
+        return Json(json!({"success": false, "message": "provider and model are required"}));
+    }
+    let provider_lc = body.provider.trim().to_ascii_lowercase();
+    let provider = match provider_lc.as_str() {
+        "vllm" => "vllm".to_string(),
+        "llamacpp" | "llama_cpp" | "llama.cpp" => "llamacpp".to_string(),
+        _ => {
+            return Json(json!({
+                "success": false,
+                "message": "unsupported provider (only vllm/llamacpp supported)"
+            }))
+        }
+    };
+    let spec = ModelDeploymentSpec {
+        target_node_uuid: node_uuid.clone(),
+        provider,
+        model: body.model.clone(),
+        params: body.params.clone().unwrap_or_default(),
+    };
+    let record = ModelDeploymentRecord {
+        deployment_id: String::new(),
+        revision: 0,
+        created_at_ms: 0,
+        updated_at_ms: 0,
+        spec: Some(spec),
+        status: None,
+    };
+
+    let mut client = state.model_deployment_registry_client.clone();
+    let resp = match client
+        .upsert_model_deployment(UpsertModelDeploymentRequest {
+            record: Some(record),
+        })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    Json(json!({
+        "success": true,
+        "deployment_id": resp.deployment_id,
+        "revision": resp.revision,
+    }))
+}
+
+async fn delete_node_model_deployment(
+    state: GatewayState,
+    p: Path<(String, String)>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::DeleteModelDeploymentRequest;
+    let (node_uuid, deployment_id) = p.0;
+    if node_uuid.trim().is_empty() || deployment_id.trim().is_empty() {
+        return Json(
+            json!({"success": false, "message": "node_uuid and deployment_id are required"}),
+        );
+    }
+    let mut client = state.model_deployment_registry_client.clone();
+    let resp = match client
+        .delete_model_deployment(DeleteModelDeploymentRequest { deployment_id })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+    Json(json!({"success": true, "revision": resp.revision}))
 }
 
 async fn list_mcp_servers(state: GatewayState) -> Json<serde_json::Value> {

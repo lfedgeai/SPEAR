@@ -13,8 +13,10 @@ use crate::proto::sms::{
     execution_log_ingest_service_server::ExecutionLogIngestServiceServer,
     execution_registry_service_server::ExecutionRegistryServiceServer,
     instance_registry_service_server::InstanceRegistryServiceServer,
-    mcp_registry_service_server::McpRegistryServiceServer, node_service_server::NodeServiceServer,
-    placement_service_server::PlacementServiceServer, task_service_server::TaskServiceServer,
+    mcp_registry_service_server::McpRegistryServiceServer,
+    model_deployment_registry_service_server::ModelDeploymentRegistryServiceServer,
+    node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
+    task_service_server::TaskServiceServer,
 };
 
 use crate::sms::service::SmsServiceImpl;
@@ -43,6 +45,9 @@ impl GrpcServer {
             .add_service(ExecutionLogIngestServiceServer::new(sms_service.clone()))
             .add_service(McpRegistryServiceServer::new(sms_service.clone()))
             .add_service(BackendRegistryServiceServer::new(sms_service.clone()))
+            .add_service(ModelDeploymentRegistryServiceServer::new(
+                sms_service.clone(),
+            ))
             .add_service(PlacementServiceServer::new(sms_service))
             .serve(addr);
 
@@ -72,6 +77,9 @@ impl GrpcServer {
             .add_service(ExecutionLogIngestServiceServer::new(sms_service.clone()))
             .add_service(McpRegistryServiceServer::new(sms_service.clone()))
             .add_service(BackendRegistryServiceServer::new(sms_service.clone()))
+            .add_service(ModelDeploymentRegistryServiceServer::new(
+                sms_service.clone(),
+            ))
             .add_service(PlacementServiceServer::new(sms_service))
             .serve_with_shutdown(addr, shutdown);
 

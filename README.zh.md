@@ -109,10 +109,10 @@ SPEARlet 支持在启动时从本机 Ollama 导入模型并生成对应的 LLM b
 
 ## Web Admin
 
-Web Admin 提供 Nodes/Tasks/Files/Backends 等页面。
+Web Admin 提供 Nodes/Tasks/Files/AI Models 等页面。
 
-- Backends 提供跨节点聚合视图
-- 点击某个 backend 行会弹出详情窗口（Raw JSON）
+- AI Models 提供跨节点聚合视图，并区分 Local/Remote
+- Local AI Models 支持在节点上创建/删除 model deployment
 
 文档：
 

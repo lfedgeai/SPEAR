@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { HashRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
+import { HashRouter, Link, NavLink, Route, Routes, Navigate } from 'react-router-dom'
 import { LayoutDashboard, Moon, Server, Settings, Sun, FileBox, ListTodo, Plug, Boxes } from 'lucide-react'
 import { Toaster } from 'sonner'
 
@@ -13,23 +13,37 @@ import TasksPage from '@/features/tasks/TasksPage'
 import TaskDetailPage from '@/features/tasks/TaskDetailPage'
 import FilesPage from '@/features/files/FilesPage'
 import FileDetailPage from '@/features/files/FileDetailPage'
-import BackendsPage from '@/features/backends/BackendsPage'
-import BackendDetailPage from '@/features/backends/BackendDetailPage'
+import AiModelsPage from '@/features/ai-models/AiModelsPage'
+import AiModelDetailPage from '@/features/ai-models/AiModelDetailPage'
 import McpPage from '@/features/mcp/McpPage'
 import McpServerDetailPage from '@/features/mcp/McpServerDetailPage'
 import SettingsPage from '@/features/settings/SettingsPage'
 import InstanceDetailPage from '@/features/instances/InstanceDetailPage'
 import ExecutionDetailPage from '@/features/executions/ExecutionDetailPage'
 
+type NavItem = {
+  label: string
+  icon: typeof Boxes
+  to?: string
+  children?: NavItem[]
+}
+
 function Shell() {
   const { mode, setMode } = useThemeMode()
   const nav = useMemo(
-    () => [
+    (): NavItem[] => [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/nodes', label: 'Nodes', icon: Server },
       { to: '/tasks', label: 'Tasks', icon: ListTodo },
       { to: '/files', label: 'Files', icon: FileBox },
-      { to: '/backends', label: 'Backends', icon: Boxes },
+      {
+        label: 'AI Models',
+        icon: Boxes,
+        children: [
+          { to: '/ai-models/remote', label: 'Remote', icon: Boxes },
+          { to: '/ai-models/local', label: 'Local', icon: Boxes },
+        ],
+      },
       { to: '/mcp', label: 'MCP', icon: Plug },
       { to: '/settings', label: 'Settings', icon: Settings },
     ],
@@ -54,24 +68,53 @@ function Shell() {
           </div>
 
           <nav className="mt-6 space-y-1">
-            {nav.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                data-testid={`nav-${item.label.toLowerCase()}`}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-2 rounded-[calc(var(--radius)-4px)] px-3 py-2 text-sm transition-colors',
-                    isActive
-                      ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--foreground))]'
-                      : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]',
-                  )
-                }
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </NavLink>
-            ))}
+            {nav.map((item) =>
+              item.children && item.children.length > 0 ? (
+                <div key={item.label} className="space-y-1">
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[hsl(var(--foreground))]">
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </div>
+                  <div className="space-y-1 pl-3">
+                    {item.children.map((child) => (
+                      <NavLink
+                        key={child.to}
+                        to={child.to || '/'}
+                        data-testid={`nav-${child.label.toLowerCase()}`}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-2 rounded-[calc(var(--radius)-4px)] px-3 py-2 text-sm transition-colors',
+                            isActive
+                              ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--foreground))]'
+                              : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]',
+                          )
+                        }
+                      >
+                        <child.icon className="h-4 w-4 opacity-50" />
+                        {child.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <NavLink
+                  key={item.to}
+                  to={item.to || '/'}
+                  data-testid={`nav-${item.label.toLowerCase()}`}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-[calc(var(--radius)-4px)] px-3 py-2 text-sm transition-colors',
+                      isActive
+                        ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--foreground))]'
+                        : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]',
+                    )
+                  }
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </NavLink>
+              ),
+            )}
           </nav>
 
           <div className="mt-auto">
@@ -132,8 +175,13 @@ function Shell() {
                 <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
                 <Route path="/files" element={<FilesPage />} />
                 <Route path="/files/:id" element={<FileDetailPage />} />
-                <Route path="/backends" element={<BackendsPage />} />
-                <Route path="/backends/:kind/:name" element={<BackendDetailPage />} />
+                <Route path="/ai-models/remote" element={<AiModelsPage hosting="remote" />} />
+                <Route path="/ai-models/local" element={<AiModelsPage hosting="local" />} />
+                <Route
+                  path="/ai-models/:hosting/:provider/:model"
+                  element={<AiModelDetailPage />}
+                />
+                <Route path="/backends" element={<Navigate to="/ai-models/remote" replace />} />
                 <Route path="/mcp" element={<McpPage />} />
                 <Route path="/mcp/:serverId" element={<McpServerDetailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

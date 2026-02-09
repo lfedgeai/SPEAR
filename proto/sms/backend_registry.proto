@@ -8,6 +8,12 @@ enum BackendStatus {
   BACKEND_STATUS_UNAVAILABLE = 2;
 }
 
+enum BackendHosting {
+  BACKEND_HOSTING_UNSPECIFIED = 0;
+  BACKEND_HOSTING_REMOTE = 1;
+  BACKEND_HOSTING_NODE_LOCAL = 2;
+}
+
 message BackendInfo {
   string name = 1;
   string kind = 2;
@@ -19,6 +25,9 @@ message BackendInfo {
   string base_url = 8;
   BackendStatus status = 9;
   string status_reason = 10;
+  string provider = 11;
+  string model = 12;
+  BackendHosting hosting = 13;
 }
 
 message NodeBackendSnapshot {
@@ -63,4 +72,3 @@ service BackendRegistryService {
   rpc ListNodeBackendSnapshots(ListNodeBackendSnapshotsRequest)
       returns (ListNodeBackendSnapshotsResponse);
 }
-

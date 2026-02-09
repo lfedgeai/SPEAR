@@ -68,6 +68,49 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             }),
         )
         .route(
+            "/admin/api/ai-models",
+            get({
+                let state = state.clone();
+                move |q: Query<super::types::AiModelsQuery>| super::list_ai_models(state.clone(), q)
+            }),
+        )
+        .route(
+            "/admin/api/ai-models/{provider}/{model}",
+            get({
+                let state = state.clone();
+                move |p: Path<(String, String)>, q: Query<super::types::AiModelsQuery>| {
+                    super::get_ai_model_detail(state.clone(), p, q)
+                }
+            }),
+        )
+        .route(
+            "/admin/api/nodes/{uuid}/ai-models",
+            post({
+                let state = state.clone();
+                move |p: Path<String>, body: Json<super::CreateNodeModelDeploymentBody>| {
+                    super::create_node_model_deployment(state.clone(), p, body)
+                }
+            }),
+        )
+        .route(
+            "/admin/api/nodes/{uuid}/ai-models/deployments",
+            get({
+                let state = state.clone();
+                move |p: Path<String>, q: Query<ListQuery>| {
+                    super::list_node_model_deployments(state.clone(), p, q)
+                }
+            }),
+        )
+        .route(
+            "/admin/api/nodes/{uuid}/ai-models/deployments/{deployment_id}",
+            delete({
+                let state = state.clone();
+                move |p: Path<(String, String)>| {
+                    super::delete_node_model_deployment(state.clone(), p)
+                }
+            }),
+        )
+        .route(
             "/admin/api/mcp/servers",
             get({
                 let state = state.clone();

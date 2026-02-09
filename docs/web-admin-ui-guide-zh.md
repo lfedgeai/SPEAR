@@ -5,10 +5,10 @@
 ## 访问与鉴权
 
 - 启用：运行 SMS 时添加 `--enable-web-admin --web-admin-addr 127.0.0.1:8081`
-- 地址：`http://127.0.0.1:8081/`
+- 地址：`http://127.0.0.1:8081/admin`
 - 管理 Token：
   - Nodes 页工具栏或 Settings 页输入 Token 并点击 `Apply`
-  - Token 会写入 `window.__ADMIN_TOKEN` 与 `localStorage('ADMIN_TOKEN')`
+  - Token 会写入 `localStorage('ADMIN_TOKEN')`
 
 ## 顶部设置
 
@@ -41,12 +41,29 @@
   - 点击 `Use` 将 `Executable URI = smsfile://<id>` 与 `Executable Name` 带回表单
 - 参数：`Capabilities`（逗号分隔）、`Args`（逗号分隔）、`Env`（每行 `key=value`）
 
-## 后端（Backends）
+## AI Models
 
-- 列表支持搜索与可用性筛选
-- 点击某个 backend 行会打开详情弹窗
-  - Summary：展示聚合后的可用节点数、ops/transports/node 数等
-  - Raw JSON：展示该 backend 聚合对象的完整 JSON
+- AI Models 页面分为 `Local` 与 `Remote`
+- 列表支持搜索与可用性筛选（available/unavailable）
+- 点击某一行进入详情页，查看该模型在各节点上的实例分布与状态
+
+### Local：创建 deployment
+
+- 入口：Local → AI Models → `Create`
+- 表单：
+  - Node：选择部署到哪个节点
+  - Provider：默认 `LLaMA CPP`
+  - Model name：展示用名称
+  - Model URL：当 Provider=llamacpp 时必填，填写 `.gguf` 文件直链（http/https）
+- 提交成功后会跳转并高亮对应的 deployment（URL query `deployment_id=...`），并在页面下方的 `Provisioning` 面板显示部署进度
+
+### Local：删除 deployment（已 available 也可删除）
+
+- 入口：Local → AI Models 列表右侧 `Actions` 列 → `Delete`
+- 行为：
+  - 会对该 `(provider, model)` 在关联节点上的 deployment 逐个删除
+  - Spearlet 在下一轮 reconcile 中停止本地进程并从 backend registry 移除
+- 删除后列表会自动刷新
 
 ## 常见问题
 

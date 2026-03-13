@@ -18,6 +18,7 @@ mod tests {
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -110,6 +111,7 @@ mod tests {
             sms_http_addr: None,
             storage_backend: Some("sled".to_string()),
             storage_path: Some("./test-data".to_string()),
+            local_models_dir: None,
             auto_register: Some(true),
             log_level: Some("debug".to_string()),
             log_format: None,
@@ -183,6 +185,7 @@ file = "/tmp/spearlet.log"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -270,6 +273,7 @@ format = "json"
             sms_http_addr: None,
             storage_backend: Some("rocksdb".to_string()),
             storage_path: Some("./cli-data".to_string()),
+            local_models_dir: None,
             auto_register: Some(true),
             log_level: Some("debug".to_string()),
             log_format: None,
@@ -349,6 +353,7 @@ file = "/tmp/home-spearlet.log"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -377,7 +382,12 @@ file = "/tmp/home-spearlet.log"
             std::env::remove_var("HOME");
 
             std::env::set_var("SPEARLET_GRPC_ADDR", "127.0.0.1:55555");
+            std::env::set_var("SPEARLET_GRPC_ENABLE_TLS", "true");
+            std::env::set_var("SPEARLET_GRPC_TLS_CERT_PATH", "/tmp/cert.pem");
+            std::env::set_var("SPEARLET_GRPC_TLS_KEY_PATH", "/tmp/key.pem");
             std::env::set_var("SPEARLET_HTTP_ADDR", "127.0.0.1:8088");
+            std::env::set_var("SPEARLET_HTTP_CORS_ENABLED", "false");
+            std::env::set_var("SPEARLET_HTTP_SWAGGER_ENABLED", "false");
             std::env::set_var("SPEARLET_LOG_LEVEL", "warn");
         }
 
@@ -390,6 +400,7 @@ file = "/tmp/home-spearlet.log"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -403,14 +414,102 @@ file = "/tmp/home-spearlet.log"
         assert!(result.is_ok());
         let cfg = result.unwrap();
         assert_eq!(cfg.spearlet.grpc.addr.to_string(), "127.0.0.1:55555");
+        assert!(cfg.spearlet.grpc.enable_tls);
+        assert_eq!(
+            cfg.spearlet.grpc.cert_path.as_deref(),
+            Some("/tmp/cert.pem")
+        );
+        assert_eq!(cfg.spearlet.grpc.key_path.as_deref(), Some("/tmp/key.pem"));
         assert_eq!(cfg.spearlet.http.server.addr.to_string(), "127.0.0.1:8088");
+        assert!(!cfg.spearlet.http.cors_enabled);
+        assert!(!cfg.spearlet.http.swagger_enabled);
         assert_eq!(cfg.spearlet.logging.level, "warn");
 
         // Cleanup / 清理环境
         unsafe {
             std::env::remove_var("SPEARLET_GRPC_ADDR");
+            std::env::remove_var("SPEARLET_GRPC_ENABLE_TLS");
+            std::env::remove_var("SPEARLET_GRPC_TLS_CERT_PATH");
+            std::env::remove_var("SPEARLET_GRPC_TLS_KEY_PATH");
             std::env::remove_var("SPEARLET_HTTP_ADDR");
+            std::env::remove_var("SPEARLET_HTTP_CORS_ENABLED");
+            std::env::remove_var("SPEARLET_HTTP_SWAGGER_ENABLED");
             std::env::remove_var("SPEARLET_LOG_LEVEL");
+        }
+    }
+
+    #[test]
+    fn test_env_overrides_router_grpc_filter_stream() {
+        unsafe {
+            std::env::remove_var("SPEAR_HOME");
+            std::env::remove_var("HOME");
+
+            std::env::set_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ENABLED", "true");
+            std::env::set_var(
+                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ADDR",
+                "127.0.0.1:50123",
+            );
+            std::env::set_var(
+                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_DECISION_TIMEOUT_MS",
+                "7",
+            );
+            std::env::set_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_FAIL_OPEN", "false");
+            std::env::set_var(
+                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_CANDIDATES_SENT",
+                "12",
+            );
+            std::env::set_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_DEBUG_KV", "3");
+            std::env::set_var(
+                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_INFLIGHT_TOTAL",
+                "99",
+            );
+            std::env::set_var(
+                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_PER_AGENT_MAX_INFLIGHT",
+                "11",
+            );
+        }
+
+        let args = CliArgs {
+            config: None,
+            node_name: None,
+            grpc_addr: None,
+            http_addr: None,
+            sms_grpc_addr: None,
+            sms_http_addr: None,
+            storage_backend: None,
+            storage_path: None,
+            local_models_dir: None,
+            auto_register: None,
+            log_level: None,
+            log_format: None,
+            log_file: None,
+            sms_connect_timeout_ms: None,
+            sms_connect_retry_ms: None,
+            reconnect_total_timeout_ms: None,
+        };
+
+        let result = AppConfig::load_with_cli(&args);
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
+        let f = cfg.spearlet.llm.router_grpc_filter_stream.as_ref().unwrap();
+        assert!(f.enabled);
+        assert_eq!(f.addr, "127.0.0.1:50123");
+        assert_eq!(f.decision_timeout_ms, 7);
+        assert!(!f.fail_open);
+        assert_eq!(f.max_candidates_sent, 12);
+        assert_eq!(f.max_debug_kv, 3);
+        assert_eq!(f.max_inflight_total, 99);
+        assert_eq!(f.per_agent_max_inflight, 11);
+
+        unsafe {
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ENABLED");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ADDR");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_DECISION_TIMEOUT_MS");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_FAIL_OPEN");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_CANDIDATES_SENT");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_DEBUG_KV");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_INFLIGHT_TOTAL");
+            std::env::remove_var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_PER_AGENT_MAX_INFLIGHT");
         }
     }
 
@@ -455,6 +554,7 @@ addr = "127.0.0.1:9000"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -529,6 +629,7 @@ addr = "127.0.0.1:9100"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -564,6 +665,7 @@ addr = "127.0.0.1:9100"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -589,6 +691,7 @@ addr = "127.0.0.1:9100"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -619,6 +722,7 @@ addr = "127.0.0.1:9100"
             sms_http_addr: None,
             storage_backend: None,
             storage_path: None,
+            local_models_dir: None,
             auto_register: None,
             log_level: None,
             log_format: None,
@@ -654,6 +758,7 @@ api_key_env = "OPENAI_CHAT_API_KEY"
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 credential_ref = "openai_chat"
 ops = ["chat_completions"]
 transports = ["http"]

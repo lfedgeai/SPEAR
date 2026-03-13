@@ -368,6 +368,12 @@ fn cchat_completion_impl(options_json: &str) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .unwrap_or("gpt-4o-mini");
 
+    let backend = options
+        .get("backend")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
     let _timeout_ms = options
         .get("timeoutMs")
         .and_then(|v| v.as_u64())
@@ -397,6 +403,12 @@ fn cchat_completion_impl(options_json: &str) -> Result<String, String> {
     let model_param = serde_json::json!({"key":"model","value": model}).to_string();
     sess.set_param_json(&model_param)
         .map_err(|e| e.to_string())?;
+
+    if let Some(b) = backend {
+        let backend_param = serde_json::json!({"key":"backend","value": b}).to_string();
+        sess.set_param_json(&backend_param)
+            .map_err(|e| e.to_string())?;
+    }
 
     let tools = options.get("tools").and_then(|v| v.as_array()).cloned();
     let mut flags = 0;

@@ -1,0 +1,295 @@
+{{- if .Values.spearlet.enabled -}}
+{{- $fullname := include "spear.spearlet.fullname" . -}}
+{{- $kind := default "DaemonSet" .Values.spearlet.kind -}}
+{{- $localModelsDir := default "/var/lib/spear/local_models" .Values.spearlet.config.localModelsDir -}}
+{{- if eq $kind "Deployment" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "spear.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: spearlet
+  template:
+    metadata:
+      labels:
+        {{- include "spear.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: spearlet
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/spearlet-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "spear.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: spearlet
+          image: "{{ include "spear.image.repository" (list . .Values.spearlet) }}:{{ include "spear.image.tag" (list . .Values.spearlet) }}"
+          imagePullPolicy: {{ include "spear.image.pullPolicy" (list . .Values.spearlet) }}
+          args:
+            - spearlet
+            - --config=/etc/spearlet/config.toml
+          env:
+            - name: SPEAR_CONFIG
+              value: /etc/spearlet/config.toml
+            - name: HOME
+              value: /tmp
+            {{- if .Values.e2e.enabled }}
+            - name: SPEAR_E2E
+              value: "1"
+            {{- end }}
+            - name: SPEARLET_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          {{- with .Values.spearlet.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.spearlet.service.grpcPort }}
+            - name: http
+              containerPort: {{ .Values.spearlet.service.httpPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/spearlet
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: {{ .Values.spearlet.config.storage.dataDir }}
+            {{- if ne $localModelsDir .Values.spearlet.config.storage.dataDir }}
+            - name: data
+              mountPath: {{ $localModelsDir }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.spearlet.resources | nindent 12 }}
+        {{- if .Values.routerFilterAgent.enabled }}
+        - name: keyword-filter-agent
+          image: "{{ include "spear.image.repository" (list . .Values.routerFilterAgent) }}:{{ include "spear.image.tag" (list . .Values.routerFilterAgent) }}"
+          imagePullPolicy: {{ include "spear.image.pullPolicy" (list . .Values.routerFilterAgent) }}
+          args:
+            - keyword-filter-agent
+            - --addr={{ .Values.routerFilterAgent.addr }}
+            - --agent-id=$(POD_NAME)
+            - --max-inflight={{ .Values.routerFilterAgent.maxInflight }}
+            - --max-candidates={{ .Values.routerFilterAgent.maxCandidates }}
+            {{- range .Values.routerFilterAgent.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.routerFilterAgent.resources | nindent 12 }}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.spearlet.persistence.enabled }}
+        - name: data
+          hostPath:
+            path: {{ .Values.spearlet.persistence.hostPath | quote }}
+            type: DirectoryOrCreate
+        {{- else }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.spearlet.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.spearlet.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.spearlet.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- else -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "spear.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: spearlet
+  template:
+    metadata:
+      labels:
+        {{- include "spear.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: spearlet
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/spearlet-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "spear.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: spearlet
+          image: "{{ include "spear.image.repository" (list . .Values.spearlet) }}:{{ include "spear.image.tag" (list . .Values.spearlet) }}"
+          imagePullPolicy: {{ include "spear.image.pullPolicy" (list . .Values.spearlet) }}
+          args:
+            - spearlet
+            - --config=/etc/spearlet/config.toml
+          env:
+            - name: SPEAR_CONFIG
+              value: /etc/spearlet/config.toml
+            - name: HOME
+              value: /tmp
+            {{- if .Values.e2e.enabled }}
+            - name: SPEAR_E2E
+              value: "1"
+            {{- end }}
+            - name: SPEARLET_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          {{- with .Values.spearlet.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.spearlet.service.grpcPort }}
+            - name: http
+              containerPort: {{ .Values.spearlet.service.httpPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/spearlet
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: {{ .Values.spearlet.config.storage.dataDir }}
+            {{- if ne $localModelsDir .Values.spearlet.config.storage.dataDir }}
+            - name: data
+              mountPath: {{ $localModelsDir }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.spearlet.resources | nindent 12 }}
+        {{- if .Values.routerFilterAgent.enabled }}
+        - name: keyword-filter-agent
+          image: "{{ include "spear.image.repository" (list . .Values.routerFilterAgent) }}:{{ include "spear.image.tag" (list . .Values.routerFilterAgent) }}"
+          imagePullPolicy: {{ include "spear.image.pullPolicy" (list . .Values.routerFilterAgent) }}
+          args:
+            - keyword-filter-agent
+            - --addr={{ .Values.routerFilterAgent.addr }}
+            - --agent-id=$(POD_NAME)
+            - --max-inflight={{ .Values.routerFilterAgent.maxInflight }}
+            - --max-candidates={{ .Values.routerFilterAgent.maxCandidates }}
+            {{- range .Values.routerFilterAgent.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.routerFilterAgent.resources | nindent 12 }}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.spearlet.persistence.enabled }}
+        - name: data
+          hostPath:
+            path: {{ .Values.spearlet.persistence.hostPath | quote }}
+            type: DirectoryOrCreate
+        {{- else }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.spearlet.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.spearlet.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.spearlet.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end -}}
+{{- end -}}

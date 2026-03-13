@@ -1,0 +1,44 @@
+{{- if .Values.sms.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "spear.sms.fullname" . }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+data:
+  config.toml: |
+    enable_swagger = {{ .Values.sms.config.enableSwagger }}
+    enable_web_admin = {{ .Values.sms.config.enableWebAdmin }}
+    heartbeat_timeout = {{ .Values.sms.config.heartbeatTimeout }}
+    cleanup_interval = {{ .Values.sms.config.cleanupInterval }}
+    max_upload_bytes = {{ .Values.sms.config.maxUploadBytes | int64 }}
+    files_dir = {{ .Values.sms.config.filesDir | quote }}
+    execution_logs_dir = {{ .Values.sms.config.executionLogsDir | quote }}
+
+    [grpc]
+    addr = {{ .Values.sms.config.grpcAddr | quote }}
+    enable_tls = false
+
+    [http]
+    addr = {{ .Values.sms.config.httpAddr | quote }}
+    enable_tls = false
+
+    [logging]
+    level = {{ .Values.sms.config.logging.level | quote }}
+    format = {{ .Values.sms.config.logging.format | quote }}
+    {{- if .Values.sms.config.logging.file }}
+    file = {{ .Values.sms.config.logging.file | quote }}
+    {{- end }}
+
+    [web_admin]
+    addr = {{ .Values.sms.config.webAdminAddr | quote }}
+    enable_tls = false
+
+    [database]
+    db_type = {{ .Values.sms.config.database.type | quote }}
+    path = {{ .Values.sms.config.database.path | quote }}
+    pool_size = {{ .Values.sms.config.database.poolSize }}
+
+    [mcp]
+    dir = {{ .Values.sms.config.mcpDir | quote }}
+{{- end -}}

@@ -218,7 +218,7 @@ rtasr 的 read/write 以及后台任务在修改队列/状态后必须：
 
 关键行为：
 
-- 建连：根据 host 配置决定 base_url 与鉴权（client_secret / api_key）
+- 建连：根据 host 配置决定 base_url；当配置了 `credential_ref` 时附加鉴权（api_key）
 - 发送：将音频 chunk base64 编码后发出 append 事件（参考 legacy：`legacy/spearlet/stream/rt_asr.go`）
 - 接收：将 websocket 事件帧（text/binary）转换为 JSON bytes 写入 `recv_queue`
 
@@ -233,6 +233,11 @@ rtasr 的 read/write 以及后台任务在修改队列/状态后必须：
 
 - `ops`：增加一个约定值（例如 `realtime_asr` 或 `realtime_transcription`）
 - `transports`：使用 `websocket`
+
+配置注意事项：
+
+- `[[spearlet.llm.backends]] hosting` 为必填，只允许 `local` 或 `remote`。
+- `credential_ref` 为可选：未配置时视为“无需鉴权”。
 
 实现层面可选两条路：
 

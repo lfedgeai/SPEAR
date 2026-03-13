@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use reqwest::Client;
-use tokio::net::TcpListener;
 use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -16,11 +16,12 @@ use url::Url;
 
 use crate::proto::sms::{BackendHosting, BackendInfo, BackendStatus};
 use crate::spearlet::config::SpearletConfig;
+use crate::spearlet::local_models::DEFAULT_LOCAL_MODELS_DIR;
 
 #[derive(Clone)]
 pub struct LlamaCppSupervisor {
     inner: Arc<Mutex<Inner>>,
-    data_dir: String,
+    local_models_dir: String,
 }
 
 struct Inner {
@@ -35,11 +36,16 @@ struct ManagedProc {
 
 impl LlamaCppSupervisor {
     pub fn new(cfg: &SpearletConfig) -> Self {
+        let local_models_dir = if cfg.local_models_dir.trim().is_empty() {
+            DEFAULT_LOCAL_MODELS_DIR.to_string()
+        } else {
+            cfg.local_models_dir.clone()
+        };
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 procs: HashMap::new(),
             })),
-            data_dir: cfg.storage.data_dir.clone(),
+            local_models_dir,
         }
     }
 
@@ -130,17 +136,14 @@ impl LlamaCppSupervisor {
         cmd.stderr(Stdio::null());
 
         if server_mode == "raw" {
-            let raw_args = params
-                .get("server_cmd_args")
-                .cloned()
-                .unwrap_or_default();
+            let raw_args = params.get("server_cmd_args").cloned().unwrap_or_default();
             let args = split_args(&raw_args);
             if args.is_empty() {
                 return Err("server_mode=raw requires server_cmd_args".to_string());
             }
             cmd.args(args);
         } else {
-            let model_path = resolve_model_path(&self.data_dir, model, params)?;
+            let model_path = resolve_model_path(&self.local_models_dir, model, params)?;
             if !model_path.exists() {
                 download_model(http, &model_path, params).await?;
             }
@@ -149,16 +152,28 @@ impl LlamaCppSupervisor {
             cmd.arg("--host").arg("127.0.0.1");
             cmd.arg("--port").arg(port.to_string());
 
-            if let Some(n_threads) = params.get("threads").cloned().filter(|v| !v.trim().is_empty())
+            if let Some(n_threads) = params
+                .get("threads")
+                .cloned()
+                .filter(|v| !v.trim().is_empty())
             {
                 cmd.arg("--threads").arg(n_threads);
             }
-            if let Some(ctx) = params.get("ctx_size").cloned().filter(|v| !v.trim().is_empty()) {
+            if let Some(ctx) = params
+                .get("ctx_size")
+                .cloned()
+                .filter(|v| !v.trim().is_empty())
+            {
                 cmd.arg("--ctx-size").arg(ctx);
             }
         }
 
-        let child = cmd.spawn().map_err(|e| e.to_string())?;
+        let child = cmd.spawn().map_err(|e| {
+            format!(
+                "failed to spawn llama server command (hint: install llama-server in spearlet image, or set params.server_cmd / server_mode=raw): {}",
+                e
+            )
+        })?;
 
         if ready_probe != "none" {
             let start_timeout_s = params
@@ -216,25 +231,42 @@ fn split_args(s: &str) -> Vec<String> {
 }
 
 fn resolve_model_path(
-    data_dir: &str,
+    local_models_dir: &str,
     model: &str,
     params: &HashMap<String, String>,
 ) -> Result<PathBuf, String> {
-    if let Some(p) = params.get("model_path").cloned().filter(|v| !v.trim().is_empty()) {
+    if let Some(p) = params
+        .get("model_path")
+        .cloned()
+        .filter(|v| !v.trim().is_empty())
+    {
         let pb = PathBuf::from(p);
         if pb.is_absolute() {
             return Ok(pb);
         }
-        return Ok(Path::new(data_dir).join(pb));
+        return Ok(Path::new(local_models_dir).join(pb));
     }
 
-    let root = Path::new(data_dir).join("local_models").join("llamacpp");
+    let root = Path::new(local_models_dir).join("llamacpp");
     let dir = root.join("models");
-    let _ = std::fs::create_dir_all(&dir);
-    let file = if let Some(model_url) = params.get("model_url").cloned().filter(|s| !s.trim().is_empty()) {
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        format!(
+            "failed to create llamacpp model dir {}: {}",
+            dir.display(),
+            e
+        )
+    })?;
+    let file = if let Some(model_url) = params
+        .get("model_url")
+        .cloned()
+        .filter(|s| !s.trim().is_empty())
+    {
         let name = Url::parse(&model_url)
             .ok()
-            .and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(|x| x.to_string())))
+            .and_then(|u| {
+                u.path_segments()
+                    .and_then(|mut s| s.next_back().map(|x| x.to_string()))
+            })
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| sanitize_component(model));
         let s = sanitize_component(&name);
@@ -247,6 +279,27 @@ fn resolve_model_path(
         format!("{}.gguf", sanitize_component(model))
     };
     Ok(dir.join(file))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_model_path_errors_when_data_dir_is_not_a_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data_dir = tmp.path().join("not_a_dir");
+        std::fs::write(&data_dir, b"x").unwrap();
+
+        let params = HashMap::<String, String>::new();
+        let err = resolve_model_path(
+            data_dir.to_string_lossy().as_ref(),
+            "qwen2.5-1b-instruct-q4_k_m",
+            &params,
+        )
+        .unwrap_err();
+        assert!(err.contains("failed to create llamacpp model dir"));
+    }
 }
 
 fn sanitize_component(s: &str) -> String {
@@ -280,12 +333,18 @@ async fn download_model(
         return Err("model file missing and skip_download=1".to_string());
     }
 
-    let parent = model_path.parent().ok_or_else(|| "invalid model_path".to_string())?;
+    let parent = model_path
+        .parent()
+        .ok_or_else(|| "invalid model_path".to_string())?;
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| e.to_string())?;
 
-    if let Some(model_url) = params.get("model_url").cloned().filter(|s| !s.trim().is_empty()) {
+    if let Some(model_url) = params
+        .get("model_url")
+        .cloned()
+        .filter(|s| !s.trim().is_empty())
+    {
         let timeout_s = params
             .get("download_timeout_s")
             .and_then(|s| s.trim().parse::<u64>().ok())
@@ -312,7 +371,9 @@ async fn download_model_from_url(
 
     let now_ms = chrono::Utc::now().timestamp_millis();
     let tmp_path = model_path.with_extension(format!("part-{}", now_ms));
-    let parent = model_path.parent().ok_or_else(|| "invalid model_path".to_string())?;
+    let parent = model_path
+        .parent()
+        .ok_or_else(|| "invalid model_path".to_string())?;
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| e.to_string())?;

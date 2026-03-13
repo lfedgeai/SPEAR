@@ -11,7 +11,11 @@ use tracing::{error, info};
 use crate::proto::spearlet::execution_service_server::ExecutionServiceServer;
 use crate::proto::spearlet::invocation_service_server::InvocationServiceServer;
 use crate::proto::spearlet::object_service_server::ObjectServiceServer;
+use crate::proto::spearlet::router_filter_stream_service_server::RouterFilterStreamServiceServer;
 use crate::spearlet::config::SpearletConfig;
+use crate::spearlet::execution::ai::router::grpc_filter_stream::{
+    RouterFilterStreamHub, RouterFilterStreamServiceImpl,
+};
 use crate::spearlet::function_service::FunctionServiceImpl;
 use crate::spearlet::object_service::ObjectServiceImpl;
 
@@ -23,6 +27,8 @@ pub struct GrpcServer {
     object_service: Arc<ObjectServiceImpl>,
     /// Function service implementation / 函数服务实现
     function_service: Arc<FunctionServiceImpl>,
+    /// Router filter stream service implementation / Router filter stream 服务实现
+    router_filter_stream_service: RouterFilterStreamServiceImpl,
 }
 
 impl GrpcServer {
@@ -37,10 +43,21 @@ impl GrpcServer {
         let function_service =
             Arc::new(FunctionServiceImpl::new(config.clone(), sms_channel).await?);
 
+        let hub = RouterFilterStreamHub::global().unwrap_or_else(|| {
+            config
+                .llm
+                .router_grpc_filter_stream
+                .clone()
+                .map(RouterFilterStreamHub::init_global)
+                .unwrap_or_else(|| Arc::new(RouterFilterStreamHub::new(Default::default())))
+        });
+        let router_filter_stream_service = RouterFilterStreamServiceImpl::new(hub);
+
         Ok(Self {
             config,
             object_service,
             function_service,
+            router_filter_stream_service,
         })
     }
 
@@ -56,11 +73,13 @@ impl GrpcServer {
 
     /// Start gRPC server / 启动gRPC服务器
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (addr, object_service, invocation_service, execution_service) = self.prepare().await?;
+        let (addr, object_service, invocation_service, execution_service, router_filter_stream) =
+            self.prepare().await?;
         let server = Server::builder()
             .add_service(object_service)
             .add_service(invocation_service)
             .add_service(execution_service)
+            .add_service(router_filter_stream)
             .serve(addr);
 
         match server.await {
@@ -83,11 +102,13 @@ impl GrpcServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        let (addr, object_service, invocation_service, execution_service) = self.prepare().await?;
+        let (addr, object_service, invocation_service, execution_service, router_filter_stream) =
+            self.prepare().await?;
         let server = Server::builder()
             .add_service(object_service)
             .add_service(invocation_service)
             .add_service(execution_service)
+            .add_service(router_filter_stream)
             .serve_with_shutdown(addr, shutdown);
 
         match server.await {
@@ -110,6 +131,7 @@ impl GrpcServer {
             ObjectServiceServer<Arc<ObjectServiceImpl>>,
             InvocationServiceServer<Arc<FunctionServiceImpl>>,
             ExecutionServiceServer<Arc<FunctionServiceImpl>>,
+            RouterFilterStreamServiceServer<RouterFilterStreamServiceImpl>,
         ),
         Box<dyn std::error::Error + Send + Sync>,
     > {
@@ -128,7 +150,18 @@ impl GrpcServer {
             .max_decoding_message_size(self.config.storage.max_object_size as usize)
             .max_encoding_message_size(self.config.storage.max_object_size as usize);
 
-        Ok((addr, object_service, invocation_service, execution_service))
+        let router_filter_stream_service =
+            RouterFilterStreamServiceServer::new(self.router_filter_stream_service.clone())
+                .max_decoding_message_size(self.config.storage.max_object_size as usize)
+                .max_encoding_message_size(self.config.storage.max_object_size as usize);
+
+        Ok((
+            addr,
+            object_service,
+            invocation_service,
+            execution_service,
+            router_filter_stream_service,
+        ))
     }
 }
 

@@ -136,6 +136,20 @@ pub struct CliArgs {
         help = "MCP server configs directory / MCP server 配置目录"
     )]
     pub mcp_dir: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Uploaded files directory / 上传文件存储目录"
+    )]
+    pub files_dir: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Execution logs directory / 执行日志存储目录"
+    )]
+    pub execution_logs_dir: Option<String>,
 }
 
 /// SMS service configuration / SMS服务配置
@@ -161,6 +175,8 @@ pub struct SmsConfig {
     pub cleanup_interval: u64,
     /// Max upload size in bytes for embedded file server / 内嵌文件服务器的最大上传字节数
     pub max_upload_bytes: u64,
+    pub files_dir: String,
+    pub execution_logs_dir: String,
     /// Optional KV config for task events outbox / 任务事件Outbox的可选KV配置
     pub event_kv: Option<KvStoreConfig>,
 
@@ -264,6 +280,16 @@ impl SmsConfig {
                 config.web_admin.addr = a;
             }
         }
+        if let Ok(v) = std::env::var("SMS_FILES_DIR") {
+            if !v.is_empty() {
+                config.files_dir = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_EXECUTION_LOGS_DIR") {
+            if !v.is_empty() {
+                config.execution_logs_dir = v;
+            }
+        }
 
         // Try loading from home directory first / 优先从用户主目录加载配置
         // Home path: ~/.sms/config.toml
@@ -317,6 +343,12 @@ impl SmsConfig {
 
         if let Some(p) = &args.mcp_dir {
             config.mcp.dir = p.clone();
+        }
+        if let Some(p) = &args.files_dir {
+            config.files_dir = p.clone();
+        }
+        if let Some(p) = &args.execution_logs_dir {
+            config.execution_logs_dir = p.clone();
         }
 
         if let Some(db_type) = &args.db_type {
@@ -387,6 +419,10 @@ impl SmsConfig {
             config.max_upload_bytes = n;
         }
 
+        if config.execution_logs_dir.trim().is_empty() {
+            config.execution_logs_dir = "./data/execution_logs".to_string();
+        }
+
         // Optional: load event KV from environment / 可选：从环境变量加载事件KV
         let ev_backend = std::env::var("SMS_EVENTS_KV_BACKEND").ok();
         let ev_path = std::env::var("SMS_EVENTS_KV_PATH").ok();
@@ -429,6 +465,8 @@ impl Default for SmsConfig {
             heartbeat_timeout: 90,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
+            files_dir: "./data/files".to_string(),
+            execution_logs_dir: String::new(),
             event_kv: None,
             mcp: McpConfig::default(),
         }

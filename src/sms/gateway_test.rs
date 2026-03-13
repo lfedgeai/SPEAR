@@ -16,11 +16,16 @@ use crate::proto::sms::{
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 /// Create a mock gateway state for testing / 创建用于测试的模拟网关状态
 async fn create_mock_gateway_state() -> GatewayState {
     // Create a mock channel for testing / 创建用于测试的模拟通道
     let channel = tonic::transport::Channel::from_static("http://localhost:50051").connect_lazy();
+    let files_dir = std::env::temp_dir()
+        .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
 
     GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
@@ -36,6 +41,7 @@ async fn create_mock_gateway_state() -> GatewayState {
         ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir,
     }
 }
 
@@ -174,6 +180,10 @@ async fn test_gateway_state_with_different_endpoints() {
             model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
+            files_dir: std::env::temp_dir()
+                .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+                .to_string_lossy()
+                .to_string(),
         };
 
         // State should be created successfully with any endpoint / 任何端点都应该成功创建状态

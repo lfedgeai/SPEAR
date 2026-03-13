@@ -15,6 +15,7 @@ This directory contains the Spear Backend Adapter Layer design (multi-operation 
 ## Routing & Backends
 
 - `routing-en.md`: capability modeling, candidate filtering, and selection policies (LB/Fallback/Hedge/Mirror)
+- `router-grpc-filter-design-en.md`: external gRPC filter/scorer contract for candidate routing
 - `backends-en.md`: Cargo feature pruning, registry/discovery, configuration model
 - `streaming-en.md`: realtime/streaming subsystem (transport, lifecycle, events)
 

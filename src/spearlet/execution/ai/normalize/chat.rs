@@ -15,7 +15,7 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
         .params
         .get(chat_keys::MODEL)
         .and_then(|v| v.as_str())
-        .unwrap_or("stub-model")
+        .unwrap_or("")
         .to_string();
 
     let mut requirements = Requirements::default();

@@ -413,6 +413,10 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -590,6 +594,10 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();

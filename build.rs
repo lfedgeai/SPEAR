@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "proto/spearlet/object.proto",
                 "proto/spearlet/function.proto",
+                "proto/spearlet/router_filter.proto",
             ],
             &["proto"],
         )?;

@@ -12,6 +12,9 @@ use crate::proto::sms::{
     BackendHosting, BackendInfo, BackendStatus, NodeBackendSnapshot, ReportNodeBackendsRequest,
 };
 use crate::spearlet::config::{LlmBackendConfig, SpearletConfig};
+use crate::spearlet::execution::ai::backends::{
+    KIND_OPENAI_CHAT_COMPLETION, KIND_OPENAI_REALTIME_WS, KIND_OLLAMA_CHAT, KIND_STUB,
+};
 use crate::spearlet::local_models::ManagedBackendRegistry;
 
 #[derive(Debug)]
@@ -65,30 +68,31 @@ impl BackendReporterService {
     }
 }
 
-fn backend_requires_api_key(kind: &str) -> bool {
-    matches!(kind, "openai_chat_completion" | "openai_realtime_ws")
-}
-
 fn infer_provider(kind: &str) -> String {
     match kind {
-        "openai_chat_completion" | "openai_realtime_ws" => "openai".to_string(),
-        "ollama_chat" => "ollama".to_string(),
-        "stub" => "internal".to_string(),
+        KIND_OPENAI_CHAT_COMPLETION | KIND_OPENAI_REALTIME_WS => "openai".to_string(),
+        KIND_OLLAMA_CHAT => "ollama".to_string(),
+        KIND_STUB => "internal".to_string(),
         _ => "unknown".to_string(),
     }
 }
 
-fn infer_hosting(kind: &str, base_url: &str) -> i32 {
-    if matches!(kind, "ollama_chat" | "stub") {
-        return BackendHosting::NodeLocal as i32;
+fn parse_hosting(s: &str) -> Option<i32> {
+    let v = s.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "local" => Some(BackendHosting::NodeLocal as i32),
+        "remote" => Some(BackendHosting::Remote as i32),
+        "unknown" | "unspecified" => Some(BackendHosting::Unspecified as i32),
+        _ => None,
     }
-    if kind.starts_with("openai_") {
-        return BackendHosting::Remote as i32;
-    }
-    if base_url.contains("127.0.0.1") || base_url.contains("localhost") {
-        return BackendHosting::NodeLocal as i32;
-    }
-    BackendHosting::Unspecified as i32
+}
+
+fn resolve_hosting(backend: &LlmBackendConfig) -> i32 {
+    backend
+        .hosting
+        .as_deref()
+        .and_then(parse_hosting)
+        .unwrap_or(BackendHosting::Unspecified as i32)
 }
 
 fn credential_env_map(cfg: &SpearletConfig) -> HashMap<String, String> {
@@ -123,27 +127,11 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
     let creds = credential_env_map(cfg);
     let mut out = Vec::new();
 
-    out.push(BackendInfo {
-        name: "stub".to_string(),
-        kind: "stub".to_string(),
-        operations: vec!["chat_completions".to_string()],
-        features: Vec::new(),
-        transports: vec!["inprocess".to_string()],
-        weight: 0,
-        priority: 0,
-        base_url: String::new(),
-        status: BackendStatus::Available as i32,
-        status_reason: String::new(),
-        provider: "internal".to_string(),
-        model: String::new(),
-        hosting: BackendHosting::NodeLocal as i32,
-    });
-
     for b in cfg.llm.backends.iter() {
         let mut status = BackendStatus::Available as i32;
         let mut reason = String::new();
 
-        if backend_requires_api_key(&b.kind) {
+        if b.credential_ref.as_deref().map(|s| s.trim()).is_some_and(|s| !s.is_empty()) {
             let env = resolve_backend_env(b, &creds);
             match env {
                 Ok(env_name) => match std::env::var(&env_name) {
@@ -173,7 +161,7 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
             status_reason: reason,
             provider: infer_provider(&b.kind),
             model: b.model.clone().unwrap_or_default(),
-            hosting: infer_hosting(&b.kind, &b.base_url),
+            hosting: resolve_hosting(b),
         });
     }
 
@@ -206,7 +194,7 @@ async fn report_loop(
         revision = revision.saturating_add(1);
         let mut backends = build_backend_info_list(&config);
         if let Some(m) = managed_backends.as_ref() {
-            backends.extend(m.list().await);
+            backends.extend(m.list());
         }
         let snapshot = NodeBackendSnapshot {
             node_uuid: node_uuid.clone(),

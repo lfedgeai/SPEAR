@@ -12,20 +12,32 @@ use crate::spearlet::param_keys::{chat as chat_keys, mcp as mcp_keys};
 pub struct OpenAIChatCompletionBackendAdapter {
     name: String,
     base_url: String,
-    api_key: String,
+    api_key: Option<String>,
+    fixed_model: Option<String>,
 }
 
 impl OpenAIChatCompletionBackendAdapter {
     pub fn new(
         name: impl Into<String>,
         base_url: impl Into<String>,
-        api_key: impl Into<String>,
+        api_key: Option<String>,
     ) -> Self {
         Self {
             name: name.into(),
             base_url: base_url.into(),
-            api_key: api_key.into(),
+            api_key: api_key.and_then(|s| {
+                let t = s.trim().to_string();
+                if t.is_empty() { None } else { Some(t) }
+            }),
+            fixed_model: None,
         }
+    }
+
+    pub fn with_fixed_model(mut self, model: impl Into<String>) -> Self {
+        let s = model.into();
+        let t = s.trim().to_string();
+        self.fixed_model = if t.is_empty() { None } else { Some(t) };
+        self
     }
 
     fn build_chat_completions_body(
@@ -41,7 +53,14 @@ impl OpenAIChatCompletionBackendAdapter {
             });
         };
 
-        if p.model.trim().is_empty() {
+        let model = self
+            .fixed_model
+            .as_deref()
+            .unwrap_or_else(|| p.model.as_str())
+            .trim()
+            .to_string();
+
+        if model.is_empty() {
             return Err(CanonicalError {
                 code: "invalid_request".to_string(),
                 message: "missing model".to_string(),
@@ -67,7 +86,7 @@ impl OpenAIChatCompletionBackendAdapter {
         })?;
 
         let mut body = json!({
-            "model": p.model,
+            "model": model,
             "messages": messages_val,
         });
 
@@ -144,15 +163,7 @@ impl BackendAdapter for OpenAIChatCompletionBackendAdapter {
             });
         }
 
-        let api_key = self.api_key.trim();
-        if api_key.is_empty() {
-            return Err(CanonicalError {
-                code: "invalid_configuration".to_string(),
-                message: "missing api key".to_string(),
-                retryable: false,
-                operation: Some(req.operation.clone()),
-            });
-        }
+        let api_key = self.api_key.as_deref().unwrap_or("");
 
         let body_json = self.build_chat_completions_body(req)?;
         let body_bytes = serde_json::to_vec(&body_json).map_err(|e| CanonicalError {
@@ -182,8 +193,10 @@ impl BackendAdapter for OpenAIChatCompletionBackendAdapter {
             let mut r = client
                 .post(url)
                 .header("content-type", "application/json")
-                .header("authorization", format!("Bearer {}", api_key))
                 .body(body_bytes);
+            if !api_key.trim().is_empty() {
+                r = r.header("authorization", format!("Bearer {}", api_key.trim()));
+            }
             if let Some(t) = timeout {
                 r = r.timeout(t);
             }
@@ -247,9 +260,9 @@ mod tests {
     use crate::spearlet::execution::ai::ir::{ChatCompletionsPayload, ChatMessage, RoutingHints};
 
     #[test]
-    fn test_missing_api_key_is_error() {
+    fn test_build_body_does_not_require_api_key() {
         let adapter =
-            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1", "");
+            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1", None);
         let req = CanonicalRequestEnvelope {
             version: 1,
             request_id: "r1".to_string(),
@@ -272,14 +285,17 @@ mod tests {
             }),
             extra: HashMap::new(),
         };
-        let err = adapter.invoke(&req).unwrap_err();
-        assert_eq!(err.code, "invalid_configuration");
+        let body = adapter.build_chat_completions_body(&req).unwrap();
+        assert_eq!(body.get("model").and_then(|v| v.as_str()), Some("gpt-test"));
     }
 
     #[test]
     fn test_join_url() {
-        let adapter =
-            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1/", "k");
+        let adapter = OpenAIChatCompletionBackendAdapter::new(
+            "openai",
+            "https://api.openai.com/v1/",
+            Some("k".to_string()),
+        );
         assert_eq!(
             adapter.join_url("chat/completions"),
             "https://api.openai.com/v1/chat/completions"
@@ -288,8 +304,11 @@ mod tests {
 
     #[test]
     fn test_params_cannot_override_messages_or_tools() {
-        let adapter =
-            OpenAIChatCompletionBackendAdapter::new("openai", "https://api.openai.com/v1/", "k");
+        let adapter = OpenAIChatCompletionBackendAdapter::new(
+            "openai",
+            "https://api.openai.com/v1/",
+            Some("k".to_string()),
+        );
 
         let mut params = HashMap::new();
         params.insert(

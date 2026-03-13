@@ -91,6 +91,17 @@ pub struct ChatSessionSnapshot {
 
 impl DefaultHostApi {
     fn cchat_attach_debug_fields(&self, mut v: Value, backend: &str, model: &str) -> Value {
+        let resp_model = v
+            .get("model")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let model = if model.trim().is_empty() && !resp_model.is_empty() {
+            resp_model.as_str()
+        } else {
+            model
+        };
         match v.as_object_mut() {
             Some(obj) => {
                 obj.insert(

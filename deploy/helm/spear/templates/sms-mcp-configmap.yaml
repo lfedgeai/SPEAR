@@ -1,0 +1,25 @@
+{{- if and .Values.sms.enabled .Values.sms.mcp.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "spear.sms.fullname" . }}-mcp
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+data:
+  {{- if .Values.sms.mcp.fs.enabled }}
+  fs.toml: |
+    server_id = "fs"
+    display_name = "Filesystem"
+    transport = "stdio"
+    tool_namespace = ""
+    allowed_tools = ["read_*", "list_*", "stat_*", "search_*"]
+
+    [stdio]
+    command = "npx"
+    args = ["-y", "@modelcontextprotocol/server-filesystem", {{ .Values.sms.mcp.fs.root | quote }}]
+    cwd = ""
+
+    [budgets]
+    tool_timeout_ms = 30000
+  {{- end }}
+{{- end -}}

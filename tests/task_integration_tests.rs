@@ -121,6 +121,10 @@ mod task_test_utils {
             model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
+            files_dir: std::env::temp_dir()
+                .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+                .to_string_lossy()
+                .to_string(),
         };
 
         // Create HTTP router / 创建HTTP路由器

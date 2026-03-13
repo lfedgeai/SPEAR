@@ -1,0 +1,8 @@
+sms:
+  config:
+    enableWebAdmin: true
+
+spearlet:
+  kind: Deployment
+  config:
+    autoRegister: true

@@ -14,13 +14,16 @@
 
 当前 `spearlet/config.rs`：
 
-- `LlmConfig` 包含 `credentials` 与 `backends`，见 [config.rs](../../src/spearlet/config.rs#L351-L406)
-- `LlmBackendConfig` **不再支持** `api_key_env`，只允许通过 `credential_ref` 引用凭据
+- `LlmConfig` 包含 `credentials` 与 `backends`，见 [config.rs](../../src/spearlet/config.rs)
+- `LlmBackendConfig` **不再支持** `api_key_env`；API key 通过 `credential_ref` 引用凭据（可选）
+- `LlmBackendConfig.hosting` 为必填，只允许 `local` 或 `remote`
 - 为了彻底清理旧方式，`LlmConfig/LlmCredentialConfig/LlmBackendConfig` 已启用 `deny_unknown_fields`，配置里出现 `api_key_env` 会导致解析失败
 
 当前 registry 构建逻辑：
 
-- 仅支持 `credential_ref`：解析出 credential 对应的 `api_key_env`，并在 `RuntimeConfig.global_environment` 缺失时过滤该 backend，见 [registry.rs](../../src/spearlet/execution/host_api/registry.rs#L11-L105)
+- `credential_ref` 为可选：
+  - 若配置了 `credential_ref`（非空）：解析出 credential 对应的 `api_key_env`，并在 `RuntimeConfig.global_environment` 缺失/为空时过滤该 backend
+  - 若未配置 `credential_ref`：视为“无需鉴权”（不会附加 API key header）
 
 ### 0.2 核心痛点
 
@@ -69,6 +72,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 credential_ref = "openai_chat"
 ops = ["chat_completions"]
 features = ["supports_tools", "supports_json_schema"]
@@ -80,6 +84,7 @@ priority = 0
 name = "openai-realtime-asr"
 kind = "openai_realtime_ws"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 credential_ref = "openai_realtime"
 ops = ["speech_to_text"]
 transports = ["websocket"]
@@ -114,6 +119,8 @@ pub struct LlmBackendConfig {
     pub name: String,
     pub kind: String,
     pub base_url: String,
+    pub hosting: Option<String>,
+    pub model: Option<String>,
     pub credential_ref: Option<String>,
     pub weight: u32,
     pub priority: i32,
@@ -132,7 +139,8 @@ pub struct LlmBackendConfig {
 
 - `backends[].api_key_env` 已移除，不再支持。
 - `spearlet.llm` 相关 struct 已启用 `deny_unknown_fields`：配置文件里出现 `api_key_env` 会直接解析失败。
-- 对需要 key 的 backend（openai_chat_completion / openai_realtime_ws）：必须配置 `credential_ref`，否则该 backend 不会进入 registry。
+- `hosting` 为必填，且仅允许 `local|remote`（启动期会直接报错）。
+- `credential_ref` 为可选：仅当配置了 `credential_ref`（非空）时才要求对应 credential/env 存在；未配置则视为“无需鉴权”。
 
 ## 3. 凭据解析与校验（解析层）
 
@@ -181,7 +189,7 @@ fn resolve_backend_api_key_env(
 
 ### 4.1 问题
 
-当前默认启动路径里 `RuntimeConfig.global_environment` 通常为空（见 [function_service.rs](../../src/spearlet/function_service.rs#L85-L95)），这会导致：
+当前默认启动路径里 `RuntimeConfig.global_environment` 通常为空（见 [function_service.rs](../../src/spearlet/function_service.rs)），这会导致（当 backend 配置了 `credential_ref` 时）：
 
 - registry 过滤掉需要 key 的 backend
 - 或者 streaming websocket header 模板无法展开 `${env:...}`

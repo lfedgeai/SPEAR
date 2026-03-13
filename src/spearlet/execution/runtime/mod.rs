@@ -39,6 +39,9 @@ pub use kubernetes::{KubernetesConfig, KubernetesRuntime};
 pub use process::{ProcessConfig, ProcessRuntime};
 pub use wasm::{WasmConfig, WasmRuntime};
 
+pub const DEFAULT_PROCESS_WORKING_DIRECTORY: &str = "/tmp/spearlet";
+pub const DEFAULT_SHELL_EXECUTABLE: &str = "/bin/sh";
+
 // Note: ExecutionMode, ExecutionStatus, RuntimeExecutionResponse, and ExecutionContext are defined in this module
 // 注意：ExecutionMode、ExecutionStatus、RuntimeExecutionResponse 和 ExecutionContext 在此模块中定义
 

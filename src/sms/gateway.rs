@@ -39,6 +39,7 @@ pub struct GatewayState {
         ModelDeploymentRegistryServiceClient<tonic::transport::Channel>,
     pub cancel_token: CancellationToken,
     pub max_upload_bytes: usize,
+    pub files_dir: String,
 }
 
 /// Create HTTP gateway router / 创建HTTP网关路由器

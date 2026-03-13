@@ -25,6 +25,7 @@ pub struct HttpGateway {
     grpc_addr: SocketAddr,
     enable_swagger: bool,
     max_upload_bytes: usize,
+    files_dir: String,
 }
 
 impl HttpGateway {
@@ -34,12 +35,14 @@ impl HttpGateway {
         grpc_addr: SocketAddr,
         enable_swagger: bool,
         max_upload_bytes: usize,
+        files_dir: String,
     ) -> Self {
         Self {
             addr,
             grpc_addr,
             enable_swagger,
             max_upload_bytes,
+            files_dir,
         }
     }
 
@@ -115,6 +118,7 @@ impl HttpGateway {
             model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: self.max_upload_bytes,
+            files_dir: self.files_dir.clone(),
         };
         let app = create_gateway_router(state);
 

@@ -2,6 +2,7 @@ use axum_test::TestServer;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::web_admin::create_admin_router;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_admin_tasks_schema_contains_expected_fields() {
@@ -75,6 +76,10 @@ async fn test_admin_tasks_schema_contains_expected_fields() {
             ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();

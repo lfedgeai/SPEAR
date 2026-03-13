@@ -92,7 +92,12 @@ make mac-build
 
 ### 密钥/凭证
 
-不要把密钥写入配置文件。使用 `llm.credentials[].api_key_env` 引用环境变量。
+不要把密钥写入配置文件。使用 `spearlet.llm.credentials[].api_key_env` 引用环境变量，并在 backend 上通过 `credential_ref` 进行绑定。
+
+LLM backend 注意事项：
+
+- `[[spearlet.llm.backends]] hosting` 为必填，只允许 `local` 或 `remote`。
+- `credential_ref` 为可选：配置后要求对应 env 存在（否则 backend 会被过滤）；不配置则视为“无需鉴权”（适用于自建代理等场景）。
 
 ### Ollama 模型导入
 
@@ -113,6 +118,15 @@ Web Admin 提供 Nodes/Tasks/Files/AI Models 等页面。
 
 - AI Models 提供跨节点聚合视图，并区分 Local/Remote
 - Local AI Models 支持在节点上创建/删除 model deployment
+
+本地模型拉取（llamacpp）：
+
+- `model` 只是展示用 key；当本地模型文件不存在时，实际下载取决于 `params.model_url`。
+- 支持参数：
+  - `model_url`：指向 `.gguf` 的 http/https URL（支持大文件）。
+  - `download_timeout_s`：总下载超时预算（秒，默认 3600）。
+  - `model_path`：绝对路径，或相对于 `spearlet.local_models_dir` 的相对路径。
+  - `skip_download=1`：模型文件不存在时直接失败（不下载）。
 
 文档：
 

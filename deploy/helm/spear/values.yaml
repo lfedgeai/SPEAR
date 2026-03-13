@@ -1,0 +1,147 @@
+global:
+  image:
+    repository: spear
+    tag: latest
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+e2e:
+  enabled: false
+
+sms:
+  enabled: true
+  image: {}
+  service:
+    type: ClusterIP
+    grpcPort: 50051
+    httpPort: 8080
+    adminPort: 8081
+  config:
+    grpcAddr: "0.0.0.0:50051"
+    httpAddr: "0.0.0.0:8080"
+    enableSwagger: true
+    enableWebAdmin: false
+    webAdminAddr: "0.0.0.0:8081"
+    database:
+      type: "sled"
+      path: "/var/lib/spear/sms"
+      poolSize: 10
+    mcpDir: ""
+    logging:
+      level: "info"
+      format: "json"
+      file: ""
+    heartbeatTimeout: 90
+    cleanupInterval: 30
+    maxUploadBytes: 67108864
+    filesDir: "/var/lib/spear/files"
+    executionLogsDir: "/var/lib/spear/execution_logs"
+  mcp:
+    enabled: false
+    fs:
+      enabled: false
+      root: "/"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+  extraArgs: []
+
+spearlet:
+  enabled: true
+  kind: DaemonSet
+  image: {}
+  service:
+    enabled: false
+    type: ClusterIP
+    grpcPort: 50052
+    httpPort: 8081
+  config:
+    grpcAddr: "0.0.0.0:50052"
+    httpAddr: "0.0.0.0:8081"
+    smsGrpcAddr: ""
+    smsHttpAddr: ""
+    autoRegister: true
+    heartbeatInterval: 30
+    cleanupInterval: 300
+    localModelsDir: ""
+    llm:
+      defaultPolicy: "weighted_random"
+      credentials: []
+      backends: []
+      discovery:
+        ollama:
+          enabled: false
+          scope: "serving"
+          baseUrl: "http://127.0.0.1:11434"
+          allowRemote: false
+          timeoutMs: 1500
+          maxModels: 32
+          allowModels: []
+          denyModels: []
+          namePrefix: "ollama/"
+          nameConflict: "skip"
+          defaultWeight: 100
+          defaultPriority: 0
+          defaultOps: ["chat_completions"]
+          defaultFeatures: []
+          defaultTransports: ["http"]
+    storage:
+      backend: "memory"
+      dataDir: "/var/lib/spear/spearlet"
+      maxCacheSizeMb: 512
+      compressionEnabled: true
+      maxObjectSize: 67108864
+    logging:
+      level: "info"
+      format: "json"
+      file: ""
+    kubernetesRuntime:
+      enabled: false
+  persistence:
+    enabled: false
+    hostPath: "/var/lib/spear/spearlet"
+  serviceAccount:
+    create: true
+    name: ""
+  rbac:
+    create: false
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+  extraArgs: []
+
+routerFilterAgent:
+  enabled: false
+  image: {}
+  addr: "127.0.0.1:50052"
+  maxInflight: 256
+  maxCandidates: 64
+  decisionTimeoutMs: 2000
+  failOpen: true
+  contentFetchEnabled: true
+  contentFetchMaxBytes: 65536
+  resources: {}
+  extraArgs: []
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

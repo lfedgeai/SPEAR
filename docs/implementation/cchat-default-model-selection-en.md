@@ -20,6 +20,7 @@ Normalization writes this model into `CanonicalRequestEnvelope.payload` and it p
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 model = "gpt-4o-mini"
 ...
 ```
@@ -72,4 +73,3 @@ With debug logging enabled, the Router emits a `router selected backend` debug l
 
 - If one backend should support multiple models (e.g. OpenAI), do not bind it via `backend.model`; use explicit `backend`/allowlist/denylist or other selection mechanisms.
 - If you want strict “model → backend” routing (e.g. pin some models to local Ollama), set `backend.model` and have guests only set `model`.
-

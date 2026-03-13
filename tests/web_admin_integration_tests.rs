@@ -10,6 +10,7 @@ use spear_next::sms::web_admin::create_admin_router;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
+use uuid::Uuid;
 
 async fn start_test_grpc() -> (tokio::task::JoinHandle<()>, String) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -125,6 +126,10 @@ async fn test_admin_list_nodes_empty() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -247,6 +252,10 @@ async fn test_admin_list_nodes_filter_and_sort() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -364,6 +373,10 @@ async fn test_admin_stats() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -442,6 +455,10 @@ async fn test_admin_nodes_stream() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -555,6 +572,10 @@ async fn test_admin_node_detail_includes_resource() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -636,6 +657,10 @@ async fn test_admin_mcp_servers_crud() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -745,6 +770,10 @@ async fn test_admin_mcp_servers_validation() {
         model_deployment_registry_client,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();

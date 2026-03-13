@@ -1,0 +1,12 @@
+SPEAR installed. / SPEAR 已安装。
+
+SMS Service / SMS 服务:
+  gRPC:  {{ include "spear.sms.fullname" . }}:{{ .Values.sms.service.grpcPort }}
+  HTTP:  {{ include "spear.sms.fullname" . }}:{{ .Values.sms.service.httpPort }}
+
+SPEARlet Workload / SPEARlet 工作负载:
+  Name:  {{ include "spear.spearlet.fullname" . }}
+  Kind:  {{ default "DaemonSet" .Values.spearlet.kind }}
+
+Quick checks / 快速检查:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}

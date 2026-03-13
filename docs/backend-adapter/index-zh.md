@@ -15,6 +15,7 @@
 ## 路由与后端
 
 - `routing-zh.md`：Capabilities 建模、候选过滤、策略选择（LB/Fallback/Hedge/Mirror）
+- `router-grpc-filter-design-zh.md`：外部 gRPC 过滤/打分服务契约与 Router 集成设计
 - `backends-zh.md`：Cargo feature 编译裁剪、Registry/Discovery、配置模型
 - `streaming-zh.md`：Realtime/Streaming 子系统（transport、生命周期、事件）
 

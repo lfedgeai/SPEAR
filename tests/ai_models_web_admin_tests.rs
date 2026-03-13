@@ -12,6 +12,7 @@ use spear_next::sms::web_admin::create_admin_router;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
+use uuid::Uuid;
 
 async fn start_sms_grpc() -> (tokio::task::JoinHandle<()>, String) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -74,6 +75,10 @@ async fn create_admin_test_server(
         model_deployment_registry_client: ModelDeploymentRegistryServiceClient::new(channel.clone()),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
 
     let app = create_admin_router(state);

@@ -165,7 +165,7 @@ message BackendInfo {
 {
   "provider": "ollama",
   "model": "llama3:8b",
-  "hosting": "node_local",
+  "hosting": "local",
   "operations": ["chat_completions"],
   "features": ["supports_stream"],
   "transports": ["http"],

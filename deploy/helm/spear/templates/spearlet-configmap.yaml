@@ -1,0 +1,132 @@
+{{- if .Values.spearlet.enabled -}}
+{{- $smsGrpc := default (printf "%s:%d" (include "spear.sms.fullname" .) (int .Values.sms.service.grpcPort)) .Values.spearlet.config.smsGrpcAddr -}}
+{{- $smsHttp := default (printf "%s:%d" (include "spear.sms.fullname" .) (int .Values.sms.service.httpPort)) .Values.spearlet.config.smsHttpAddr -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "spear.spearlet.fullname" . }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+data:
+  config.toml: |
+    [spearlet]
+    sms_grpc_addr = {{ $smsGrpc | quote }}
+    sms_http_addr = {{ $smsHttp | quote }}
+    auto_register = {{ .Values.spearlet.config.autoRegister }}
+    heartbeat_interval = {{ .Values.spearlet.config.heartbeatInterval }}
+    cleanup_interval = {{ .Values.spearlet.config.cleanupInterval }}
+    local_models_dir = {{ .Values.spearlet.config.localModelsDir | quote }}
+
+    [spearlet.grpc]
+    addr = {{ .Values.spearlet.config.grpcAddr | quote }}
+    enable_tls = false
+
+    [spearlet.http.server]
+    addr = {{ .Values.spearlet.config.httpAddr | quote }}
+    enable_tls = false
+
+    [spearlet.storage]
+    backend = {{ .Values.spearlet.config.storage.backend | quote }}
+    data_dir = {{ .Values.spearlet.config.storage.dataDir | quote }}
+    max_cache_size_mb = {{ .Values.spearlet.config.storage.maxCacheSizeMb | int64 }}
+    compression_enabled = {{ .Values.spearlet.config.storage.compressionEnabled }}
+    max_object_size = {{ .Values.spearlet.config.storage.maxObjectSize | int64 }}
+
+    [spearlet.logging]
+    level = {{ .Values.spearlet.config.logging.level | quote }}
+    format = {{ .Values.spearlet.config.logging.format | quote }}
+    {{- if .Values.spearlet.config.logging.file }}
+    file = {{ .Values.spearlet.config.logging.file | quote }}
+    {{- end }}
+
+    {{- with .Values.spearlet.config.llm }}
+
+    [spearlet.llm]
+    default_policy = {{ .defaultPolicy | quote }}
+
+    {{- with .discovery.ollama }}
+    [spearlet.llm.discovery.ollama]
+    enabled = {{ .enabled }}
+    scope = {{ .scope | quote }}
+    base_url = {{ .baseUrl | quote }}
+    allow_remote = {{ .allowRemote }}
+    timeout_ms = {{ .timeoutMs }}
+    max_models = {{ .maxModels }}
+    allow_models = {{ toJson .allowModels }}
+    deny_models = {{ toJson .denyModels }}
+    name_prefix = {{ .namePrefix | quote }}
+    name_conflict = {{ .nameConflict | quote }}
+    default_weight = {{ .defaultWeight }}
+    default_priority = {{ .defaultPriority }}
+    default_ops = {{ toJson .defaultOps }}
+    default_features = {{ toJson .defaultFeatures }}
+    default_transports = {{ toJson .defaultTransports }}
+    {{- end }}
+
+    {{- range .credentials }}
+    [[spearlet.llm.credentials]]
+    name = {{ .name | quote }}
+    kind = {{ default "env" .kind | quote }}
+    api_key_env = {{ .apiKeyEnv | quote }}
+    {{- end }}
+
+    {{- range .backends }}
+    [[spearlet.llm.backends]]
+    name = {{ .name | quote }}
+    kind = {{ .kind | quote }}
+    base_url = {{ default "" .baseUrl | quote }}
+    {{- with .hosting }}
+    hosting = {{ . | quote }}
+    {{- end }}
+    {{- with .model }}
+    model = {{ . | quote }}
+    {{- end }}
+    {{- with .credentialRef }}
+    credential_ref = {{ . | quote }}
+    {{- end }}
+    weight = {{ default 100 .weight }}
+    priority = {{ default 0 .priority }}
+    ops = {{ toJson (default (list) .ops) }}
+    features = {{ toJson (default (list) .features) }}
+    transports = {{ toJson (default (list) .transports) }}
+    {{- end }}
+
+    {{- end }}
+
+    {{- if .Values.routerFilterAgent.enabled }}
+
+    [spearlet.llm.router_grpc_filter_stream]
+    enabled = true
+    decision_timeout_ms = {{ default 2000 .Values.routerFilterAgent.decisionTimeoutMs }}
+    fail_open = {{ .Values.routerFilterAgent.failOpen }}
+    content_fetch_enabled = {{ .Values.routerFilterAgent.contentFetchEnabled }}
+    content_fetch_max_bytes = {{ .Values.routerFilterAgent.contentFetchMaxBytes }}
+    content_fetch_cache_ttl_ms = {{ (.Values.routerFilterAgent.contentFetchCacheTtlMs | default 60000) | int }}
+    session_token_ttl_ms = {{ (.Values.routerFilterAgent.sessionTokenTtlMs | default 600000) | int }}
+    {{- end }}
+
+    {{- if .Values.e2e.enabled }}
+
+    [[spearlet.llm.backends]]
+    name = "stub_local"
+    kind = "stub"
+    base_url = ""
+    hosting = "local"
+    weight = 100
+    priority = 0
+    ops = ["chat_completions"]
+    features = []
+    transports = ["in_process"]
+
+    [[spearlet.llm.backends]]
+    name = "stub_remote"
+    kind = "stub"
+    base_url = ""
+    hosting = "remote"
+    weight = 100
+    priority = 0
+    ops = ["chat_completions"]
+    features = []
+    transports = ["in_process"]
+    {{- end }}
+{{- end -}}

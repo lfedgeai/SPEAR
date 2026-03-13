@@ -159,6 +159,8 @@ impl TestDataGenerator {
             heartbeat_timeout: 90,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
+            files_dir: "./test_data/files".to_string(),
+            execution_logs_dir: "./test_data/files/execution_logs".to_string(),
             event_kv: None,
             mcp: crate::sms::config::McpConfig::default(),
         }
@@ -197,6 +199,8 @@ impl TestDataGenerator {
             heartbeat_timeout: _heartbeat_timeout,
             cleanup_interval: 30,
             max_upload_bytes: 64 * 1024 * 1024,
+            files_dir: "./test_data/files".to_string(),
+            execution_logs_dir: "./test_data/files/execution_logs".to_string(),
             event_kv: None,
             mcp: crate::sms::config::McpConfig::default(),
         }

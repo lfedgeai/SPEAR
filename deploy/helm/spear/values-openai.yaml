@@ -1,0 +1,51 @@
+sms:
+  config:
+    enableWebAdmin: true
+    mcpDir: /etc/sms/mcp.d
+  mcp:
+    enabled: true
+    fs:
+      enabled: true
+
+e2e:
+  enabled: false
+
+spearlet:
+  service:
+    enabled: true
+  config:
+    llm:
+      defaultPolicy: weighted_random
+      credentials:
+        - name: openai_chat
+          kind: env
+          apiKeyEnv: OPENAI_API_KEY
+      backends:
+        - name: openai-chat
+          kind: openai_chat_completion
+          baseUrl: https://api.openai.com/v1
+          model: gpt-4o-mini
+          credentialRef: openai_chat
+          hosting: remote
+          weight: 100
+          priority: 0
+          ops:
+            - chat_completions
+          features:
+            - supports_tools
+            - supports_json_schema
+          transports:
+            - http
+  extraEnv:
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openai-api-key
+          key: OPENAI_API_KEY
+
+routerFilterAgent:
+  enabled: true
+  decisionTimeoutMs: 2000
+  failOpen: false
+  sessionTokenTtlMs: 3600000
+  contentFetchCacheTtlMs: 600000

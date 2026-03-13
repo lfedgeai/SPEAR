@@ -56,6 +56,7 @@ Each model becomes one backend entry:
 
 - `kind = "ollama_chat"`
 - `base_url = <ollama base_url>`
+- `hosting = "local"`
 - `model = "<model_name>"` (fixed)
 - `credential_ref = null` (no secrets)
 

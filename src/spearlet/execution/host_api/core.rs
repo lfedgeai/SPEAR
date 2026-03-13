@@ -211,7 +211,14 @@ impl DefaultHostApi {
     pub fn new(runtime_config: super::super::runtime::RuntimeConfig) -> Self {
         let (registry, policy) =
             super::registry::build_registry_from_runtime_config(&runtime_config);
-        let router = Router::new(registry, policy);
+        let grpc_filter_stream = runtime_config
+            .spearlet_config
+            .as_ref()
+            .and_then(|cfg| cfg.llm.router_grpc_filter_stream.clone())
+            .map(crate::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub::init_global)
+            .or_else(crate::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub::global)
+            .filter(|h| h.config.enabled);
+        let router = Router::new_with_filter(registry, policy, grpc_filter_stream);
         let ai_engine = Arc::new(AiEngine::new(router));
 
         let mcp_registry_sync = runtime_config

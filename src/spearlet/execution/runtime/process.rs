@@ -6,7 +6,8 @@
 
 use super::{
     ExecutionContext, ListeningStatus, MessageHandler, Runtime, RuntimeCapabilities, RuntimeConfig,
-    RuntimeExecutionResponse, RuntimeListeningConfig, RuntimeType,
+    RuntimeExecutionResponse, RuntimeListeningConfig, RuntimeType, DEFAULT_PROCESS_WORKING_DIRECTORY,
+    DEFAULT_SHELL_EXECUTABLE,
 };
 use crate::spearlet::execution::{
     communication::{
@@ -90,8 +91,8 @@ pub struct ProcessSecurityConfig {
 impl Default for ProcessConfig {
     fn default() -> Self {
         Self {
-            working_directory: "/tmp/spearlet".to_string(),
-            default_executable: "/bin/sh".to_string(),
+            working_directory: DEFAULT_PROCESS_WORKING_DIRECTORY.to_string(),
+            default_executable: DEFAULT_SHELL_EXECUTABLE.to_string(),
             isolation_config: ProcessIsolationConfig {
                 use_process_groups: true,
                 use_namespaces: false,
@@ -868,8 +869,8 @@ mod tests {
     #[test]
     fn test_process_config_default() {
         let config = ProcessConfig::default();
-        assert_eq!(config.working_directory, "/tmp/spearlet");
-        assert_eq!(config.default_executable, "/bin/sh");
+        assert_eq!(config.working_directory, DEFAULT_PROCESS_WORKING_DIRECTORY);
+        assert_eq!(config.default_executable, DEFAULT_SHELL_EXECUTABLE);
         assert!(config.isolation_config.use_process_groups);
         assert!(config.security_config.drop_privileges);
     }

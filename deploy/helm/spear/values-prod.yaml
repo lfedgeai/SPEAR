@@ -1,0 +1,6 @@
+sms:
+  persistence:
+    enabled: true
+
+spearlet:
+  kind: DaemonSet

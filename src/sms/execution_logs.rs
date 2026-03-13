@@ -6,14 +6,31 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-const EXECUTION_LOGS_DIR: &str = "./data/execution_logs";
 const LOGS_FILE_NAME: &str = "logs.ndjson";
 const META_FILE_NAME: &str = "meta.json";
 
 static EXECUTION_LOCKS: OnceLock<DashMap<String, std::sync::Arc<Mutex<()>>>> = OnceLock::new();
+static EXECUTION_LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 fn execution_locks() -> &'static DashMap<String, std::sync::Arc<Mutex<()>>> {
     EXECUTION_LOCKS.get_or_init(DashMap::new)
+}
+
+pub fn init_execution_logs_dir(dir: &str) {
+    let v = dir.trim();
+    let chosen = if v.is_empty() {
+        "./data/execution_logs"
+    } else {
+        v
+    };
+    let _ = EXECUTION_LOGS_DIR.set(PathBuf::from(chosen));
+}
+
+fn execution_logs_dir() -> PathBuf {
+    EXECUTION_LOGS_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("./data/execution_logs"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,7 +139,7 @@ fn sanitize_execution_id(id: &str) -> Option<&str> {
 }
 
 fn exec_dir(execution_id: &str) -> PathBuf {
-    Path::new(EXECUTION_LOGS_DIR).join(execution_id)
+    execution_logs_dir().join(execution_id)
 }
 
 fn logs_path(execution_id: &str) -> PathBuf {
@@ -440,4 +457,36 @@ pub async fn read_logs_download_text(
     }
 
     Ok((out, meta.truncated))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn logs_are_written_under_sms_execution_logs_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        init_execution_logs_dir(dir.path().to_string_lossy().as_ref());
+
+        let execution_id = "exec-test-1";
+        let _ = append_logs(
+            execution_id,
+            vec![AppendLogLine {
+                ts_ms: Some(1),
+                stream: Some("stdout".to_string()),
+                level: Some("info".to_string()),
+                message: "hello".to_string(),
+            }],
+        )
+        .await
+        .unwrap();
+        let _ = finalize_execution_logs(execution_id).await.unwrap();
+
+        let out = read_logs_page(execution_id, None, 200).await.unwrap();
+        assert_eq!(out.lines.len(), 1);
+        assert_eq!(out.lines[0].message, "hello");
+        assert!(Path::new(dir.path()).join(execution_id).exists());
+    }
 }

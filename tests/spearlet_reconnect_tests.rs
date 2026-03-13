@@ -54,6 +54,7 @@ fn make_spearlet_config(sms_grpc_addr: String) -> Arc<SpearletConfig> {
         },
         http: spear_next::spearlet::config::HttpConfig::default(),
         storage: spear_next::spearlet::config::StorageConfig::default(),
+        local_models_dir: String::new(),
         logging: spear_next::config::base::LogConfig {
             level: "debug".to_string(),
             format: "json".to_string(),

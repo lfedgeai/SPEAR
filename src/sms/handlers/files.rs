@@ -16,8 +16,6 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
-const FILES_DIR: &str = "./data/files";
-
 #[derive(Deserialize)]
 pub struct PresignUploadRequest {
     pub bucket: Option<String>,
@@ -38,11 +36,11 @@ pub async fn upload_file(
     State(state): State<GatewayState>,
     req: axum::http::Request<Body>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    fs::create_dir_all(FILES_DIR)
+    fs::create_dir_all(&state.files_dir)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let id = Uuid::new_v4().to_string();
-    let path = std::path::Path::new(FILES_DIR).join(&id);
+    let path = std::path::Path::new(&state.files_dir).join(&id);
     let headers = file_headers_from_request(&req);
     let mut file = fs::File::create(&path)
         .await
@@ -58,7 +56,7 @@ pub async fn upload_file(
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .as_secs();
-    let meta_path = std::path::Path::new(FILES_DIR).join(format!("{}.json", id));
+    let meta_path = std::path::Path::new(&state.files_dir).join(format!("{}.json", id));
     let meta = json!({
         "id": id,
         "name": headers.file_name,
@@ -77,7 +75,10 @@ pub async fn upload_file(
     ))
 }
 
-pub async fn download_file(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+pub async fn download_file(
+    State(state): State<GatewayState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
     let id = std::path::Path::new(&id)
         .file_name()
         .and_then(|s| s.to_str())
@@ -85,7 +86,7 @@ pub async fn download_file(Path(id): Path<String>) -> Result<impl IntoResponse, 
     let id = Uuid::parse_str(id)
         .map(|u| u.to_string())
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let path = std::path::Path::new(FILES_DIR).join(&id);
+    let path = std::path::Path::new(&state.files_dir).join(&id);
     let file = fs::File::open(&path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -97,7 +98,10 @@ pub async fn download_file(Path(id): Path<String>) -> Result<impl IntoResponse, 
     Ok(resp)
 }
 
-pub async fn delete_file(Path(id): Path<String>) -> Result<Json<serde_json::Value>, StatusCode> {
+pub async fn delete_file(
+    State(state): State<GatewayState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let id = std::path::Path::new(&id)
         .file_name()
         .and_then(|s| s.to_str())
@@ -105,18 +109,21 @@ pub async fn delete_file(Path(id): Path<String>) -> Result<Json<serde_json::Valu
     let id = Uuid::parse_str(id)
         .map(|u| u.to_string())
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let path = std::path::Path::new(FILES_DIR).join(&id);
+    let path = std::path::Path::new(&state.files_dir).join(&id);
     fs::remove_file(&path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let meta_path = std::path::Path::new(FILES_DIR)
+    let meta_path = std::path::Path::new(&state.files_dir)
         .join(&id)
         .with_extension("json");
     let _ = fs::remove_file(&meta_path).await;
     Ok(Json(json!({ "success": true })))
 }
 
-pub async fn get_file_meta(Path(id): Path<String>) -> Result<Json<serde_json::Value>, StatusCode> {
+pub async fn get_file_meta(
+    State(state): State<GatewayState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let id = std::path::Path::new(&id)
         .file_name()
         .and_then(|s| s.to_str())
@@ -124,10 +131,10 @@ pub async fn get_file_meta(Path(id): Path<String>) -> Result<Json<serde_json::Va
     let id = Uuid::parse_str(id)
         .map(|u| u.to_string())
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let path = std::path::Path::new(FILES_DIR).join(&id);
+    let path = std::path::Path::new(&state.files_dir).join(&id);
     match fs::metadata(&path).await {
         Ok(meta) => {
-            let meta_path = std::path::Path::new(FILES_DIR)
+            let meta_path = std::path::Path::new(&state.files_dir)
                 .join(&id)
                 .with_extension("json");
             let mut obj = json!({ "found": true, "len": meta.len() });
@@ -158,12 +165,13 @@ pub struct ListFilesQuery {
 }
 
 pub async fn list_files(
+    State(state): State<GatewayState>,
     Query(params): Query<ListFilesQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    fs::create_dir_all(FILES_DIR)
+    fs::create_dir_all(&state.files_dir)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let mut rd = fs::read_dir(FILES_DIR)
+    let mut rd = fs::read_dir(&state.files_dir)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let mut items = Vec::new();
@@ -185,7 +193,8 @@ pub async fn list_files(
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
                 // Try read sidecar name
-                let meta_path = std::path::Path::new(FILES_DIR).join(format!("{}.json", fname));
+                let meta_path =
+                    std::path::Path::new(&state.files_dir).join(format!("{}.json", fname));
                 let mut name_field: Option<String> = None;
                 let mut created_at: Option<u64> = None;
                 if let Ok(bytes) = fs::read(&meta_path).await {

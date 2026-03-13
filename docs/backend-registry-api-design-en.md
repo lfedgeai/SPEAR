@@ -4,6 +4,11 @@
 
 Spearlet builds a runtime backend registry from `SpearletConfig.llm.backends` and `llm.credentials`, materialized via [registry.rs](../src/spearlet/execution/host_api/registry.rs). Today, there is no user-facing API to list and inspect all currently registered backends, and Web Admin has no view to display available backends across nodes.
 
+Implementation note (current repo):
+
+- Spearlet already reports a periodic backend snapshot to SMS (including local model “managed” backends).
+- `hosting` is configuration-driven (required: `local|remote`); inference is intentionally avoided.
+
 This document defines an elegant, best-practice design for:
 
 - Backend listing APIs (node-scoped and aggregated), and

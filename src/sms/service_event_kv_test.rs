@@ -114,6 +114,8 @@ params = {}
             heartbeat_timeout: None,
             cleanup_interval: None,
             max_upload_bytes: None,
+            files_dir: None,
+            execution_logs_dir: None,
         };
         let cfg = crate::sms::config::SmsConfig::load_with_cli(&args).unwrap();
         assert!(cfg.event_kv.is_some());

@@ -216,16 +216,9 @@ pub fn create_admin_router(state: GatewayState) -> Router {
         )
         .route("/admin/api/files", get(list_files))
         .route("/admin/api/files/presign-upload", post(presign_upload))
-        .route(
-            "/admin/api/files",
-            post({
-                let state = state.clone();
-                move |req: axum::http::Request<axum::body::Body>| {
-                    upload_file(axum::extract::State(state.clone()), req)
-                }
-            }),
-        )
+        .route("/admin/api/files", post(upload_file))
         .route("/admin/api/files/{id}", get(download_file))
         .route("/admin/api/files/{id}", delete(delete_file))
         .route("/admin/api/files/{id}/meta", get(get_file_meta))
+        .with_state(state)
 }

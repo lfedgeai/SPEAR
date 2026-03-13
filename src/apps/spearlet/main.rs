@@ -7,7 +7,7 @@ use spear_next::spearlet::backend_reporter::BackendReporterService;
 use spear_next::spearlet::config::CliArgs;
 use spear_next::spearlet::grpc_server::GrpcServer;
 use spear_next::spearlet::http_gateway::HttpGateway;
-use spear_next::spearlet::local_models::{LocalModelController, ManagedBackendRegistry};
+use spear_next::spearlet::local_models::{global_managed_backends, LocalModelController};
 use spear_next::spearlet::mcp::registry_sync::global_mcp_registry_sync_with_channel;
 use spear_next::spearlet::ollama_discovery::maybe_import_ollama_serving_models;
 use spear_next::spearlet::registration::RegistrationService;
@@ -128,7 +128,7 @@ async fn run(
             .map(|v| !v.is_empty())
             .unwrap_or(false);
     if connect_requested {
-        let managed_backends = ManagedBackendRegistry::new();
+        let managed_backends = global_managed_backends();
         let registration_service = RegistrationService::new(config.clone(), sms_channel.clone());
         if let Err(e) = registration_service.start().await {
             tracing::error!("Registration service start failed: {}", e);

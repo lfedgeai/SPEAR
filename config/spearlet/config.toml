@@ -13,6 +13,7 @@ auto_register = true
 heartbeat_interval = 30
 # Cleanup interval (seconds) / 清理间隔（秒）
 cleanup_interval = 300
+local_models_dir = ""
 
 [spearlet.grpc]
 # gRPC bind address / gRPC绑定地址
@@ -53,6 +54,35 @@ file = "./logs/spearlet.log"
 [spearlet.llm]
 # Backend routing policy / 后端路由策略
 default_policy = "weighted_random"
+
+[spearlet.llm.router_grpc_filter_stream]
+# Enable router gRPC filter stream / 是否启用 router gRPC 过滤 stream
+enabled = false
+# Spearlet gRPC address (host:port) for filter agent to dial / 供 filter agent 连接的 Spearlet gRPC 地址（host:port）
+addr = "127.0.0.1:50052"
+# Decision timeout budget (ms) / 决策超时预算（毫秒）
+decision_timeout_ms = 5
+# Fail-open when filter is unavailable / filter 不可用时是否 fail-open
+fail_open = true
+# Max candidates sent to agent / 发给 agent 的最大候选数
+max_candidates_sent = 64
+# Max debug kv entries accepted / 接受的最大 debug kv 数
+max_debug_kv = 32
+# Max total inflight across all agents / 所有 agent 的总 in-flight 上限
+max_inflight_total = 4096
+# Max inflight per agent / 单个 agent 的 in-flight 上限
+per_agent_max_inflight = 512
+
+# Enable controlled fetch by request_id (requires session_token) / 是否启用基于 request_id 的受控拉取（需要 session_token）
+content_fetch_enabled = false
+# Max bytes returned by fetch / 受控拉取返回的最大字节数
+content_fetch_max_bytes = 65536
+# Cache ttl (ms) for fetchable requests / 可拉取请求的缓存 TTL（毫秒）
+content_fetch_cache_ttl_ms = 60000
+# Max cached requests / 缓存的最大请求条数
+content_fetch_cache_max_entries = 1024
+# Session token ttl (ms) / session token TTL（毫秒）
+session_token_ttl_ms = 600000
 
 [spearlet.llm.discovery.ollama]
 # Enable importing Ollama currently serving models / 是否导入 Ollama 当前正在 serve 的模型
@@ -103,6 +133,7 @@ api_key_env = "OPENAI_API_KEY"
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 model = "gpt-4o-mini"
 credential_ref = "openai_chat"
 ops = ["chat_completions"]
@@ -115,6 +146,7 @@ priority = 0
 name = "openai-realtime-asr"
 kind = "openai_realtime_ws"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 credential_ref = "openai_realtime"
 ops = ["speech_to_text"]
 features = []

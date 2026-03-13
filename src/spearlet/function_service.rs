@@ -44,12 +44,12 @@ fn collect_llm_global_environment(cfg: &SpearletConfig) -> HashMap<String, Strin
 
     let mut required: HashSet<String> = HashSet::new();
     for b in cfg.llm.backends.iter() {
-        if !backend_requires_api_key(&b.kind) {
-            continue;
-        }
-        let Some(r) = b.credential_ref.as_ref() else {
+        let Some(r) = b.credential_ref.as_deref().map(|s| s.trim()) else {
             continue;
         };
+        if r.is_empty() {
+            continue;
+        }
         let Some(env) = cred_env.get(r) else {
             continue;
         };
@@ -65,10 +65,6 @@ fn collect_llm_global_environment(cfg: &SpearletConfig) -> HashMap<String, Strin
         }
     }
     out
-}
-
-fn backend_requires_api_key(kind: &str) -> bool {
-    matches!(kind, "openai_chat_completion" | "openai_realtime_ws")
 }
 
 /// Function service statistics / 函数服务统计信息

@@ -6,6 +6,7 @@ export default async function main() {
     messages: [{ role: "user", content: "Hi" }],
     timeoutMs: 30_000,
   });
+  console.log(resp.text());
 
   return resp.text();
 }

@@ -1,0 +1,327 @@
+syntax = "proto3";
+
+package spearlet;
+
+// RouterFilterStreamService: Filter 进程作为 gRPC client 主动连接到 Spearlet 的 TCP gRPC 端口；
+// RouterFilterStreamService: The filter agent dials Spearlet's TCP gRPC port as a gRPC client;
+// Spearlet 作为 gRPC server 通过同一条双向 stream 下发过滤请求并接收响应。
+// Spearlet acts as a gRPC server and uses the same bidirectional stream to push filter requests
+// and receive decisions.
+service RouterFilterStreamService {
+  // Open establishes a long-lived bidirectional stream.
+  // Open 建立长连接双向 stream。
+  //
+  // Filter side sends: RegisterRequest / Heartbeat / FilterResponse
+  // Filter 侧发送：RegisterRequest / Heartbeat / FilterResponse
+  //
+  // Spearlet side sends: RegisterResponse / Ping / Reject / FilterRequest
+  // Spearlet 侧发送：RegisterResponse / Ping / Reject / FilterRequest
+  rpc Open(stream StreamClientMessage) returns (stream StreamServerMessage);
+
+  // FetchRequestById allows agent to fetch request payload by request_id with session_token.
+  // FetchRequestById 允许 agent 基于 request_id + session_token 受控拉取请求 payload。
+  rpc FetchRequestById(RequestFetchRequest) returns (RequestFetchResponse);
+}
+
+// Operation is aligned with CanonicalRequestEnvelope.operation.
+// Operation 与 CanonicalRequestEnvelope.operation 对齐。
+enum Operation {
+  OPERATION_UNSPECIFIED = 0;
+  OPERATION_CHAT_COMPLETIONS = 1;
+  OPERATION_EMBEDDINGS = 2;
+  OPERATION_IMAGE_GENERATION = 3;
+  OPERATION_SPEECH_TO_TEXT = 4;
+  OPERATION_TEXT_TO_SPEECH = 5;
+  OPERATION_REALTIME_VOICE = 6;
+}
+
+// StreamClientMessage: messages sent from filter agent to spearlet.
+// StreamClientMessage：Filter agent -> Spearlet 的消息。
+message StreamClientMessage {
+  oneof msg {
+    RegisterRequest register = 1;
+    Heartbeat heartbeat = 2;
+    FilterResponse filter_response = 3;
+  }
+}
+
+// StreamServerMessage: messages sent from spearlet to filter agent.
+// StreamServerMessage：Spearlet -> Filter agent 的消息。
+message StreamServerMessage {
+  oneof msg {
+    RegisterResponse register_ok = 1;
+    Ping ping = 2;
+    Reject reject = 3;
+    FilterRequest filter_request = 4;
+  }
+}
+
+// RegisterRequest declares agent identity and capabilities.
+// RegisterRequest 声明 agent 标识与能力。
+message RegisterRequest {
+  // Filter process id for observability and routing.
+  // Filter 进程标识（用于观测与路由）。
+  string agent_id = 1;
+
+  // Optional declared supported operations.
+  // 可选：声明支持的 operation。
+  repeated Operation supported_operations = 2;
+
+  // Max in-flight requests the agent can process concurrently.
+  // agent 可并发处理的最大 in-flight 请求数。
+  uint32 max_inflight = 3;
+
+  // Preferred max candidates to receive per request (Spearlet may truncate).
+  // 期望每次请求最多接收的候选数（Spearlet 可能截断）。
+  uint32 max_candidates = 4;
+
+  // Protocol version supported by agent.
+  // agent 支持的协议版本。
+  uint32 protocol_version = 5;
+}
+
+// RegisterResponse acknowledges registration.
+// RegisterResponse 确认注册结果。
+message RegisterResponse {
+  uint32 protocol_version = 1;
+  bool accepted = 2;
+  string message = 3;
+  string session_token = 4;
+  int64 token_expire_at_ms = 5;
+}
+
+// Heartbeat keeps the stream alive and updates agent liveness.
+// Heartbeat 用于保活并更新 agent 存活状态。
+message Heartbeat {
+  // Optional wall clock timestamp (ms).
+  // 可选：毫秒时间戳。
+  int64 now_ms = 1;
+}
+
+// Ping is a server-side keepalive message.
+// Ping 是服务端的保活消息。
+message Ping {
+  int64 now_ms = 1;
+}
+
+// Reject asks agent to stop / disconnect with a reason.
+// Reject 要求 agent 停止/断开，并携带原因。
+message Reject {
+  string code = 1;
+  string message = 2;
+}
+
+// FilterRequest is pushed by spearlet to ask agent to filter/score candidates.
+// FilterRequest 由 Spearlet 下发，要求 agent 对候选集过滤/打分。
+message FilterRequest {
+  // Correlation id used for multiplexing concurrent requests on a single stream.
+  // 用于在同一条 stream 上并发复用的关联 ID。
+  string correlation_id = 1;
+
+  // CanonicalRequestEnvelope.request_id
+  // CanonicalRequestEnvelope.request_id
+  string request_id = 2;
+
+  // CanonicalRequestEnvelope.operation
+  // CanonicalRequestEnvelope.operation
+  Operation operation = 3;
+
+  // Decision time budget in milliseconds.
+  // 决策时间预算（毫秒）。
+  uint32 decision_timeout_ms = 4;
+
+  // Non-secret request metadata.
+  // 非 secret 的请求元信息。
+  map<string, string> meta = 5;
+
+  // Routing hints derived from request / normalize.
+  // 来自请求 / normalize 的路由提示。
+  RoutingHints routing = 6;
+
+  // Required features/transports derived from normalize layer.
+  // normalize 层产出的 required features/transports。
+  Requirements requirements = 7;
+
+  // Operation-specific, size-limited request signals.
+  // 面向 operation 的、受大小限制的请求 signals。
+  RequestSignals signals = 8;
+
+  // Candidate set after hard filtering and routing hints.
+  // 硬过滤与 routing hints 后的候选集。
+  repeated Candidate candidates = 9;
+}
+
+// RoutingHints describes hard routing constraints and requested model.
+// RoutingHints 描述硬路由约束与请求的模型名。
+message RoutingHints {
+  // Optional: force backend name before filter (already applied by router).
+  // 可选：指定 backend 名称（router 已先行应用）。
+  string backend = 1;
+  repeated string allowlist = 2;
+  repeated string denylist = 3;
+  string requested_model = 4;
+}
+
+// Requirements describes normalized required features/transports.
+// Requirements 描述 normalize 后的 required features/transports。
+message Requirements {
+  repeated string required_features = 1;
+  repeated string required_transports = 2;
+}
+
+// RequestSignals provides small, operation-specific properties.
+// RequestSignals 提供小体积、面向 operation 的属性信号。
+message RequestSignals {
+  // Chat / 聊天
+  string model = 1;
+  uint32 message_count = 2;
+  uint32 approx_text_bytes = 3;
+  bool uses_tools = 4;
+  bool uses_json_schema = 5;
+
+  // ASR / 语音识别
+  string audio_codec = 10;
+  uint32 audio_sample_rate_hz = 11;
+  uint32 audio_channels = 12;
+  uint32 audio_duration_ms = 13;
+  string audio_language_hint = 14;
+}
+
+message RequestFetchRequest {
+  string request_id = 1;
+  string session_token = 2;
+  uint32 max_bytes = 3;
+}
+
+message RequestFetchResponse {
+  string request_id = 1;
+  string content_type = 2;
+  bytes payload = 3;
+}
+
+// Candidate describes a backend instance candidate.
+// Candidate 描述一个 backend instance 候选。
+message Candidate {
+  // BackendInstance.name
+  // BackendInstance.name
+  string name = 1;
+
+  // Backend kind (openai_chat_completion / ollama_chat / ...).
+  // backend kind（openai_chat_completion / ollama_chat / ...）。
+  string kind = 2;
+
+  // Optional base_url (may be omitted for privacy).
+  // 可选 base_url（出于隐私可能省略）。
+  string base_url = 3;
+
+  // BackendInstance.model (if bound).
+  // BackendInstance.model（若绑定）。
+  string model = 4;
+
+  // BackendInstance.weight
+  // BackendInstance.weight
+  uint32 weight = 5;
+
+  // BackendInstance.priority
+  // BackendInstance.priority
+  int32 priority = 6;
+
+  // capabilities.ops (string form).
+  // capabilities.ops（字符串形式）。
+  repeated string ops = 7;
+
+  // capabilities.features
+  // capabilities.features
+  repeated string features = 8;
+
+  // capabilities.transports
+  // capabilities.transports
+  repeated string transports = 9;
+
+  // Explicit local/remote hint from Spearlet.
+  // Spearlet 提供的显式 local/remote 提示。
+  bool is_local = 21;
+
+  // Optional runtime hints.
+  // 可选：运行时提示。
+  CandidateRuntimeHints runtime = 20;
+}
+
+// CandidateRuntimeHints provides optional runtime metrics.
+// CandidateRuntimeHints 提供可选的运行时指标。
+message CandidateRuntimeHints {
+  double ewma_latency_ms = 1;
+  double recent_error_rate = 2;
+  uint32 inflight = 3;
+  bool healthy = 4;
+}
+
+// FilterResponse is sent by agent to return decisions.
+// FilterResponse 由 agent 返回，携带决策结果。
+message FilterResponse {
+  // Must match FilterRequest.correlation_id.
+  // 必须与 FilterRequest.correlation_id 一致。
+  string correlation_id = 1;
+
+  // Optional decision id for observability.
+  // 可选：用于观测的 decision id。
+  string decision_id = 2;
+
+  // Per-candidate decisions.
+  // 针对候选的决策列表。
+  repeated CandidateDecision decisions = 3;
+
+  // Optional request-level final action.
+  // 可选：请求级最终动作。
+  FinalAction final_action = 4;
+
+  // Optional debug kv (size-limited by spearlet).
+  // 可选 debug kv（由 spearlet 侧限制大小）。
+  map<string, string> debug = 5;
+}
+
+// CandidateDecision describes keep/drop and optional overrides for one candidate.
+// CandidateDecision 描述单个候选的 keep/drop 与可选覆盖。
+message CandidateDecision {
+  // Candidate.name / 候选名称
+  string name = 1;
+
+  // KEEP keeps candidate; DROP removes it.
+  // KEEP 表示保留；DROP 表示移除。
+  DecisionAction action = 2;
+
+  // Optional overrides.
+  // 可选覆盖值。
+  optional uint32 weight_override = 3;
+  optional int32 priority_override = 4;
+  optional double score = 5;
+
+  // Reason codes for observability.
+  // 原因码（用于观测与排障）。
+  repeated string reason_codes = 6;
+}
+
+// DecisionAction defines per-candidate action.
+// DecisionAction 定义单候选动作。
+enum DecisionAction {
+  DECISION_ACTION_UNSPECIFIED = 0;
+  DECISION_ACTION_KEEP = 1;
+  DECISION_ACTION_DROP = 2;
+}
+
+// FinalAction defines request-level forced action.
+// FinalAction 定义请求级强制动作。
+message FinalAction {
+  // If true, router rejects the request (fail-closed).
+  // 若为 true，router 直接拒绝请求（fail-closed）。
+  bool reject_request = 1;
+
+  // Reject code/message.
+  // 拒绝码/消息。
+  string reject_code = 2;
+  string reject_message = 3;
+
+  // Optional: force selecting a specific backend name.
+  // 可选：强制选择某个 backend name。
+  string force_backend = 10;
+}

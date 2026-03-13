@@ -319,6 +319,7 @@ async fn test_connect_fails_with_unreachable_sms() {
         },
         http: crate::spearlet::config::HttpConfig::default(),
         storage: crate::spearlet::config::StorageConfig::default(),
+        local_models_dir: String::new(),
         logging: crate::config::base::LogConfig::default(),
         sms_grpc_addr: "127.0.0.1:65535".to_string(),
         sms_http_addr: "127.0.0.1:8080".to_string(),

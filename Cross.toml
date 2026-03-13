@@ -1,6 +1,7 @@
 [target.x86_64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu@sha256:99758e86639d254c90c8b121550b4e5c5faaceebc6e3cd1a6d6dc37540112f97"
 pre-build = [
   "apt-get update -y",
-  "apt-get install -y protobuf-compiler",
+  "apt-get install -y protobuf-compiler libc6-dev pkg-config",
+  "bash -lc 'set -euo pipefail; apt-get install -y clang llvm-dev libclang-dev || true; apt-get install -y clang-15 llvm-15-dev libclang-15-dev || true; apt-get install -y clang-14 llvm-14-dev libclang-14-dev || true; apt-get install -y clang-13 llvm-13-dev libclang-13-dev || true; ldconfig; for d in /usr/lib/llvm-*/lib /usr/lib/x86_64-linux-gnu; do if ls \"$d\"/libclang.so* >/dev/null 2>&1; then echo \"found libclang in $d\"; ln -sf \"$(ls \"$d\"/libclang.so* | head -n1)\" /usr/lib/libclang.so || true; fi; done; ldconfig'",
 ]

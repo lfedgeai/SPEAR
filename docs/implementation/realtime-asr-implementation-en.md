@@ -178,7 +178,7 @@ Suggested deps:
 
 Key behavior:
 
-- connect: resolve base_url + auth via host credentials
+- connect: resolve base_url; attach auth via host credentials when configured (`credential_ref`)
 - send: base64-encode audio and emit append events (aligned with legacy implementation)
 - recv: convert WS frames into JSON bytes into recv_queue
 
@@ -195,6 +195,11 @@ Must support:
 
 - explicit backend selection via params
 - host allowlist/denylist enforcement
+
+Config notes:
+
+- `[[spearlet.llm.backends]] hosting` is required and must be `local` or `remote`.
+- `credential_ref` is optional; if omitted, the backend is treated as “no-auth”.
 
 ## 8. Control plane: rtasr_ctl commands (v1)
 
@@ -216,4 +221,3 @@ Recommended set:
 - E2E:
   - stub mode always runs in CI
   - real WS mode runs only when credentials are available (optional/ignored)
-

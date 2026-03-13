@@ -10,19 +10,22 @@ use url::Url;
 pub struct OpenAIRealtimeWsBackendAdapter {
     name: String,
     base_url: String,
-    api_key_env: String,
+    api_key_env: Option<String>,
 }
 
 impl OpenAIRealtimeWsBackendAdapter {
     pub fn new(
         name: impl Into<String>,
         base_url: impl Into<String>,
-        api_key_env: impl Into<String>,
+        api_key_env: Option<String>,
     ) -> Self {
         Self {
             name: name.into(),
             base_url: base_url.into(),
-            api_key_env: api_key_env.into(),
+            api_key_env: api_key_env.and_then(|s| {
+                let t = s.trim().to_string();
+                if t.is_empty() { None } else { Some(t) }
+            }),
         }
     }
 }
@@ -60,16 +63,6 @@ impl BackendAdapter for OpenAIRealtimeWsBackendAdapter {
             });
         }
 
-        let api_key_env = self.api_key_env.trim();
-        if api_key_env.is_empty() {
-            return Err(CanonicalError {
-                code: "invalid_configuration".to_string(),
-                message: "missing credential_ref".to_string(),
-                retryable: false,
-                operation: None,
-            });
-        }
-
         let model = match &req.payload {
             crate::spearlet::execution::ai::ir::Payload::SpeechToText(p) => p
                 .model
@@ -78,18 +71,20 @@ impl BackendAdapter for OpenAIRealtimeWsBackendAdapter {
             _ => "gpt-4o-mini-transcribe".to_string(),
         };
         let ws_url = derive_openai_realtime_ws_url(&self.base_url)?;
+        let mut headers = Vec::new();
+        if let Some(api_key_env) = self.api_key_env.as_deref() {
+            headers.push((
+                "authorization".to_string(),
+                format!("Bearer ${{env:{}}}", api_key_env),
+            ));
+        }
+        headers.push(("OpenAI-Beta".to_string(), "realtime=v1".to_string()));
 
         Ok(StreamingPlan::Websocket(StreamingWebsocketPlan {
             prepare: Vec::new(),
             websocket: WebsocketPlan {
                 url: ws_url,
-                headers: vec![
-                    (
-                        "authorization".to_string(),
-                        format!("Bearer ${{env:{}}}", api_key_env),
-                    ),
-                    ("OpenAI-Beta".to_string(), "realtime=v1".to_string()),
-                ],
+                headers,
                 client_events: vec![serde_json::json!({
                     "type": "session.update",
                     "session": {
@@ -141,4 +136,31 @@ fn derive_openai_realtime_ws_url(base_url: &str) -> Result<String, CanonicalErro
     u.set_path(&format!("{}/realtime", path));
     u.set_query(Some("model=gpt-realtime"));
     Ok(u.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spearlet::execution::ai::ir::{Payload, SpeechToTextPayload};
+
+    #[test]
+    fn streaming_plan_allows_missing_api_key_env() {
+        let adapter = OpenAIRealtimeWsBackendAdapter::new("b1", "https://api.openai.com", None);
+        let req = CanonicalRequestEnvelope {
+            version: 1,
+            request_id: "r1".to_string(),
+            operation: crate::spearlet::execution::ai::ir::Operation::SpeechToText,
+            meta: Default::default(),
+            routing: Default::default(),
+            requirements: Default::default(),
+            timeout_ms: None,
+            payload: Payload::SpeechToText(SpeechToTextPayload { model: None }),
+            extra: Default::default(),
+        };
+        let plan = adapter.streaming_plan(&req).unwrap();
+        let StreamingPlan::Websocket(p) = plan else {
+            panic!("expected websocket plan");
+        };
+        assert!(!p.websocket.headers.iter().any(|(k, _)| k == "authorization"));
+    }
 }

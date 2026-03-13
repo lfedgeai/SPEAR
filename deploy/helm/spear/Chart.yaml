@@ -1,0 +1,6 @@
+apiVersion: v2
+name: spear
+description: SPEAR (SMS + SPEARlet) Helm chart / SPEAR（SMS + SPEARlet）Helm Chart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -10,13 +10,16 @@ This enables:
 
 ## 0. Current state
 
-- `LlmConfig` includes `credentials` and `backends`: see [config.rs](../../src/spearlet/config.rs#L351-L406)
-- `LlmBackendConfig` no longer supports `api_key_env`; it must use `credential_ref`
+- `LlmConfig` includes `credentials` and `backends`: see [config.rs](../../src/spearlet/config.rs)
+- `LlmBackendConfig` no longer supports `api_key_env`; API keys are referenced via `credential_ref` (optional)
+- `LlmBackendConfig.hosting` is required and must be `local` or `remote`
 - To fully remove the legacy path, `LlmConfig/LlmCredentialConfig/LlmBackendConfig` use `deny_unknown_fields`: a config containing `api_key_env` under `[[spearlet.llm.backends]]` fails to parse
 
 Registry behavior:
 
-- Only `credential_ref` is supported: resolve the env-var name via the referenced credential and filter the backend if the env var is missing in `RuntimeConfig.global_environment`: see [registry.rs](../../src/spearlet/execution/host_api/registry.rs#L11-L105)
+- `credential_ref` is optional:
+  - if it is set (non-empty): resolve the env-var name via the referenced credential and filter the backend if the env var is missing in `RuntimeConfig.global_environment`
+  - if it is not set: treat the backend as “no-auth” (no API key header)
 
 ## 1. Schema (TOML)
 
@@ -38,6 +41,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 credential_ref = "openai_chat"
 ops = ["chat_completions"]
 features = ["supports_tools", "supports_json_schema"]
@@ -49,6 +53,7 @@ priority = 0
 name = "openai-realtime-asr"
 kind = "openai_realtime_ws"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 credential_ref = "openai_realtime"
 ops = ["speech_to_text"]
 transports = ["websocket"]
@@ -75,6 +80,8 @@ pub struct LlmBackendConfig {
     pub name: String,
     pub kind: String,
     pub base_url: String,
+    pub hosting: Option<String>,
+    pub model: Option<String>,
     pub credential_ref: Option<String>,
     pub weight: u32,
     pub priority: i32,
@@ -86,11 +93,11 @@ pub struct LlmBackendConfig {
 
 ## 3. RuntimeConfig.global_environment injection (best practice)
 
-Problem: if `RuntimeConfig.global_environment` is empty, backends that require API keys will be filtered, and `${env:...}` template expansion will fail.
+Problem: if `RuntimeConfig.global_environment` is empty, backends that reference API keys via `credential_ref` will be filtered.
 
 Implemented approach:
 
-- Collect only the env vars referenced by `credential_ref` (i.e., `credentials[].api_key_env` that are actually used by configured backends)
+- Collect only the env vars referenced by non-empty `credential_ref`
 - Read those env vars from the OS process environment and inject them into each runtime's `RuntimeConfig.global_environment`
 
 Implementation: [function_service.rs](../../src/spearlet/function_service.rs#L57-L92)
@@ -103,14 +110,13 @@ Security note:
 
 Implementation: [registry.rs](../../src/spearlet/execution/host_api/registry.rs#L11-L163)
 
-Behavior:
+Behavior (current):
 
 - Build a credential index from `llm.credentials[]`
-- For backends that require API keys, resolve `api_key_env` via `credential_ref`
+- If a backend has a non-empty `credential_ref`, resolve `api_key_env` via the referenced credential
 - Filter a backend if:
-  - `credential_ref` is missing
-  - the referenced credential does not exist
-  - the resolved env var is missing in `RuntimeConfig.global_environment`
+  - `credential_ref` is set but the referenced credential does not exist
+  - the resolved env var is missing in `RuntimeConfig.global_environment` (or empty)
 
 ## 5. Migration
 

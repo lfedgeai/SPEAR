@@ -26,7 +26,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean coverage coverage-quick coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-linux mac-build mac-build-release web-admin-build web-admin-lint web-admin-test samples
+.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean coverage coverage-quick coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-docker e2e-linux e2e-kind mac-build mac-build-release web-admin-build web-admin-lint web-admin-test keyword-filter-agent-build keyword-filter-agent-build-release router-filter-agent-build router-filter-agent-build-release samples
 .DEFAULT_GOAL := build
 
 # Default target / 默认目标
@@ -49,11 +49,14 @@ help:
 	@echo "  doc             - Generate documentation / 生成文档"
 	@echo "  install-deps    - Install development dependencies / 安装开发依赖"
 	@echo "  help            - Show this help message / 显示此帮助信息"
-	@echo "  e2e             - Run Docker-based E2E tests / 运行基于Docker的端到端测试"
+	@echo "  e2e             - Run all E2E tests / 运行所有端到端测试"
+	@echo "  e2e-docker      - Run Docker-based E2E tests / 运行基于Docker的端到端测试"
+	@echo "  e2e-kind        - Run kind+Helm E2E tests / 运行基于kind+Helm的端到端测试"
 	@echo "  samples         - Build WASM samples / 构建WASM示例"
 	@echo "  web-admin-build - Build Web Admin assets / 构建Web Admin静态资源"
 	@echo "  web-admin-test  - Run Web Admin tests / 运行Web Admin测试"
 	@echo "  web-admin-lint  - Lint Web Admin / Web Admin代码检查"
+	@echo "  keyword-filter-agent-build - Build keyword filter agent / 构建keyword filter agent"
 	@echo ""
 	@echo -e "$(YELLOW)Examples / 示例:$(NC)"
 	@echo "  make build                    # Build with default features / 使用默认特性构建"
@@ -81,7 +84,7 @@ install-deps:
 	@echo -e "$(GREEN)✅ Development dependencies installation completed / 开发依赖安装完成$(NC)"
 
 # Build the project / 构建项目
-build: web-admin-build
+build: web-admin-build keyword-filter-agent-build
 	@echo -e "$(BLUE)🔨 Building $(PROJECT_NAME)... / 构建$(PROJECT_NAME)...$(NC)"
 	@if [ -n "$(FEATURES)" ]; then \
 		echo -e "$(YELLOW)Building with features: $(FEATURES) / 使用特性构建: $(FEATURES)$(NC)"; \
@@ -92,7 +95,7 @@ build: web-admin-build
 	@echo -e "$(GREEN)✅ Build completed / 构建完成$(NC)"
 
 # Build release version / 构建发布版本
-build-release: web-admin-build
+build-release: web-admin-build keyword-filter-agent-build-release
 	@echo -e "$(BLUE)🚀 Building release version... / 构建发布版本...$(NC)"
 	@if [ -n "$(FEATURES)" ]; then \
 		$(CARGO) build --release --features $(FEATURES); \
@@ -100,6 +103,29 @@ build-release: web-admin-build
 		$(CARGO) build --release; \
 	fi
 	@echo -e "$(GREEN)✅ Release build completed / 发布版本构建完成$(NC)"
+
+# Build keyword filter agent / 构建 keyword filter agent
+keyword-filter-agent-build:
+	@echo -e "$(BLUE)🔨 Building keyword-filter-agent... / 构建keyword-filter-agent...$(NC)"
+	@if [ -n "$(FEATURES)" ]; then \
+		$(CARGO) build --bin keyword-filter-agent --features $(FEATURES); \
+	else \
+		$(CARGO) build --bin keyword-filter-agent; \
+	fi
+	@echo -e "$(GREEN)✅ keyword-filter-agent build completed / keyword-filter-agent构建完成$(NC)"
+
+# Build keyword filter agent (release) / 构建 keyword filter agent（release）
+keyword-filter-agent-build-release:
+	@echo -e "$(BLUE)🚀 Building keyword-filter-agent (release)... / 构建keyword-filter-agent（release）...$(NC)"
+	@if [ -n "$(FEATURES)" ]; then \
+		$(CARGO) build --release --bin keyword-filter-agent --features $(FEATURES); \
+	else \
+		$(CARGO) build --release --bin keyword-filter-agent; \
+	fi
+	@echo -e "$(GREEN)✅ keyword-filter-agent release build completed / keyword-filter-agent发布版构建完成$(NC)"
+
+router-filter-agent-build: keyword-filter-agent-build
+router-filter-agent-build-release: keyword-filter-agent-build-release
 
 # Run tests / 运行测试
 test:
@@ -407,17 +433,23 @@ info:
 	@echo "Coverage Directory / 覆盖率目录: $(COVERAGE_DIR)"
 	@echo ""
 
-# Run Docker-based E2E tests / 运行基于Docker的端到端测试
+# Run all E2E tests / 运行所有端到端测试
 e2e:
-	@echo -e "$(BLUE)🧪 Running E2E tests with Docker... / 使用Docker运行端到端测试...$(NC)"
-	@if [ "$(shell uname -s)" = "Linux" ]; then \
-		$(CARGO) build; \
-		E2E_BIN_DIR=$(TARGET_DIR)/debug DOCKER=1 $(CARGO) test --test testcontainers_e2e -- --ignored --nocapture || (echo -e "$(RED)❌ E2E tests failed / 端到端测试失败$(NC)"; exit 1); \
-	else \
-		echo -e "$(YELLOW)⚠️  Non-Linux host detected, skipping E2E execution. Use 'make e2e-linux' to cross-compile and run / 非Linux主机检测到，跳过E2E执行。使用'make e2e-linux'进行交叉编译并运行$(NC)"; \
-		$(CARGO) test --test testcontainers_e2e -- --ignored --nocapture >/dev/null 2>&1 || true; \
-	fi
+	@echo -e "$(BLUE)🧪 Running E2E tests... / 运行端到端测试...$(NC)"
+	@bash scripts/e2e.sh
 	@echo -e "$(GREEN)✅ E2E tests completed / 端到端测试完成$(NC)"
+
+.PHONY: e2e-docker
+e2e-docker:
+	@echo -e "$(BLUE)🧪 Running E2E tests with Docker... / 使用Docker运行端到端测试...$(NC)"
+	@bash scripts/e2e-docker.sh
+	@echo -e "$(GREEN)✅ E2E tests (Docker) completed / 端到端测试（Docker）完成$(NC)"
+
+.PHONY: e2e-kind
+e2e-kind:
+	@echo -e "$(BLUE)🧪 Running E2E tests with kind+Helm... / 使用kind+Helm运行端到端测试...$(NC)"
+	@bash scripts/e2e-kind.sh
+	@echo -e "$(GREEN)✅ E2E tests (kind) completed / 端到端测试（kind）完成$(NC)"
 
 .PHONY: e2e-linux
 e2e-linux:
@@ -439,7 +471,7 @@ SAMPLES_CFLAGS ?=
 SAMPLES_JS_DIR ?= samples/wasm-js
 SAMPLES_JS_BUILD ?= $(SAMPLES_BUILD)/js
 JS_WASM_PREFIX ?= js-
-JS_SAMPLES ?= chat_completion chat_completion_tool_sum
+JS_SAMPLES ?= chat_completion chat_completion_tool_sum router_filter_keyword
 BUILD_JS_SAMPLES ?= 1
 SAMPLES_RUST_DIR ?= $(SAMPLES_JS_DIR)
 RUST_SAMPLES ?= $(JS_SAMPLES)

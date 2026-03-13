@@ -79,6 +79,14 @@ pub struct CliArgs {
     )]
     pub storage_path: Option<String>,
 
+    /// Local models directory (download/cache) / 本地模型目录（下载/缓存）
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Local models directory for downloads/caches / 本地模型下载与缓存目录"
+    )]
+    pub local_models_dir: Option<String>,
+
     /// Auto register with SMS / 自动向SMS注册
     #[arg(long, help = "Auto register with SMS / 自动向SMS注册")]
     pub auto_register: Option<bool>,
@@ -162,9 +170,34 @@ impl AppConfig {
                 config.spearlet.grpc.addr = a;
             }
         }
+        if let Ok(v) = std::env::var("SPEARLET_GRPC_ENABLE_TLS") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.spearlet.grpc.enable_tls = b;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_GRPC_TLS_CERT_PATH") {
+            if !v.is_empty() {
+                config.spearlet.grpc.cert_path = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_GRPC_TLS_KEY_PATH") {
+            if !v.is_empty() {
+                config.spearlet.grpc.key_path = Some(v);
+            }
+        }
         if let Ok(v) = std::env::var("SPEARLET_HTTP_ADDR") {
             if let Ok(a) = v.parse::<std::net::SocketAddr>() {
                 config.spearlet.http.server.addr = a;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_HTTP_CORS_ENABLED") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.spearlet.http.cors_enabled = b;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_HTTP_SWAGGER_ENABLED") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.spearlet.http.swagger_enabled = b;
             }
         }
 
@@ -176,6 +209,11 @@ impl AppConfig {
         if let Ok(v) = std::env::var("SPEARLET_STORAGE_DATA_DIR") {
             if !v.is_empty() {
                 config.spearlet.storage.data_dir = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LOCAL_MODELS_DIR") {
+            if !v.is_empty() {
+                config.spearlet.local_models_dir = v;
             }
         }
         if let Ok(v) = std::env::var("SPEARLET_STORAGE_MAX_CACHE_MB") {
@@ -223,6 +261,135 @@ impl AppConfig {
         if let Ok(v) = std::env::var("SPEARLET_RECONNECT_TOTAL_TIMEOUT_MS") {
             if let Ok(n) = v.parse::<u64>() {
                 config.spearlet.reconnect_total_timeout_ms = n;
+            }
+        }
+
+        let mut touch_router_filter_stream = false;
+        if std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ENABLED").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ADDR").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_DECISION_TIMEOUT_MS").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_FAIL_OPEN").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_CANDIDATES_SENT").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_DEBUG_KV").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_INFLIGHT_TOTAL").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_PER_AGENT_MAX_INFLIGHT")
+                .is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_ENABLED").is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_MAX_BYTES")
+                .is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_TTL_MS")
+                .is_ok()
+            || std::env::var(
+                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_MAX_ENTRIES",
+            )
+            .is_ok()
+            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_SESSION_TOKEN_TTL_MS").is_ok()
+        {
+            touch_router_filter_stream = true;
+        }
+        if touch_router_filter_stream && config.spearlet.llm.router_grpc_filter_stream.is_none() {
+            config.spearlet.llm.router_grpc_filter_stream =
+                Some(RouterGrpcFilterStreamConfig::default());
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ENABLED") {
+            if let Ok(b) = v.parse::<bool>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.enabled = b;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ADDR") {
+            if !v.is_empty() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.addr = v;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_DECISION_TIMEOUT_MS") {
+            if let Ok(n) = v.parse::<u64>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.decision_timeout_ms = n;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_FAIL_OPEN") {
+            if let Ok(b) = v.parse::<bool>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.fail_open = b;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_CANDIDATES_SENT") {
+            if let Ok(n) = v.parse::<usize>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.max_candidates_sent = n;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_DEBUG_KV") {
+            if let Ok(n) = v.parse::<usize>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.max_debug_kv = n;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_MAX_INFLIGHT_TOTAL") {
+            if let Ok(n) = v.parse::<usize>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.max_inflight_total = n;
+                }
+            }
+        }
+        if let Ok(v) =
+            std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_PER_AGENT_MAX_INFLIGHT")
+        {
+            if let Ok(n) = v.parse::<usize>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.per_agent_max_inflight = n;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_ENABLED")
+        {
+            if let Ok(b) = v.parse::<bool>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.content_fetch_enabled = b;
+                }
+            }
+        }
+        if let Ok(v) =
+            std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_MAX_BYTES")
+        {
+            if let Ok(n) = v.parse::<usize>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.content_fetch_max_bytes = n;
+                }
+            }
+        }
+        if let Ok(v) =
+            std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_TTL_MS")
+        {
+            if let Ok(n) = v.parse::<u64>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.content_fetch_cache_ttl_ms = n;
+                }
+            }
+        }
+        if let Ok(v) =
+            std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_MAX_ENTRIES")
+        {
+            if let Ok(n) = v.parse::<usize>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.content_fetch_cache_max_entries = n;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_SESSION_TOKEN_TTL_MS")
+        {
+            if let Ok(n) = v.parse::<u64>() {
+                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
+                    cfg.session_token_ttl_ms = n;
+                }
             }
         }
 
@@ -289,6 +456,10 @@ impl AppConfig {
             config.spearlet.storage.data_dir = storage_path.clone();
         }
 
+        if let Some(p) = &args.local_models_dir {
+            config.spearlet.local_models_dir = p.clone();
+        }
+
         if let Some(auto_register) = args.auto_register {
             config.spearlet.auto_register = auto_register;
         }
@@ -330,8 +501,33 @@ impl AppConfig {
             config.spearlet.auto_register = true;
         }
 
+        validate_spearlet_config(&config.spearlet)?;
         Ok(config)
     }
+}
+
+fn validate_spearlet_config(
+    cfg: &SpearletConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    for b in cfg.llm.backends.iter() {
+        let hosting = b.hosting.as_deref().map(|s| s.trim()).unwrap_or("");
+        if hosting.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("llm backend hosting is required: {}", b.name),
+            )
+            .into());
+        }
+        let hosting = hosting.to_ascii_lowercase();
+        if hosting != "local" && hosting != "remote" {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid llm backend hosting (expected local|remote): {}", b.name),
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// SPEARlet service configuration / SPEARlet服务配置
@@ -347,6 +543,8 @@ pub struct SpearletConfig {
     pub http: HttpConfig,
     /// Storage configuration / 存储配置
     pub storage: StorageConfig,
+    /// Local models directory (download/cache) / 本地模型目录（下载/缓存）
+    pub local_models_dir: String,
     /// Logging configuration / 日志配置
     pub logging: LogConfig,
     /// SMS service address / SMS服务地址
@@ -388,6 +586,56 @@ pub struct LlmConfig {
     pub credentials: Vec<LlmCredentialConfig>,
     pub backends: Vec<LlmBackendConfig>,
     pub discovery: LlmDiscoveryConfig,
+    /// Router gRPC filter stream configuration / Router gRPC 过滤 stream 配置
+    pub router_grpc_filter_stream: Option<RouterGrpcFilterStreamConfig>,
+}
+
+/// Router gRPC filter stream configuration / Router gRPC 过滤 stream 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RouterGrpcFilterStreamConfig {
+    /// Enable router filter stream / 启用 Router filter stream
+    pub enabled: bool,
+    /// Spearlet gRPC address to dial (host:port) / 需要 dial 的 Spearlet gRPC 地址（host:port）
+    pub addr: String,
+    /// Decision timeout budget in ms / 决策超时预算（毫秒）
+    pub decision_timeout_ms: u64,
+    /// Fail open when filter unavailable / filter 不可用时 fail-open
+    pub fail_open: bool,
+    /// Max candidates to send to agent / 发给 agent 的最大候选数
+    pub max_candidates_sent: usize,
+    /// Max debug kv entries accepted / 接受的最大 debug kv 数
+    pub max_debug_kv: usize,
+    /// Max total inflight across all agents / 所有 agent 的总 in-flight 上限
+    pub max_inflight_total: usize,
+    /// Max inflight per agent / 单个 agent 的 in-flight 上限
+    pub per_agent_max_inflight: usize,
+
+    pub content_fetch_enabled: bool,
+    pub content_fetch_max_bytes: usize,
+    pub content_fetch_cache_ttl_ms: u64,
+    pub content_fetch_cache_max_entries: usize,
+    pub session_token_ttl_ms: u64,
+}
+
+impl Default for RouterGrpcFilterStreamConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            addr: "127.0.0.1:50052".to_string(),
+            decision_timeout_ms: 2_000,
+            fail_open: true,
+            max_candidates_sent: 64,
+            max_debug_kv: 32,
+            max_inflight_total: 4096,
+            per_agent_max_inflight: 512,
+            content_fetch_enabled: false,
+            content_fetch_max_bytes: 64 * 1024,
+            content_fetch_cache_ttl_ms: 60_000,
+            content_fetch_cache_max_entries: 1024,
+            session_token_ttl_ms: 600_000,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -470,6 +718,7 @@ pub struct LlmBackendConfig {
     pub name: String,
     pub kind: String,
     pub base_url: String,
+    pub hosting: Option<String>,
     pub model: Option<String>,
     pub credential_ref: Option<String>,
     pub weight: u32,
@@ -485,6 +734,7 @@ impl Default for LlmBackendConfig {
             name: String::new(),
             kind: String::new(),
             base_url: String::new(),
+            hosting: None,
             model: None,
             credential_ref: None,
             weight: 100,
@@ -548,6 +798,7 @@ impl Default for SpearletConfig {
             },
             http: HttpConfig::default(),
             storage: StorageConfig::default(),
+            local_models_dir: String::new(),
             logging: LogConfig::default(),
             sms_grpc_addr: "127.0.0.1:50051".to_string(),
             sms_http_addr: "127.0.0.1:8080".to_string(),

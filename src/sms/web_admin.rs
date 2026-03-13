@@ -44,14 +44,24 @@ pub struct WebAdminServer {
     addr: SocketAddr,
     grpc_addr: SocketAddr,
     enabled: bool,
+    max_upload_bytes: usize,
+    files_dir: String,
 }
 
 impl WebAdminServer {
-    pub fn new(addr: SocketAddr, grpc_addr: SocketAddr, enabled: bool) -> Self {
+    pub fn new(
+        addr: SocketAddr,
+        grpc_addr: SocketAddr,
+        enabled: bool,
+        max_upload_bytes: usize,
+        files_dir: String,
+    ) -> Self {
         Self {
             addr,
             grpc_addr,
             enabled,
+            max_upload_bytes,
+            files_dir,
         }
     }
 
@@ -113,7 +123,8 @@ impl WebAdminServer {
             backend_registry_client,
             model_deployment_registry_client,
             cancel_token: cancel_token.clone(),
-            max_upload_bytes: 64 * 1024 * 1024,
+            max_upload_bytes: self.max_upload_bytes,
+            files_dir: self.files_dir.clone(),
         };
         let mut app = create_admin_router(state);
         if let Ok(token) = std::env::var("SMS_WEB_ADMIN_TOKEN") {

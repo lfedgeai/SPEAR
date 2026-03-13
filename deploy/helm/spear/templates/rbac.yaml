@@ -1,0 +1,29 @@
+{{- if and .Values.spearlet.enabled (or .Values.spearlet.rbac.create .Values.spearlet.config.kubernetesRuntime.enabled) -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "spear.spearlet.fullname" . }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "spear.spearlet.fullname" . }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "spear.serviceAccountName" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "spear.spearlet.fullname" . }}
+{{- end -}}

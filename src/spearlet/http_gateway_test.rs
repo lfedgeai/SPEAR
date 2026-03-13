@@ -668,7 +668,7 @@ mod new_endpoints_tests {
             ))
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -692,7 +692,7 @@ mod new_endpoints_tests {
             .body(Body::from("invalid json"))
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
@@ -707,7 +707,7 @@ mod new_endpoints_tests {
             .body(Body::from(r#"{"mode":"sync"}"#))
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
@@ -721,7 +721,7 @@ mod new_endpoints_tests {
             .body(Body::empty())
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -744,7 +744,7 @@ mod new_endpoints_tests {
             .body(Body::empty())
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
@@ -759,7 +759,7 @@ mod new_endpoints_tests {
             .body(Body::from(r#"{"reason":"test"}"#))
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -778,7 +778,7 @@ mod new_endpoints_tests {
             .body(Body::empty())
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -801,7 +801,7 @@ mod new_endpoints_tests {
             .body(Body::empty())
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
@@ -815,7 +815,7 @@ mod new_endpoints_tests {
             .body(Body::empty())
             .unwrap();
 
-        let response = router.oneshot(request).await.unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -845,6 +845,7 @@ mod new_endpoints_tests {
         assert_eq!(json["task_count"], 1);
 
         let resp = router
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)

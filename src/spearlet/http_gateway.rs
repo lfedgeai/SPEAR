@@ -94,8 +94,7 @@ pub(crate) fn build_router(state: AppState, swagger_enabled: bool) -> Router {
         .route("/tasks/{task_id}", get(get_task))
         .route("/tasks/{task_id}/executions", get(get_task_executions))
         .route("/monitoring/stats", get(get_stats))
-        .route("/monitoring/health", get(get_health_status))
-        .with_state(state);
+        .route("/monitoring/health", get(get_health_status));
 
     if swagger_enabled {
         app = app
@@ -105,7 +104,152 @@ pub(crate) fn build_router(state: AppState, swagger_enabled: bool) -> Router {
             .route("/docs", get(swagger_ui));
     }
 
-    app
+    if std::env::var("SPEAR_E2E").ok().as_deref() == Some("1") {
+        app = app.route("/__e2e/llm/router-filter", get(e2e_llm_router_filter));
+    }
+
+    app.with_state::<()>(state)
+}
+
+#[derive(Deserialize)]
+struct E2eLlmRouterFilterQuery {
+    content: Option<String>,
+    model: Option<String>,
+}
+
+async fn e2e_llm_router_filter(
+    State(state): State<AppState>,
+    Query(q): Query<E2eLlmRouterFilterQuery>,
+) -> impl IntoResponse {
+    let Some(hub) =
+        crate::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub::global()
+            .filter(|h| h.config.enabled)
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"router_filter_disabled_or_unavailable"})),
+        )
+            .into_response();
+    };
+
+    let content = q.content.unwrap_or_else(|| "my secret is 123".to_string());
+    let model = q.model.unwrap_or_else(|| "gpt-4o-mini".to_string());
+
+    let req = crate::spearlet::execution::ai::ir::CanonicalRequestEnvelope {
+        version: 1,
+        request_id: uuid::Uuid::new_v4().to_string(),
+        operation: crate::spearlet::execution::ai::ir::Operation::ChatCompletions,
+        meta: HashMap::new(),
+        routing: crate::spearlet::execution::ai::ir::RoutingHints::default(),
+        requirements: Default::default(),
+        timeout_ms: Some(2000),
+        payload: crate::spearlet::execution::ai::ir::Payload::ChatCompletions(
+            crate::spearlet::execution::ai::ir::ChatCompletionsPayload {
+                model,
+                messages: vec![crate::spearlet::execution::ai::ir::ChatMessage {
+                    role: "user".to_string(),
+                    content: serde_json::Value::String(content),
+                    tool_call_id: None,
+                    tool_calls: None,
+                    name: None,
+                }],
+                tools: vec![],
+                params: HashMap::new(),
+            },
+        ),
+        extra: HashMap::new(),
+    };
+
+    hub.cache_request_for_fetch(req.clone());
+
+    let runtime_config = crate::spearlet::execution::runtime::RuntimeConfig {
+        runtime_type: crate::spearlet::execution::RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: Some((*state.config).clone()),
+        resource_pool: crate::spearlet::execution::runtime::ResourcePoolConfig::default(),
+    };
+
+    let (registry, _policy) =
+        crate::spearlet::execution::host_api::registry::build_registry_from_runtime_config(
+            &runtime_config,
+        );
+    let candidates = registry.candidates(&req);
+    if candidates.len() < 2 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"need_at_least_two_candidates","candidate_count":candidates.len()})),
+        )
+            .into_response();
+    }
+
+    let (resp, _trace) = match tokio::task::block_in_place(|| {
+        hub.try_filter_candidates_blocking(&req, &candidates, 1500)
+    }) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error":e.code,"message":e.message})),
+            )
+                .into_response()
+        }
+    };
+
+    let mut kept: Vec<&crate::spearlet::execution::ai::router::registry::BackendInstance> =
+        candidates;
+    if let Some(final_action) = resp.final_action.as_ref() {
+        if !final_action.force_backend.trim().is_empty() {
+            let forced = final_action.force_backend.trim();
+            kept.retain(|c| c.name == forced);
+        }
+    }
+
+    let mut decision_by_name: HashMap<&str, &crate::proto::spearlet::CandidateDecision> =
+        HashMap::new();
+    for d in resp.decisions.iter() {
+        decision_by_name.insert(d.name.as_str(), d);
+    }
+
+    kept.retain(|c| {
+        let Some(d) = decision_by_name.get(c.name.as_str()) else {
+            return true;
+        };
+        d.action != crate::proto::spearlet::DecisionAction::Drop as i32
+    });
+
+    let kept_names: Vec<String> = kept.iter().map(|c| c.name.clone()).collect();
+    let mut dropped_names: Vec<String> = Vec::new();
+    for (name, d) in decision_by_name {
+        if d.action == crate::proto::spearlet::DecisionAction::Drop as i32 {
+            dropped_names.push(name.to_string());
+        }
+    }
+    dropped_names.sort();
+
+    if kept.len() != 1 {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error":"unexpected_kept_candidate_count",
+                "kept": kept_names,
+                "dropped": dropped_names,
+                "debug": resp.debug,
+            })),
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "selected_backend": kept[0].name,
+            "kept": kept_names,
+            "dropped": dropped_names,
+            "debug": resp.debug,
+        })),
+    )
+        .into_response()
 }
 
 impl HttpGateway {

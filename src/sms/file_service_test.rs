@@ -14,9 +14,14 @@ use axum::http::{Request, StatusCode};
 use axum::{body::Body, Router};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 async fn make_router_with_limit(limit: usize) -> Router {
     let channel = tonic::transport::Channel::from_static("http://localhost:50051").connect_lazy();
+    let files_dir = std::env::temp_dir()
+        .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
@@ -31,6 +36,7 @@ async fn make_router_with_limit(limit: usize) -> Router {
         ),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: limit,
+        files_dir,
     };
     create_gateway_router(state)
 }

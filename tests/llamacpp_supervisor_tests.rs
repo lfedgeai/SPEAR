@@ -11,7 +11,10 @@ async fn test_llamacpp_supervisor_raw_mode_start_and_stop() {
     let mut cfg = SpearletConfig::default();
     cfg.storage.data_dir = tmp.path().to_string_lossy().to_string();
     let sup = LlamaCppSupervisor::new(&cfg);
-    let http = Client::builder().timeout(std::time::Duration::from_secs(1)).build().unwrap();
+    let http = Client::builder()
+        .timeout(std::time::Duration::from_secs(1))
+        .build()
+        .unwrap();
 
     let mut params = HashMap::new();
     params.insert("server_mode".to_string(), "raw".to_string());
@@ -24,7 +27,10 @@ async fn test_llamacpp_supervisor_raw_mode_start_and_stop() {
         .await
         .unwrap();
     assert_eq!(b.provider, "llamacpp");
-    assert_eq!(b.hosting, spear_next::proto::sms::BackendHosting::NodeLocal as i32);
+    assert_eq!(
+        b.hosting,
+        spear_next::proto::sms::BackendHosting::NodeLocal as i32
+    );
     assert!(sup.get_backend("d1").await.is_some());
 
     let live: HashSet<String> = HashSet::new();
@@ -38,7 +44,10 @@ async fn test_llamacpp_supervisor_restarts_on_spec_change() {
     let mut cfg = SpearletConfig::default();
     cfg.storage.data_dir = tmp.path().to_string_lossy().to_string();
     let sup = LlamaCppSupervisor::new(&cfg);
-    let http = Client::builder().timeout(std::time::Duration::from_secs(1)).build().unwrap();
+    let http = Client::builder()
+        .timeout(std::time::Duration::from_secs(1))
+        .build()
+        .unwrap();
 
     let mut params = HashMap::new();
     params.insert("server_mode".to_string(), "raw".to_string());
@@ -59,4 +68,3 @@ async fn test_llamacpp_supervisor_restarts_on_spec_change() {
     sup.stop_all().await;
     assert!(sup.get_backend("d1").await.is_none());
 }
-

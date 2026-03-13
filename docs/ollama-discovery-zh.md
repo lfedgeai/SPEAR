@@ -56,6 +56,7 @@ default_transports = ["http"]
 
 - `kind = "ollama_chat"`
 - `base_url = <ollama base_url>`
+- `hosting = "local"`
 - `model = "<model_name>"`（固定绑定模型）
 - `credential_ref = null`（不需要密钥）
 

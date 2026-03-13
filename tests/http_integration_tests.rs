@@ -105,6 +105,10 @@ mod http_test_utils {
             model_deployment_registry_client,
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
+            files_dir: std::env::temp_dir()
+                .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+                .to_string_lossy()
+                .to_string(),
         };
         let app = create_gateway_router(state);
         (
@@ -284,6 +288,10 @@ async fn test_http_node_lifecycle() {
         model_deployment_registry_client: model_deployment_registry_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
 
     let filter_app = create_gateway_router(filter_state);
@@ -422,6 +430,10 @@ async fn test_http_resource_management() {
         model_deployment_registry_client: model_deployment_registry_client_filter,
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
+        files_dir: std::env::temp_dir()
+            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
     };
     let app = create_gateway_router(state);
 

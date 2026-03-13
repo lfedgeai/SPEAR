@@ -64,7 +64,7 @@ impl LocalModelController {
         let node_uuid = self.config.compute_node_uuid();
         let mut client = ModelDeploymentRegistryServiceClient::new(channel.clone());
         let http = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(15))
             .build()
             .unwrap_or_else(|_| Client::new());
 
@@ -225,11 +225,11 @@ impl LocalModelController {
                 if is_ready {
                     if let Some(b) = self
                         .build_backend_info_for_ready(
-                        &rec.deployment_id,
-                        &spec.provider,
-                        &spec.model,
-                        &spec.params,
-                    )
+                            &rec.deployment_id,
+                            &spec.provider,
+                            &spec.model,
+                            &spec.params,
+                        )
                         .await
                     {
                         managed_backend_infos.push(b);
@@ -256,11 +256,11 @@ impl LocalModelController {
             if is_ready {
                 if let Some(b) = self
                     .build_backend_info_for_ready(
-                    &rec.deployment_id,
-                    &spec.provider,
-                    &spec.model,
-                    &spec.params,
-                )
+                        &rec.deployment_id,
+                        &spec.provider,
+                        &spec.model,
+                        &spec.params,
+                    )
                     .await
                 {
                     managed_backend_infos.push(b);
@@ -270,9 +270,7 @@ impl LocalModelController {
 
         seen_spec.retain(|id, _| live_ids.contains(id));
         self.llamacpp.stop_removed(&live_ids).await;
-        self.managed_backends
-            .set_backends(managed_backend_infos)
-            .await;
+        self.managed_backends.set_backends(managed_backend_infos);
     }
 
     async fn reconcile_one(
@@ -287,12 +285,24 @@ impl LocalModelController {
         let provider = spec.provider.to_ascii_lowercase();
         if provider == "vllm" {
             return self
-                .reconcile_vllm_placeholder(client, node_uuid, &deployment_id, observed_record_revision)
+                .reconcile_vllm_placeholder(
+                    client,
+                    node_uuid,
+                    &deployment_id,
+                    observed_record_revision,
+                )
                 .await;
         }
         if provider == "llamacpp" || provider == "llama_cpp" || provider == "llama.cpp" {
             return self
-                .reconcile_llamacpp(http, client, node_uuid, &deployment_id, observed_record_revision, &spec)
+                .reconcile_llamacpp(
+                    http,
+                    client,
+                    node_uuid,
+                    &deployment_id,
+                    observed_record_revision,
+                    &spec,
+                )
                 .await;
         }
         let _ = self
@@ -342,8 +352,7 @@ impl LocalModelController {
                 .params
                 .get("skip_download")
                 .map(|s| s.trim() == "1")
-                .unwrap_or(false)
-        ;
+                .unwrap_or(false);
 
         let phase = if should_pull {
             ModelDeploymentPhase::Pulling

@@ -4,6 +4,7 @@ ui-tests/data
 data
 logs
 target
+.tmp
 **/node_modules
 **/dist
 .DS_Store

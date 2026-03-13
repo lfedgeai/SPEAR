@@ -6,7 +6,7 @@
 
 use super::{
     ExecutionContext, Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeExecutionResponse,
-    RuntimeType,
+    RuntimeType, DEFAULT_SHELL_EXECUTABLE,
 };
 use crate::spearlet::execution::{
     instance::{InstanceConfig, InstanceResourceLimits, TaskInstance},
@@ -379,7 +379,7 @@ spec:
       - name: executor
         image: {}
         imagePullPolicy: {}
-        command: ["/bin/sh", "-c"]
+        command: ["{}", "-c"]
         args: ["echo 'Execution started'; sleep 10; echo 'Execution completed'"]
 {}
         resources:
@@ -429,6 +429,7 @@ spec:
             self.config.network_config.host_ipc,
             image,
             self.config.image_pull_policy,
+            DEFAULT_SHELL_EXECUTABLE,
             env_section,
             self.config.resource_config.cpu_request,
             self.config.resource_config.memory_request,

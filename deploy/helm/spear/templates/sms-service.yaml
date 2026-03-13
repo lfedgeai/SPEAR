@@ -1,0 +1,23 @@
+{{- if .Values.sms.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "spear.sms.fullname" . }}
+  labels:
+    {{- include "spear.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.sms.service.type }}
+  selector:
+    {{- include "spear.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sms
+  ports:
+    - name: grpc
+      port: {{ .Values.sms.service.grpcPort }}
+      targetPort: grpc
+    - name: http
+      port: {{ .Values.sms.service.httpPort }}
+      targetPort: http
+    - name: admin
+      port: {{ .Values.sms.service.adminPort }}
+      targetPort: admin
+{{- end -}}

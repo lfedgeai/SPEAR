@@ -17,6 +17,10 @@ path = "src/apps/sms/main.rs"
 name = "spearlet"
 path = "src/apps/spearlet/main.rs"
 
+[[bin]]
+name = "keyword-filter-agent"
+path = "src/apps/keyword_filter_agent/main.rs"
+
 [dependencies]
 # Async runtime / 异步运行时
 tokio = { version = "1.0", features = ["full"] }
@@ -31,10 +35,10 @@ prost-types = "0.13"
 
 # HTTP server / HTTP服务器
 axum = "0.8"
-tower = "0.4"
+tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "timeout"] }
 hyper = { version = "1", features = ["client", "http1"] }
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
 
 # Configuration management / 配置管理
 figment = { version = "0.10", features = ["toml", "env"] }
@@ -109,7 +113,7 @@ cpal = { version = "0.15", optional = true }
 tempfile = "3.0"
 tokio-test = "0.4"
 axum-test = "17.0"
-tower = "0.4"
+tower = "0.5"
 tokio-stream = { version = "0.1", features = ["net"] }
 serde_urlencoded = "0.7"
 # Docker-based integration testing / 基于Docker的集成测试

@@ -162,7 +162,7 @@ To keep the frontend simple, expose a model-centric API from the SMS Web Admin B
 {
   "provider": "ollama",
   "model": "llama3:8b",
-  "hosting": "node_local",
+  "hosting": "local",
   "operations": ["chat_completions"],
   "features": ["supports_stream"],
   "transports": ["http"],

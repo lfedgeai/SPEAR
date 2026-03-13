@@ -1,0 +1,12 @@
+.git
+.github
+.DS_Store
+
+target
+**/target
+
+web-admin/node_modules
+web-admin/dist
+ui-tests/node_modules
+
+**/*.log

@@ -6,6 +6,7 @@ use reqwest::Url;
 use serde::Deserialize;
 
 use crate::spearlet::config::{LlmBackendConfig, SpearletConfig};
+use crate::spearlet::execution::ai::backends::KIND_OLLAMA_CHAT;
 
 #[derive(Debug, Deserialize)]
 struct OllamaPsResponse {
@@ -68,8 +69,9 @@ pub async fn maybe_import_ollama_serving_models(cfg: &mut SpearletConfig) -> Res
 
         cfg.llm.backends.push(LlmBackendConfig {
             name: derived,
-            kind: "ollama_chat".to_string(),
+            kind: KIND_OLLAMA_CHAT.to_string(),
             base_url: discovery.base_url.clone(),
+            hosting: Some("local".to_string()),
             model: Some(model),
             credential_ref: None,
             weight: discovery.default_weight,
@@ -217,7 +219,7 @@ mod tests {
 
         let n = maybe_import_ollama_serving_models(&mut cfg).await.unwrap();
         assert_eq!(n, 2);
-        assert!(cfg.llm.backends.iter().any(|b| b.kind == "ollama_chat"));
+        assert!(cfg.llm.backends.iter().any(|b| b.kind == KIND_OLLAMA_CHAT));
         assert!(cfg
             .llm
             .backends

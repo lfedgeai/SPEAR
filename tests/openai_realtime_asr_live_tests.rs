@@ -32,6 +32,7 @@ fn test_openai_realtime_asr_websocket_connect() {
         name: resolved.name.clone(),
         kind: "openai_realtime_ws".to_string(),
         base_url: resolved.base_url.clone(),
+        hosting: None,
         model: None,
         credential_ref: Some("openai_default".to_string()),
         weight: 100,

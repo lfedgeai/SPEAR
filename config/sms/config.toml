@@ -15,6 +15,10 @@ cleanup_interval = 30
 # Max upload size / 最大上传字节数
 max_upload_bytes = 67108864
 
+# Uploaded files directory / 上传文件存储目录
+files_dir = "./data/files"
+execution_logs_dir = "./data/files/execution_logs"
+
 [grpc]
 # gRPC bind address / gRPC绑定地址
 addr = "127.0.0.1:50051"

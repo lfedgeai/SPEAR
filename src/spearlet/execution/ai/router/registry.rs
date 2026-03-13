@@ -4,9 +4,19 @@ use crate::spearlet::execution::ai::backends::BackendAdapter;
 use crate::spearlet::execution::ai::ir::CanonicalRequestEnvelope;
 use crate::spearlet::execution::ai::router::capabilities::Capabilities;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hosting {
+    Unknown,
+    Local,
+    Remote,
+}
+
 #[derive(Clone)]
 pub struct BackendInstance {
     pub name: String,
+    pub kind: String,
+    pub base_url: String,
+    pub hosting: Hosting,
     pub model: Option<String>,
     pub weight: u32,
     pub priority: i32,

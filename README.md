@@ -92,7 +92,12 @@ Repo-shipped examples:
 
 ### Secrets
 
-Do not put secrets into config files. Use `llm.credentials[].api_key_env` to reference environment variables.
+Do not put secrets into config files. Use `spearlet.llm.credentials[].api_key_env` to reference environment variables and bind them from backends via `credential_ref`.
+
+LLM backend notes:
+
+- `[[spearlet.llm.backends]] hosting` is required and must be `local` or `remote`.
+- `credential_ref` is optional. If set, the referenced env var must exist (otherwise the backend is filtered). If not set, the backend is treated as “no-auth” (useful for self-hosted proxies).
 
 ### Ollama discovery
 
@@ -113,6 +118,15 @@ Web Admin provides Nodes/Tasks/Files/AI Models pages.
 
 - AI Models provides an aggregated view across nodes, split into Local/Remote.
 - Local AI Models supports creating/deleting model deployments on a node.
+
+Local model provisioning (llamacpp):
+
+- `model` is just a display key; actual download uses `params.model_url` when the model file is missing.
+- Supported params:
+  - `model_url`: http/https URL to a `.gguf` file (large files are supported).
+  - `download_timeout_s`: total download budget in seconds (default: 3600).
+  - `model_path`: absolute path, or relative to `spearlet.local_models_dir`.
+  - `skip_download=1`: fail if the model file is missing (no download).
 
 Docs:
 

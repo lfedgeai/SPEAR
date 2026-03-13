@@ -4,6 +4,11 @@
 
 Spearlet 会基于 `SpearletConfig.llm.backends` 与 `llm.credentials` 构建运行时 backend registry，构建逻辑见 [registry.rs](../src/spearlet/execution/host_api/registry.rs)。目前系统缺少一个面向用户的 API 来列出“当前已注册且可用”的 backends，也缺少 Web Admin 页面展示“available backends”的入口。
 
+实现状态说明（以当前仓库为准）：
+
+- Spearlet 已经会周期性向 SMS 上报 backend 快照（包含本地模型的 managed backends）。
+- hosting 完全以配置为准（必填：`local|remote`），不再做推断。
+
 本文给出一套业界 best practice、且在当前架构下较为优雅的方案，包含：
 
 - 后端 API（节点维度与集群聚合维度）的设计

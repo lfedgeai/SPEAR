@@ -236,10 +236,18 @@ impl RegistrationService {
         let client = client_guard.as_mut().ok_or("Node client not connected")?;
 
         let node_addr = config.grpc.addr;
+        let mut ip_address = node_addr.ip().to_string();
+        if node_addr.ip().is_unspecified() || node_addr.ip().is_loopback() {
+            if let Ok(v) = std::env::var("POD_IP") {
+                if let Ok(ip) = v.parse::<std::net::IpAddr>() {
+                    ip_address = ip.to_string();
+                }
+            }
+        }
         let node_uuid = config.compute_node_uuid();
         let node = Node {
             uuid: node_uuid,
-            ip_address: node_addr.ip().to_string(),
+            ip_address,
             port: node_addr.port() as i32,
             status: "online".to_string(),
             last_heartbeat: chrono::Utc::now().timestamp(),

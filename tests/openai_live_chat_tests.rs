@@ -22,7 +22,7 @@ fn test_openai_live_chat_completion() {
     let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
 
     let adapter =
-        OpenAIChatCompletionBackendAdapter::new("openai-live", resolved.base_url, resolved.api_key);
+        OpenAIChatCompletionBackendAdapter::new("openai-live", resolved.base_url, Some(resolved.api_key));
 
     let req = CanonicalRequestEnvelope {
         version: 1,

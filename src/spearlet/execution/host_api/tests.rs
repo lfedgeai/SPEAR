@@ -52,11 +52,32 @@ fn stt_req() -> CanonicalRequestEnvelope {
 
 #[test]
 fn test_cchat_send_pipeline_stub_backend() {
+    let mut cfg = crate::spearlet::config::SpearletConfig::default();
+    cfg.llm
+        .backends
+        .push(crate::spearlet::config::LlmBackendConfig {
+            name: "stub".to_string(),
+            kind: "stub".to_string(),
+            base_url: String::new(),
+            hosting: Some("local".to_string()),
+            model: None,
+            credential_ref: None,
+            weight: 100,
+            priority: 0,
+            ops: vec!["chat_completions".to_string()],
+            features: vec![
+                "supports_tools".to_string(),
+                "supports_json_schema".to_string(),
+                "supports_stream".to_string(),
+            ],
+            transports: vec!["in_process".to_string()],
+        });
+
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
         settings: HashMap::new(),
         global_environment: HashMap::new(),
-        spearlet_config: None,
+        spearlet_config: Some(cfg),
         resource_pool: ResourcePoolConfig::default(),
     });
 
@@ -75,11 +96,32 @@ fn test_cchat_send_pipeline_stub_backend() {
 
 #[test]
 fn test_cchat_send_auto_tool_call_loop_stub_backend() {
+    let mut cfg = crate::spearlet::config::SpearletConfig::default();
+    cfg.llm
+        .backends
+        .push(crate::spearlet::config::LlmBackendConfig {
+            name: "stub".to_string(),
+            kind: "stub".to_string(),
+            base_url: String::new(),
+            hosting: Some("local".to_string()),
+            model: None,
+            credential_ref: None,
+            weight: 100,
+            priority: 0,
+            ops: vec!["chat_completions".to_string()],
+            features: vec![
+                "supports_tools".to_string(),
+                "supports_json_schema".to_string(),
+                "supports_stream".to_string(),
+            ],
+            transports: vec!["in_process".to_string()],
+        });
+
     let api = DefaultHostApi::new(RuntimeConfig {
         runtime_type: RuntimeType::Wasm,
         settings: HashMap::new(),
         global_environment: HashMap::new(),
-        spearlet_config: None,
+        spearlet_config: Some(cfg),
         resource_pool: ResourcePoolConfig::default(),
     });
 
@@ -130,6 +172,7 @@ fn test_configured_openai_backend_missing_key_is_filtered() {
             name: "openai-us".to_string(),
             kind: "openai_chat_completion".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_default".to_string()),
             weight: 100,
@@ -155,7 +198,8 @@ fn test_configured_openai_backend_missing_key_is_filtered() {
     let resp_fd = api.cchat_send(fd, 0).unwrap();
     let bytes = api.cchat_recv(resp_fd).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert!(v.get("choices").is_some());
+    assert!(v.get("choices").is_none());
+    assert!(v.get("error").is_some());
 }
 
 #[test]
@@ -174,6 +218,7 @@ fn test_registry_credential_ref_missing_env_filters_backend() {
             name: "openai-chat".to_string(),
             kind: "openai_chat_completion".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_chat".to_string()),
             weight: 100,
@@ -193,8 +238,7 @@ fn test_registry_credential_ref_missing_env_filters_backend() {
 
     let (reg, _policy) = super::registry::build_registry_from_runtime_config(&runtime_config);
     let candidates = reg.candidates(&chat_req());
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].name, "stub");
+    assert_eq!(candidates.len(), 0);
 }
 
 #[test]
@@ -213,6 +257,7 @@ fn test_registry_credential_ref_with_env_registers_backend() {
             name: "openai-chat".to_string(),
             kind: "openai_chat_completion".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_chat".to_string()),
             weight: 100,
@@ -254,6 +299,7 @@ fn test_registry_openai_chat_completion_kind_alias_registers_backend() {
             name: "openai-chat".to_string(),
             kind: "openai_chat_completion".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_chat".to_string()),
             weight: 100,
@@ -295,6 +341,7 @@ fn test_realtime_ws_plan_uses_resolved_env_template() {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_realtime".to_string()),
             weight: 100,
@@ -520,6 +567,7 @@ async fn test_rtasr_websocket_transport_receives_events() {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_realtime".to_string()),
             weight: 100,
@@ -742,6 +790,7 @@ async fn test_rtasr_websocket_flush_sends_commit() {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_realtime".to_string()),
             weight: 100,
@@ -855,6 +904,7 @@ async fn test_rtasr_websocket_autoflush_bytes_sends_commit() {
             name: "rt-ws".to_string(),
             kind: "openai_realtime_ws".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            hosting: Some("remote".to_string()),
             model: None,
             credential_ref: Some("openai_realtime".to_string()),
             weight: 100,

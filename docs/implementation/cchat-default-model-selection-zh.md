@@ -20,6 +20,7 @@
 name = "openai-chat"
 kind = "openai_chat_completion"
 base_url = "https://api.openai.com/v1"
+hosting = "remote"
 model = "gpt-4o-mini"
 ...
 ```
@@ -72,4 +73,3 @@ WASM-C 示例会解析并打印：
 
 - 如果希望一个 backend 支持多个 model（例如 OpenAI 多模型），不要为该 backend 配置 `model` 绑定；用 `backend`/allowlist/denylist 或其它策略进行选择。
 - 如果你希望“按模型精确路由”（例如把某些模型固定到本机 Ollama），为对应 backend 配置 `model` 并让 guest 仅设置 `model` 即可。
-

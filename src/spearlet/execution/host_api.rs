@@ -3,7 +3,7 @@ mod core;
 mod fd;
 mod iface;
 mod mic;
-mod registry;
+pub(crate) mod registry;
 mod rtasr;
 mod util;
 

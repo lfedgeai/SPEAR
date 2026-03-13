@@ -10,6 +10,7 @@
 | Project Architecture Overview | [project-architecture-overview-en.md](./project-architecture-overview-en.md) | [project-architecture-overview-zh.md](./project-architecture-overview-zh.md) | 项目架构全面概述 |
 | Task Execution Model | [task-execution-model-en.md](./task-execution-model-en.md) | [task-execution-model-zh.md](./task-execution-model-zh.md) | Task 执行模型与方案 A 约定 |
 | SMS Terminology | [sms-terminology-en.md](./sms-terminology-en.md) | [sms-terminology-zh.md](./sms-terminology-zh.md) | SMS术语和架构说明 |
+| LLM Backends Configuration | [llm-backends-configuration-en.md](./llm-backends-configuration-en.md) | [llm-backends-configuration-zh.md](./llm-backends-configuration-zh.md) | LLM backend/credentials 配置说明与示例 |
 | ObjectRef API Removal | [objectref-api-removal-en.md](./objectref-api-removal-en.md) | [objectref-api-removal-zh.md](./objectref-api-removal-zh.md) | ObjectRef API移除文档 |
 | MCP Integration Architecture | [mcp-integration-architecture-en.md](./mcp-integration-architecture-en.md) | [mcp-integration-architecture-zh.md](./mcp-integration-architecture-zh.md) | MCP 注册中心、注入与执行链路 |
 | Task-level MCP Subset Design | [mcp-task-subset-design-en.md](./mcp-task-subset-design-en.md) | [mcp-task-subset-design-zh.md](./mcp-task-subset-design-zh.md) | Task 级 MCP 子集选择与治理 |
@@ -82,6 +83,12 @@
 |---|---|---|---|
 | Constants Module Refactoring | [constants-refactoring-en.md](./constants-refactoring-en.md) | [constants-refactoring-zh.md](./constants-refactoring-zh.md) | Constants模块重构文档 |
 
+### 🚢 Deployment / 部署
+
+| 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
+|---|---|---|---|
+| Helm Deployment Guide | [helm-deployment-en.md](./helm-deployment-en.md) | [helm-deployment-zh.md](./helm-deployment-zh.md) | 使用 Helm 部署 SPEAR 集群 |
+
 ### 🔧 Troubleshooting & Operations / 故障排除与运维
 
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
@@ -101,6 +108,7 @@
 | 文档 / Document | 英文版 / English | 中文版 / Chinese | 描述 / Description |
 |---|---|---|---|
 | Test Validation & Warning Cleanup | [test-validation-and-warning-cleanup-en.md](./test-validation-and-warning-cleanup-en.md) | [test-validation-and-warning-cleanup-zh.md](./test-validation-and-warning-cleanup-zh.md) | 测试验证和警告清理完整指南 |
+| Kind Helm E2E | [kind-helm-e2e-en.md](./kind-helm-e2e-en.md) | [kind-helm-e2e-zh.md](./kind-helm-e2e-zh.md) | 使用 kind+Helm 运行端到端测试 |
 | Code Coverage Analysis Usage Guide | [coverage-usage-en.md](./coverage-usage-en.md) | [coverage-usage-zh.md](./coverage-usage-zh.md) | 代码覆盖率分析使用指南 |
 | Test Fixes | [test-fixes-en.md](./test-fixes-en.md) | [test-fixes-zh.md](./test-fixes-zh.md) | 测试修复和改进 |
 | Cargo Test Fix Summary | [cargo-test-fix-summary-en.md](./cargo-test-fix-summary-en.md) | [cargo-test-fix-summary-zh.md](./cargo-test-fix-summary-zh.md) | Cargo测试修复完整总结 |

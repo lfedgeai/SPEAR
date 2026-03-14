@@ -6,12 +6,14 @@ pub mod registry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::spearlet::execution::ai::backends::KIND_OPENAI_CHAT_COMPLETION;
 use crate::spearlet::execution::ai::ir::{CanonicalError, CanonicalRequestEnvelope};
-use crate::spearlet::execution::ai::{backends::openai_chat_completion::OpenAIChatCompletionBackendAdapter, ir::Operation};
 use crate::spearlet::execution::ai::router::policy::SelectionPolicy;
 use crate::spearlet::execution::ai::router::registry::{BackendInstance, BackendRegistry, Hosting};
+use crate::spearlet::execution::ai::{
+    backends::openai_chat_completion::OpenAIChatCompletionBackendAdapter, ir::Operation,
+};
 use crate::spearlet::local_models::{global_managed_backends, ManagedBackendRegistry};
-use crate::spearlet::execution::ai::backends::KIND_OPENAI_CHAT_COMPLETION;
 use parking_lot::RwLock;
 use rand::Rng;
 use tracing::debug;
@@ -367,21 +369,20 @@ fn managed_backend_info_to_instance(b: crate::proto::sms::BackendInfo) -> Option
         1 => Hosting::Remote,
         _ => Hosting::Unknown,
     };
-    let adapter: Arc<dyn crate::spearlet::execution::ai::backends::BackendAdapter> =
-        match b.kind.as_str() {
-            KIND_OPENAI_CHAT_COMPLETION => {
-                let mut a = OpenAIChatCompletionBackendAdapter::new(
-                    b.name.clone(),
-                    b.base_url.clone(),
-                    None,
-                );
-                if !b.model.trim().is_empty() {
-                    a = a.with_fixed_model(b.model.clone());
-                }
-                Arc::new(a)
+    let adapter: Arc<dyn crate::spearlet::execution::ai::backends::BackendAdapter> = match b
+        .kind
+        .as_str()
+    {
+        KIND_OPENAI_CHAT_COMPLETION => {
+            let mut a =
+                OpenAIChatCompletionBackendAdapter::new(b.name.clone(), b.base_url.clone(), None);
+            if !b.model.trim().is_empty() {
+                a = a.with_fixed_model(b.model.clone());
             }
-            _ => return None,
-        };
+            Arc::new(a)
+        }
+        _ => return None,
+    };
     Some(BackendInstance {
         name: b.name,
         kind: b.kind,

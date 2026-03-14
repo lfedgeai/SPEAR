@@ -54,9 +54,7 @@ fn with_default_model(
     req: &CanonicalRequestEnvelope,
     default_model: Option<&str>,
 ) -> Option<CanonicalRequestEnvelope> {
-    let m = default_model
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())?;
+    let m = default_model.map(|s| s.trim()).filter(|s| !s.is_empty())?;
     if !has_missing_model(req) {
         return None;
     }
@@ -165,7 +163,9 @@ mod tests {
     };
     use crate::spearlet::execution::ai::router::capabilities::Capabilities;
     use crate::spearlet::execution::ai::router::policy::SelectionPolicy;
-    use crate::spearlet::execution::ai::router::registry::{BackendInstance, BackendRegistry, Hosting};
+    use crate::spearlet::execution::ai::router::registry::{
+        BackendInstance, BackendRegistry, Hosting,
+    };
     use crate::spearlet::execution::ai::router::Router;
     use serde_json::Value;
     use std::collections::HashMap;
@@ -188,7 +188,10 @@ mod tests {
             adapter: Arc::new(StubBackendAdapter::new("stub")),
         };
 
-        let router = Router::new(BackendRegistry::new(vec![inst]), SelectionPolicy::WeightedRandom);
+        let router = Router::new(
+            BackendRegistry::new(vec![inst]),
+            SelectionPolicy::WeightedRandom,
+        );
         let ai = AiEngine::new(router);
 
         let req = CanonicalRequestEnvelope {

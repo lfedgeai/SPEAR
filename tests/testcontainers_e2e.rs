@@ -150,10 +150,7 @@ fn http_get_body(host: &str, port: u16, path: &str) -> String {
 }
 
 fn docker_logs(name: &str) -> String {
-    let out = Command::new("docker")
-        .args(["logs", name])
-        .output()
-        .ok();
+    let out = Command::new("docker").args(["logs", name]).output().ok();
     let mut s = String::new();
     if let Some(o) = out {
         s.push_str(&String::from_utf8_lossy(&o.stdout));

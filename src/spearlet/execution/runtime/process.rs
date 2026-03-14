@@ -6,8 +6,8 @@
 
 use super::{
     ExecutionContext, ListeningStatus, MessageHandler, Runtime, RuntimeCapabilities, RuntimeConfig,
-    RuntimeExecutionResponse, RuntimeListeningConfig, RuntimeType, DEFAULT_PROCESS_WORKING_DIRECTORY,
-    DEFAULT_SHELL_EXECUTABLE,
+    RuntimeExecutionResponse, RuntimeListeningConfig, RuntimeType,
+    DEFAULT_PROCESS_WORKING_DIRECTORY, DEFAULT_SHELL_EXECUTABLE,
 };
 use crate::spearlet::execution::{
     communication::{

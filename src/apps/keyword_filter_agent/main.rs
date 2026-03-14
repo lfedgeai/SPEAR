@@ -272,13 +272,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         tx.send(StreamClientMessage {
             msg: Some(
-                spear_next::proto::spearlet::stream_client_message::Msg::Register(RegisterRequest {
-                    agent_id: args.agent_id.clone(),
-                    supported_operations: Vec::new(),
-                    max_inflight: args.max_inflight,
-                    max_candidates: args.max_candidates,
-                    protocol_version: 1,
-                }),
+                spear_next::proto::spearlet::stream_client_message::Msg::Register(
+                    RegisterRequest {
+                        agent_id: args.agent_id.clone(),
+                        supported_operations: Vec::new(),
+                        max_inflight: args.max_inflight,
+                        max_candidates: args.max_candidates,
+                        protocol_version: 1,
+                    },
+                ),
             ),
         })
         .await?;

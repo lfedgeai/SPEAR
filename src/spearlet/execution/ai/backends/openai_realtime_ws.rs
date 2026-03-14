@@ -24,7 +24,11 @@ impl OpenAIRealtimeWsBackendAdapter {
             base_url: base_url.into(),
             api_key_env: api_key_env.and_then(|s| {
                 let t = s.trim().to_string();
-                if t.is_empty() { None } else { Some(t) }
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t)
+                }
             }),
         }
     }
@@ -161,6 +165,10 @@ mod tests {
         let StreamingPlan::Websocket(p) = plan else {
             panic!("expected websocket plan");
         };
-        assert!(!p.websocket.headers.iter().any(|(k, _)| k == "authorization"));
+        assert!(!p
+            .websocket
+            .headers
+            .iter()
+            .any(|(k, _)| k == "authorization"));
     }
 }

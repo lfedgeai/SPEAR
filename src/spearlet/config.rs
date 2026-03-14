@@ -522,7 +522,10 @@ fn validate_spearlet_config(
         if hosting != "local" && hosting != "remote" {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("invalid llm backend hosting (expected local|remote): {}", b.name),
+                format!(
+                    "invalid llm backend hosting (expected local|remote): {}",
+                    b.name
+                ),
             )
             .into());
         }

@@ -13,7 +13,7 @@ use crate::proto::sms::{
 };
 use crate::spearlet::config::{LlmBackendConfig, SpearletConfig};
 use crate::spearlet::execution::ai::backends::{
-    KIND_OPENAI_CHAT_COMPLETION, KIND_OPENAI_REALTIME_WS, KIND_OLLAMA_CHAT, KIND_STUB,
+    KIND_OLLAMA_CHAT, KIND_OPENAI_CHAT_COMPLETION, KIND_OPENAI_REALTIME_WS, KIND_STUB,
 };
 use crate::spearlet::local_models::ManagedBackendRegistry;
 
@@ -131,7 +131,11 @@ fn build_backend_info_list(cfg: &SpearletConfig) -> Vec<BackendInfo> {
         let mut status = BackendStatus::Available as i32;
         let mut reason = String::new();
 
-        if b.credential_ref.as_deref().map(|s| s.trim()).is_some_and(|s| !s.is_empty()) {
+        if b.credential_ref
+            .as_deref()
+            .map(|s| s.trim())
+            .is_some_and(|s| !s.is_empty())
+        {
             let env = resolve_backend_env(b, &creds);
             match env {
                 Ok(env_name) => match std::env::var(&env_name) {

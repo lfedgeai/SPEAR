@@ -27,7 +27,11 @@ impl OpenAIChatCompletionBackendAdapter {
             base_url: base_url.into(),
             api_key: api_key.and_then(|s| {
                 let t = s.trim().to_string();
-                if t.is_empty() { None } else { Some(t) }
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t)
+                }
             }),
             fixed_model: None,
         }

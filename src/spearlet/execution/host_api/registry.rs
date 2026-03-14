@@ -3,7 +3,7 @@ use crate::spearlet::execution::ai::backends::openai_chat_completion::OpenAIChat
 use crate::spearlet::execution::ai::backends::openai_realtime_ws::OpenAIRealtimeWsBackendAdapter;
 use crate::spearlet::execution::ai::backends::stub::StubBackendAdapter;
 use crate::spearlet::execution::ai::backends::{
-    KIND_OPENAI_CHAT_COMPLETION, KIND_OPENAI_REALTIME_WS, KIND_OLLAMA_CHAT, KIND_STUB,
+    KIND_OLLAMA_CHAT, KIND_OPENAI_CHAT_COMPLETION, KIND_OPENAI_REALTIME_WS, KIND_STUB,
 };
 use crate::spearlet::execution::ai::ir::Operation;
 use crate::spearlet::execution::ai::router::capabilities::Capabilities;

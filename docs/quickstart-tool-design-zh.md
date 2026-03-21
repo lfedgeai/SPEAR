@@ -9,9 +9,10 @@
 - CLI 子命令：已支持 `configure / tui / plan / apply / status / cleanup`
 - `plan`：已实现（对 `mode=k8s-kind` 输出分阶段 plan，并提示 legacy 脚本 fallback）
 - TUI：menuconfig 风格编辑器 + 功能键已贯通（`Plan/Apply/Status/Cleanup`），并提供显式确认/结果弹窗
-- `apply`：当前仅实现 `mode=k8s-kind`；默认走 Rust 内置编排（docker/kind/helm + Kubernetes API + Docker API）；`k8s-existing/docker-local` 尚未实现
+- `apply`：已实现 `mode=k8s-kind` 与 `mode=docker-local`（MVP）；默认走 Rust 内置编排（docker/kind/helm + Kubernetes API + Docker API）；`k8s-existing` 尚未实现
 - `state`：尚未实现 state 落盘与基于 state 的安全 cleanup（目前 cleanup 主要按 scope 驱动，而非 state 驱动）
 - Helm/values/secret：已贯通到 `mode=k8s-kind` apply（namespace/release/values、日志覆盖、镜像配置、可选从 env 创建 OpenAI Secret）
+  - docker-local（MVP）：通过 Docker network + docker run 拉起 `sms/spearlet`，按配置映射 HTTP 端口；OpenAI key 仅从 env 注入容器 env；可选启动 `keyword-filter-agent`
 
 相关现状参考：
 - legacy 脚本（fallback）：`../scripts/kind-openai-quickstart.sh`
@@ -220,7 +221,7 @@ publish_spearlet_http = "18081:8081"
 
 #### docker-local
 - docker network create（若不存在）
-- docker run sms + spearlet（必要端口映射与网络联通）
+- docker run sms + spearlet（基于 `docker_local.*` 的网络、容器名与端口映射）
 - openai key：从 env 注入容器 env（不落盘）
 - 做基础 health/连通性检查
 

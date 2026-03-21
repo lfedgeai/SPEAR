@@ -73,6 +73,7 @@ network_name = "spear-quickstart"
 sms_name = "spear-sms"
 spearlet_name = "spear-spearlet"
 publish_sms_http = "18080:8080"
+publish_sms_web_admin = "18082:8081"
 publish_spearlet_http = "18081:8081"
 "#;
 
@@ -203,7 +204,13 @@ pub struct DockerLocalConfig {
     pub sms_name: String,
     pub spearlet_name: String,
     pub publish_sms_http: String,
+    #[serde(default = "default_publish_sms_web_admin")]
+    pub publish_sms_web_admin: String,
     pub publish_spearlet_http: String,
+}
+
+fn default_publish_sms_web_admin() -> String {
+    "18082:8081".to_string()
 }
 
 pub fn ensure_default_config(path: &Path, force: bool) -> anyhow::Result<()> {

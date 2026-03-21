@@ -238,6 +238,12 @@ impl RegistrationService {
         let node_addr = config.grpc.addr;
         let mut ip_address = node_addr.ip().to_string();
         if node_addr.ip().is_unspecified() || node_addr.ip().is_loopback() {
+            if let Ok(v) = std::env::var("SPEARLET_ADVERTISE_IP") {
+                let v = v.trim();
+                if !v.is_empty() {
+                    ip_address = v.to_string();
+                }
+            }
             if let Ok(v) = std::env::var("POD_IP") {
                 if let Ok(ip) = v.parse::<std::net::IpAddr>() {
                     ip_address = ip.to_string();

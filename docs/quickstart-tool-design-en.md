@@ -9,9 +9,10 @@ The repository now ships a Rust quickstart tool at `tools/spear-quickstart/` (a 
 - CLI subcommands: `configure / tui / plan / apply / status / cleanup`
 - `plan`: implemented (prints a phase-oriented plan for `mode=k8s-kind`, plus a legacy-script fallback note)
 - TUI: menuconfig-like editor + function keys wired (`Plan/Apply/Status/Cleanup`), with explicit confirm/result dialogs
-- `apply`: `mode=k8s-kind` only; native Rust orchestration (docker/kind/helm + Kubernetes API + Docker API). `k8s-existing/docker-local` not implemented
+- `apply`: implemented for `mode=k8s-kind` and `mode=docker-local` (MVP); native Rust orchestration (docker/kind/helm + Kubernetes API + Docker API). `k8s-existing` not implemented
 - `state`: not implemented yet; cleanup is scope-driven (not state-driven)
 - Helm/values/secret: plumbed into `mode=k8s-kind` apply (namespace/release/values, logging overrides, images, optional OpenAI secret from env)
+  - docker-local (MVP): start `sms/spearlet` via Docker network + docker run; publish HTTP ports from config; OpenAI key is injected from env only; optional `keyword-filter-agent`
 
 References (current state):
 - Legacy script (fallback): `../scripts/kind-openai-quickstart.sh`
@@ -220,7 +221,7 @@ Split into 5 phases and show them in `plan` output.
 
 #### docker-local
 - Create docker network if missing
-- Run sms and spearlet containers (ports, network connectivity)
+- Run sms and spearlet containers (based on `docker_local.*` network/names/port mappings)
 - Inject OpenAI key via env only (no persistence)
 - Minimal health/connectivity checks
 

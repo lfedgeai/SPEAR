@@ -6,7 +6,7 @@
 
 - SMS：元数据/控制面服务（gRPC + HTTP）。
 - SPEARlet：节点 Agent / Worker（gRPC + HTTP）。
-- Router Filter Agent（可选）：作为 sidecar 连接到 SPEARlet 的 router-filter-stream。
+- Router Filter：由 SMS 提供的 gRPC 服务（默认内置；预留未来插件扩展点）。
 
 ## 前置条件
 
@@ -16,12 +16,11 @@
 
 ## 构建镜像
 
-生产环境推荐拆分为三个镜像：
+生产环境推荐拆分为两个镜像：
 
 ```bash
 docker build -f deploy/docker/sms/Dockerfile -t <REGISTRY>/spear-sms:<TAG> .
 docker build -f deploy/docker/spearlet/Dockerfile -t <REGISTRY>/spear-spearlet:<TAG> .
-docker build -f deploy/docker/router-filter-agent/Dockerfile -t <REGISTRY>/spear-router-filter-agent:<TAG> .
 ```
 
 Cargo registry 说明：
@@ -32,7 +31,6 @@ Cargo registry 说明：
 ```bash
 docker build -f deploy/docker/sms/Dockerfile -t <REGISTRY>/spear-sms:<TAG> --build-arg USE_CARGO_MIRROR=0 .
 docker build -f deploy/docker/spearlet/Dockerfile -t <REGISTRY>/spear-spearlet:<TAG> --build-arg USE_CARGO_MIRROR=0 .
-docker build -f deploy/docker/router-filter-agent/Dockerfile -t <REGISTRY>/spear-router-filter-agent:<TAG> --build-arg USE_CARGO_MIRROR=0 .
 ```
 
 推送镜像：
@@ -40,7 +38,6 @@ docker build -f deploy/docker/router-filter-agent/Dockerfile -t <REGISTRY>/spear
 ```bash
 docker push <REGISTRY>/spear-sms:<TAG>
 docker push <REGISTRY>/spear-spearlet:<TAG>
-docker push <REGISTRY>/spear-router-filter-agent:<TAG>
 ```
 
 ## 使用 Helm 安装
@@ -68,15 +65,12 @@ kind create cluster --name spear
 
 docker build -f deploy/docker/sms/Dockerfile -t spear-sms:local .
 docker build -f deploy/docker/spearlet/Dockerfile -t spear-spearlet:local .
-docker build -f deploy/docker/router-filter-agent/Dockerfile -t spear-router-filter-agent:local .
 
-kind load docker-image --name spear spear-sms:local spear-spearlet:local spear-router-filter-agent:local
+kind load docker-image --name spear spear-sms:local spear-spearlet:local
 
 helm upgrade --install spear deploy/helm/spear -n spear --create-namespace \
   --set sms.image.repository=spear-sms --set sms.image.tag=local \
-  --set spearlet.image.repository=spear-spearlet --set spearlet.image.tag=local \
-  --set routerFilterAgent.enabled=true \
-  --set routerFilterAgent.image.repository=spear-router-filter-agent --set routerFilterAgent.image.tag=local
+  --set spearlet.image.repository=spear-spearlet --set spearlet.image.tag=local
 
 kubectl -n spear get pods -o wide
 kubectl -n spear wait --for=condition=Ready pod -l app.kubernetes.io/instance=spear --timeout=300s
@@ -208,13 +202,21 @@ kubectl -n spear port-forward svc/spear-spear-sms 18082:8081
 
 - http://127.0.0.1:18082/
 
-### 启用 keyword filter agent sidecar
+### 启用 Router Filter
+
+默认情况下，Router Filter 服务端由 SMS 提供（内置，默认 no-op）。如需让 SPEARlet 在路由阶段发起过滤调用，可启用：
 
 ```bash
 helm upgrade --install spear deploy/helm/spear \
-  --set routerFilterAgent.enabled=true \
-  --set routerFilterAgent.image.repository=<REGISTRY>/spear-router-filter-agent \
-  --set routerFilterAgent.image.tag=<TAG>
+  --set routerFilter.enabled=true
+```
+
+如需覆盖 Router Filter 服务端地址（host:port），可设置：
+
+```bash
+helm upgrade --install spear deploy/helm/spear \
+  --set routerFilter.enabled=true \
+  --set routerFilter.addr="<HOST>:<PORT>"
 ```
 
 ### 启用 SPEARlet Kubernetes runtime 的 RBAC

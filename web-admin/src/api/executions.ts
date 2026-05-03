@@ -6,7 +6,7 @@ export type CreateExecutionPayload = {
   /** Preferred node uuid (optional) / 期望节点 uuid（可选） */
   node_uuid?: string
   /** Execution mode (optional) / 执行模式（可选） */
-  execution_mode?: 'sync' | 'async' | 'stream'
+  execution_mode?: 'sync' | 'async'
   /** Maximum placement candidates (optional) / 最大候选节点数（可选） */
   max_candidates?: number
 }

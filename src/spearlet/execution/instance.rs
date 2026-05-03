@@ -217,6 +217,8 @@ pub struct TaskInstance {
     pub created_at: SystemTime,
     /// Last updated timestamp / 最后更新时间戳
     pub updated_at: Arc<parking_lot::RwLock<SystemTime>>,
+    /// Current execution id (best-effort) / 当前执行ID（尽力维护）
+    pub current_execution_id: Arc<parking_lot::RwLock<Option<String>>>,
     /// Request counter for generating unique request IDs / 请求计数器用于生成唯一请求ID
     request_counter: AtomicU64,
 }
@@ -239,6 +241,7 @@ impl TaskInstance {
             listening_address: Arc::new(parking_lot::RwLock::new(None)),
             created_at: now,
             updated_at: Arc::new(parking_lot::RwLock::new(now)),
+            current_execution_id: Arc::new(parking_lot::RwLock::new(None)),
             request_counter: AtomicU64::new(0),
         }
     }
@@ -251,6 +254,15 @@ impl TaskInstance {
     /// Get parent task ID / 获取父 Task ID
     pub fn task_id(&self) -> &str {
         &self.task_id
+    }
+
+    pub fn current_execution_id(&self) -> Option<String> {
+        self.current_execution_id.read().clone()
+    }
+
+    pub fn set_current_execution_id(&self, execution_id: Option<String>) {
+        *self.current_execution_id.write() = execution_id;
+        *self.updated_at.write() = SystemTime::now();
     }
 
     /// Get current status / 获取当前状态

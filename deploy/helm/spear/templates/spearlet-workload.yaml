@@ -94,32 +94,6 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
             {{- toYaml .Values.spearlet.resources | nindent 12 }}
-        {{- if .Values.routerFilterAgent.enabled }}
-        - name: keyword-filter-agent
-          image: "{{ include "spear.image.repository" (list . .Values.routerFilterAgent) }}:{{ include "spear.image.tag" (list . .Values.routerFilterAgent) }}"
-          imagePullPolicy: {{ include "spear.image.pullPolicy" (list . .Values.routerFilterAgent) }}
-          args:
-            - keyword-filter-agent
-            - --addr={{ .Values.routerFilterAgent.addr }}
-            - --agent-id=$(POD_NAME)
-            - --max-inflight={{ .Values.routerFilterAgent.maxInflight }}
-            - --max-candidates={{ .Values.routerFilterAgent.maxCandidates }}
-            {{- range .Values.routerFilterAgent.extraArgs }}
-            - {{ . | quote }}
-            {{- end }}
-          env:
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          resources:
-            {{- toYaml .Values.routerFilterAgent.resources | nindent 12 }}
-        {{- end }}
       volumes:
         - name: config
           configMap:
@@ -238,32 +212,6 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
             {{- toYaml .Values.spearlet.resources | nindent 12 }}
-        {{- if .Values.routerFilterAgent.enabled }}
-        - name: keyword-filter-agent
-          image: "{{ include "spear.image.repository" (list . .Values.routerFilterAgent) }}:{{ include "spear.image.tag" (list . .Values.routerFilterAgent) }}"
-          imagePullPolicy: {{ include "spear.image.pullPolicy" (list . .Values.routerFilterAgent) }}
-          args:
-            - keyword-filter-agent
-            - --addr={{ .Values.routerFilterAgent.addr }}
-            - --agent-id=$(POD_NAME)
-            - --max-inflight={{ .Values.routerFilterAgent.maxInflight }}
-            - --max-candidates={{ .Values.routerFilterAgent.maxCandidates }}
-            {{- range .Values.routerFilterAgent.extraArgs }}
-            - {{ . | quote }}
-            {{- end }}
-          env:
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          resources:
-            {{- toYaml .Values.routerFilterAgent.resources | nindent 12 }}
-        {{- end }}
       volumes:
         - name: config
           configMap:

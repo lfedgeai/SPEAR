@@ -50,6 +50,7 @@ pub mod registry_watch;
 pub mod routes;
 pub mod service;
 pub mod services;
+pub mod stream_mux;
 pub mod types;
 pub mod unified_events;
 pub mod web_admin;

@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 mod common;
 
+const SPEAR_EAGAIN: i32 = 11;
+
 #[test]
 fn test_openai_realtime_asr_websocket_connect() {
     let resolved = match common::resolve_realtime_asr_backend() {
@@ -118,7 +120,7 @@ fn test_openai_realtime_asr_websocket_connect() {
     while off < audio_pcm.len() {
         let end = std::cmp::min(off + chunk, audio_pcm.len());
         let rc = api.rtasr_write(fd, &audio_pcm[off..end]);
-        if rc == -libc::EAGAIN {
+        if rc == -SPEAR_EAGAIN {
             std::thread::sleep(std::time::Duration::from_millis(5));
             continue;
         }
@@ -131,7 +133,7 @@ fn test_openai_realtime_asr_websocket_connect() {
     while off < silence_bytes.len() {
         let end = std::cmp::min(off + chunk, silence_bytes.len());
         let rc = api.rtasr_write(fd, &silence_bytes[off..end]);
-        if rc == -libc::EAGAIN {
+        if rc == -SPEAR_EAGAIN {
             std::thread::sleep(std::time::Duration::from_millis(5));
             continue;
         }
@@ -167,7 +169,7 @@ fn test_openai_realtime_asr_websocket_connect() {
                     }
                 }
             }
-            Err(rc) if rc == -libc::EAGAIN => {
+            Err(rc) if rc == -SPEAR_EAGAIN => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Err(rc) => {

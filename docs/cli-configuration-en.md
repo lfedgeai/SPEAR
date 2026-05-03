@@ -22,6 +22,11 @@ cargo run --bin sms -- [OPTIONS]
 | `--heartbeat-timeout <SECONDS>` | u64 | Node heartbeat timeout | 120 |
 | `--cleanup-interval <SECONDS>` | u64 | Node cleanup interval | 300 |
 | `--enable-swagger` | Flag | Enable Swagger UI | false |
+| `--disable-swagger` | Flag | Disable Swagger UI | false |
+| `--enable-console` | Flag | Enable SPEAR Console (/console) | false |
+| `--disable-console` | Flag | Disable SPEAR Console (/console) | false |
+| `--enable-web-admin` | Flag | Enable Web Admin | false |
+| `--disable-web-admin` | Flag | Disable Web Admin | false |
 | `--log-level <LEVEL>` | String | Log level (trace, debug, info, warn, error) | info |
 | `--storage-backend <BACKEND>` | String | KV storage backend (memory, sled, rocksdb) | memory |
 | `--storage-path <PATH>` | String | Storage path for file-based backends | None |
@@ -61,6 +66,8 @@ http_addr = "0.0.0.0:8080"
 cleanup_interval = 300
 heartbeat_timeout = 120
 enable_swagger = true
+enable_console = true
+enable_web_admin = false
 
 [sms.kv_store]
 backend = "memory"

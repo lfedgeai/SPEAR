@@ -223,8 +223,6 @@ pub enum ExecutionMode {
     Sync = 1,
     /// Asynchronous execution / 异步执行
     Async = 2,
-    /// Streaming execution / 流式执行
-    Stream = 3,
 }
 
 /// Function execution status / 函数执行状态
@@ -260,7 +258,7 @@ pub struct RuntimeExecutionResponse {
     pub metadata: HashMap<String, serde_json::Value>,
 
     // === Execution lifecycle fields === / === 执行生命周期字段 ===
-    /// Execution mode (sync/async/stream) / 执行模式（同步/异步/流式）
+    /// Execution mode (sync/async) / 执行模式（同步/异步）
     pub execution_mode: ExecutionMode,
     /// Current execution status / 当前执行状态
     pub execution_status: ExecutionStatus,

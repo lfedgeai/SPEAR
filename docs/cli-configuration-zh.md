@@ -23,6 +23,11 @@ cargo run --bin sms -- [选项]
 | `--heartbeat-timeout <秒数>` | u64 | 节点心跳超时时间 | 120 |
 | `--cleanup-interval <秒数>` | u64 | 节点清理间隔 | 300 |
 | `--enable-swagger` | 标志 | 启用Swagger UI | false |
+| `--disable-swagger` | 标志 | 禁用Swagger UI | false |
+| `--enable-console` | 标志 | 启用 SPEAR Console（/console） | false |
+| `--disable-console` | 标志 | 禁用 SPEAR Console（/console） | false |
+| `--enable-web-admin` | 标志 | 启用 Web Admin | false |
+| `--disable-web-admin` | 标志 | 禁用 Web Admin | false |
 | `--log-level <级别>` | String | 日志级别 (trace, debug, info, warn, error) | info |
 | `--storage-backend <后端>` | String | KV存储后端 (memory, sled, rocksdb) | memory |
 | `--storage-path <路径>` | String | 基于文件的后端存储路径 | 无 |
@@ -62,6 +67,8 @@ http_addr = "0.0.0.0:8080"
 cleanup_interval = 300
 heartbeat_timeout = 120
 enable_swagger = true
+enable_console = true
+enable_web_admin = false
 
 [sms.kv_store]
 backend = "memory"

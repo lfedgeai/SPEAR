@@ -17,10 +17,6 @@ path = "src/apps/sms/main.rs"
 name = "spearlet"
 path = "src/apps/spearlet/main.rs"
 
-[[bin]]
-name = "keyword-filter-agent"
-path = "src/apps/keyword_filter_agent/main.rs"
-
 [dependencies]
 # Async runtime / 异步运行时
 tokio = { version = "1.0", features = ["full"] }
@@ -34,7 +30,7 @@ prost = "0.13"
 prost-types = "0.13"
 
 # HTTP server / HTTP服务器
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "timeout"] }
 hyper = { version = "1", features = ["client", "http1"] }

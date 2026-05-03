@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { cn, isValidEndpointName, normalizeEndpointName } from '@/lib/utils'
 
 function formatTs(ts: number) {
   if (!ts) return '-'
@@ -47,14 +47,6 @@ type CreateForm = {
   mcp_enabled: boolean
   mcp_tool_allowlist: string
   mcp_tool_denylist: string
-}
-
-function endpointFromName(name: string) {
-  const s = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return s ? `/tasks/${s}` : ''
 }
 
 type UriScheme = 'smsfile' | 'https' | 's3' | 'minio'
@@ -157,6 +149,10 @@ function CreateTaskDialog(props: {
   })
 
   const [endpointTouched, setEndpointTouched] = useState(false)
+  const endpointOk = useMemo(
+    () => isValidEndpointName(form.endpoint),
+    [form.endpoint],
+  )
 
   const nodes = nodesQuery.data?.nodes || []
   const mcpServers = useMemo(() => {
@@ -170,9 +166,34 @@ function CreateTaskDialog(props: {
 
   useEffect(() => {
     if (!props.open) return
+    setScheme('smsfile')
+    setPickerOpen(false)
+    setFileQ('')
+    setFileOffset(0)
+    setFileRows([])
+    setFileTotal(null)
+    setEndpointTouched(false)
     setMcpAllowed(new Set())
     setMcpDefault(new Set())
     setMcpFilter('')
+    setForm({
+      name: '',
+      description: '',
+      priority: 'normal',
+      node_uuid: '',
+      endpoint: '',
+      version: 'v1',
+      capabilities: '',
+      executable_type: 'no-executable',
+      executable_uri: '',
+      executable_name: '',
+      checksum: '',
+      args: '',
+      env: '',
+      mcp_enabled: false,
+      mcp_tool_allowlist: '',
+      mcp_tool_denylist: '',
+    })
   }, [props.open])
 
   const mcpDefaultIds = useMemo(
@@ -185,7 +206,7 @@ function CreateTaskDialog(props: {
   )
 
   const mcpCanSubmit = !form.mcp_enabled || mcpDefaultIds.length > 0
-  const canSubmit = !!(form.name && form.endpoint && form.version && mcpCanSubmit)
+  const canSubmit = !!(form.name && endpointOk && form.version && mcpCanSubmit)
 
   const [runAfterCreate, setRunAfterCreate] = useState(true)
 
@@ -213,7 +234,9 @@ function CreateTaskDialog(props: {
                 setForm((f) => ({
                   ...f,
                   name: nextName,
-                  endpoint: endpointTouched ? f.endpoint : endpointFromName(nextName),
+                  endpoint: endpointTouched
+                    ? f.endpoint
+                    : normalizeEndpointName(nextName),
                 }))
               }}
             />
@@ -419,13 +442,18 @@ function CreateTaskDialog(props: {
 
           <div className="col-span-2">
             <Input
-              placeholder="Endpoint"
+              placeholder="Endpoint (e.g. echo_01)"
               value={form.endpoint}
               onChange={(e) => {
                 setEndpointTouched(true)
                 setForm((f) => ({ ...f, endpoint: e.target.value }))
               }}
             />
+            {form.endpoint && !endpointOk ? (
+              <div className="mt-1 text-xs text-[hsl(var(--destructive))]">
+                Endpoint must match ^[A-Za-z0-9_-]+$
+              </div>
+            ) : null}
           </div>
           <div className="col-span-2">
             <Input

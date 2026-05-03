@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tracing::{error, info};
 
@@ -21,44 +22,28 @@ use tokio_util::sync::CancellationToken;
 
 /// SMS HTTP gateway / SMS HTTP网关
 pub struct HttpGateway {
-    addr: SocketAddr,
-    grpc_addr: SocketAddr,
-    enable_swagger: bool,
-    max_upload_bytes: usize,
-    files_dir: String,
+    config: Arc<crate::sms::config::SmsConfig>,
 }
 
 impl HttpGateway {
     /// Create a new HTTP gateway / 创建新的HTTP网关
-    pub fn new(
-        addr: SocketAddr,
-        grpc_addr: SocketAddr,
-        enable_swagger: bool,
-        max_upload_bytes: usize,
-        files_dir: String,
-    ) -> Self {
-        Self {
-            addr,
-            grpc_addr,
-            enable_swagger,
-            max_upload_bytes,
-            files_dir,
-        }
+    pub fn new(config: Arc<crate::sms::config::SmsConfig>) -> Self {
+        Self { config }
     }
 
     /// Get the HTTP address / 获取HTTP地址
     pub fn addr(&self) -> SocketAddr {
-        self.addr
+        self.config.http.addr
     }
 
     /// Get the gRPC address / 获取gRPC地址
     pub fn grpc_addr(&self) -> SocketAddr {
-        self.grpc_addr
+        self.config.grpc.addr
     }
 
     /// Check if Swagger is enabled / 检查是否启用Swagger
     pub fn enable_swagger(&self) -> bool {
-        self.enable_swagger
+        self.config.enable_swagger
     }
 
     /// Start the HTTP gateway / 启动HTTP网关
@@ -88,10 +73,10 @@ impl HttpGateway {
     }
 
     async fn prepare(self) -> Result<(tokio::net::TcpListener, axum::Router)> {
-        info!("Starting SMS HTTP gateway on {}", self.addr);
-        info!("Connecting to gRPC server at {}", self.grpc_addr);
+        info!("Starting SMS HTTP gateway on {}", self.config.http.addr);
+        info!("Connecting to gRPC server at {}", self.config.grpc.addr);
 
-        let grpc_url = format!("http://{}", self.grpc_addr);
+        let grpc_url = format!("http://{}", self.config.grpc.addr);
         let channel = tonic::transport::Channel::from_shared(grpc_url)
             .expect("Invalid gRPC URL")
             .connect_lazy();
@@ -107,6 +92,7 @@ impl HttpGateway {
             ModelDeploymentRegistryServiceClient::new(channel.clone());
 
         let state = GatewayState {
+            config: self.config.clone(),
             node_client,
             task_client,
             placement_client,
@@ -116,16 +102,19 @@ impl HttpGateway {
             mcp_registry_client,
             backend_registry_client,
             model_deployment_registry_client,
+            stream_sessions: super::gateway::StreamSessionStore::new(),
+            execution_stream_pool: super::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
-            max_upload_bytes: self.max_upload_bytes,
-            files_dir: self.files_dir.clone(),
+            max_upload_bytes: self.config.max_upload_bytes as usize,
+            files_dir: self.config.files_dir.clone(),
         };
         let app = create_gateway_router(state);
 
-        info!("SMS HTTP gateway listening on {}", self.addr);
-        info!("Swagger UI enabled: {}", self.enable_swagger);
+        info!("SMS HTTP gateway listening on {}", self.config.http.addr);
+        info!("SPEAR Console enabled: {}", self.config.enable_console);
+        info!("Swagger UI enabled: {}", self.config.enable_swagger);
 
-        let listener = tokio::net::TcpListener::bind(self.addr).await?;
+        let listener = tokio::net::TcpListener::bind(self.config.http.addr).await?;
         Ok((listener, app))
     }
 }

@@ -20,7 +20,7 @@ sms:
     grpcAddr: "0.0.0.0:50051"
     httpAddr: "0.0.0.0:8080"
     enableSwagger: true
-    enableWebAdmin: false
+    enableWebAdmin: true
     webAdminAddr: "0.0.0.0:8081"
     database:
       type: "sled"
@@ -120,18 +120,13 @@ spearlet:
   extraEnv: []
   extraArgs: []
 
-routerFilterAgent:
+routerFilter:
   enabled: false
-  image: {}
-  addr: "127.0.0.1:50052"
-  maxInflight: 256
-  maxCandidates: 64
+  addr: ""
   decisionTimeoutMs: 2000
   failOpen: true
-  contentFetchEnabled: true
+  contentFetchEnabled: false
   contentFetchMaxBytes: 65536
-  resources: {}
-  extraArgs: []
 
 podSecurityContext:
   runAsNonRoot: true

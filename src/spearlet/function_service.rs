@@ -2,11 +2,9 @@
 //! spearlet的函数服务实现
 
 use std::collections::{HashMap, HashSet};
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tokio_stream::Stream;
 use tonic::transport::Channel;
 use tonic::{Request, Response, Status};
 use tracing::debug;
@@ -14,10 +12,9 @@ use uuid::Uuid;
 
 use crate::proto::spearlet::{
     execution_service_server::ExecutionService, invocation_service_server::InvocationService,
-    CancelExecutionRequest, CancelExecutionResponse, ConsoleClientMessage, ConsoleExit,
-    ConsoleOpen, ConsoleServerMessage, Error as ProtoError, Execution, ExecutionMode,
-    ExecutionStatus, GetExecutionRequest, InvokeRequest, InvokeResponse, InvokeStreamChunk,
-    ListExecutionsRequest, ListExecutionsResponse, Payload,
+    Error as ProtoError, Execution, ExecutionMode, ExecutionStatus, GetExecutionRequest,
+    InvokeRequest, InvokeResponse, ListExecutionsRequest, ListExecutionsResponse, Payload,
+    TerminateExecutionRequest, TerminateExecutionResponse,
 };
 
 use crate::spearlet::execution::{
@@ -164,6 +161,8 @@ impl FunctionServiceImpl {
             "running" => ExecutionStatus::Running as i32,
             "completed" => ExecutionStatus::Completed as i32,
             "failed" => ExecutionStatus::Failed as i32,
+            "terminated" => ExecutionStatus::Terminated as i32,
+            "timeout" => ExecutionStatus::Timeout as i32,
             _ => ExecutionStatus::Unspecified as i32,
         }
     }
@@ -267,146 +266,6 @@ impl InvocationService for FunctionServiceImpl {
         debug!("received invoke request");
         Ok(Response::new(self.invoke_once(request.into_inner()).await?))
     }
-
-    type InvokeStreamStream = Pin<Box<dyn Stream<Item = Result<InvokeStreamChunk, Status>> + Send>>;
-
-    async fn invoke_stream(
-        &self,
-        request: Request<InvokeRequest>,
-    ) -> Result<Response<Self::InvokeStreamStream>, Status> {
-        let mut req = request.into_inner();
-        if req.invocation_id.is_empty() {
-            req.invocation_id = Uuid::new_v4().to_string();
-        }
-        if req.execution_id.is_empty() {
-            req.execution_id = self.generate_execution_id();
-        }
-        if req.function_name.is_empty() {
-            req.function_name = DEFAULT_ENTRY_FUNCTION_NAME.to_string();
-        }
-        let invocation_id = req.invocation_id.clone();
-        let execution_id = req.execution_id.clone();
-
-        let stream = tokio_stream::iter(vec![
-            Ok(InvokeStreamChunk {
-                invocation_id: invocation_id.clone(),
-                execution_id: execution_id.clone(),
-                instance_id: String::new(),
-                status: ExecutionStatus::Running as i32,
-                chunk: Some(Payload {
-                    content_type: "text/plain".to_string(),
-                    data: b"first chunk".to_vec(),
-                }),
-                is_final: false,
-                error: None,
-                metadata: HashMap::new(),
-            }),
-            Ok(InvokeStreamChunk {
-                invocation_id,
-                execution_id,
-                instance_id: String::new(),
-                status: ExecutionStatus::Completed as i32,
-                chunk: Some(Payload {
-                    content_type: "text/plain".to_string(),
-                    data: b"last chunk".to_vec(),
-                }),
-                is_final: true,
-                error: None,
-                metadata: HashMap::new(),
-            }),
-        ]);
-
-        Ok(Response::new(Box::pin(stream)))
-    }
-
-    type OpenConsoleStream =
-        Pin<Box<dyn Stream<Item = Result<ConsoleServerMessage, Status>> + Send>>;
-
-    async fn open_console(
-        &self,
-        request: Request<tonic::Streaming<ConsoleClientMessage>>,
-    ) -> Result<Response<Self::OpenConsoleStream>, Status> {
-        let mut inbound = request.into_inner();
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<ConsoleServerMessage, Status>>(8);
-        let mgr = self.execution_manager.clone();
-
-        tokio::spawn(async move {
-            let first = inbound.message().await;
-            let open = match first {
-                Ok(Some(ConsoleClientMessage {
-                    msg: Some(crate::proto::spearlet::console_client_message::Msg::Open(open)),
-                })) => open,
-                Ok(_) => {
-                    let _ = tx
-                        .send(Err(Status::invalid_argument("missing open message")))
-                        .await;
-                    return;
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e)).await;
-                    return;
-                }
-            };
-
-            let ConsoleOpen { invoke, .. } = open;
-            let Some(mut invoke) = invoke else {
-                let _ = tx
-                    .send(Err(Status::invalid_argument("missing invoke")))
-                    .await;
-                return;
-            };
-            invoke.mode = ExecutionMode::Console as i32;
-
-            let invocation_id = if invoke.invocation_id.is_empty() {
-                Uuid::new_v4().to_string()
-            } else {
-                invoke.invocation_id.clone()
-            };
-            let execution_id = if invoke.execution_id.is_empty() {
-                Uuid::new_v4().to_string()
-            } else {
-                invoke.execution_id.clone()
-            };
-            invoke.invocation_id = invocation_id.clone();
-            invoke.execution_id = execution_id.clone();
-            if invoke.function_name.is_empty() {
-                invoke.function_name = DEFAULT_ENTRY_FUNCTION_NAME.to_string();
-            }
-
-            let _ = mgr.submit_invocation(invoke).await;
-
-            let _ = tx
-                .send(Ok(ConsoleServerMessage {
-                    invocation_id: invocation_id.clone(),
-                    execution_id: execution_id.clone(),
-                    instance_id: String::new(),
-                    msg: Some(crate::proto::spearlet::console_server_message::Msg::Error(
-                        ProtoError {
-                            code: "NOT_IMPLEMENTED".to_string(),
-                            message: "console i/o not implemented".to_string(),
-                        },
-                    )),
-                }))
-                .await;
-            let _ = tx
-                .send(Ok(ConsoleServerMessage {
-                    invocation_id,
-                    execution_id,
-                    instance_id: String::new(),
-                    msg: Some(crate::proto::spearlet::console_server_message::Msg::Exit(
-                        ConsoleExit {
-                            code: 1,
-                            message: "console closed".to_string(),
-                        },
-                    )),
-                }))
-                .await;
-        });
-
-        Ok(Response::new(Box::pin(
-            tokio_stream::wrappers::ReceiverStream::new(rx),
-        )))
-    }
 }
 
 #[tonic::async_trait]
@@ -466,15 +325,32 @@ impl ExecutionService for FunctionServiceImpl {
         }))
     }
 
-    async fn cancel_execution(
+    async fn terminate_execution(
         &self,
-        request: Request<CancelExecutionRequest>,
-    ) -> Result<Response<CancelExecutionResponse>, Status> {
+        request: Request<TerminateExecutionRequest>,
+    ) -> Result<Response<TerminateExecutionResponse>, Status> {
         let req = request.into_inner();
-        Ok(Response::new(CancelExecutionResponse {
-            success: false,
-            final_status: ExecutionStatus::Unspecified as i32,
-            message: format!("cancel not implemented for {}", req.execution_id),
+        let reason = if req.reason.is_empty() {
+            None
+        } else {
+            Some(req.reason)
+        };
+        self.execution_manager
+            .terminate_execution(&req.execution_id, reason)
+            .await
+            .map_err(|e| match e {
+                ExecutionError::InvalidRequest { message }
+                    if message.starts_with("execution not found:") =>
+                {
+                    Status::not_found(message)
+                }
+                _ => Status::internal(e.to_string()),
+            })?;
+
+        Ok(Response::new(TerminateExecutionResponse {
+            success: true,
+            final_status: ExecutionStatus::Terminated as i32,
+            message: "terminate requested".to_string(),
         }))
     }
 
@@ -539,24 +415,6 @@ impl InvocationService for Arc<FunctionServiceImpl> {
     ) -> Result<Response<InvokeResponse>, Status> {
         (**self).invoke(request).await
     }
-
-    type InvokeStreamStream = <FunctionServiceImpl as InvocationService>::InvokeStreamStream;
-
-    async fn invoke_stream(
-        &self,
-        request: Request<InvokeRequest>,
-    ) -> Result<Response<Self::InvokeStreamStream>, Status> {
-        (**self).invoke_stream(request).await
-    }
-
-    type OpenConsoleStream = <FunctionServiceImpl as InvocationService>::OpenConsoleStream;
-
-    async fn open_console(
-        &self,
-        request: Request<tonic::Streaming<ConsoleClientMessage>>,
-    ) -> Result<Response<Self::OpenConsoleStream>, Status> {
-        (**self).open_console(request).await
-    }
 }
 
 #[tonic::async_trait]
@@ -568,11 +426,11 @@ impl ExecutionService for Arc<FunctionServiceImpl> {
         (**self).get_execution(request).await
     }
 
-    async fn cancel_execution(
+    async fn terminate_execution(
         &self,
-        request: Request<CancelExecutionRequest>,
-    ) -> Result<Response<CancelExecutionResponse>, Status> {
-        (**self).cancel_execution(request).await
+        request: Request<TerminateExecutionRequest>,
+    ) -> Result<Response<TerminateExecutionResponse>, Status> {
+        (**self).terminate_execution(request).await
     }
 
     async fn list_executions(

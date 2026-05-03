@@ -42,7 +42,6 @@ enum ExecutionMode {
   EXECUTION_MODE_UNKNOWN = 0;      // 未知模式
   EXECUTION_MODE_SYNC = 1;         // 同步执行
   EXECUTION_MODE_ASYNC = 2;        // 异步执行
-  EXECUTION_MODE_STREAM = 3;       // 流式执行
 }
 ```
 
@@ -116,12 +115,12 @@ rpc GetExecutionStatus(GetExecutionStatusRequest) returns (GetExecutionStatusRes
 
 用于查询异步执行的状态和结果。
 
-#### CancelExecution - 取消执行
+#### TerminateExecution - 终止执行
 ```protobuf
-rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+rpc TerminateExecution(TerminateExecutionRequest) returns (TerminateExecutionResponse);
 ```
 
-用于取消正在执行的异步任务。
+用于终止正在执行的任务（包括手动终止与超时终止等场景）。
 
 #### StreamFunction - 流式执行
 ```protobuf

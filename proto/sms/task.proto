@@ -76,6 +76,16 @@ message RegisterTaskRequest {
   TaskExecutable executable = 10;        // Executable descriptor / 可执行描述
 }
 
+// Resolve task by endpoint / 通过 endpoint 解析任务
+message ResolveEndpointRequest {
+  string endpoint = 1; // Endpoint name / Endpoint 名称
+}
+
+message ResolveEndpointResponse {
+  bool found = 1; // Whether task is found / 是否找到任务
+  Task task = 2;  // Task details / 任务详情
+}
+
 // Task registration response / 任务注册响应
 message RegisterTaskResponse {
   bool success = 1;                      // Whether registration was successful / 注册是否成功
@@ -166,6 +176,9 @@ service TaskService {
 
   // Subscribe task events for a node / 订阅节点任务事件
   rpc SubscribeTaskEvents(SubscribeTaskEventsRequest) returns (stream TaskEvent);
+
+  // Resolve task by endpoint / 通过 endpoint 解析任务
+  rpc ResolveEndpoint(ResolveEndpointRequest) returns (ResolveEndpointResponse);
 
   // Update task status (observed state) / 更新任务状态（观测态）
   rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);

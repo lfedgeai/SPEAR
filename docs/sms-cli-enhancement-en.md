@@ -100,6 +100,10 @@ Modified `src/bin/sms/main.rs` to:
 | `--db-pool-size` | | Database connection pool size | `--db-pool-size 10` |
 | `--enable-swagger` | | Enable Swagger UI | `--enable-swagger` |
 | `--disable-swagger` | | Disable Swagger UI | `--disable-swagger` |
+| `--enable-console` | | Enable SPEAR Console (/console) | `--enable-console` |
+| `--disable-console` | | Disable SPEAR Console (/console) | `--disable-console` |
+| `--enable-web-admin` | | Enable Web Admin | `--enable-web-admin` |
+| `--disable-web-admin` | | Disable Web Admin | `--disable-web-admin` |
 | `--log-level` | | Log level | `--log-level debug` |
 | `--heartbeat-timeout` | | Heartbeat timeout in seconds | `--heartbeat-timeout 30` |
 | `--cleanup-interval` | | Cleanup interval in seconds | `--cleanup-interval 60` |

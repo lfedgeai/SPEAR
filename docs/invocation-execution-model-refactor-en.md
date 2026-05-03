@@ -203,8 +203,6 @@ enum ExecutionMode {
   EXECUTION_MODE_UNSPECIFIED = 0;
   EXECUTION_MODE_SYNC = 1;
   EXECUTION_MODE_ASYNC = 2;
-  EXECUTION_MODE_STREAM = 3;
-  EXECUTION_MODE_CONSOLE = 4;
 }
 
 enum ExecutionStatus {
@@ -259,66 +257,8 @@ message InvokeResponse {
   google.protobuf.Timestamp completed_at = 8;
 }
 
-message InvokeStreamChunk {
-  string invocation_id = 1;
-  string execution_id = 2;
-  string instance_id = 3;
-
-  ExecutionStatus status = 4;
-  Payload chunk = 5;
-  bool is_final = 6;
-  Error error = 7;
-  map<string, string> metadata = 8;
-}
-
 service InvocationService {
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
-  rpc InvokeStream(InvokeRequest) returns (stream InvokeStreamChunk);
-  rpc OpenConsole(stream ConsoleClientMessage) returns (stream ConsoleServerMessage);
-}
-
-message TerminalSize {
-  uint32 rows = 1;
-  uint32 cols = 2;
-}
-
-enum ConsoleSignal {
-  CONSOLE_SIGNAL_UNSPECIFIED = 0;
-  CONSOLE_SIGNAL_INT = 1;
-  CONSOLE_SIGNAL_TERM = 2;
-}
-
-message ConsoleOpen {
-  InvokeRequest invoke = 1;
-  TerminalSize initial_size = 2;
-}
-
-message ConsoleClientMessage {
-  oneof msg {
-    ConsoleOpen open = 1;
-    bytes stdin = 2;
-    TerminalSize resize = 3;
-    ConsoleSignal signal = 4;
-  }
-}
-
-message ConsoleExit {
-  int32 code = 1;
-  string message = 2;
-}
-
-message ConsoleServerMessage {
-  string invocation_id = 1;
-  string execution_id = 2;
-  string instance_id = 3;
-
-  oneof msg {
-    bytes stdout = 10;
-    bytes stderr = 11;
-    ExecutionStatus status = 12;
-    ConsoleExit exit = 13;
-    Error error = 14;
-  }
 }
 ```
 message GetExecutionRequest {
@@ -339,12 +279,12 @@ message Execution {
   google.protobuf.Timestamp completed_at = 10;
 }
 
-message CancelExecutionRequest {
+message TerminateExecutionRequest {
   string execution_id = 1;
   string reason = 2;
 }
 
-message CancelExecutionResponse {
+message TerminateExecutionResponse {
   bool success = 1;
   ExecutionStatus final_status = 2;
   string message = 3;
@@ -364,7 +304,7 @@ message ListExecutionsResponse {
 
 service ExecutionService {
   rpc GetExecution(GetExecutionRequest) returns (Execution);
-  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+  rpc TerminateExecution(TerminateExecutionRequest) returns (TerminateExecutionResponse);
   rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
 }
 ```
@@ -458,7 +398,7 @@ This avoids accidental duplicated work when the BFF retries network calls.
 
 ## Cancellation
 
-### CancelExecution
+### TerminateExecution
 
 Cancels a single attempt (`execution_id`).
 
@@ -493,8 +433,7 @@ Changes:
 
 Acceptance:
 
-- Invoke/stream/get/cancel/list work end-to-end locally.
-- OpenConsole supports interactive stdin/stdout/stderr loop for one runtime.
+- Invoke/get/cancel/list work end-to-end locally.
 
 ### Phase 3: Update all in-repo callers
 

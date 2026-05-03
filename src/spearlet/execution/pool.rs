@@ -833,10 +833,9 @@ impl InstancePool {
 mod tests {
     use super::*;
     use crate::spearlet::execution::{
-        artifact::{Artifact, ArtifactSpec, InvocationType},
-        instance::{InstanceConfig, InstanceResourceLimits},
+        artifact::ArtifactSpec,
         scheduler::SchedulingPolicy,
-        task::{HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig},
+        task::{TaskSpec, TaskType},
     };
 
     fn create_test_task() -> Arc<Task> {

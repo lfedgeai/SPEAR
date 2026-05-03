@@ -1,6 +1,8 @@
 use axum_test::TestServer;
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::web_admin::create_admin_router;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -40,6 +42,7 @@ async fn test_admin_tasks_schema_contains_expected_fields() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: spear_next::proto::sms::node_service_client::NodeServiceClient::new(
             channel.clone(),
         ),
@@ -74,6 +77,8 @@ async fn test_admin_tasks_schema_contains_expected_fields() {
             spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(
                 channel.clone(),
             ),
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -89,7 +94,7 @@ async fn test_admin_tasks_schema_contains_expected_fields() {
         "description": "d",
         "priority": "normal",
         "node_uuid": "node-1",
-        "endpoint": "http://localhost/task",
+        "endpoint": "task-a",
         "version": "v1",
         "capabilities": ["c"]
     });

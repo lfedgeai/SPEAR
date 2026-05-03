@@ -22,6 +22,7 @@ SPEAR Node Service 提供了 RESTful API 和 gRPC 接口用于节点和任务管
 {
   "ip_address": "127.0.0.1",
   "port": 8081,
+  "http_port": 8080,
   "metadata": {
     "region": "us-west-1",
     "zone": "a",
@@ -33,6 +34,7 @@ SPEAR Node Service 提供了 RESTful API 和 gRPC 接口用于节点和任务管
 **字段说明**:
 - `ip_address` (必需): 节点的 IP 地址，字符串类型
 - `port` (必需): 节点的端口号，整数类型
+- `http_port` (可选): 节点 HTTP 网关端口（用于 HTTP 路由/stream 代理），整数类型
 - `metadata` (可选): 额外的元数据，键值对对象
 
 **成功响应**:
@@ -87,6 +89,7 @@ curl http://localhost:8080/api/v1/nodes?status=active
       "uuid": "93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8",
       "ip_address": "127.0.0.1",
       "port": 8081,
+      "http_port": 8080,
       "status": "active",
       "last_heartbeat": 1757275996,
       "registered_at": 1757275996,
@@ -118,6 +121,7 @@ curl http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8
 {
   "ip_address": "192.168.1.100",
   "port": 8082,
+  "http_port": 8080,
   "status": "active",
   "metadata": {
     "region": "us-east-1",
@@ -125,6 +129,34 @@ curl http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8
   }
 }
 ```
+
+## Execution Stream API
+
+这些端点用于为某个 execution 建立双向 WebSocket stream。
+
+### 1. 创建 Stream Session（推荐）
+
+**端点**: `POST /api/v1/executions/{execution_id}/streams/session`
+
+**用途**: 返回短期 token 和可直接连接的 `ws_url`。
+
+**响应示例**:
+```json
+{
+  "execution_id": "exec-123",
+  "token": "<short-lived-token>",
+  "ws_url": "ws://localhost:8080/api/v1/executions/exec-123/streams/ws?token=<short-lived-token>",
+  "expires_in_ms": 60000
+}
+```
+
+### 2. WebSocket Stream（数据面）
+
+**端点**: `GET /api/v1/executions/{execution_id}/streams/ws?token=...`
+
+**说明**:
+- 客户端应先调用 `streams/session`，再用返回的 `ws_url` 进行连接。
+- 每个 WebSocket binary message 对应一个 SSF frame。
 
 ### 5. 删除节点
 

@@ -28,10 +28,7 @@ RELEASE_NAME="${RELEASE_NAME:-spear}"
 
 SMS_IMAGE_REPO="${SMS_IMAGE_REPO:-spear-sms}"
 SPEARLET_IMAGE_REPO="${SPEARLET_IMAGE_REPO:-spear-spearlet}"
-ROUTER_FILTER_AGENT_IMAGE_REPO="${ROUTER_FILTER_AGENT_IMAGE_REPO:-spear-router-filter-agent}"
 IMAGE_TAG="${IMAGE_TAG:-local}"
-
-ENABLE_ROUTER_FILTER_AGENT="${ENABLE_ROUTER_FILTER_AGENT:-1}"
 
 ENABLE_WEB_ADMIN="${ENABLE_WEB_ADMIN:-1}"
 
@@ -98,12 +95,10 @@ kubectl config use-context "kind-$CLUSTER_NAME"
 
 docker build -f deploy/docker/sms/Dockerfile --build-arg "DEBIAN_SUITE=${DEBIAN_SUITE}" -t "${SMS_IMAGE_REPO}:${IMAGE_TAG}" .
 docker build -f deploy/docker/spearlet/Dockerfile --build-arg "DEBIAN_SUITE=${DEBIAN_SUITE}" -t "${SPEARLET_IMAGE_REPO}:${IMAGE_TAG}" .
-docker build -f deploy/docker/router-filter-agent/Dockerfile --build-arg "DEBIAN_SUITE=${DEBIAN_SUITE}" -t "${ROUTER_FILTER_AGENT_IMAGE_REPO}:${IMAGE_TAG}" .
 
 kind load docker-image --name "$CLUSTER_NAME" \
   "${SMS_IMAGE_REPO}:${IMAGE_TAG}" \
-  "${SPEARLET_IMAGE_REPO}:${IMAGE_TAG}" \
-  "${ROUTER_FILTER_AGENT_IMAGE_REPO}:${IMAGE_TAG}"
+  "${SPEARLET_IMAGE_REPO}:${IMAGE_TAG}"
 
 HELM_ARGS=(
   upgrade
@@ -132,17 +127,6 @@ if [[ "$ENABLE_WEB_ADMIN" == "1" ]]; then
   )
 fi
 
-if [[ "$ENABLE_ROUTER_FILTER_AGENT" == "1" ]]; then
-  HELM_ARGS+=(
-    --set
-    "routerFilterAgent.enabled=true"
-    --set
-    "routerFilterAgent.image.repository=${ROUTER_FILTER_AGENT_IMAGE_REPO}"
-    --set
-    "routerFilterAgent.image.tag=${IMAGE_TAG}"
-  )
-fi
-
 helm "${HELM_ARGS[@]}"
 
 kubectl -n "$NAMESPACE" rollout status "statefulset/${SMS_STS}" --timeout="$TIMEOUT"
@@ -152,14 +136,6 @@ kubectl -n "$NAMESPACE" rollout status "daemonset/${SPEARLET_DS}" --timeout="$TI
 kubectl -n "$NAMESPACE" wait --for=condition=Ready pod -l app.kubernetes.io/component=spearlet --timeout="$TIMEOUT"
 
 SPEARLET_POD="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/component=spearlet -o jsonpath='{.items[0].metadata.name}')"
-
-if [[ "$ENABLE_ROUTER_FILTER_AGENT" == "1" ]]; then
-  ROUTER_READY="$(kubectl -n "$NAMESPACE" get pod "$SPEARLET_POD" -o jsonpath='{.status.containerStatuses[?(@.name=="keyword-filter-agent")].ready}')"
-  if [[ "$ROUTER_READY" != "true" ]]; then
-    echo "keyword-filter-agent not ready" >&2
-    exit 1
-  fi
-fi
 
 kubectl -n "$NAMESPACE" port-forward "pod/${SMS_POD}" 18080:8080 >/dev/null 2>&1 &
 SMS_PF_PID="$!"
@@ -188,11 +164,5 @@ until curl -fsS "http://127.0.0.1:18081/health" >/dev/null 2>&1; do
     exit 1
   fi
 done
-
-if [[ "$ENABLE_ROUTER_FILTER_AGENT" == "1" ]]; then
-  resp="$(curl -fsS "http://127.0.0.1:18081/__e2e/llm/router-filter?content=my%20secret%20is%20123")"
-  echo "$resp" | grep -q '"selected_backend":"stub_local"' || (echo "filter e2e failed: $resp" >&2; exit 1)
-  echo "$resp" | grep -q '"stub_remote"' || (echo "filter e2e missing dropped stub_remote: $resp" >&2; exit 1)
-fi
 
 echo "kind e2e ok"

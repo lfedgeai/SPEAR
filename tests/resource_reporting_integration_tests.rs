@@ -55,9 +55,9 @@ async fn test_spearlet_reports_node_resource_on_heartbeat() {
         .await
         .unwrap();
     let mut last = None;
-    for _ in 0..5 {
+    for _ in 0..30 {
         tokio::time::advance(std::time::Duration::from_secs(1)).await;
-        for _ in 0..10 {
+        for _ in 0..100 {
             tokio::task::yield_now().await;
         }
         let resp = client

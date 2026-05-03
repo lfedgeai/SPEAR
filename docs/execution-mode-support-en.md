@@ -71,10 +71,6 @@ async fn invoke_function(&self, request: Request<InvokeFunctionRequest>)
             let (status_endpoint, estimated_ms) = self.handle_async_execution(&req, &execution_id, &task_id).await;
             // Return response with status endpoint
         },
-        ExecutionMode::Stream => {
-            // Streaming execution should use StreamFunction RPC
-            // Return error suggesting correct RPC method
-        },
         _ => {
             // Unknown execution mode handling
         }

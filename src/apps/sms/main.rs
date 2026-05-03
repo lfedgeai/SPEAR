@@ -79,13 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Initialize HTTP gateway / 初始化HTTP网关
-    let http_gateway = HttpGateway::new(
-        config.http.addr,
-        config.grpc.addr,
-        config.enable_swagger,
-        config.max_upload_bytes as usize,
-        config.files_dir.clone(),
-    );
+    let http_gateway = HttpGateway::new(config.clone());
     let (shutdown_tx_http, shutdown_rx_http) = tokio::sync::oneshot::channel::<()>();
     let http_handle = tokio::spawn(async move {
         if let Err(e) = http_gateway
@@ -154,6 +148,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("SMS server started successfully");
     tracing::info!("gRPC server: http://{}", config.grpc.addr);
     tracing::info!("HTTP gateway: http://{}", config.http.addr);
+    if config.enable_console {
+        tracing::info!("SPEAR Console: http://{}/console", config.http.addr);
+    }
     if config.enable_swagger {
         tracing::info!("Swagger UI: http://{}/swagger-ui", config.http.addr);
     }

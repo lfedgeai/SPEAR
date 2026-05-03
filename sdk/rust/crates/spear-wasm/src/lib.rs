@@ -34,12 +34,15 @@ impl SpearError {
 
 fn errno_to_code(errno: i32) -> &'static str {
     match -errno {
-        libc::EBADF => "invalid_fd",
-        libc::EFAULT => "invalid_ptr",
-        libc::ENOSPC => "buffer_too_small",
-        libc::EINVAL => "invalid_cmd",
-        libc::EIO => "internal",
-        libc::EAGAIN => "eagain",
+        constants::SPEAR_EBADF => "invalid_fd",
+        constants::SPEAR_EFAULT => "invalid_ptr",
+        constants::SPEAR_ENOSPC => "buffer_too_small",
+        constants::SPEAR_EINVAL => "invalid_cmd",
+        constants::SPEAR_EIO => "internal",
+        constants::SPEAR_EAGAIN => "eagain",
+        constants::SPEAR_ENOTCONN => "not_connected",
+        constants::SPEAR_ETIMEDOUT => "timeout",
+        constants::SPEAR_ENOSYS => "unsupported",
         _ => "unknown",
     }
 }
@@ -111,6 +114,18 @@ pub fn log_error(msg: &str) -> Result<(), SpearError> {
     log_write(LOG_ERROR, msg)
 }
 
+pub fn sleep_ms(ms: u32) {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        spear_wasm_sys::sleep_ms(ms.min(i32::MAX as u32) as i32);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = ms;
+    }
+}
+
 fn recv_alloc_with<F>(
     op: &'static str,
     mut call: F,
@@ -130,7 +145,7 @@ where
             buf.truncate(out_len);
             return Ok(buf);
         }
-        if rc != -libc::ENOSPC {
+        if rc != -constants::SPEAR_ENOSPC {
             return Err(SpearError {
                 code: errno_to_code(rc),
                 errno: rc,
@@ -143,7 +158,7 @@ where
 
     Err(SpearError {
         code: "buffer_too_small",
-        errno: -libc::ENOSPC,
+        errno: -constants::SPEAR_ENOSPC,
         op,
     })
 }
@@ -152,8 +167,202 @@ where
 pub struct Fd(i32);
 
 impl Fd {
+    pub fn from_raw(raw: i32) -> Self {
+        Self(raw)
+    }
+
     pub fn raw(self) -> i32 {
         self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserStreamDirection {
+    Inbound,
+    Outbound,
+    Bidirectional,
+}
+
+impl UserStreamDirection {
+    pub fn as_i32(self) -> i32 {
+        match self {
+            UserStreamDirection::Inbound => constants::SPEAR_USER_STREAM_DIR_INBOUND,
+            UserStreamDirection::Outbound => constants::SPEAR_USER_STREAM_DIR_OUTBOUND,
+            UserStreamDirection::Bidirectional => constants::SPEAR_USER_STREAM_DIR_BIDIRECTIONAL,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UserStreamCtlEvent {
+    pub stream_id: u32,
+    pub kind: u32,
+}
+
+pub fn user_stream_open(stream_id: u32, direction: UserStreamDirection) -> Result<Fd, SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let sid = stream_id as i32;
+        let rc = unsafe { spear_wasm_sys::user_stream_open(sid, direction.as_i32()) };
+        let fd = rc_to_result(rc, "user_stream_open")?;
+        Ok(Fd(fd))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (stream_id, direction);
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op: "user_stream_open",
+        })
+    }
+}
+
+pub fn user_stream_write(fd: Fd, bytes: &[u8]) -> Result<(), SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let (ptr, len) = cast_ptr_len(bytes);
+        let rc = unsafe { spear_wasm_sys::user_stream_write(fd.0, ptr, len) };
+        rc_to_unit(rc, "user_stream_write")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (fd, bytes);
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op: "user_stream_write",
+        })
+    }
+}
+
+pub fn user_stream_read_alloc(fd: Fd) -> Result<Option<Vec<u8>>, SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut cap = 64 * 1024;
+        for _ in 0..3 {
+            let mut buf = vec![0u8; cap.max(1)];
+            let mut len_u32: u32 = buf.len() as u32;
+            let rc = unsafe {
+                let out_ptr_i32 = buf.as_mut_ptr() as usize as i32;
+                let out_len_ptr_i32 = (&mut len_u32 as *mut u32) as usize as i32;
+                spear_wasm_sys::user_stream_read(fd.0, out_ptr_i32, out_len_ptr_i32)
+            };
+            if rc >= 0 {
+                buf.truncate(len_u32 as usize);
+                return Ok(Some(buf));
+            }
+            if rc == -constants::SPEAR_EAGAIN {
+                return Ok(None);
+            }
+            if rc != -constants::SPEAR_ENOSPC {
+                return Err(SpearError {
+                    code: errno_to_code(rc),
+                    errno: rc,
+                    op: "user_stream_read",
+                });
+            }
+            cap = (len_u32 as usize).max(cap.saturating_mul(2));
+        }
+        Err(SpearError {
+            code: "buffer_too_small",
+            errno: -constants::SPEAR_ENOSPC,
+            op: "user_stream_read",
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = fd;
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op: "user_stream_read",
+        })
+    }
+}
+
+pub fn user_stream_ctl_open() -> Result<Fd, SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let fd = unsafe { spear_wasm_sys::user_stream_ctl_open() };
+        let fd = rc_to_result(fd, "user_stream_ctl_open")?;
+        Ok(Fd(fd))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op: "user_stream_ctl_open",
+        })
+    }
+}
+
+pub fn user_stream_ctl_read_event(fd: Fd) -> Result<Option<UserStreamCtlEvent>, SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut cap = 8u32;
+        let mut buf = vec![0u8; cap as usize];
+        let rc = unsafe {
+            let out_ptr_i32 = buf.as_mut_ptr() as usize as i32;
+            let out_len_ptr_i32 = (&mut cap as *mut u32) as usize as i32;
+            spear_wasm_sys::user_stream_ctl_read(fd.0, out_ptr_i32, out_len_ptr_i32)
+        };
+        if rc >= 0 {
+            if cap as usize != 8 {
+                buf.truncate(cap as usize);
+            }
+            if buf.len() < 8 {
+                return Err(SpearError {
+                    code: "invalid_ptr",
+                    errno: -constants::SPEAR_EFAULT,
+                    op: "user_stream_ctl_read",
+                });
+            }
+            let stream_id = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+            let kind = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+            return Ok(Some(UserStreamCtlEvent { stream_id, kind }));
+        }
+        if rc == -constants::SPEAR_EAGAIN {
+            return Ok(None);
+        }
+        Err(SpearError {
+            code: errno_to_code(rc),
+            errno: rc,
+            op: "user_stream_ctl_read",
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = fd;
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op: "user_stream_ctl_read",
+        })
+    }
+}
+
+pub fn user_stream_close(fd: Fd) -> Result<(), SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let rc = unsafe { spear_wasm_sys::user_stream_close(fd.0) };
+        rc_to_unit(rc, "user_stream_close")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = fd;
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op: "user_stream_close",
+        })
     }
 }
 
@@ -346,9 +555,9 @@ mod tests {
 
     #[test]
     fn test_errno_mapping_known() {
-        assert_eq!(errno_to_code(-libc::EBADF), "invalid_fd");
-        assert_eq!(errno_to_code(-libc::ENOSPC), "buffer_too_small");
-        assert_eq!(errno_to_code(-libc::EAGAIN), "eagain");
+        assert_eq!(errno_to_code(-constants::SPEAR_EBADF), "invalid_fd");
+        assert_eq!(errno_to_code(-constants::SPEAR_ENOSPC), "buffer_too_small");
+        assert_eq!(errno_to_code(-constants::SPEAR_EAGAIN), "eagain");
     }
 
     #[test]
@@ -361,7 +570,7 @@ mod tests {
                 called += 1;
                 if called == 1 {
                     *out_len = 128;
-                    return -libc::ENOSPC;
+                    return -constants::SPEAR_ENOSPC;
                 }
                 unsafe {
                     std::ptr::copy_nonoverlapping(payload.as_ptr(), out_ptr, payload.len());

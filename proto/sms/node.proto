@@ -7,6 +7,7 @@ message Node {
   string uuid = 1;          // Node unique identifier / 节点唯一标识符
   string ip_address = 2;    // Node IP address / 节点IP地址
   int32 port = 3;           // Node port / 节点端口
+  int32 http_port = 8;      // Node HTTP gateway port / 节点HTTP网关端口
   string status = 4;        // Node status (active, inactive, etc.) / 节点状态
   int64 last_heartbeat = 5; // Last heartbeat timestamp / 最后心跳时间戳
   int64 registered_at = 6;  // Node registration timestamp / 节点注册时间戳

@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
@@ -463,6 +463,7 @@ pub async fn read_logs_download_text(
 mod tests {
     use super::*;
     use serial_test::serial;
+    use std::path::Path;
 
     #[tokio::test]
     #[serial]

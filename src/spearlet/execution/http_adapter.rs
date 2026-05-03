@@ -119,7 +119,6 @@ impl HttpAdapter {
         match runtime_response.execution_mode {
             ExecutionMode::Sync => Self::sync_to_http(runtime_response),
             ExecutionMode::Async => Self::async_to_http(runtime_response),
-            ExecutionMode::Stream => Self::stream_to_http(runtime_response),
             ExecutionMode::Unknown => Self::unknown_to_http(runtime_response),
         }
     }
@@ -214,32 +213,6 @@ impl HttpAdapter {
             status_code,
             headers,
             body: serde_json::to_vec(&status_response).unwrap_or_default(),
-            metadata: runtime_response.metadata.clone(),
-        }
-    }
-
-    /// Convert stream execution to HTTP response / 将流式执行转换为 HTTP 响应
-    fn stream_to_http(runtime_response: &RuntimeExecutionResponse) -> HttpResponse {
-        let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "text/event-stream".to_string());
-        headers.insert("Cache-Control".to_string(), "no-cache".to_string());
-        headers.insert("Connection".to_string(), "keep-alive".to_string());
-        headers.insert(
-            "X-Execution-ID".to_string(),
-            runtime_response.execution_id.clone(),
-        );
-        headers.insert("X-Execution-Mode".to_string(), "stream".to_string());
-
-        let status_code = if runtime_response.has_failed() {
-            500
-        } else {
-            200
-        };
-
-        HttpResponse {
-            status_code,
-            headers,
-            body: runtime_response.data.clone(),
             metadata: runtime_response.metadata.clone(),
         }
     }
@@ -392,7 +365,7 @@ impl Default for HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::runtime::{ExecutionMode, ExecutionStatus};
+    use crate::spearlet::execution::runtime::ExecutionMode;
 
     #[test]
     fn test_sync_response_conversion() {

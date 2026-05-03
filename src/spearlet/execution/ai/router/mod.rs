@@ -62,6 +62,9 @@ impl Router {
         policy: SelectionPolicy,
         grpc_filter_stream: Option<Arc<grpc_filter_stream::RouterFilterStreamHub>>,
     ) -> Self {
+        if let Some(h) = grpc_filter_stream.as_ref() {
+            h.start_background();
+        }
         Self {
             registry,
             policy,

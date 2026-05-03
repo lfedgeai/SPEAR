@@ -1,6 +1,6 @@
 use crate::spearlet::execution::hostcall::types::{FdEntry, FdFlags, FdInner, FdKind, PollEvents};
 use dashmap::DashMap;
-use libc::{EBADF, EINVAL};
+use crate::spearlet::execution::host_api::errno::{EBADF, EINVAL};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -320,6 +320,8 @@ impl FdTable {
                     FdKind::Epoll => "Epoll",
                     FdKind::RtAsr => "RtAsr",
                     FdKind::Mic => "Mic",
+                    FdKind::UserStream => "UserStream",
+                    FdKind::UserStreamCtl => "UserStreamCtl",
                 };
                 Ok(Some(
                     serde_json::to_vec(&json!({"kind": kind})).unwrap_or_else(|_| b"{}".to_vec()),
@@ -333,6 +335,8 @@ impl FdTable {
                     FdKind::Epoll => "Epoll",
                     FdKind::RtAsr => "RtAsr",
                     FdKind::Mic => "Mic",
+                    FdKind::UserStream => "UserStream",
+                    FdKind::UserStreamCtl => "UserStreamCtl",
                 };
                 let mut flags: Vec<&str> = Vec::new();
                 if e.flags.contains(FdFlags::O_NONBLOCK) {
@@ -371,6 +375,35 @@ impl FdTable {
                         } else {
                             Ok(Some(r.metrics_bytes.clone()))
                         }
+                    }
+                    FdInner::UserStream(st) => {
+                        let ch = st.channel.lock().unwrap();
+                        let v = json!({
+                            "execution_id": st.execution_id.clone(),
+                            "stream_id": st.stream_id,
+                            "direction": format!("{:?}", st.direction),
+                            "conn_state": format!("{:?}", ch.conn_state),
+                            "inbound_len": ch.inbound.len(),
+                            "inbound_bytes": ch.inbound_bytes,
+                            "max_inbound_bytes": ch.max_inbound_bytes,
+                            "outbound_len": ch.outbound.len(),
+                            "outbound_bytes": ch.outbound_bytes,
+                            "max_outbound_bytes": ch.max_outbound_bytes,
+                            "max_frame_bytes": ch.max_frame_bytes,
+                        });
+                        Ok(Some(
+                            serde_json::to_vec(&v).unwrap_or_else(|_| b"{}".to_vec()),
+                        ))
+                    }
+                    FdInner::UserStreamCtl(st) => {
+                        let v = json!({
+                            "execution_id": st.execution_id.clone(),
+                            "pending_len": st.pending.len(),
+                            "max_pending": st.max_pending,
+                        });
+                        Ok(Some(
+                            serde_json::to_vec(&v).unwrap_or_else(|_| b"{}".to_vec()),
+                        ))
                     }
                     _ => Ok(Some(b"{}".to_vec())),
                 }

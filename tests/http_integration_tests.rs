@@ -6,8 +6,10 @@
 
 use axum_test::TestServer;
 use serde_json::json;
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::create_gateway_router;
 use spear_next::sms::gateway::GatewayState;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -94,6 +96,7 @@ mod http_test_utils {
             );
         let model_deployment_registry_client = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel.clone());
         let state = GatewayState {
+            config: Arc::new(SmsConfig::default()),
             node_client: sms_client,
             task_client,
             placement_client,
@@ -103,6 +106,8 @@ mod http_test_utils {
             mcp_registry_client,
             backend_registry_client,
             model_deployment_registry_client,
+            stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+            execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
             files_dir: std::env::temp_dir()
@@ -277,6 +282,7 @@ async fn test_http_node_lifecycle() {
         );
     let model_deployment_registry_client_filter = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel_filter.clone());
     let filter_state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
@@ -286,6 +292,8 @@ async fn test_http_node_lifecycle() {
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
         model_deployment_registry_client: model_deployment_registry_client_filter,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -419,6 +427,7 @@ async fn test_http_resource_management() {
         );
     let model_deployment_registry_client_filter = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel_filter.clone());
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
@@ -428,6 +437,8 @@ async fn test_http_resource_management() {
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
         model_deployment_registry_client: model_deployment_registry_client_filter,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()

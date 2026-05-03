@@ -460,12 +460,29 @@ impl WasmRuntime {
 
                             match out {
                                 Ok(values) => Ok(format!("{:?}", values).into_bytes()),
-                                Err(e) => Err(ExecutionError::RuntimeError {
-                                    message: format!("wasmedge exec error: {}", e),
-                                }),
+                                Err(e) => {
+                                    if let Some(s) = crate::spearlet::execution::host_api::termination::instance_registry().check(&instance_id) {
+                                        Err(ExecutionError::InstanceDestroyed {
+                                            message: s
+                                                .message
+                                                .unwrap_or_else(|| "instance destroyed".to_string()),
+                                        })
+                                    } else if let Some(s) = crate::spearlet::execution::host_api::termination::exec_registry().check(&execution_id) {
+                                        Err(ExecutionError::ExecutionTerminated {
+                                            message: s
+                                                .message
+                                                .unwrap_or_else(|| "execution terminated".to_string()),
+                                        })
+                                    } else {
+                                        Err(ExecutionError::RuntimeError {
+                                            message: format!("wasmedge exec error: {}", e),
+                                        })
+                                    }
+                                }
                             }
                         };
                         crate::spearlet::execution::host_api::set_current_wasm_execution_id(None);
+                        crate::spearlet::execution::host_api::termination::clear_execution_termination(&execution_id);
                         let elapsed_ms = start.elapsed().as_millis() as u64;
                         tracing::debug!(
                             execution_id = %execution_id,
@@ -927,7 +944,11 @@ impl Runtime for WasmRuntime {
             let req = WasmWorkerRequest::Invoke {
                 execution_id: context.execution_id.clone(),
                 function_name: function_name.clone(),
-                timeout_ms: None,
+                timeout_ms: if context.timeout_ms > 0 {
+                    Some(context.timeout_ms)
+                } else {
+                    None
+                },
                 context_data: context.context_data.clone(),
                 completion_tx: context.completion_tx.clone(),
                 reply_tx: tx,
@@ -941,7 +962,6 @@ impl Runtime for WasmRuntime {
 
             let duration = start_time.elapsed();
             let duration_ms = duration.as_millis() as u64;
-            instance.record_request_completion(true, duration_ms as f64);
             debug!(
                 instance_id = %instance.id(),
                 execution_id = %context.execution_id,
@@ -1144,7 +1164,7 @@ mod wasm_runtime_thread_tests {
         InstanceConfig, InstanceResourceLimits, NetworkConfig,
     };
     #[cfg(feature = "wasmedge")]
-    use wasmedge_sdk::{params, wat2wasm, Module};
+    use wasmedge_sdk::Module;
 
     #[test]
     fn test_wasm_config_default() {

@@ -2,7 +2,7 @@ use crate::spearlet::execution::hostcall::types::{
     RtAsrClientCommitConfig, RtAsrClientCommitMode, RtAsrSegmentationConfig,
     RtAsrSegmentationStrategy, RtAsrSendItem, RtAsrState, RtAsrVadConfig,
 };
-use libc::EINVAL;
+use crate::spearlet::execution::host_api::errno::EINVAL;
 
 pub(super) fn parse_segmentation_config(
     v: &serde_json::Value,

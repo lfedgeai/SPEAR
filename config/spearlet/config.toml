@@ -56,10 +56,10 @@ file = "./logs/spearlet.log"
 default_policy = "weighted_random"
 
 [spearlet.llm.router_grpc_filter_stream]
-# Enable router gRPC filter stream / 是否启用 router gRPC 过滤 stream
+# Enable router filter / 是否启用 router filter
 enabled = false
-# Spearlet gRPC address (host:port) for filter agent to dial / 供 filter agent 连接的 Spearlet gRPC 地址（host:port）
-addr = "127.0.0.1:50052"
+# Router filter server address (host:port); empty means using sms_grpc_addr / Router filter 服务端地址（host:port）；为空表示使用 sms_grpc_addr
+addr = ""
 # Decision timeout budget (ms) / 决策超时预算（毫秒）
 decision_timeout_ms = 5
 # Fail-open when filter is unavailable / filter 不可用时是否 fail-open
@@ -73,16 +73,10 @@ max_inflight_total = 4096
 # Max inflight per agent / 单个 agent 的 in-flight 上限
 per_agent_max_inflight = 512
 
-# Enable controlled fetch by request_id (requires session_token) / 是否启用基于 request_id 的受控拉取（需要 session_token）
+# Forward request payload snippet to filter server / 向 filter 服务端透传请求 payload 片段
 content_fetch_enabled = false
-# Max bytes returned by fetch / 受控拉取返回的最大字节数
+# Max payload bytes forwarded / 透传的最大 payload 字节数
 content_fetch_max_bytes = 65536
-# Cache ttl (ms) for fetchable requests / 可拉取请求的缓存 TTL（毫秒）
-content_fetch_cache_ttl_ms = 60000
-# Max cached requests / 缓存的最大请求条数
-content_fetch_cache_max_entries = 1024
-# Session token ttl (ms) / session token TTL（毫秒）
-session_token_ttl_ms = 600000
 
 [spearlet.llm.discovery.ollama]
 # Enable importing Ollama currently serving models / 是否导入 Ollama 当前正在 serve 的模型

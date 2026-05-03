@@ -12,6 +12,7 @@ use crate::sms::gateway::{create_gateway_router, GatewayState};
 use axum::body;
 use axum::http::{Request, StatusCode};
 use axum::{body::Body, Router};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -23,6 +24,7 @@ async fn make_router_with_limit(limit: usize) -> Router {
         .to_string_lossy()
         .to_string();
     let state = GatewayState {
+        config: Arc::new(crate::sms::config::SmsConfig::default()),
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
         placement_client: PlacementServiceClient::new(channel.clone()),
@@ -34,6 +36,8 @@ async fn make_router_with_limit(limit: usize) -> Router {
         model_deployment_registry_client: ModelDeploymentRegistryServiceClient::new(
             channel.clone(),
         ),
+        stream_sessions: crate::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: limit,
         files_dir,

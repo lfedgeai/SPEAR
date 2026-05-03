@@ -2,16 +2,14 @@
 
 #[cfg(test)]
 use std::collections::HashMap;
-use std::sync::Arc;
-use tonic::{Request, Status};
+use tonic::Request;
 
 use crate::proto::spearlet::{
     object_service_server::ObjectService, AddObjectRefRequest, DeleteObjectRequest,
     GetObjectRequest, ListObjectsRequest, PinObjectRequest, PutObjectRequest,
-    RemoveObjectRefRequest, UnpinObjectRequest,
+    RemoveObjectRefRequest,
 };
-use crate::spearlet::object_service::{ObjectServiceImpl, ObjectServiceStats};
-use crate::storage::kv::{KvStore, MemoryKvStore};
+use crate::spearlet::object_service::ObjectServiceImpl;
 
 fn create_test_service() -> ObjectServiceImpl {
     ObjectServiceImpl::new_with_memory(1024 * 1024) // 1MB max object size

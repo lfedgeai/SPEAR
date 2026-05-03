@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "proto/spearlet/object.proto",
                 "proto/spearlet/function.proto",
+                "proto/spearlet/instance.proto",
                 "proto/spearlet/router_filter.proto",
             ],
             &["proto"],
@@ -57,6 +58,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let data = std::fs::read(src)?;
         let br_path = std::path::Path::new(&out_dir).join(format!("{}.br", name));
         let gz_path = std::path::Path::new(&out_dir).join(format!("{}.gz", name));
+        {
+            let mut w =
+                brotli::CompressorWriter::new(std::fs::File::create(&br_path)?, 4096, 5, 22);
+            use std::io::Write;
+            w.write_all(&data)?;
+        }
+        {
+            use flate2::{write::GzEncoder, Compression};
+            use std::io::Write;
+            let mut w = GzEncoder::new(std::fs::File::create(&gz_path)?, Compression::default());
+            w.write_all(&data)?;
+            w.finish()?;
+        }
+    }
+
+    // Precompress SPEAR Console assets
+    // 预压缩 SPEAR Console 静态资源
+    println!("cargo:rerun-if-changed=assets/console/");
+    let console_out_dir = std::path::Path::new(&out_dir).join("console");
+    std::fs::create_dir_all(&console_out_dir)?;
+    let console_assets = [
+        ("assets/console/index.html", "index.html"),
+        ("assets/console/main.js", "main.js"),
+        ("assets/console/main.css", "main.css"),
+    ];
+    for (src, name) in console_assets.iter() {
+        let data = std::fs::read(src)?;
+        let br_path = console_out_dir.join(format!("{}.br", name));
+        let gz_path = console_out_dir.join(format!("{}.gz", name));
         {
             let mut w =
                 brotli::CompressorWriter::new(std::fs::File::create(&br_path)?, 4096, 5, 22);

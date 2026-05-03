@@ -1,12 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
+import { destroyInstance } from '@/api/control'
 import { listInstanceExecutions } from '@/api/instanceExecution'
+import { getExecution } from '@/api/instanceExecution'
 import type { ExecutionSummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 function formatMs(ts: number) {
@@ -37,6 +41,10 @@ export default function InstanceDetailPage() {
   const { instanceId } = useParams()
   const id = instanceId || ''
   const navigate = useNavigate()
+  const [destroyOpen, setDestroyOpen] = useState(false)
+  const [destroyReason, setDestroyReason] = useState('')
+  const [destroyLoading, setDestroyLoading] = useState(false)
+  const [destroyError, setDestroyError] = useState('')
 
   const executionsQuery = useInfiniteQuery({
     queryKey: ['instance-executions', id],
@@ -65,6 +73,23 @@ export default function InstanceDetailPage() {
   }, [executionsQuery.data])
 
   const inferredTaskId = useMemo(() => rows[0]?.task_id || '', [rows])
+  const primaryExecutionId = useMemo(() => {
+    const running = rows.find((r) => String(r.status).toLowerCase() === 'running')
+    return running?.execution_id || rows[0]?.execution_id || ''
+  }, [rows])
+
+  const resolveNodeQuery = useQuery({
+    queryKey: ['execution-detail-for-instance', primaryExecutionId],
+    queryFn: () => getExecution(primaryExecutionId),
+    enabled: !!primaryExecutionId,
+    retry: false,
+  })
+
+  const resolvedNodeUuid = useMemo(() => {
+    const d = resolveNodeQuery.data
+    if (!d || !d.success || !d.found || !d.execution) return ''
+    return d.execution.node_uuid || ''
+  }, [resolveNodeQuery.data])
 
   return (
     <div className="space-y-4">
@@ -80,6 +105,17 @@ export default function InstanceDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setDestroyError('')
+              setDestroyReason('')
+              setDestroyOpen(true)
+            }}
+            disabled={!resolvedNodeUuid}
+          >
+            Destroy
+          </Button>
           {inferredTaskId ? (
             <Link to={`/tasks/${encodeURIComponent(inferredTaskId)}`}>
               <Button variant="secondary">View task</Button>
@@ -183,6 +219,76 @@ export default function InstanceDetailPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog open={destroyOpen} onOpenChange={setDestroyOpen}>
+        <DialogContent className="w-[min(520px,calc(100vw-24px))]">
+          <DialogHeader
+            title="Destroy instance"
+            description="Best-effort. This terminates all running executions on the instance."
+          />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">Instance</div>
+                <div className="font-mono text-xs">{id}</div>
+              </div>
+              <div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">Node</div>
+                <div className="font-mono text-xs">{resolvedNodeUuid || '-'}</div>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">Reason (optional)</div>
+              <Input
+                value={destroyReason}
+                onChange={(ev) => setDestroyReason(ev.target.value)}
+                placeholder="Reason"
+              />
+            </div>
+            {destroyError ? (
+              <div className="text-sm text-[hsl(var(--destructive))]">{destroyError}</div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setDestroyOpen(false)}
+                disabled={destroyLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={destroyLoading || !resolvedNodeUuid}
+                onClick={async () => {
+                  setDestroyError('')
+                  setDestroyLoading(true)
+                  try {
+                    const resp = await destroyInstance({
+                      instance_id: id,
+                      node_uuid: resolvedNodeUuid,
+                      reason: destroyReason.trim() ? destroyReason.trim() : undefined,
+                    })
+                    if (!resp.success) {
+                      setDestroyError(resp.message || 'Destroy failed')
+                      return
+                    }
+                    setDestroyOpen(false)
+                    void executionsQuery.refetch()
+                  } catch (err) {
+                    setDestroyError(
+                      String((err as { message?: string } | null)?.message || err || 'Destroy failed'),
+                    )
+                  } finally {
+                    setDestroyLoading(false)
+                  }
+                }}
+              >
+                {destroyLoading ? 'Destroying…' : 'Destroy'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

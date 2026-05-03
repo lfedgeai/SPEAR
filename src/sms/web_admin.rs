@@ -15,6 +15,7 @@ use serde_json::json;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::wrappers::IntervalStream;
 use tokio_util::sync::CancellationToken;
@@ -32,8 +33,10 @@ pub use router::create_admin_router;
 use types::{AiModelsQuery, ListQuery, PageTokenQuery, StreamQuery};
 
 use crate::proto::spearlet::{
-    invocation_service_client::InvocationServiceClient, ExecutionMode, ExecutionStatus,
-    InvokeRequest, Payload,
+    execution_service_client::ExecutionServiceClient,
+    instance_service_client::InstanceServiceClient,
+    invocation_service_client::InvocationServiceClient, DestroyInstanceRequest, ExecutionMode,
+    ExecutionStatus, InvokeRequest, Payload, TerminateExecutionRequest,
 };
 use crate::spearlet::execution::DEFAULT_ENTRY_FUNCTION_NAME;
 
@@ -113,6 +116,7 @@ impl WebAdminServer {
         let model_deployment_registry_client =
             ModelDeploymentRegistryServiceClient::new(channel.clone());
         let state = GatewayState {
+            config: Arc::new(crate::sms::config::SmsConfig::default()),
             node_client,
             task_client,
             placement_client,
@@ -122,6 +126,8 @@ impl WebAdminServer {
             mcp_registry_client,
             backend_registry_client,
             model_deployment_registry_client,
+            stream_sessions: crate::sms::gateway::StreamSessionStore::new(),
+            execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: cancel_token.clone(),
             max_upload_bytes: self.max_upload_bytes,
             files_dir: self.files_dir.clone(),
@@ -1078,13 +1084,160 @@ struct CreateExecutionBody {
     max_candidates: Option<u32>,
 }
 
+#[derive(serde::Deserialize)]
+pub(super) struct TerminateExecutionBody {
+    reason: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct DestroyInstanceBody {
+    node_uuid: String,
+    reason: Option<String>,
+}
+
 fn parse_execution_mode(v: Option<&str>) -> i32 {
     match v.map(|s| s.to_ascii_lowercase()) {
         Some(s) if s == "async" => ExecutionMode::Async as i32,
-        Some(s) if s == "stream" => ExecutionMode::Stream as i32,
-        Some(s) if s == "console" => ExecutionMode::Console as i32,
         _ => ExecutionMode::Sync as i32,
     }
+}
+
+pub(super) async fn terminate_execution_admin(
+    state: GatewayState,
+    p: Path<String>,
+    axum::extract::Json(body): axum::extract::Json<TerminateExecutionBody>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::{GetExecutionRequest, GetNodeRequest};
+    let execution_id = p.0;
+    if execution_id.trim().is_empty() {
+        return Json(json!({"success": false, "message": "execution_id is required"}));
+    }
+
+    let mut exe_client = state.execution_index_client.clone();
+    let exe = match exe_client
+        .get_execution(tonic::Request::new(GetExecutionRequest {
+            execution_id: execution_id.clone(),
+        }))
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+    if !exe.found {
+        return Json(json!({"success": false, "message": "execution not found"}));
+    }
+    let Some(exe) = exe.execution else {
+        return Json(json!({"success": false, "message": "execution not found"}));
+    };
+    if exe.node_uuid.trim().is_empty() {
+        return Json(json!({"success": false, "message": "node_uuid is missing for execution"}));
+    }
+
+    let mut node_client = state.node_client.clone();
+    let node_resp = match node_client
+        .get_node(GetNodeRequest {
+            uuid: exe.node_uuid.clone(),
+        })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+    if !node_resp.found {
+        return Json(json!({"success": false, "message": "node not found"}));
+    }
+    let Some(node) = node_resp.node else {
+        return Json(json!({"success": false, "message": "node not found"}));
+    };
+
+    let url = format!("http://{}:{}", node.ip_address, node.port);
+    let channel = tonic::transport::Channel::from_shared(url.clone())
+        .ok()
+        .map(|ch| ch.connect_lazy());
+    let Some(channel) = channel else {
+        return Json(json!({"success": false, "message": "invalid node url"}));
+    };
+
+    let mut client = ExecutionServiceClient::new(channel);
+    let reason = body.reason.unwrap_or_default();
+    let resp = match client
+        .terminate_execution(TerminateExecutionRequest {
+            execution_id: execution_id.clone(),
+            reason,
+        })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    Json(json!({
+        "success": resp.success,
+        "node_uuid": exe.node_uuid,
+        "execution_id": execution_id,
+        "final_status": resp.final_status,
+        "message": resp.message,
+    }))
+}
+
+pub(super) async fn destroy_instance_admin(
+    state: GatewayState,
+    p: Path<String>,
+    axum::extract::Json(body): axum::extract::Json<DestroyInstanceBody>,
+) -> Json<serde_json::Value> {
+    use crate::proto::sms::GetNodeRequest;
+    let instance_id = p.0;
+    if instance_id.trim().is_empty() {
+        return Json(json!({"success": false, "message": "instance_id is required"}));
+    }
+    if body.node_uuid.trim().is_empty() {
+        return Json(json!({"success": false, "message": "node_uuid is required"}));
+    }
+
+    let mut node_client = state.node_client.clone();
+    let node_resp = match node_client
+        .get_node(GetNodeRequest {
+            uuid: body.node_uuid.clone(),
+        })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+    if !node_resp.found {
+        return Json(json!({"success": false, "message": "node not found"}));
+    }
+    let Some(node) = node_resp.node else {
+        return Json(json!({"success": false, "message": "node not found"}));
+    };
+
+    let url = format!("http://{}:{}", node.ip_address, node.port);
+    let channel = tonic::transport::Channel::from_shared(url.clone())
+        .ok()
+        .map(|ch| ch.connect_lazy());
+    let Some(channel) = channel else {
+        return Json(json!({"success": false, "message": "invalid node url"}));
+    };
+
+    let mut client = InstanceServiceClient::new(channel);
+    let reason = body.reason.unwrap_or_default();
+    let resp = match client
+        .destroy_instance(DestroyInstanceRequest {
+            instance_id: instance_id.clone(),
+            reason,
+        })
+        .await
+    {
+        Ok(r) => r.into_inner(),
+        Err(e) => return Json(json!({"success": false, "message": e.to_string()})),
+    };
+
+    Json(json!({
+        "success": resp.success,
+        "node_uuid": body.node_uuid,
+        "instance_id": instance_id,
+        "message": resp.message,
+    }))
 }
 
 async fn create_invocation(

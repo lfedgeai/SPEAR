@@ -71,10 +71,6 @@ async fn invoke_function(&self, request: Request<InvokeFunctionRequest>)
             let (status_endpoint, estimated_ms) = self.handle_async_execution(&req, &execution_id, &task_id).await;
             // 返回包含状态端点的响应
         },
-        ExecutionMode::Stream => {
-            // 流式执行应使用 StreamFunction RPC
-            // 返回错误提示使用正确的 RPC 方法
-        },
         _ => {
             // 未知执行模式处理
         }

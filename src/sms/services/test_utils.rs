@@ -9,12 +9,10 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::config::base::StorageConfig;
 use crate::proto::sms::Node;
 use crate::sms::config::SmsConfig;
-use crate::sms::services::node_service::{NodeInfo, NodeService, NodeStatus};
+use crate::sms::services::node_service::{NodeService, NodeStatus};
 use crate::sms::services::resource_service::NodeResourceInfo;
-use crate::storage::KvStoreConfig;
 
 /// Test data generator for creating sample nodes / 创建示例节点的测试数据生成器
 pub struct TestDataGenerator;
@@ -26,6 +24,7 @@ impl TestDataGenerator {
             uuid: Uuid::new_v4().to_string(),
             ip_address: "127.0.0.1".to_string(),
             port: 8080,
+            http_port: 0,
             status: "online".to_string(),
             last_heartbeat: Utc::now().timestamp(),
             registered_at: Utc::now().timestamp(),
@@ -39,6 +38,7 @@ impl TestDataGenerator {
             uuid: Uuid::new_v4().to_string(),
             ip_address: ip.to_string(),
             port: port as i32,
+            http_port: 0,
             status: "online".to_string(),
             last_heartbeat: Utc::now().timestamp(),
             registered_at: Utc::now().timestamp(),
@@ -53,6 +53,7 @@ impl TestDataGenerator {
                 uuid: Uuid::new_v4().to_string(),
                 ip_address: format!("127.0.0.{}", i + 1),
                 port: 8080 + i as i32,
+                http_port: 0,
                 status: "online".to_string(),
                 last_heartbeat: Utc::now().timestamp(),
                 registered_at: Utc::now().timestamp(),
@@ -73,6 +74,7 @@ impl TestDataGenerator {
             uuid: Uuid::new_v4().to_string(),
             ip_address: "127.0.0.1".to_string(),
             port: 8080,
+            http_port: 0,
             status: status_str.to_string(),
             last_heartbeat: Utc::now().timestamp(),
             registered_at: Utc::now().timestamp(),
@@ -86,6 +88,7 @@ impl TestDataGenerator {
             uuid: Uuid::new_v4().to_string(),
             ip_address: "127.0.0.1".to_string(),
             port: 8080,
+            http_port: 0,
             status: "offline".to_string(),
             last_heartbeat: (Utc::now() - chrono::Duration::seconds(age_seconds)).timestamp(),
             registered_at: Utc::now().timestamp(),
@@ -99,6 +102,7 @@ impl TestDataGenerator {
             uuid: Uuid::new_v4().to_string(),
             ip_address: "127.0.0.1".to_string(),
             port: 8080,
+            http_port: 0,
             status: "online".to_string(),
             last_heartbeat: Utc::now().timestamp(),
             registered_at: Utc::now().timestamp(),
@@ -152,6 +156,7 @@ impl TestDataGenerator {
                 pool_size: Some(5),
             },
             enable_web_admin: false,
+            enable_console: true,
             web_admin: ServerConfig {
                 addr: "127.0.0.1:8081".parse().unwrap(),
                 ..Default::default()
@@ -192,6 +197,7 @@ impl TestDataGenerator {
                 pool_size: Some(5),
             },
             enable_web_admin: false,
+            enable_console: true,
             web_admin: ServerConfig {
                 addr: "127.0.0.1:8081".parse().unwrap(),
                 ..Default::default()

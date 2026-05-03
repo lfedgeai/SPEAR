@@ -10,8 +10,8 @@ use spear_next::proto::spearlet::{
     execution_service_client::ExecutionServiceClient,
     execution_service_server::ExecutionServiceServer,
     invocation_service_client::InvocationServiceClient,
-    invocation_service_server::InvocationServiceServer, CancelExecutionRequest,
-    GetExecutionRequest, InvokeRequest,
+    invocation_service_server::InvocationServiceServer, GetExecutionRequest, InvokeRequest,
+    TerminateExecutionRequest,
 };
 use spear_next::spearlet::{FunctionServiceImpl, SpearletConfig};
 
@@ -80,19 +80,18 @@ async fn test_get_execution_not_found() {
 }
 
 #[tokio::test]
-async fn test_cancel_execution_is_not_implemented() {
+async fn test_terminate_execution_not_found() {
     let (addr, _handle) = start_test_server().await;
     let mut client = execution_client(addr).await;
 
-    let resp = client
-        .cancel_execution(tonic::Request::new(CancelExecutionRequest {
+    let err = client
+        .terminate_execution(tonic::Request::new(TerminateExecutionRequest {
             execution_id: "any".to_string(),
             reason: "test".to_string(),
         }))
         .await
-        .unwrap()
-        .into_inner();
-    assert!(!resp.success);
+        .unwrap_err();
+    assert_eq!(err.code(), tonic::Code::NotFound);
 }
 
 // Additional integration tests would go here...

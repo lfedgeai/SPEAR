@@ -50,233 +50,34 @@ Proposed new proto file:
 
 This keeps the contract close to the Spearlet router use case (even if the server is deployed externally).
 
-### 3.2 Service definition (Filter agent dials Spearlet TCP)
+### 3.2 Service definition (Spearlet dials the filter server)
+
+The current implementation treats Router Filter as a **server** (provided by SMS by default). Spearlet calls it as a gRPC client:
 
 ```proto
-syntax = "proto3";
-
-package spearlet;
-
-// RouterFilterStreamService: the Filter process acts as a gRPC client and connects to Spearlet over TCP.
-// Spearlet acts as a gRPC server and pushes filter requests over the same bidirectional stream.
-service RouterFilterStreamService {
-  // Open establishes a long-lived bidirectional stream.
-  // - Filter side sends: Register/Heartbeat/FilterResponse
-  // - Spearlet side sends: FilterRequest/Ping/Reject
-  rpc Open(stream StreamClientMessage) returns (stream StreamServerMessage);
-
-  // FetchRequestById allows the agent to fetch request payload by request_id + session_token.
-  rpc FetchRequestById(RequestFetchRequest) returns (RequestFetchResponse);
-}
-
-enum Operation {
-  OPERATION_UNSPECIFIED = 0;
-  OPERATION_CHAT_COMPLETIONS = 1;
-  OPERATION_EMBEDDINGS = 2;
-  OPERATION_IMAGE_GENERATION = 3;
-  OPERATION_SPEECH_TO_TEXT = 4;
-  OPERATION_TEXT_TO_SPEECH = 5;
-  OPERATION_REALTIME_VOICE = 6;
-}
-
-message StreamClientMessage {
-  oneof msg {
-    RegisterRequest register = 1;
-    Heartbeat heartbeat = 2;
-    FilterResponse filter_response = 3;
-  }
-}
-
-message StreamServerMessage {
-  oneof msg {
-    RegisterResponse register_ok = 1;
-    Ping ping = 2;
-    Reject reject = 3;
-    FilterRequest filter_request = 4;
-  }
-}
-
-message RegisterRequest {
-  string agent_id = 1;                   // identity for observability and routing
-  repeated Operation supported_operations = 2;
-  uint32 max_inflight = 3;               // backpressure: max concurrent in-flight requests
-  uint32 max_candidates = 4;             // preferred candidate set size
-  uint32 protocol_version = 5;
-}
-
-message RegisterResponse {
-  uint32 protocol_version = 1;
-  bool accepted = 2;
-  string message = 3;
-  string session_token = 4;
-  int64 token_expire_at_ms = 5;
-}
-
-message Heartbeat {
-  int64 now_ms = 1;
-}
-
-message Ping {
-  int64 now_ms = 1;
-}
-
-message Reject {
-  string code = 1;
-  string message = 2;
-}
-
-message FilterRequest {
-  // Correlation id for multiplexing concurrent requests on the same stream.
-  string correlation_id = 1;
-
-  string request_id = 2;                 // CanonicalRequestEnvelope.request_id
-  Operation operation = 3;               // CanonicalRequestEnvelope.operation
-
-  // Time budget. Router also enforces it locally; filter uses it for self-limiting.
-  uint32 decision_timeout_ms = 4;
-
-  // Request metadata (safe, non-secret).
-  map<string, string> meta = 5;          // CanonicalRequestEnvelope.meta (stringified)
-
-  // Routing hints that came from the guest and/or host constraints.
-  RoutingHints routing = 6;
-
-  // Required features/transports extracted from Normalize.
-  Requirements requirements = 7;
-
-  // Operation-specific, size-bounded request signals.
-  RequestSignals signals = 8;
-
-  repeated Candidate candidates = 9;     // candidate set after hard filtering
-}
-
-message RoutingHints {
-  string backend = 1;                    // optional requested backend name
-  repeated string allowlist = 2;
-  repeated string denylist = 3;
-  string requested_model = 4;            // extracted from payload.model if present
-}
-
-message Requirements {
-  repeated string required_features = 1;
-  repeated string required_transports = 2;
-}
-
-message RequestSignals {
-  // For chat: model, message count, approximate text bytes, tool usage flags, response format flags.
-  string model = 1;
-  uint32 message_count = 2;
-  uint32 approx_text_bytes = 3;
-  bool uses_tools = 4;
-  bool uses_json_schema = 5;
-
-  // For ASR: codec, sample rate, channel count, duration estimate, language hint.
-  string audio_codec = 10;
-  uint32 audio_sample_rate_hz = 11;
-  uint32 audio_channels = 12;
-  uint32 audio_duration_ms = 13;
-  string audio_language_hint = 14;
-}
-
-message RequestFetchRequest {
-  string request_id = 1;
-  string session_token = 2;
-  uint32 max_bytes = 3;
-}
-
-message RequestFetchResponse {
-  string request_id = 1;
-  string content_type = 2;
-  bytes payload = 3;
-}
-
-message Candidate {
-  string name = 1;                       // BackendInstance.name
-  string kind = 2;                       // backend kind (openai_chat_completion / ...)
-  string base_url = 3;                   // optional; can be omitted for privacy
-  string model = 4;                      // BackendInstance.model (if bound)
-  uint32 weight = 5;                     // BackendInstance.weight
-  int32 priority = 6;                    // BackendInstance.priority
-  repeated string ops = 7;               // capabilities.ops (string form)
-  repeated string features = 8;          // capabilities.features
-  repeated string transports = 9;        // capabilities.transports
-
-  // Optional runtime hints (if available).
-  CandidateRuntimeHints runtime = 20;
-}
-
-message CandidateRuntimeHints {
-  // All fields are optional; Router may omit them.
-  double ewma_latency_ms = 1;
-  double recent_error_rate = 2;          // 0.0 ~ 1.0
-  uint32 inflight = 3;
-  bool healthy = 4;
-}
-
-message FilterResponse {
-  string correlation_id = 1;             // matches FilterRequest.correlation_id
-  string decision_id = 2;                // for observability
-  repeated CandidateDecision decisions = 3;
-  FinalAction final_action = 4;
-  map<string, string> debug = 5;         // optional debug kvs (size-bounded)
-}
-
-message CandidateDecision {
-  string name = 1;                       // matches Candidate.name (backend instance name)
-
-  // KEEP means candidate remains usable; DROP means remove from candidate set.
-  DecisionAction action = 2;
-
-  // Optional overrides; if unset, Router keeps original values.
-  optional uint32 weight_override = 3;
-  optional int32 priority_override = 4;
-
-  // Optional soft score; Router may use it only for debug or for a "score-aware" policy.
-  optional double score = 5;
-
-  // Human/debug reasons. Router also logs these as structured fields.
-  repeated string reason_codes = 6;
-}
-
-enum DecisionAction {
-  DECISION_ACTION_UNSPECIFIED = 0;
-  DECISION_ACTION_KEEP = 1;
-  DECISION_ACTION_DROP = 2;
-}
-
-message FinalAction {
-  // If set, Router should stop and return an error to the caller (fail-closed).
-  // Router must map this to CanonicalError and SHOULD mark retryable=false unless explicitly stated.
-  bool reject_request = 1;
-  string reject_code = 2;                // e.g. "policy_denied"
-  string reject_message = 3;
-
-  // If set, Router forces routing to a backend name (still constrained by allowlist/denylist).
-  string force_backend = 10;
+service RouterFilterService {
+  rpc Filter(FilterRequest) returns (FilterResponse);
 }
 ```
 
-### 3.3 Controlled content fetch (request_id + session_token)
+For the full schema, refer to `proto/spearlet/router_filter.proto`.
 
-By default, Spearlet only sends size-bounded `RequestSignals` to the agent and does not transmit raw request content.
+### 3.3 Optional payload forwarding
 
-When the policy must inspect content, prefer a controlled fetch flow:
+By default, Spearlet sends only size-bounded `RequestSignals` + `meta` and does not transmit raw request content.
 
-1. The agent registers via the `Open` stream; Spearlet returns `session_token` and its expiry in `RegisterResponse`.
-2. While handling a `FilterRequest`, the agent can call `FetchRequestById(request_id, session_token, max_bytes)` (unary) to fetch the payload.
-3. Spearlet only returns payload when:
-   - `content_fetch_enabled = true`
-   - `session_token` is valid and the agent is still connected
-   - `request_id` hits a short-TTL in-memory cache
-   - the payload size is within `content_fetch_max_bytes` (also capped by request `max_bytes`)
+When a policy must inspect content, Spearlet can optionally populate `FilterRequest.request_payload` (bounded by config):
 
-This turns “accessing raw content” into an explicit, bounded, auditable action instead of a default broadcast.
+- `content_fetch_enabled = true`
+- `content_fetch_max_bytes` caps forwarded payload size (if exceeded, payload is not forwarded)
+
+This keeps the connection direction one-way (Spearlet → Filter) while making raw-content access explicit and bounded.
 
 ## 4. Router-side Implementation Plan (function / variable level)
 
 ### 4.1 New module and main entry points (Rust)
 
-Proposed new module (Router-side stream integration):
+Proposed new module (Router-side gRPC client hub integration):
 
 - `src/spearlet/execution/ai/router/grpc_filter_stream.rs`
 
@@ -291,22 +92,11 @@ pub struct RouterFilterStreamConfig {
     pub max_candidates_sent: usize,
     pub max_debug_kv: usize,
     pub max_inflight_total: usize,
-    pub per_agent_max_inflight: usize,
 }
 
 pub struct RouterFilterStreamHub {
     config: RouterFilterStreamConfig,
-    agents: tokio::sync::RwLock<std::collections::HashMap<String, AgentHandle>>,
-    rr: std::sync::atomic::AtomicU64,
-    inflight: tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<FilterResponse>>>,
-}
-
-pub struct AgentHandle {
-    pub agent_id: String,
-    pub tx: tokio::sync::mpsc::Sender<FilterRequest>,
-    pub inflight: std::sync::Arc<tokio::sync::Semaphore>,
-    pub supported_operations: std::collections::HashSet<Operation>,
-    pub last_heartbeat_ms: std::sync::atomic::AtomicI64,
+    // Background async worker for gRPC calls.
 }
 
 pub struct FilterTrace {
@@ -325,26 +115,26 @@ pub struct FinalActionTrace {
 }
 
 impl RouterFilterStreamHub {
-    pub async fn try_filter_candidates(
+    pub fn try_filter_candidates_blocking(
         &self,
         req: &CanonicalRequestEnvelope,
-        candidates: &[&BackendInstance],
+        candidates: &mut Vec<&BackendInstance>,
         decision_timeout_ms: u64,
     ) -> Result<(FilterResponse, FilterTrace), CanonicalError>;
 }
 ```
 
-### 4.1.1 Transport: TCP (Spearlet exposes a gRPC port)
+### 4.1.1 Transport: TCP (Filter exposes a gRPC port)
 
 This design uses TCP (host:port):
 
-- Spearlet runs a gRPC server on a TCP port (typically reusing `spearlet.grpc.addr`).
-- The filter process dials that address and maintains long-lived bidirectional stream(s).
+- The filter server (provided by SMS by default) runs a gRPC server on a TCP port (typically reusing `sms.grpc.addr`).
+- Spearlet dials that address as a gRPC client (defaults to `spearlet.sms_grpc_addr`, can be overridden by `router_grpc_filter_stream.addr`).
 
 Address examples:
 
-- `127.0.0.1:50052` (same-host loopback)
-- `spearlet-node-a.internal:50052` (cross-host)
+- `127.0.0.1:50051` (same-host loopback)
+- `sms.internal:50051` (cross-host)
 
 ### 4.2 Router::route integration details
 

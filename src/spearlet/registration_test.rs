@@ -2,8 +2,7 @@
 //! 注册模块的测试
 
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::{sleep, Instant};
+use tokio::time::Instant;
 
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::registration::{RegistrationService, RegistrationState};

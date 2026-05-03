@@ -2,6 +2,7 @@
 //! SMS HTTP网关测试
 
 use axum::Router;
+use std::sync::Arc;
 use tonic::transport::Channel;
 
 use crate::proto::sms::{
@@ -28,6 +29,7 @@ async fn create_mock_gateway_state() -> GatewayState {
         .to_string();
 
     GatewayState {
+        config: Arc::new(crate::sms::config::SmsConfig::default()),
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
         placement_client: PlacementServiceClient::new(channel.clone()),
@@ -39,6 +41,8 @@ async fn create_mock_gateway_state() -> GatewayState {
         model_deployment_registry_client: ModelDeploymentRegistryServiceClient::new(
             channel.clone(),
         ),
+        stream_sessions: crate::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir,
@@ -169,6 +173,7 @@ async fn test_gateway_state_with_different_endpoints() {
             ModelDeploymentRegistryServiceClient::new(channel.clone());
 
         let state = GatewayState {
+            config: Arc::new(crate::sms::config::SmsConfig::default()),
             node_client,
             task_client,
             placement_client,
@@ -178,6 +183,8 @@ async fn test_gateway_state_with_different_endpoints() {
             mcp_registry_client,
             backend_registry_client,
             model_deployment_registry_client,
+            stream_sessions: crate::sms::gateway::StreamSessionStore::new(),
+            execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
             files_dir: std::env::temp_dir()
@@ -206,7 +213,7 @@ async fn test_gateway_router_service_conversion() {
 #[tokio::test]
 async fn test_concurrent_gateway_creation() {
     // Test concurrent gateway creation / 测试并发网关创建
-    use std::sync::Arc;
+    
 
     let mut handles = vec![];
 

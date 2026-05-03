@@ -7,10 +7,10 @@ use spear_next::proto::sms::{
 };
 use spear_next::proto::spearlet::{
     execution_service_server::ExecutionServiceServer,
-    invocation_service_server::InvocationServiceServer, CancelExecutionRequest,
-    CancelExecutionResponse, Execution, GetExecutionRequest, InvokeRequest, InvokeResponse,
-    ListExecutionsRequest, ListExecutionsResponse,
+    invocation_service_server::InvocationServiceServer, Execution, GetExecutionRequest,
+    InvokeRequest, InvokeResponse, ListExecutionsRequest, ListExecutionsResponse,
 };
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::sms::web_admin::create_admin_router;
@@ -56,36 +56,6 @@ impl spear_next::proto::spearlet::invocation_service_server::InvocationService
             })),
         }
     }
-
-    type InvokeStreamStream = std::pin::Pin<
-        Box<
-            dyn tokio_stream::Stream<
-                    Item = Result<spear_next::proto::spearlet::InvokeStreamChunk, Status>,
-                > + Send,
-        >,
-    >;
-
-    async fn invoke_stream(
-        &self,
-        _request: Request<InvokeRequest>,
-    ) -> Result<Response<Self::InvokeStreamStream>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    type OpenConsoleStream = std::pin::Pin<
-        Box<
-            dyn tokio_stream::Stream<
-                    Item = Result<spear_next::proto::spearlet::ConsoleServerMessage, Status>,
-                > + Send,
-        >,
-    >;
-
-    async fn open_console(
-        &self,
-        _request: Request<tonic::Streaming<spear_next::proto::spearlet::ConsoleClientMessage>>,
-    ) -> Result<Response<Self::OpenConsoleStream>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
 }
 
 #[tonic::async_trait]
@@ -99,10 +69,10 @@ impl spear_next::proto::spearlet::execution_service_server::ExecutionService
         Err(Status::unimplemented("not used in test"))
     }
 
-    async fn cancel_execution(
+    async fn terminate_execution(
         &self,
-        _request: Request<CancelExecutionRequest>,
-    ) -> Result<Response<CancelExecutionResponse>, Status> {
+        _request: Request<spear_next::proto::spearlet::TerminateExecutionRequest>,
+    ) -> Result<Response<spear_next::proto::spearlet::TerminateExecutionResponse>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 
@@ -145,24 +115,6 @@ impl spear_next::proto::spearlet::invocation_service_server::InvocationService
             })),
         }
     }
-
-    type InvokeStreamStream = <MockFunctionService as spear_next::proto::spearlet::invocation_service_server::InvocationService>::InvokeStreamStream;
-
-    async fn invoke_stream(
-        &self,
-        _request: Request<InvokeRequest>,
-    ) -> Result<Response<Self::InvokeStreamStream>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
-
-    type OpenConsoleStream = <MockFunctionService as spear_next::proto::spearlet::invocation_service_server::InvocationService>::OpenConsoleStream;
-
-    async fn open_console(
-        &self,
-        _request: Request<tonic::Streaming<spear_next::proto::spearlet::ConsoleClientMessage>>,
-    ) -> Result<Response<Self::OpenConsoleStream>, Status> {
-        Err(Status::unimplemented("not used in test"))
-    }
 }
 
 #[tonic::async_trait]
@@ -176,10 +128,10 @@ impl spear_next::proto::spearlet::execution_service_server::ExecutionService
         Err(Status::unimplemented("not used in test"))
     }
 
-    async fn cancel_execution(
+    async fn terminate_execution(
         &self,
-        _request: Request<CancelExecutionRequest>,
-    ) -> Result<Response<CancelExecutionResponse>, Status> {
+        _request: Request<spear_next::proto::spearlet::TerminateExecutionRequest>,
+    ) -> Result<Response<spear_next::proto::spearlet::TerminateExecutionResponse>, Status> {
         Err(Status::unimplemented("not used in test"))
     }
 
@@ -305,6 +257,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         uuid: node1_uuid.clone(),
         ip_address: "127.0.0.1".to_string(),
         port: port1 as i32,
+        http_port: 0,
         status: "online".to_string(),
         last_heartbeat: now,
         registered_at: now,
@@ -314,6 +267,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         uuid: node2_uuid.clone(),
         ip_address: "127.0.0.1".to_string(),
         port: port2 as i32,
+        http_port: 0,
         status: "online".to_string(),
         last_heartbeat: now,
         registered_at: now,
@@ -402,6 +356,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client: placement_client.clone(),
@@ -411,6 +366,8 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -487,6 +444,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
                 uuid: node1_uuid.clone(),
                 ip_address: "127.0.0.1".to_string(),
                 port: port1 as i32,
+                http_port: 0,
                 status: "online".to_string(),
                 last_heartbeat: now,
                 registered_at: now,
@@ -501,6 +459,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
                 uuid: node2_uuid.clone(),
                 ip_address: "127.0.0.1".to_string(),
                 port: port2 as i32,
+                http_port: 0,
                 status: "online".to_string(),
                 last_heartbeat: now,
                 registered_at: now,
@@ -583,6 +542,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -592,6 +552,8 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()

@@ -2,8 +2,6 @@
 //! SMS gRPC服务器模块的测试
 
 use std::net::SocketAddr;
-use std::time::Duration;
-use tokio::time::timeout;
 
 use crate::config::base::StorageConfig;
 use crate::proto::sms::task_service_server::TaskService;
@@ -52,7 +50,7 @@ async fn test_register_task_returns_uuid_on_success() {
         description: "simple echo".to_string(),
         priority: crate::proto::sms::TaskPriority::Normal as i32,
         node_uuid: Uuid::new_v4().to_string(),
-        endpoint: "http://localhost:8080/echo".to_string(),
+        endpoint: "echo".to_string(),
         version: "1.0.0".to_string(),
         capabilities: vec!["echo".to_string()],
         metadata: std::collections::HashMap::new(),
@@ -181,7 +179,7 @@ async fn test_sms_grpc_server_with_different_storage_backends() {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use tokio::time::sleep;
+    
 
     #[tokio::test]
     async fn test_sms_grpc_server_lifecycle() {

@@ -100,6 +100,10 @@ impl SmsConfig {
 | `--db-pool-size` | | 数据库连接池大小 | `--db-pool-size 10` |
 | `--enable-swagger` | | 启用 Swagger UI | `--enable-swagger` |
 | `--disable-swagger` | | 禁用 Swagger UI | `--disable-swagger` |
+| `--enable-console` | | 启用 SPEAR Console（/console） | `--enable-console` |
+| `--disable-console` | | 禁用 SPEAR Console（/console） | `--disable-console` |
+| `--enable-web-admin` | | 启用 Web Admin | `--enable-web-admin` |
+| `--disable-web-admin` | | 禁用 Web Admin | `--disable-web-admin` |
 | `--log-level` | | 日志级别 | `--log-level debug` |
 | `--heartbeat-timeout` | | 心跳超时时间（秒） | `--heartbeat-timeout 30` |
 | `--cleanup-interval` | | 清理间隔时间（秒） | `--cleanup-interval 60` |

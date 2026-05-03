@@ -6,19 +6,22 @@ This document describes how to perform code coverage testing in the SPEAR Next p
 
 ## Tool Selection
 
-We use `cargo-tarpaulin` as the primary code coverage tool, which is the most popular and powerful coverage tool in the Rust ecosystem.
+We use `cargo-llvm-cov` as the primary code coverage tool. It works across platforms (macOS/Linux) and integrates well with LLVM-based tooling.
 
-### Installing cargo-tarpaulin
+`cargo-tarpaulin` is still available as a legacy option (mainly for Linux environments).
+
+### Installing cargo-llvm-cov
 
 ```bash
-cargo install cargo-tarpaulin
+cargo install cargo-llvm-cov
+rustup component add llvm-tools-preview
 ```
 
 ## Configuration Files
 
 ### tarpaulin.toml
 
-The `tarpaulin.toml` file in the project root contains the coverage testing configuration:
+The `tarpaulin.toml` file in the project root contains the legacy tarpaulin coverage configuration:
 
 ```toml
 [report]
@@ -69,7 +72,7 @@ no-clean = false
 
 ### 1. Quick Coverage Testing
 
-Use the provided quick script:
+Use the provided quick script (tarpaulin-based):
 
 ```bash
 # Run quick coverage test
@@ -81,36 +84,30 @@ make coverage-quick
 
 ### 2. Full Coverage Testing
 
-Run complete coverage analysis (including all features):
+Run complete coverage analysis:
 
 ```bash
 # Run full coverage test
-./scripts/coverage.sh
-
-# Or use Makefile
 make coverage
 ```
 
 ### 3. Manual Execution
 
-Use cargo-tarpaulin directly:
+Use cargo-llvm-cov directly:
 
 ```bash
-# Basic coverage test
-cargo tarpaulin --config tarpaulin.toml
+# HTML report (all features)
+cargo llvm-cov --workspace --all-features --html --output-dir target/coverage
 
-# Specify features
-cargo tarpaulin --features sled --config tarpaulin.toml
-
-# All features
-cargo tarpaulin --all-features --config tarpaulin.toml
+# LCOV report (all features)
+cargo llvm-cov --workspace --all-features --lcov --output-path target/coverage/lcov.info
 ```
 
 ## Output Formats
 
 ### HTML Report
 
-- Location: `target/coverage/tarpaulin-report.html`
+- Location: `target/coverage/index.html`
 - Provides detailed visual coverage reports
 - View line-level coverage for each file
 
@@ -121,19 +118,26 @@ cargo tarpaulin --all-features --config tarpaulin.toml
 
 ### JSON Format
 
+Tarpaulin legacy output:
+
 - Location: `target/coverage/tarpaulin-report.json`
-- Machine-readable format for automated processing
 
 ## Makefile Targets
 
 The project provides the following Makefile targets:
 
 ```bash
-# Quick coverage test (default features)
-make coverage-quick
-
-# Full coverage test (all features)
+# Comprehensive coverage (prefers cargo-llvm-cov when available)
 make coverage
+
+# HTML coverage report (llvm-cov)
+make coverage-html
+
+# LCOV coverage report (llvm-cov)
+make coverage-lcov
+
+# Quick coverage test (tarpaulin-based)
+make coverage-quick
 
 # Clean coverage data
 make clean-coverage

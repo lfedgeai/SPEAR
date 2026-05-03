@@ -1,16 +1,8 @@
 //! Tests for SMS HTTP Handlers
 //! SMS HTTP处理器测试
 
-use axum::{
-    body::Body,
-    extract::{Path, Query, State},
-    http::{Request, StatusCode},
-    response::Json,
-};
-use serde_json::json;
 use serde_urlencoded;
 use std::collections::HashMap;
-use tower::ServiceExt;
 
 use crate::sms::handlers::{
     health_check, HttpHeartbeatRequest, HttpRegisterNodeRequest, HttpUpdateNodeRequest,
@@ -46,6 +38,7 @@ fn test_http_register_node_request_serialization() {
     let request = HttpRegisterNodeRequest {
         ip_address: "192.168.1.100".to_string(),
         port: 8080,
+        http_port: Some(8081),
         metadata: Some(metadata.clone()),
     };
 
@@ -71,6 +64,7 @@ fn test_http_update_node_request_serialization() {
     let request = HttpUpdateNodeRequest {
         ip_address: Some("192.168.1.101".to_string()),
         port: Some(8081),
+        http_port: Some(8082),
         status: Some("inactive".to_string()),
         metadata: Some(metadata.clone()),
     };
@@ -260,6 +254,7 @@ fn test_request_validation() {
     let empty_node_request = HttpRegisterNodeRequest {
         ip_address: "".to_string(),
         port: 0,
+        http_port: None,
         metadata: None,
     };
     let json_str = serde_json::to_string(&empty_node_request).unwrap();
@@ -271,6 +266,7 @@ fn test_request_validation() {
     let invalid_port_request = HttpRegisterNodeRequest {
         ip_address: "127.0.0.1".to_string(),
         port: -1,
+        http_port: None,
         metadata: None,
     };
     let json_str = serde_json::to_string(&invalid_port_request).unwrap();
@@ -281,6 +277,7 @@ fn test_request_validation() {
     let large_port_request = HttpRegisterNodeRequest {
         ip_address: "127.0.0.1".to_string(),
         port: 65535,
+        http_port: None,
         metadata: None,
     };
     let json_str = serde_json::to_string(&large_port_request).unwrap();
@@ -419,6 +416,7 @@ mod integration_tests {
         let request = Arc::new(HttpRegisterNodeRequest {
             ip_address: "192.168.1.100".to_string(),
             port: 8080,
+            http_port: Some(8081),
             metadata: Some(HashMap::from([
                 ("region".to_string(), "us-west-1".to_string()),
                 ("zone".to_string(), "a".to_string()),
@@ -451,6 +449,7 @@ mod integration_tests {
         let node_request = HttpRegisterNodeRequest {
             ip_address: "192.168.1.100".to_string(),
             port: 8080,
+            http_port: Some(8081),
             metadata: Some(HashMap::new()),
         };
 

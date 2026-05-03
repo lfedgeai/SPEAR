@@ -277,13 +277,6 @@ impl AppConfig {
             || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_ENABLED").is_ok()
             || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_MAX_BYTES")
                 .is_ok()
-            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_TTL_MS")
-                .is_ok()
-            || std::env::var(
-                "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_MAX_ENTRIES",
-            )
-            .is_ok()
-            || std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_SESSION_TOKEN_TTL_MS").is_ok()
         {
             touch_router_filter_stream = true;
         }
@@ -363,32 +356,6 @@ impl AppConfig {
             if let Ok(n) = v.parse::<usize>() {
                 if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
                     cfg.content_fetch_max_bytes = n;
-                }
-            }
-        }
-        if let Ok(v) =
-            std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_TTL_MS")
-        {
-            if let Ok(n) = v.parse::<u64>() {
-                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
-                    cfg.content_fetch_cache_ttl_ms = n;
-                }
-            }
-        }
-        if let Ok(v) =
-            std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_CONTENT_FETCH_CACHE_MAX_ENTRIES")
-        {
-            if let Ok(n) = v.parse::<usize>() {
-                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
-                    cfg.content_fetch_cache_max_entries = n;
-                }
-            }
-        }
-        if let Ok(v) = std::env::var("SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_SESSION_TOKEN_TTL_MS")
-        {
-            if let Ok(n) = v.parse::<u64>() {
-                if let Some(cfg) = config.spearlet.llm.router_grpc_filter_stream.as_mut() {
-                    cfg.session_token_ttl_ms = n;
                 }
             }
         }
@@ -599,7 +566,8 @@ pub struct LlmConfig {
 pub struct RouterGrpcFilterStreamConfig {
     /// Enable router filter stream / 启用 Router filter stream
     pub enabled: bool,
-    /// Spearlet gRPC address to dial (host:port) / 需要 dial 的 Spearlet gRPC 地址（host:port）
+    /// Router filter server gRPC address (host:port); empty means using sms_grpc_addr.
+    /// Router filter 服务端 gRPC 地址（host:port）；为空时表示使用 sms_grpc_addr。
     pub addr: String,
     /// Decision timeout budget in ms / 决策超时预算（毫秒）
     pub decision_timeout_ms: u64,
@@ -614,18 +582,17 @@ pub struct RouterGrpcFilterStreamConfig {
     /// Max inflight per agent / 单个 agent 的 in-flight 上限
     pub per_agent_max_inflight: usize,
 
+    /// Forward request payload snippet to filter server (size-bounded).
+    /// 向 filter 服务端透传请求 payload 片段（有大小限制）。
     pub content_fetch_enabled: bool,
     pub content_fetch_max_bytes: usize,
-    pub content_fetch_cache_ttl_ms: u64,
-    pub content_fetch_cache_max_entries: usize,
-    pub session_token_ttl_ms: u64,
 }
 
 impl Default for RouterGrpcFilterStreamConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            addr: "127.0.0.1:50052".to_string(),
+            addr: String::new(),
             decision_timeout_ms: 2_000,
             fail_open: true,
             max_candidates_sent: 64,
@@ -634,9 +601,6 @@ impl Default for RouterGrpcFilterStreamConfig {
             per_agent_max_inflight: 512,
             content_fetch_enabled: false,
             content_fetch_max_bytes: 64 * 1024,
-            content_fetch_cache_ttl_ms: 60_000,
-            content_fetch_cache_max_entries: 1024,
-            session_token_ttl_ms: 600_000,
         }
     }
 }

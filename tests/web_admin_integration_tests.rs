@@ -4,9 +4,11 @@ use spear_next::proto::sms::{
     placement_service_server::PlacementServiceServer, task_service_server::TaskServiceServer, Node,
     NodeResource, RegisterNodeRequest, UpdateNodeResourceRequest,
 };
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::sms::web_admin::create_admin_router;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
@@ -115,6 +117,7 @@ async fn test_admin_list_nodes_empty() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -124,6 +127,8 @@ async fn test_admin_list_nodes_empty() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -153,6 +158,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
         uuid: "n1".into(),
         ip_address: "10.0.0.1".into(),
         port: 8001,
+        http_port: 0,
         status: "online".into(),
         last_heartbeat: now - 10,
         registered_at: now - 100,
@@ -162,6 +168,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
         uuid: "n2".into(),
         ip_address: "10.0.0.2".into(),
         port: 8002,
+        http_port: 0,
         status: "online".into(),
         last_heartbeat: now - 1,
         registered_at: now - 90,
@@ -241,6 +248,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -250,6 +258,8 @@ async fn test_admin_list_nodes_filter_and_sort() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -292,6 +302,7 @@ async fn test_admin_stats() {
         uuid: "s1".into(),
         ip_address: "10.0.0.1".into(),
         port: 8001,
+        http_port: 0,
         status: "online".into(),
         last_heartbeat: now,
         registered_at: now - 100,
@@ -301,6 +312,7 @@ async fn test_admin_stats() {
         uuid: "s2".into(),
         ip_address: "10.0.0.2".into(),
         port: 8002,
+        http_port: 0,
         status: "offline".into(),
         last_heartbeat: now - 600,
         registered_at: now - 1000,
@@ -362,6 +374,7 @@ async fn test_admin_stats() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -371,6 +384,8 @@ async fn test_admin_stats() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -444,6 +459,7 @@ async fn test_admin_nodes_stream() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -453,6 +469,8 @@ async fn test_admin_nodes_stream() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -480,6 +498,7 @@ async fn test_admin_node_detail_includes_resource() {
         uuid: uuid.clone(),
         ip_address: "10.0.0.9".into(),
         port: 8009,
+        http_port: 0,
         status: "online".into(),
         last_heartbeat: now,
         registered_at: now - 10,
@@ -561,6 +580,7 @@ async fn test_admin_node_detail_includes_resource() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -570,6 +590,8 @@ async fn test_admin_node_detail_includes_resource() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -646,6 +668,7 @@ async fn test_admin_mcp_servers_crud() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -655,6 +678,8 @@ async fn test_admin_mcp_servers_crud() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -759,6 +784,7 @@ async fn test_admin_mcp_servers_validation() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -768,6 +794,8 @@ async fn test_admin_mcp_servers_validation() {
         mcp_registry_client,
         backend_registry_client,
         model_deployment_registry_client,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -830,6 +858,7 @@ async fn test_unhealthy_node_is_marked_offline_not_removed() {
                 uuid: uuid.clone(),
                 ip_address: "10.0.0.9".into(),
                 port: 8009,
+                http_port: 0,
                 status: "online".into(),
                 last_heartbeat: now - 10,
                 registered_at: now,

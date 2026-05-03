@@ -146,7 +146,7 @@ async fn test_spearlet_fetches_task_from_sms_when_missing_locally() {
             description: "d".to_string(),
             priority: spear_next::proto::sms::TaskPriority::Normal as i32,
             node_uuid: "node-x".to_string(),
-            endpoint: "http://localhost/task".to_string(),
+            endpoint: "sms-task".to_string(),
             version: "v1".to_string(),
             capabilities: vec!["c".to_string()],
             metadata: Default::default(),

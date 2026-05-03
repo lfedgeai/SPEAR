@@ -52,7 +52,7 @@ async fn test_register_task_returns_uuid_on_success() {
         description: "simple echo".to_string(),
         priority: crate::proto::sms::TaskPriority::Normal as i32,
         node_uuid: Uuid::new_v4().to_string(),
-        endpoint: "http://localhost:8080/echo".to_string(),
+        endpoint: "echo".to_string(),
         version: "1.0.0".to_string(),
         capabilities: vec!["echo".to_string()],
         metadata: std::collections::HashMap::new(),

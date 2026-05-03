@@ -13,11 +13,25 @@
 
 enum {
     SPEAR_CCHAT_OK = 0,
-    SPEAR_CCHAT_ERR_INVALID_FD = -EBADF,
-    SPEAR_CCHAT_ERR_INVALID_PTR = -EFAULT,
-    SPEAR_CCHAT_ERR_BUFFER_TOO_SMALL = -ENOSPC,
-    SPEAR_CCHAT_ERR_INVALID_CMD = -EINVAL,
-    SPEAR_CCHAT_ERR_INTERNAL = -EIO,
+    SPEAR_EPERM = 1,
+    SPEAR_ENOENT = 2,
+    SPEAR_EIO = 5,
+    SPEAR_EBADF = 9,
+    SPEAR_EAGAIN = 11,
+    SPEAR_ENOMEM = 12,
+    SPEAR_EFAULT = 14,
+    SPEAR_EINVAL = 22,
+    SPEAR_ENOSPC = 28,
+    SPEAR_EPIPE = 32,
+    SPEAR_ECONNRESET = 104,
+    SPEAR_ENOTCONN = 107,
+    SPEAR_ETIMEDOUT = 110,
+
+    SPEAR_CCHAT_ERR_INVALID_FD = -SPEAR_EBADF,
+    SPEAR_CCHAT_ERR_INVALID_PTR = -SPEAR_EFAULT,
+    SPEAR_CCHAT_ERR_BUFFER_TOO_SMALL = -SPEAR_ENOSPC,
+    SPEAR_CCHAT_ERR_INVALID_CMD = -SPEAR_EINVAL,
+    SPEAR_CCHAT_ERR_INTERNAL = -SPEAR_EIO,
 };
 
 enum {
@@ -99,6 +113,40 @@ int32_t sp_mic_read(int32_t fd, int32_t out_ptr, int32_t out_len_ptr);
 
 SPEAR_IMPORT("mic_close")
 int32_t sp_mic_close(int32_t fd);
+
+enum {
+    SPEAR_USER_STREAM_DIR_INBOUND = 1,
+    SPEAR_USER_STREAM_DIR_OUTBOUND = 2,
+    SPEAR_USER_STREAM_DIR_BIDIRECTIONAL = 3,
+};
+
+enum {
+    SPEAR_USER_STREAM_CTL_EVENT_STREAM_CONNECTED = 1,
+    SPEAR_USER_STREAM_CTL_EVENT_SESSION_CLOSED = 2,
+};
+
+typedef struct {
+    uint32_t stream_id;
+    uint32_t kind;
+} sp_user_stream_ctl_event_t;
+
+SPEAR_IMPORT("user_stream_open")
+int32_t sp_user_stream_open(int32_t stream_id, int32_t direction);
+
+SPEAR_IMPORT("user_stream_read")
+int32_t sp_user_stream_read(int32_t fd, int32_t out_ptr, int32_t out_len_ptr);
+
+SPEAR_IMPORT("user_stream_write")
+int32_t sp_user_stream_write(int32_t fd, int32_t buf_ptr, int32_t buf_len);
+
+SPEAR_IMPORT("user_stream_close")
+int32_t sp_user_stream_close(int32_t fd);
+
+SPEAR_IMPORT("user_stream_ctl_open")
+int32_t sp_user_stream_ctl_open(void);
+
+SPEAR_IMPORT("user_stream_ctl_read")
+int32_t sp_user_stream_ctl_read(int32_t fd, int32_t out_ptr, int32_t out_len_ptr);
 
 enum {
     SPEAR_EPOLL_CTL_ADD = 1,
@@ -203,7 +251,7 @@ static inline uint8_t *sp_cchat_recv_alloc(int32_t resp_fd, uint32_t *out_len) {
             *out_len = len;
             return buf;
         }
-        if (rc != -ENOSPC) {
+        if (rc != -SPEAR_ENOSPC) {
             free(buf);
             return NULL;
         }
@@ -271,7 +319,7 @@ static inline uint8_t *sp_rtasr_read_alloc(int32_t fd, uint32_t *out_len) {
             *out_len = len;
             return buf;
         }
-        if (rc != -ENOSPC) {
+        if (rc != -SPEAR_ENOSPC) {
             free(buf);
             return NULL;
         }
@@ -335,7 +383,7 @@ static inline uint8_t *sp_mic_read_alloc(int32_t fd, uint32_t *out_len) {
             *out_len = len;
             return buf;
         }
-        if (rc != -ENOSPC) {
+        if (rc != -SPEAR_ENOSPC) {
             free(buf);
             return NULL;
         }
@@ -349,6 +397,43 @@ static inline uint8_t *sp_mic_read_alloc(int32_t fd, uint32_t *out_len) {
     }
     free(buf);
     return NULL;
+}
+
+static inline uint8_t *sp_user_stream_read_alloc(int32_t fd, uint32_t *out_len) {
+    uint32_t cap = 64 * 1024;
+    uint8_t *buf = (uint8_t *)malloc(cap);
+    if (!buf) {
+        return NULL;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+        uint32_t len = cap;
+        int32_t rc = sp_user_stream_read(fd, (int32_t)(uintptr_t)buf, (int32_t)(uintptr_t)&len);
+        if (rc >= 0) {
+            *out_len = len;
+            return buf;
+        }
+        if (rc != -SPEAR_ENOSPC) {
+            free(buf);
+            return NULL;
+        }
+        cap = len;
+        uint8_t *b2 = (uint8_t *)realloc(buf, cap);
+        if (!b2) {
+            free(buf);
+            return NULL;
+        }
+        buf = b2;
+    }
+    free(buf);
+    return NULL;
+}
+
+static inline int32_t sp_user_stream_ctl_read_event(int32_t fd, sp_user_stream_ctl_event_t *out_evt) {
+    if (!out_evt) {
+        return SPEAR_CCHAT_ERR_INVALID_PTR;
+    }
+    uint32_t len = (uint32_t)sizeof(*out_evt);
+    return sp_user_stream_ctl_read(fd, (int32_t)(uintptr_t)out_evt, (int32_t)(uintptr_t)&len);
 }
 
 enum {

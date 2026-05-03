@@ -12,6 +12,8 @@ pub enum FdKind {
     Epoll,
     RtAsr,
     Mic,
+    UserStream,
+    UserStreamCtl,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,6 +256,135 @@ pub struct MicConfig {
     pub format: String,
 }
 
+/// User stream direction / 用户流方向
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UserStreamDirection {
+    In,
+    Out,
+    Bidi,
+}
+
+impl UserStreamDirection {
+    pub fn from_i32(v: i32) -> Option<Self> {
+        match v {
+            1 => Some(Self::In),
+            2 => Some(Self::Out),
+            3 => Some(Self::Bidi),
+            _ => None,
+        }
+    }
+
+    pub fn allows_read(self) -> bool {
+        matches!(self, Self::In | Self::Bidi)
+    }
+
+    pub fn allows_write(self) -> bool {
+        matches!(self, Self::Out | Self::Bidi)
+    }
+}
+
+/// User stream connection state / 用户流连接状态
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UserStreamConnState {
+    Init,
+    Connected,
+    Closed,
+    Error,
+}
+
+/// Shared channel state for one logical stream_id / 单个 stream_id 的共享通道状态
+pub struct UserStreamChannel {
+    pub stream_id: u32,
+    pub conn_state: UserStreamConnState,
+
+    pub inbound: VecDeque<Vec<u8>>,
+    pub inbound_bytes: usize,
+    pub max_inbound_bytes: usize,
+
+    pub outbound: VecDeque<Vec<u8>>,
+    pub outbound_bytes: usize,
+    pub max_outbound_bytes: usize,
+
+    pub max_frame_bytes: usize,
+    pub last_error: Option<String>,
+
+    pub notify_outbound: std::sync::Arc<tokio::sync::Notify>,
+    pub notify_state: std::sync::Arc<tokio::sync::Notify>,
+    pub attached_fds: HashSet<i32>,
+}
+
+impl std::fmt::Debug for UserStreamChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserStreamChannel")
+            .field("stream_id", &self.stream_id)
+            .field("conn_state", &self.conn_state)
+            .field("inbound_len", &self.inbound.len())
+            .field("inbound_bytes", &self.inbound_bytes)
+            .field("max_inbound_bytes", &self.max_inbound_bytes)
+            .field("outbound_len", &self.outbound.len())
+            .field("outbound_bytes", &self.outbound_bytes)
+            .field("max_outbound_bytes", &self.max_outbound_bytes)
+            .field("max_frame_bytes", &self.max_frame_bytes)
+            .field("last_error", &self.last_error)
+            .field("attached_fds_len", &self.attached_fds.len())
+            .finish()
+    }
+}
+
+impl UserStreamChannel {
+    pub fn new(stream_id: u32) -> Self {
+        Self {
+            stream_id,
+            conn_state: UserStreamConnState::Init,
+            inbound: VecDeque::new(),
+            inbound_bytes: 0,
+            max_inbound_bytes: 2 * 1024 * 1024,
+            outbound: VecDeque::new(),
+            outbound_bytes: 0,
+            max_outbound_bytes: 2 * 1024 * 1024,
+            max_frame_bytes: 256 * 1024,
+            last_error: None,
+            notify_outbound: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_state: std::sync::Arc::new(tokio::sync::Notify::new()),
+            attached_fds: HashSet::new(),
+        }
+    }
+}
+
+/// Per-fd user stream view / 每个 fd 的 user stream 视图
+pub struct UserStreamState {
+    pub execution_id: String,
+    pub stream_id: u32,
+    pub direction: UserStreamDirection,
+    pub channel: Arc<Mutex<UserStreamChannel>>,
+}
+
+impl std::fmt::Debug for UserStreamState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserStreamState")
+            .field("execution_id", &self.execution_id)
+            .field("stream_id", &self.stream_id)
+            .field("direction", &self.direction)
+            .finish()
+    }
+}
+
+pub struct UserStreamCtlState {
+    pub execution_id: String,
+    pub pending: VecDeque<[u8; 8]>,
+    pub max_pending: usize,
+}
+
+impl std::fmt::Debug for UserStreamCtlState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserStreamCtlState")
+            .field("execution_id", &self.execution_id)
+            .field("pending_len", &self.pending.len())
+            .field("max_pending", &self.max_pending)
+            .finish()
+    }
+}
+
 pub struct MicState {
     pub config: Option<MicConfig>,
     pub queue: VecDeque<Vec<u8>>,
@@ -415,6 +546,8 @@ pub enum FdInner {
     Epoll(Arc<EpollState>),
     RtAsr(Box<RtAsrState>),
     Mic(MicState),
+    UserStream(Box<UserStreamState>),
+    UserStreamCtl(Box<UserStreamCtlState>),
 }
 
 #[derive(Debug)]

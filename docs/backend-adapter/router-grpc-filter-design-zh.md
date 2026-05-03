@@ -50,246 +50,34 @@
 
 让契约贴近 Spearlet Router 的使用场景（即使服务部署在外部）。
 
-### 3.2 Service 定义（Filter 进程主动 dial Spearlet TCP）
+### 3.2 Service 定义（Spearlet 主动 dial Filter 服务）
+
+当前实现将 Router Filter 定位为**服务端**（默认由 SMS 提供），Spearlet 作为 gRPC client 主动调用：
 
 ```proto
-syntax = "proto3";
-
-package spearlet;
-
-// RouterFilterStreamService：Filter 进程作为 gRPC client，主动连接到 Spearlet 的 TCP gRPC 端口；
-// Spearlet 作为 gRPC server，通过同一条双向 stream 下发过滤请求并接收决策响应。
-service RouterFilterStreamService {
-  // Open 建立一条长连接双向 stream。
-  // - Filter 侧：发送 Register/Heartbeat/FilterResponse
-  // - Spearlet 侧：发送 FilterRequest/Ping/Reject
-  rpc Open(stream StreamClientMessage) returns (stream StreamServerMessage);
-
-  // FetchRequestById 允许 agent 基于 request_id + session_token 受控拉取请求 payload。
-  rpc FetchRequestById(RequestFetchRequest) returns (RequestFetchResponse);
-}
-
-enum Operation {
-  OPERATION_UNSPECIFIED = 0;
-  OPERATION_CHAT_COMPLETIONS = 1;
-  OPERATION_EMBEDDINGS = 2;
-  OPERATION_IMAGE_GENERATION = 3;
-  OPERATION_SPEECH_TO_TEXT = 4;
-  OPERATION_TEXT_TO_SPEECH = 5;
-  OPERATION_REALTIME_VOICE = 6;
-}
-
-message StreamClientMessage {
-  oneof msg {
-    RegisterRequest register = 1;
-    Heartbeat heartbeat = 2;
-    FilterResponse filter_response = 3;
-  }
-}
-
-message StreamServerMessage {
-  oneof msg {
-    RegisterResponse register_ok = 1;
-    Ping ping = 2;
-    Reject reject = 3;
-    FilterRequest filter_request = 4;
-  }
-}
-
-message RegisterRequest {
-  // Filter 进程标识（用于观测与路由选择）。
-  string agent_id = 1;
-
-  // Filter 能力宣告（可选，用于后续做按 op 分发/版本灰度）。
-  repeated Operation supported_operations = 2;
-
-  // Filter 可并发处理的最大 in-flight 请求数（Spearlet 用于背压）。
-  uint32 max_inflight = 3;
-
-  // Filter 期望的最大候选数（Spearlet 会做 min 截断）。
-  uint32 max_candidates = 4;
-
-  // Filter 支持的协议版本（便于演进）。
-  uint32 protocol_version = 5;
-}
-
-message RegisterResponse {
-  uint32 protocol_version = 1;
-  bool accepted = 2;
-  string message = 3;
-  string session_token = 4;
-  int64 token_expire_at_ms = 5;
-}
-
-message Heartbeat {
-  // 毫秒时间戳（可选）。
-  int64 now_ms = 1;
-}
-
-message Ping {
-  int64 now_ms = 1;
-}
-
-message Reject {
-  string code = 1;
-  string message = 2;
-}
-
-message FilterRequest {
-  // 用于在同一条 stream 上并发复用的关联 ID。
-  // Spearlet 生成，Filter 必须原样回传。
-  string correlation_id = 1;
-
-  string request_id = 2;                 // CanonicalRequestEnvelope.request_id
-  Operation operation = 3;               // CanonicalRequestEnvelope.operation
-
-  // 决策预算（Spearlet 也会在本地 enforce 超时；Filter 侧用于自我限时）。
-  uint32 decision_timeout_ms = 4;
-
-  // 请求元信息（安全、非 secret）。
-  map<string, string> meta = 5;          // CanonicalRequestEnvelope.meta（字符串化）
-
-  // 来自 guest 与 host 约束的 routing hints。
-  RoutingHints routing = 6;
-
-  // Normalize 层产出的 required features/transports。
-  Requirements requirements = 7;
-
-  // 面向 operation 的、受大小限制的 request signals。
-  RequestSignals signals = 8;
-
-  repeated Candidate candidates = 9;     // 硬过滤后的候选集
-}
-
-message RoutingHints {
-  string backend = 1;                    // 可选：指定 backend 名称
-  repeated string allowlist = 2;
-  repeated string denylist = 3;
-  string requested_model = 4;            // 从 payload.model 提取（若存在）
-}
-
-message Requirements {
-  repeated string required_features = 1;
-  repeated string required_transports = 2;
-}
-
-message RequestSignals {
-  // Chat：model、消息数、文本体积估计、tools 标志、response_format 标志。
-  string model = 1;
-  uint32 message_count = 2;
-  uint32 approx_text_bytes = 3;
-  bool uses_tools = 4;
-  bool uses_json_schema = 5;
-
-  // ASR：codec、采样率、声道数、时长估计、语言提示。
-  string audio_codec = 10;
-  uint32 audio_sample_rate_hz = 11;
-  uint32 audio_channels = 12;
-  uint32 audio_duration_ms = 13;
-  string audio_language_hint = 14;
-}
-
-message RequestFetchRequest {
-  string request_id = 1;
-  string session_token = 2;
-  uint32 max_bytes = 3;
-}
-
-message RequestFetchResponse {
-  string request_id = 1;
-  string content_type = 2;
-  bytes payload = 3;
-}
-
-message Candidate {
-  string name = 1;                       // BackendInstance.name
-  string kind = 2;                       // backend kind（openai_chat_completion / ...）
-  string base_url = 3;                   // 可选；出于隐私可默认不发送
-  string model = 4;                      // BackendInstance.model（若绑定）
-  uint32 weight = 5;                     // BackendInstance.weight
-  int32 priority = 6;                    // BackendInstance.priority
-  repeated string ops = 7;               // capabilities.ops（字符串形式）
-  repeated string features = 8;          // capabilities.features
-  repeated string transports = 9;        // capabilities.transports
-
-  // 可选：运行时提示（如可用）。
-  CandidateRuntimeHints runtime = 20;
-}
-
-message CandidateRuntimeHints {
-  // 全字段可选；Router 可省略。
-  double ewma_latency_ms = 1;
-  double recent_error_rate = 2;          // 0.0 ~ 1.0
-  uint32 inflight = 3;
-  bool healthy = 4;
-}
-
-message FilterResponse {
-  // 对应 FilterRequest.correlation_id
-  string correlation_id = 1;
-
-  string decision_id = 2;                // 用于可观测
-  repeated CandidateDecision decisions = 3;
-  FinalAction final_action = 4;
-  map<string, string> debug = 5;         // 可选 debug kv（受大小限制）
-}
-
-message CandidateDecision {
-  string name = 1;                       // 对应 Candidate.name（后端实例名）
-
-  // KEEP 表示保留候选；DROP 表示从候选集中移除。
-  DecisionAction action = 2;
-
-  // 可选覆盖；未设置则 Router 保留原值。
-  optional uint32 weight_override = 3;
-  optional int32 priority_override = 4;
-
-  // 可选软分；Router 可仅用于 debug 或用于“score-aware”策略。
-  optional double score = 5;
-
-  // 原因码（可用于日志与排障）。
-  repeated string reason_codes = 6;
-}
-
-enum DecisionAction {
-  DECISION_ACTION_UNSPECIFIED = 0;
-  DECISION_ACTION_KEEP = 1;
-  DECISION_ACTION_DROP = 2;
-}
-
-message FinalAction {
-  // 若为 true，Router 直接拒绝请求（fail-closed）。
-  // Router 必须映射为 CanonicalError；除非显式指定，否则建议 retryable=false。
-  bool reject_request = 1;
-  string reject_code = 2;                // 例如 "policy_denied"
-  string reject_message = 3;
-
-  // 若设置，Router 强制选择某 backend name（仍受 allowlist/denylist 等硬约束限制）。
-  string force_backend = 10;
+service RouterFilterService {
+  rpc Filter(FilterRequest) returns (FilterResponse);
 }
 ```
 
-### 3.3 受控拉取请求内容（request_id + session_token）
+完整字段定义以源码为准：`proto/spearlet/router_filter.proto`。
 
-默认情况下，Spearlet 只向 Filter 发送受限的 `RequestSignals`，不透传原始请求内容。
+### 3.3 请求内容透传（可选）
 
-当策略确实需要基于内容做判断时，推荐采用“受控拉取”模式：
+默认情况下，Spearlet 只向 Filter 发送受限的 `RequestSignals` + `meta` 等小体积信息，不透传原始请求内容。
 
-1. Filter 通过 `Open` stream 完成注册，Spearlet 在 `RegisterResponse` 中返回 `session_token` 及其过期时间。
-2. Filter 在处理 `FilterRequest` 时，如需正文，使用 `FetchRequestById(request_id, session_token, max_bytes)` 发起一次 unary 拉取。
-3. Spearlet 仅在满足如下条件时返回 payload：
-   - `content_fetch_enabled = true`
-   - `session_token` 有效且关联的 agent 仍在连接中
-   - `request_id` 命中短 TTL 的内存缓存
-   - 返回大小不超过 `content_fetch_max_bytes`（同时受请求侧 `max_bytes` 限制）
+当策略确实需要基于内容做判断时，可以在 Spearlet 侧开启：
 
-该模式的目标是：把“访问正文”从默认广播变成显式、可控、可审计的行为，并通过短 TTL/大小上限降低风险面。
+- `content_fetch_enabled = true`：把请求 payload 片段写入 `FilterRequest.request_payload`
+- `content_fetch_max_bytes`：控制透传大小上限（超过则不透传）
+
+该模式的目标是：保持连接方向单向（Spearlet → Filter），同时把“访问正文”变成显式开关 + 有界 payload，降低风险面与尾延迟。
 
 ## 4. Router 侧实现规划（函数 / 变量级）
 
 ### 4.1 新模块与主要入口（Rust）
 
-建议新增 Router 侧 gRPC stream 接入模块：
+建议新增 Router 侧 gRPC client hub 接入模块：
 
 - `src/spearlet/execution/ai/router/grpc_filter_stream.rs`
 
@@ -304,22 +92,12 @@ pub struct RouterFilterStreamConfig {
     pub max_candidates_sent: usize,
     pub max_debug_kv: usize,
     pub max_inflight_total: usize,
-    pub per_agent_max_inflight: usize,
 }
 
 pub struct RouterFilterStreamHub {
     config: RouterFilterStreamConfig,
-    agents: tokio::sync::RwLock<std::collections::HashMap<String, AgentHandle>>,
-    rr: std::sync::atomic::AtomicU64,
-    inflight: tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<FilterResponse>>>,
-}
-
-pub struct AgentHandle {
-    pub agent_id: String,
-    pub tx: tokio::sync::mpsc::Sender<FilterRequest>,
-    pub inflight: std::sync::Arc<tokio::sync::Semaphore>,
-    pub supported_operations: std::collections::HashSet<Operation>,
-    pub last_heartbeat_ms: std::sync::atomic::AtomicI64,
+    // Background async worker for gRPC calls.
+    // 用于执行 gRPC 调用的后台异步 worker。
 }
 
 pub struct FilterTrace {
@@ -338,26 +116,26 @@ pub struct FinalActionTrace {
 }
 
 impl RouterFilterStreamHub {
-    pub async fn try_filter_candidates(
+    pub fn try_filter_candidates_blocking(
         &self,
         req: &CanonicalRequestEnvelope,
-        candidates: &[&BackendInstance],
+        candidates: &mut Vec<&BackendInstance>,
         decision_timeout_ms: u64,
     ) -> Result<(FilterResponse, FilterTrace), CanonicalError>;
 }
 ```
 
-### 4.1.1 传输方式：TCP（Spearlet 对外暴露 gRPC 端口）
+### 4.1.1 传输方式：TCP（Filter 对外暴露 gRPC 端口）
 
 本设计采用 TCP（host:port）作为连接方式：
 
-- Spearlet 作为 gRPC server 监听 TCP 端口（通常复用 `spearlet.grpc.addr`）。
-- Filter 进程作为 gRPC client 主动 dial 该地址并维持长连接 stream。
+- Filter（默认由 SMS 提供）作为 gRPC server 监听 TCP 端口（通常复用 `sms.grpc.addr`）。
+- Spearlet 作为 gRPC client 主动 dial 该地址（默认使用 `spearlet.sms_grpc_addr`，也可在 `router_grpc_filter_stream.addr` 覆盖）。
 
 地址格式示例：
 
-- `127.0.0.1:50052`（同机 loopback）
-- `spearlet-node-a.internal:50052`（跨宿主机）
+- `127.0.0.1:50051`（同机 loopback）
+- `sms.internal:50051`（跨宿主机）
 
 ### 4.2 Router::route 的集成细节
 

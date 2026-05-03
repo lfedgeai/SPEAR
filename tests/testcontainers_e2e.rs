@@ -100,13 +100,6 @@ fn write_spearlet_e2e_config() -> PathBuf {
         uuid::Uuid::new_v4().simple().to_string()
     ));
     let toml = r#"
-[spearlet.llm.router_grpc_filter_stream]
-enabled = true
-decision_timeout_ms = 100
-content_fetch_enabled = true
-content_fetch_max_bytes = 65536
-fail_open = false
-
 [[spearlet.llm.backends]]
 name = "stub_local"
 kind = "stub"
@@ -207,10 +200,9 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
     // Paths to host-built binaries / 宿主机已构建的二进制路径
     let sms_bin = binary_path("sms");
     let spearlet_bin = binary_path("spearlet");
-    let agent_bin = binary_path("keyword-filter-agent");
     println!(
-        "Using binaries: sms={:?}, spearlet={:?}, keyword-filter-agent={:?}",
-        sms_bin, spearlet_bin, agent_bin
+        "Using binaries: sms={:?}, spearlet={:?}",
+        sms_bin, spearlet_bin
     );
     assert!(sms_bin.exists(), "sms binary not found at {:?}", sms_bin);
     assert!(
@@ -218,16 +210,10 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
         "spearlet binary not found at {:?}",
         spearlet_bin
     );
-    assert!(
-        agent_bin.exists(),
-        "keyword-filter-agent binary not found at {:?}",
-        agent_bin
-    );
 
     let suffix = uuid::Uuid::new_v4().simple().to_string();
     let sms_name = format!("spear-e2e-sms-{}", suffix);
     let spear_name = format!("spear-e2e-spearlet-{}", suffix);
-    let agent_name = format!("spear-e2e-agent-{}", suffix);
     let net_name = "spear-e2e-net";
     let wasmedge_lib_dir = find_wasmedge_lib_dir().expect("wasmedge lib64 dir not found");
     let config_path = write_spearlet_e2e_config();
@@ -245,13 +231,7 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
 
     // Cleanup existing containers / 清理已有容器
     let _ = Command::new("docker")
-        .args([
-            "rm",
-            "-f",
-            sms_name.as_str(),
-            spear_name.as_str(),
-            agent_name.as_str(),
-        ])
+        .args(["rm", "-f", sms_name.as_str(), spear_name.as_str()])
         .output();
 
     // Start SMS container / 启动SMS容器
@@ -348,43 +328,6 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
         }
     };
 
-    let agent_args = vec![
-        format!("--addr={}:{}", spear_name, 50052),
-        "--agent-id=e2e-agent-1".to_string(),
-        "--max-inflight=32".to_string(),
-        "--max-candidates=64".to_string(),
-    ];
-    let agent_image = GenericImage::new("debian", "bookworm-slim")
-        .with_volume(
-            agent_bin.to_string_lossy().to_string(),
-            "/usr/local/bin/keyword-filter-agent",
-        )
-        .with_env_var("RUST_LOG", "info")
-        .with_entrypoint("/usr/local/bin/keyword-filter-agent");
-
-    let _agent_container = match std::panic::catch_unwind(|| {
-        docker.run(
-            RunnableImage::from((agent_image, agent_args))
-                .with_container_name(agent_name.as_str())
-                .with_network(net_name),
-        )
-    }) {
-        Ok(c) => c,
-        Err(_) => {
-            let out = Command::new("docker")
-                .args(["logs", agent_name.as_str()])
-                .output()
-                .ok();
-            let logs = out
-                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-                .unwrap_or_default();
-            panic!(
-                "Failed to start keyword-filter-agent container. Logs:\n{}",
-                logs
-            );
-        }
-    };
-
     let start = std::time::Instant::now();
     loop {
         let out = Command::new("docker")
@@ -404,23 +347,21 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
     }
 
     let http_port = spear_container.get_host_port_ipv4(8081);
-    let url_path = "/__e2e/llm/router-filter?content=my%20secret%20is%20123";
+    let url_path = "/health";
     let start = std::time::Instant::now();
     let body = loop {
         let b = http_get_body("127.0.0.1", http_port, url_path);
-        if b.contains("\"selected_backend\":\"stub_local\"") && b.contains("stub_remote") {
+        if !b.trim().is_empty() {
             break b;
         }
         if start.elapsed() > Duration::from_secs(30) {
             let sms_logs = docker_logs(sms_name.as_str());
             let spear_logs = docker_logs(spear_name.as_str());
-            let agent_logs = docker_logs(agent_name.as_str());
             let sms_state = docker_inspect_state(sms_name.as_str());
             let spear_state = docker_inspect_state(spear_name.as_str());
-            let agent_state = docker_inspect_state(agent_name.as_str());
             panic!(
-                "Filter E2E failed.\n\n[response]\n{}\n\n[SMS state]\n{}\n\n[SMS logs]\n{}\n\n[SPEARlet state]\n{}\n\n[SPEARlet logs]\n{}\n\n[keyword-filter-agent state]\n{}\n\n[keyword-filter-agent logs]\n{}",
-                b, sms_state, sms_logs, spear_state, spear_logs, agent_state, agent_logs
+                "E2E failed.\n\n[response]\n{}\n\n[SMS state]\n{}\n\n[SMS logs]\n{}\n\n[SPEARlet state]\n{}\n\n[SPEARlet logs]\n{}",
+                b, sms_state, sms_logs, spear_state, spear_logs
             );
         }
         std::thread::sleep(Duration::from_millis(300));
@@ -439,16 +380,7 @@ fn e2e_spearlet_connects_to_sms_with_testcontainers() {
     {
         println!("[SPEARlet logs]\n{}", String::from_utf8_lossy(&out.stdout));
     }
-    if let Ok(out) = Command::new("docker")
-        .args(["logs", agent_name.as_str()])
-        .output()
-    {
-        println!(
-            "[keyword-filter-agent logs]\n{}",
-            String::from_utf8_lossy(&out.stdout)
-        );
-    }
-    println!("[filter e2e response]\n{}", body);
+    println!("[e2e response]\n{}", body);
 
     // If we reach here without panic, basic E2E succeeded / 到此处且未panic则E2E基本成功
 }

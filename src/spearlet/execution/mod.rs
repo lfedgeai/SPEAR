@@ -160,6 +160,12 @@ pub enum ExecutionError {
     #[error("Execution timeout: {timeout_ms}ms")]
     ExecutionTimeout { timeout_ms: u64 },
 
+    #[error("Execution terminated: {message}")]
+    ExecutionTerminated { message: String },
+
+    #[error("Instance destroyed: {message}")]
+    InstanceDestroyed { message: String },
+
     #[error("Instance creation failed: {message}")]
     InstanceCreationFailed { message: String },
 

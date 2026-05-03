@@ -14,6 +14,21 @@ pub mod constants {
     //! Hostcall constants mirrored from the C SDK
     //! 与 C SDK 对齐的 hostcall 常量
 
+    pub const SPEAR_EPERM: i32 = 1;
+    pub const SPEAR_ENOENT: i32 = 2;
+    pub const SPEAR_EIO: i32 = 5;
+    pub const SPEAR_EBADF: i32 = 9;
+    pub const SPEAR_EAGAIN: i32 = 11;
+    pub const SPEAR_ENOMEM: i32 = 12;
+    pub const SPEAR_EFAULT: i32 = 14;
+    pub const SPEAR_EINVAL: i32 = 22;
+    pub const SPEAR_ENOSPC: i32 = 28;
+    pub const SPEAR_EPIPE: i32 = 32;
+    pub const SPEAR_ENOSYS: i32 = 38;
+    pub const SPEAR_ECONNRESET: i32 = 104;
+    pub const SPEAR_ENOTCONN: i32 = 107;
+    pub const SPEAR_ETIMEDOUT: i32 = 110;
+
     pub const SPEAR_CCHAT_CTL_SET_PARAM: i32 = 1;
     pub const SPEAR_CCHAT_CTL_GET_METRICS: i32 = 2;
 
@@ -46,6 +61,13 @@ pub mod constants {
     pub const SPEAR_FD_CTL_GET_KIND: i32 = 3;
     pub const SPEAR_FD_CTL_GET_STATUS: i32 = 4;
     pub const SPEAR_FD_CTL_GET_METRICS: i32 = 5;
+
+    pub const SPEAR_USER_STREAM_DIR_INBOUND: i32 = 1;
+    pub const SPEAR_USER_STREAM_DIR_OUTBOUND: i32 = 2;
+    pub const SPEAR_USER_STREAM_DIR_BIDIRECTIONAL: i32 = 3;
+
+    pub const SPEAR_USER_STREAM_CTL_EVENT_STREAM_CONNECTED: i32 = 1;
+    pub const SPEAR_USER_STREAM_CTL_EVENT_SESSION_CLOSED: i32 = 2;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -83,4 +105,12 @@ extern "C" {
     pub fn spear_epoll_close(epfd: i32) -> i32;
 
     pub fn spear_fd_ctl(fd: i32, cmd: i32, arg_ptr: i32, arg_len_ptr: i32) -> i32;
+
+    pub fn user_stream_open(stream_id: i32, direction: i32) -> i32;
+    pub fn user_stream_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32;
+    pub fn user_stream_write(fd: i32, buf_ptr: i32, buf_len: i32) -> i32;
+    pub fn user_stream_close(fd: i32) -> i32;
+
+    pub fn user_stream_ctl_open() -> i32;
+    pub fn user_stream_ctl_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32;
 }

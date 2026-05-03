@@ -3,11 +3,11 @@ mod source_device;
 mod source_stub;
 
 use crate::spearlet::execution::host_api::DefaultHostApi;
+use crate::spearlet::execution::host_api::errno::{SPEAR_EAGAIN, SPEAR_EBADF, SPEAR_EINVAL, SPEAR_EIO};
 use crate::spearlet::execution::hostcall::types::{
     FdEntry, FdFlags, FdInner, FdKind, MicConfig, MicState, PollEvents,
 };
 use base64::{engine::general_purpose, Engine as _};
-use libc::{EAGAIN, EBADF, EINVAL, EIO};
 use std::collections::HashSet;
 
 impl DefaultHostApi {
@@ -32,13 +32,14 @@ impl DefaultHostApi {
         const MIC_CTL_GET_STATUS: i32 = 2;
 
         let Some(entry) = self.fd_table.get(fd) else {
-            return Err(-EBADF);
+            return Err(-SPEAR_EBADF);
         };
 
         match cmd {
             MIC_CTL_SET_PARAM => {
-                let bytes = payload.ok_or(-EINVAL)?;
-                let v: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| -EINVAL)?;
+                let bytes = payload.ok_or(-SPEAR_EINVAL)?;
+                let v: serde_json::Value =
+                    serde_json::from_slice(bytes).map_err(|_| -SPEAR_EINVAL)?;
                 let sample_rate_hz = v
                     .get("sample_rate_hz")
                     .and_then(|x| x.as_u64())
@@ -81,12 +82,12 @@ impl DefaultHostApi {
                 };
 
                 let (notify, generation) = {
-                    let mut e = entry.lock().map_err(|_| -EIO)?;
+                    let mut e = entry.lock().map_err(|_| -SPEAR_EIO)?;
                     if e.closed {
-                        return Err(-EBADF);
+                        return Err(-SPEAR_EBADF);
                     }
                     let FdInner::Mic(st) = &mut e.inner else {
-                        return Err(-EBADF);
+                        return Err(-SPEAR_EBADF);
                     };
 
                     st.running = false;
@@ -104,9 +105,9 @@ impl DefaultHostApi {
                     if let Some(s) = stub_pcm16.as_ref() {
                         let bytes = general_purpose::STANDARD
                             .decode(s.trim())
-                            .map_err(|_| -EINVAL)?;
+                            .map_err(|_| -SPEAR_EINVAL)?;
                         if bytes.len() > 10 * 1024 * 1024 {
-                            return Err(-EINVAL);
+                            return Err(-SPEAR_EINVAL);
                         }
                         st.stub_pcm16 = Some(bytes);
                         st.stub_pcm16_offset = 0;
@@ -137,12 +138,12 @@ impl DefaultHostApi {
                                 let msg =
                                     "device mic not enabled (build without feature mic-device)";
                                 let notify_err = {
-                                    let mut e = entry.lock().map_err(|_| -EIO)?;
+                                    let mut e = entry.lock().map_err(|_| -SPEAR_EIO)?;
                                     if e.closed {
-                                        return Err(-EBADF);
+                                        return Err(-SPEAR_EBADF);
                                     }
                                     let FdInner::Mic(st) = &mut e.inner else {
-                                        return Err(-EBADF);
+                                        return Err(-SPEAR_EBADF);
                                     };
                                     st.running = false;
                                     st.generation = st.generation.wrapping_add(1);
@@ -154,7 +155,7 @@ impl DefaultHostApi {
                                 if notify_err {
                                     self.fd_table.notify_watchers(fd);
                                 }
-                                return Err(-EIO);
+                                return Err(-SPEAR_EIO);
                             }
                         }
                         Err(source_device::DeviceMicStartError::Failed(msg)) => {
@@ -162,12 +163,12 @@ impl DefaultHostApi {
                                 self.spawn_mic_stub_task(fd, generation);
                             } else {
                                 let notify_err = {
-                                    let mut e = entry.lock().map_err(|_| -EIO)?;
+                                    let mut e = entry.lock().map_err(|_| -SPEAR_EIO)?;
                                     if e.closed {
-                                        return Err(-EBADF);
+                                        return Err(-SPEAR_EBADF);
                                     }
                                     let FdInner::Mic(st) = &mut e.inner else {
-                                        return Err(-EBADF);
+                                        return Err(-SPEAR_EBADF);
                                     };
                                     st.running = false;
                                     st.generation = st.generation.wrapping_add(1);
@@ -179,7 +180,7 @@ impl DefaultHostApi {
                                 if notify_err {
                                     self.fd_table.notify_watchers(fd);
                                 }
-                                return Err(-EIO);
+                                return Err(-SPEAR_EIO);
                             }
                         }
                     }
@@ -189,12 +190,12 @@ impl DefaultHostApi {
                 Ok(None)
             }
             MIC_CTL_GET_STATUS => {
-                let e = entry.lock().map_err(|_| -EIO)?;
+                let e = entry.lock().map_err(|_| -SPEAR_EIO)?;
                 if e.closed {
-                    return Err(-EBADF);
+                    return Err(-SPEAR_EBADF);
                 }
                 let FdInner::Mic(st) = &e.inner else {
-                    return Err(-EBADF);
+                    return Err(-SPEAR_EBADF);
                 };
                 let body = serde_json::json!({
                     "running": st.running,
@@ -210,27 +211,27 @@ impl DefaultHostApi {
                         "format": c.format,
                     })),
                 });
-                let bytes = serde_json::to_vec(&body).map_err(|_| -EIO)?;
+                let bytes = serde_json::to_vec(&body).map_err(|_| -SPEAR_EIO)?;
                 Ok(Some(bytes))
             }
-            _ => Err(-EINVAL),
+            _ => Err(-SPEAR_EINVAL),
         }
     }
 
     pub fn mic_read(&self, fd: i32) -> Result<Vec<u8>, i32> {
         let Some(entry) = self.fd_table.get(fd) else {
-            return Err(-EBADF);
+            return Err(-SPEAR_EBADF);
         };
-        let mut e = entry.lock().map_err(|_| -EIO)?;
+        let mut e = entry.lock().map_err(|_| -SPEAR_EIO)?;
         if e.closed {
-            return Err(-EBADF);
+            return Err(-SPEAR_EBADF);
         }
 
         let old = e.poll_mask;
         let mut payload: Option<Vec<u8>> = None;
         {
             let FdInner::Mic(st) = &mut e.inner else {
-                return Err(-EBADF);
+                return Err(-SPEAR_EBADF);
             };
             if let Some(p) = st.queue.pop_front() {
                 st.queue_bytes = st.queue_bytes.saturating_sub(p.len());
@@ -247,7 +248,7 @@ impl DefaultHostApi {
 
         match payload {
             Some(p) => Ok(p),
-            None => Err(-EAGAIN),
+            None => Err(-SPEAR_EAGAIN),
         }
     }
 

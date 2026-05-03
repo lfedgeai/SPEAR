@@ -1,13 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
+import { destroyInstance } from '@/api/control'
 import { getTaskDetail } from '@/api/tasks'
 import { listTaskInstances } from '@/api/instanceExecution'
 import type { InstanceSummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 function formatMs(ts: number) {
@@ -28,6 +31,11 @@ export default function TaskDetailPage() {
   const { taskId } = useParams()
   const id = taskId || ''
   const navigate = useNavigate()
+  const [destroyOpen, setDestroyOpen] = useState(false)
+  const [destroyTarget, setDestroyTarget] = useState<{ instanceId: string; nodeUuid: string } | null>(null)
+  const [destroyReason, setDestroyReason] = useState('')
+  const [destroyLoading, setDestroyLoading] = useState(false)
+  const [destroyError, setDestroyError] = useState('')
 
   const taskQuery = useQuery({
     queryKey: ['task-detail', id],
@@ -215,13 +223,32 @@ export default function TaskDetailPage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Link
-                          to={`/instances/${encodeURIComponent(row.instance_id)}`}
-                          className="text-xs text-[hsl(var(--muted-foreground))] hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          View
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setDestroyError('')
+                              setDestroyReason('')
+                              setDestroyTarget({
+                                instanceId: row.instance_id,
+                                nodeUuid: row.node_uuid,
+                              })
+                              setDestroyOpen(true)
+                            }}
+                            disabled={!row.node_uuid}
+                          >
+                            Destroy
+                          </Button>
+                          <Link
+                            to={`/instances/${encodeURIComponent(row.instance_id)}`}
+                            className="text-xs text-[hsl(var(--muted-foreground))] hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            View
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -243,6 +270,77 @@ export default function TaskDetailPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog open={destroyOpen} onOpenChange={setDestroyOpen}>
+        <DialogContent className="w-[min(520px,calc(100vw-24px))]">
+          <DialogHeader
+            title="Destroy instance"
+            description="Best-effort. This terminates all running executions on the instance."
+          />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">Instance</div>
+                <div className="font-mono text-xs">{destroyTarget?.instanceId || '-'}</div>
+              </div>
+              <div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">Node</div>
+                <div className="font-mono text-xs">{destroyTarget?.nodeUuid || '-'}</div>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">Reason (optional)</div>
+              <Input
+                value={destroyReason}
+                onChange={(ev) => setDestroyReason(ev.target.value)}
+                placeholder="Reason"
+              />
+            </div>
+            {destroyError ? (
+              <div className="text-sm text-[hsl(var(--destructive))]">{destroyError}</div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setDestroyOpen(false)}
+                disabled={destroyLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={destroyLoading || !destroyTarget?.instanceId || !destroyTarget?.nodeUuid}
+                onClick={async () => {
+                  if (!destroyTarget?.instanceId || !destroyTarget?.nodeUuid) return
+                  setDestroyError('')
+                  setDestroyLoading(true)
+                  try {
+                    const resp = await destroyInstance({
+                      instance_id: destroyTarget.instanceId,
+                      node_uuid: destroyTarget.nodeUuid,
+                      reason: destroyReason.trim() ? destroyReason.trim() : undefined,
+                    })
+                    if (!resp.success) {
+                      setDestroyError(resp.message || 'Destroy failed')
+                      return
+                    }
+                    setDestroyOpen(false)
+                    void instancesQuery.refetch()
+                  } catch (err) {
+                    setDestroyError(
+                      String((err as { message?: string } | null)?.message || err || 'Destroy failed'),
+                    )
+                  } finally {
+                    setDestroyLoading(false)
+                  }
+                }}
+              >
+                {destroyLoading ? 'Destroying…' : 'Destroy'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

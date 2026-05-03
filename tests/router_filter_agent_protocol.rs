@@ -1,229 +1,187 @@
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::process::Stdio;
+//! Router filter protocol tests (server-side filter; Spearlet dials it).
+//! Router filter 协议测试（Filter 作为服务端；Spearlet 主动连接）。
+
 use std::sync::Arc;
 
-use tokio::process::Command;
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
-use spear_next::proto::spearlet::router_filter_stream_service_server::{
-    RouterFilterStreamService, RouterFilterStreamServiceServer,
+use spear_next::proto::spearlet::router_filter_service_server::{
+    RouterFilterService, RouterFilterServiceServer,
 };
 use spear_next::proto::spearlet::{
-    Candidate, CandidateRuntimeHints, DecisionAction, FilterRequest, FilterResponse, Heartbeat,
-    Operation, RegisterRequest, RegisterResponse, RequestFetchRequest, RequestFetchResponse,
-    RoutingHints, StreamClientMessage, StreamServerMessage,
+    CandidateDecision, DecisionAction, FilterRequest, FilterResponse,
 };
+use spear_next::spearlet::config::RouterGrpcFilterStreamConfig;
+use spear_next::spearlet::execution::ai::backends::stub::StubBackendAdapter;
+use spear_next::spearlet::execution::ai::ir::{
+    CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload, RoutingHints,
+};
+use spear_next::spearlet::execution::ai::router::capabilities::Capabilities;
+use spear_next::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub;
+use spear_next::spearlet::execution::ai::router::policy::SelectionPolicy;
+use spear_next::spearlet::execution::ai::router::registry::{
+    BackendInstance, BackendRegistry, Hosting,
+};
+use spear_next::spearlet::execution::ai::router::Router;
 
-type ServerStream =
-    Pin<Box<dyn tokio_stream::Stream<Item = Result<StreamServerMessage, Status>> + Send + 'static>>;
+const BLACKLIST_KEYWORDS: &[&str] = &[
+    "secret",
+    "confidential",
+    "apikey",
+    "password",
+    "机密",
+    "敏感",
+];
 
-#[derive(Clone)]
-struct TestSvc {
-    request_payload: Arc<Vec<u8>>,
-    response_tx: Arc<Mutex<Option<oneshot::Sender<FilterResponse>>>>,
+fn contains_blacklist_keyword(s: &str) -> Option<&'static str> {
+    let lower = s.to_ascii_lowercase();
+    for &kw in BLACKLIST_KEYWORDS {
+        if kw.is_ascii() {
+            if lower.contains(kw) {
+                return Some(kw);
+            }
+        } else if s.contains(kw) {
+            return Some(kw);
+        }
+    }
+    None
 }
 
+#[derive(Debug, Clone)]
+struct TestKeywordFilterSvc;
+
 #[tonic::async_trait]
-impl RouterFilterStreamService for TestSvc {
-    type OpenStream = ServerStream;
-
-    async fn open(
+impl RouterFilterService for TestKeywordFilterSvc {
+    async fn filter(
         &self,
-        request: Request<tonic::Streaming<StreamClientMessage>>,
-    ) -> Result<Response<Self::OpenStream>, Status> {
-        let mut inbound = request.into_inner();
-        let (tx, rx) = mpsc::channel::<Result<StreamServerMessage, Status>>(16);
-        let svc = self.clone();
-
-        tokio::spawn(async move {
-            let first = inbound.next().await;
-            let Some(Ok(StreamClientMessage { msg: Some(m) })) = first else {
-                return;
-            };
-            let _register = match m {
-                spear_next::proto::spearlet::stream_client_message::Msg::Register(r) => r,
-                spear_next::proto::spearlet::stream_client_message::Msg::Heartbeat(Heartbeat {
-                    ..
-                }) => return,
-                spear_next::proto::spearlet::stream_client_message::Msg::FilterResponse(_) => {
-                    return
-                }
-            };
-
-            let _ = tx
-                .send(Ok(StreamServerMessage {
-                    msg: Some(
-                        spear_next::proto::spearlet::stream_server_message::Msg::RegisterOk(
-                            RegisterResponse {
-                                protocol_version: 1,
-                                accepted: true,
-                                message: "ok".to_string(),
-                                session_token: "t1".to_string(),
-                                token_expire_at_ms: 0,
-                            },
-                        ),
-                    ),
-                }))
-                .await;
-
-            let candidates = vec![
-                Candidate {
-                    name: "stub".to_string(),
-                    kind: "stub".to_string(),
-                    base_url: "".to_string(),
-                    model: "".to_string(),
-                    weight: 100,
-                    priority: 0,
-                    ops: vec!["chat_completions".to_string()],
-                    features: vec![],
-                    transports: vec!["http".to_string()],
-                    is_local: true,
-                    runtime: Some(CandidateRuntimeHints::default()),
-                },
-                Candidate {
-                    name: "openai".to_string(),
-                    kind: "openai_chat_completion".to_string(),
-                    base_url: "https://api.openai.com/v1".to_string(),
-                    model: "".to_string(),
-                    weight: 100,
-                    priority: 0,
-                    ops: vec!["chat_completions".to_string()],
-                    features: vec![],
-                    transports: vec!["http".to_string()],
-                    is_local: false,
-                    runtime: Some(CandidateRuntimeHints::default()),
-                },
-            ];
-
-            let _ = tx
-                .send(Ok(StreamServerMessage {
-                    msg: Some(
-                        spear_next::proto::spearlet::stream_server_message::Msg::FilterRequest(
-                            FilterRequest {
-                                correlation_id: "c1".to_string(),
-                                request_id: "req-1".to_string(),
-                                operation: Operation::ChatCompletions as i32,
-                                decision_timeout_ms: 1000,
-                                meta: std::collections::HashMap::new(),
-                                routing: Some(RoutingHints {
-                                    backend: "".to_string(),
-                                    allowlist: vec![],
-                                    denylist: vec![],
-                                    requested_model: "".to_string(),
-                                }),
-                                requirements: None,
-                                signals: None,
-                                candidates,
-                            },
-                        ),
-                    ),
-                }))
-                .await;
-
-            while let Some(msg) = inbound.next().await {
-                let Ok(StreamClientMessage { msg: Some(m) }) = msg else {
-                    continue;
-                };
-                match m {
-                    spear_next::proto::spearlet::stream_client_message::Msg::FilterResponse(r) => {
-                        if let Some(tx) = svc.response_tx.lock().await.take() {
-                            let _ = tx.send(r);
-                        }
-                        break;
-                    }
-                    spear_next::proto::spearlet::stream_client_message::Msg::Heartbeat(_) => {}
-                    spear_next::proto::spearlet::stream_client_message::Msg::Register(
-                        RegisterRequest { .. },
-                    ) => {}
-                }
-            }
-        });
-
-        Ok(Response::new(
-            Box::pin(ReceiverStream::new(rx)) as Self::OpenStream
-        ))
-    }
-
-    async fn fetch_request_by_id(
-        &self,
-        request: Request<RequestFetchRequest>,
-    ) -> Result<Response<RequestFetchResponse>, Status> {
+        request: Request<FilterRequest>,
+    ) -> Result<Response<FilterResponse>, Status> {
         let r = request.into_inner();
-        if r.session_token != "t1" {
-            return Err(Status::permission_denied("bad token"));
+        let text = String::from_utf8_lossy(&r.request_payload).to_string();
+        let hit = contains_blacklist_keyword(&text);
+        let mut decisions = Vec::with_capacity(r.candidates.len());
+        for c in r.candidates.iter() {
+            let action = if hit.is_some() && !c.is_local {
+                DecisionAction::Drop as i32
+            } else {
+                DecisionAction::Keep as i32
+            };
+            decisions.push(CandidateDecision {
+                name: c.name.clone(),
+                action,
+                weight_override: None,
+                priority_override: None,
+                score: None,
+                reason_codes: Vec::new(),
+            });
         }
-        if r.request_id != "req-1" {
-            return Err(Status::not_found("bad request_id"));
+        let mut debug = std::collections::HashMap::new();
+        if let Some(kw) = hit {
+            debug.insert("keyword_filter_hit".to_string(), kw.to_string());
         }
-        Ok(Response::new(RequestFetchResponse {
-            request_id: r.request_id,
-            content_type: "application/json".to_string(),
-            payload: self.request_payload.as_ref().clone(),
+        Ok(Response::new(FilterResponse {
+            correlation_id: r.correlation_id,
+            decision_id: "test_keyword_filter".to_string(),
+            decisions,
+            final_action: None,
+            debug,
         }))
     }
 }
 
 #[tokio::test]
-async fn protocol_keyword_filter_agent_drops_remote_candidates() {
-    let payload = serde_json::to_vec(&serde_json::json!({
-        "messages": [{"role": "user", "content": "my secret is 123"}]
-    }))
-    .unwrap();
-    let (resp_tx, resp_rx) = oneshot::channel::<FilterResponse>();
-    let svc = TestSvc {
-        request_payload: Arc::new(payload),
-        response_tx: Arc::new(Mutex::new(Some(resp_tx))),
-    };
-
+async fn protocol_keyword_filter_server_drops_remote_candidates() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr: SocketAddr = listener.local_addr().unwrap();
+    let addr = listener.local_addr().unwrap();
     let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
     let server = tokio::spawn(async move {
         tonic::transport::Server::builder()
-            .add_service(RouterFilterStreamServiceServer::new(svc))
+            .add_service(RouterFilterServiceServer::new(TestKeywordFilterSvc))
             .serve_with_incoming(incoming)
             .await
             .unwrap();
     });
 
-    let agent = env!("CARGO_BIN_EXE_keyword-filter-agent");
-    let mut child = Command::new(agent)
-        .arg("--addr")
-        .arg(addr.to_string())
-        .arg("--agent-id")
-        .arg("protocol-agent-1")
-        .arg("--max-inflight")
-        .arg("8")
-        .arg("--max-candidates")
-        .arg("8")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    let cfg = RouterGrpcFilterStreamConfig {
+        enabled: true,
+        addr: addr.to_string(),
+        decision_timeout_ms: 1500,
+        fail_open: false,
+        content_fetch_enabled: true,
+        content_fetch_max_bytes: 64 * 1024,
+        ..Default::default()
+    };
+    let hub = Arc::new(RouterFilterStreamHub::new(cfg));
+    hub.start_background();
 
-    let resp = tokio::time::timeout(std::time::Duration::from_secs(10), resp_rx)
+    let local = BackendInstance {
+        name: "stub".to_string(),
+        kind: "stub".to_string(),
+        base_url: String::new(),
+        hosting: Hosting::Local,
+        model: Some("gpt".to_string()),
+        weight: 100,
+        priority: 0,
+        capabilities: Capabilities {
+            ops: vec![Operation::ChatCompletions],
+            features: vec![],
+            transports: vec!["http".to_string()],
+        },
+        adapter: Arc::new(StubBackendAdapter::new("stub")),
+    };
+    let remote = BackendInstance {
+        name: "openai".to_string(),
+        kind: "stub".to_string(),
+        base_url: "https://api.openai.com/v1".to_string(),
+        hosting: Hosting::Remote,
+        model: Some("gpt".to_string()),
+        weight: 100,
+        priority: 0,
+        capabilities: Capabilities {
+            ops: vec![Operation::ChatCompletions],
+            features: vec![],
+            transports: vec!["http".to_string()],
+        },
+        adapter: Arc::new(StubBackendAdapter::new("openai")),
+    };
+
+    let router = Router::new_with_filter(
+        BackendRegistry::new(vec![local.clone(), remote]),
+        SelectionPolicy::WeightedRandom,
+        Some(hub),
+    );
+
+    let req = CanonicalRequestEnvelope {
+        version: 1,
+        request_id: "req-1".to_string(),
+        operation: Operation::ChatCompletions,
+        meta: std::collections::HashMap::new(),
+        routing: RoutingHints::default(),
+        requirements: Default::default(),
+        timeout_ms: Some(1500),
+        payload: Payload::ChatCompletions(ChatCompletionsPayload {
+            model: "gpt".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::Value::String("my secret is 123".to_string()),
+                tool_call_id: None,
+                tool_calls: None,
+                name: None,
+            }],
+            tools: vec![],
+            params: std::collections::HashMap::new(),
+        }),
+        extra: std::collections::HashMap::new(),
+    };
+
+    let router = Arc::new(router);
+    let req_cloned = req.clone();
+    let router_cloned = router.clone();
+    let inst = tokio::task::spawn_blocking(move || router_cloned.route(&req_cloned))
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(inst.name, local.name);
 
-    let mut map: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
-    for d in resp.decisions.iter() {
-        map.insert(d.name.clone(), d.action);
-    }
-    assert_eq!(
-        map.get("openai").copied(),
-        Some(DecisionAction::Drop as i32)
-    );
-    assert_eq!(map.get("stub").copied(), Some(DecisionAction::Keep as i32));
-    assert_eq!(
-        resp.debug.get("keyword_filter_hit").map(|s| s.as_str()),
-        Some("secret")
-    );
-
-    let _ = child.kill().await;
     server.abort();
 }

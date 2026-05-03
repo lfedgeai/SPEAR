@@ -31,12 +31,45 @@ if (typeof globalThis.console.log !== "function") {
 }
 
 export const Spear = {
+  sleepMs: (ms) => __spear_sleep_ms(Number(ms) | 0),
   chat: {
     completions: {
       create: async (options) => {
         const raw = __spear_cchat_completion(JSON.stringify(options ?? {}));
         return new ChatCompletionResponse(raw);
       },
+    },
+  },
+  userStream: {
+    Direction: {
+      INBOUND: 1,
+      OUTBOUND: 2,
+      BIDIRECTIONAL: 3,
+    },
+    open: (streamId, direction) => {
+      const sid = Number(streamId) | 0;
+      const dir = direction == null ? 3 : Number(direction) | 0;
+      const fd = __spear_user_stream_open(sid, dir);
+      const write = (data) => {
+        const u8 =
+          data instanceof Uint8Array
+            ? data
+            : new TextEncoder().encode(typeof data === "string" ? data : String(data));
+        __spear_user_stream_write(fd, u8_to_bin(u8));
+      };
+      const read = () => {
+        const bin = __spear_user_stream_read(fd);
+        if (bin == null) return null;
+        return bin_to_u8(bin);
+      };
+      const close = () => __spear_user_stream_close(fd);
+      return { fd, read, write, close };
+    },
+    ctlOpen: () => {
+      const fd = __spear_user_stream_ctl_open();
+      const readEvent = () => __spear_user_stream_ctl_read_event(fd);
+      const close = () => __spear_user_stream_close(fd);
+      return { fd, readEvent, close };
     },
   },
   tool: (spec) => {
@@ -66,3 +99,15 @@ export const Spear = {
     return __spear_tool_register(fnJson, wrapper);
   },
 };
+
+function u8_to_bin(u8) {
+  let s = "";
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i] & 255);
+  return s;
+}
+
+function bin_to_u8(bin) {
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 255;
+  return out;
+}

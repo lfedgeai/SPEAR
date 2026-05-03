@@ -241,7 +241,7 @@ int main() {
                 }
                 int32_t wr = sp_rtasr_write(asr_fd, (int32_t)(uintptr_t)pcm, (int32_t)pcm_len);
                 free(pcm);
-                if (wr < 0 && wr != -EAGAIN) {
+                if (wr < 0 && wr != -SPEAR_EAGAIN) {
                     printf("rtasr_write failed: %d\n", wr);
                 }
             }

@@ -103,6 +103,8 @@ mod http_test_utils {
             mcp_registry_client,
             backend_registry_client,
             model_deployment_registry_client,
+            stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+            execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
             files_dir: std::env::temp_dir()
@@ -286,6 +288,8 @@ async fn test_http_node_lifecycle() {
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
         model_deployment_registry_client: model_deployment_registry_client_filter,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()
@@ -428,6 +432,8 @@ async fn test_http_resource_management() {
         mcp_registry_client: mcp_registry_client_filter,
         backend_registry_client: backend_registry_client_filter,
         model_deployment_registry_client: model_deployment_registry_client_filter,
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()

@@ -33,6 +33,7 @@ pub mod execution;
 pub mod function_service;
 pub mod grpc_server;
 pub mod http_gateway;
+pub mod instance_service;
 pub mod local_models;
 pub mod mcp;
 pub mod object_service;

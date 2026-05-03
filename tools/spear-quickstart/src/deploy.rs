@@ -17,6 +17,9 @@ use tokio::runtime::Runtime;
 use crate::config;
 use crate::config::Config;
 
+#[path = "deploy_docker_local.rs"]
+mod deploy_docker_local;
+
 fn bool01(v: bool) -> &'static str {
     if v {
         "1"
@@ -53,10 +56,6 @@ fn env_for_kind(cfg: &Config) -> anyhow::Result<HashMap<String, String>> {
         "SPEARLET_IMAGE_REPO".to_string(),
         cfg.images.spearlet_repo.clone(),
     );
-    env.insert(
-        "ROUTER_FILTER_AGENT_IMAGE_REPO".to_string(),
-        cfg.images.router_filter_agent_repo.clone(),
-    );
     env.insert("IMAGE_TAG".to_string(), cfg.images.tag.clone());
     env.insert(
         "SPEARLET_WITH_NODE".to_string(),
@@ -71,8 +70,8 @@ fn env_for_kind(cfg: &Config) -> anyhow::Result<HashMap<String, String>> {
         bool01(cfg.components.enable_web_admin).to_string(),
     );
     env.insert(
-        "ENABLE_ROUTER_FILTER_AGENT".to_string(),
-        bool01(cfg.components.enable_router_filter_agent).to_string(),
+        "ENABLE_ROUTER_FILTER".to_string(),
+        bool01(cfg.components.enable_router_filter).to_string(),
     );
     env.insert(
         "ENABLE_E2E".to_string(),
@@ -123,9 +122,9 @@ fn docker_check_daemon() -> anyhow::Result<()> {
 async fn docker_assert_image_exists(docker: &Docker, image: &str) -> anyhow::Result<()> {
     match docker.inspect_image(image).await {
         Ok(_) => Ok(()),
-        Err(BollardError::DockerResponseServerError { status_code, .. }) if status_code == 404 => {
-            Err(anyhow!("docker image not found: {}", image))
-        }
+        Err(BollardError::DockerResponseServerError {
+            status_code: 404, ..
+        }) => Err(anyhow!("docker image not found: {}", image)),
         Err(e) => Err(anyhow!("docker inspect image failed ({}): {}", image, e)),
     }
 }
@@ -145,7 +144,7 @@ fn run_checked(cmd: &mut Command, ctx: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn kubeconfig_path(repo_root: &PathBuf, cfg: &Config) -> PathBuf {
+fn kubeconfig_path(repo_root: &Path, cfg: &Config) -> PathBuf {
     repo_root.join(&cfg.k8s.kind.kubeconfig_file)
 }
 
@@ -412,7 +411,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
 
     let sms_image = format!("{}:{}", cfg.images.sms_repo, cfg.images.tag);
     let spearlet_image = format!("{}:{}", cfg.images.spearlet_repo, cfg.images.tag);
-    let router_image = format!("{}:{}", cfg.images.router_filter_agent_repo, cfg.images.tag);
 
     if cfg.build.enabled {
         ensure_tool("docker", &["version"])?;
@@ -454,23 +452,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
             run_checked(&mut cmd, "docker build spearlet")
         });
 
-        if cfg.components.enable_router_filter_agent {
-            apply_result = apply_result.and_then(|_| {
-                let mut cmd = Command::new("docker");
-                cmd.current_dir(&repo_root);
-                cmd.args(["build"]);
-                cmd.args(&build_flags);
-                cmd.args(["-f", "deploy/docker/router-filter-agent/Dockerfile"]);
-                cmd.args([
-                    "--build-arg",
-                    &format!("DEBIAN_SUITE={}", cfg.build.debian_suite),
-                ]);
-                cmd.args(["-t", &router_image]);
-                cmd.arg(".");
-                run_checked(&mut cmd, "docker build router-filter-agent")
-            });
-        }
-
         apply_result = apply_result.and_then(|_| {
             let rt = Runtime::new().context("create tokio runtime")?;
             rt.block_on(async {
@@ -478,9 +459,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
                     Docker::connect_with_local_defaults().context("connect docker daemon")?;
                 docker_assert_image_exists(&docker, &sms_image).await?;
                 docker_assert_image_exists(&docker, &spearlet_image).await?;
-                if cfg.components.enable_router_filter_agent {
-                    docker_assert_image_exists(&docker, &router_image).await?;
-                }
                 Ok::<(), anyhow::Error>(())
             })?;
 
@@ -490,9 +468,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
             cmd.args(["load", "docker-image", "--name", cluster_name]);
             cmd.arg(&sms_image);
             cmd.arg(&spearlet_image);
-            if cfg.components.enable_router_filter_agent {
-                cmd.arg(&router_image);
-            }
             run_checked(&mut cmd, "kind load docker-image")
         });
     }
@@ -557,18 +532,15 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
         helm_args.push("sms.config.enableWebAdmin=false".to_string());
     }
 
-    if cfg.components.enable_router_filter_agent {
-        helm_args.push("--set".to_string());
-        helm_args.push(format!(
-            "routerFilterAgent.image.repository={}",
-            cfg.images.router_filter_agent_repo
-        ));
-        helm_args.push("--set".to_string());
-        helm_args.push(format!("routerFilterAgent.image.tag={}", cfg.images.tag));
-    } else {
-        helm_args.push("--set".to_string());
-        helm_args.push("routerFilterAgent.enabled=false".to_string());
-    }
+    helm_args.push("--set".to_string());
+    helm_args.push(format!(
+        "routerFilter.enabled={}",
+        if cfg.components.enable_router_filter {
+            "true"
+        } else {
+            "false"
+        }
+    ));
 
     if cfg.components.enable_e2e {
         helm_args.push("--set".to_string());
@@ -693,6 +665,7 @@ pub fn render_plan(cfg: &Config) -> anyhow::Result<String> {
 
             Ok(out)
         }
+        "docker-local" => deploy_docker_local::render_plan(cfg),
         other => Err(anyhow!(
             "mode {} is not implemented in Rust quickstart yet",
             other
@@ -733,6 +706,14 @@ pub fn apply(cfg: &Config, yes: bool) -> anyhow::Result<()> {
                 apply_k8s_kind_native(cfg)
             }
         }
+        "docker-local" => {
+            if !yes {
+                return Err(anyhow!(
+                    "apply requires --yes (interactive confirmations not implemented)"
+                ));
+            }
+            deploy_docker_local::apply(cfg)
+        }
         other => Err(anyhow!(
             "mode {} is not implemented in Rust quickstart yet",
             other
@@ -741,6 +722,41 @@ pub fn apply(cfg: &Config, yes: bool) -> anyhow::Result<()> {
 }
 
 pub fn status(cfg: &Config) -> anyhow::Result<()> {
+    println!("{}", status_text(cfg)?);
+    Ok(())
+}
+
+pub fn status_text(cfg: &Config) -> anyhow::Result<String> {
+    fn run_capture(mut cmd: Command, ctx: &str) -> anyhow::Result<String> {
+        cmd.stdin(Stdio::null());
+        let out = cmd.output().with_context(|| ctx.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if !out.status.success() {
+            return Err(anyhow!(
+                "{} failed (rc={})\n\nstdout:\n{}\n\nstderr:\n{}\n",
+                ctx,
+                out.status.code().unwrap_or(1),
+                stdout,
+                stderr
+            ));
+        }
+        let mut s = String::new();
+        if !stdout.trim().is_empty() {
+            s.push_str(&stdout);
+            if !stdout.ends_with('\n') {
+                s.push('\n');
+            }
+        }
+        if !stderr.trim().is_empty() {
+            s.push_str(&stderr);
+            if !stderr.ends_with('\n') {
+                s.push('\n');
+            }
+        }
+        Ok(s)
+    }
+
     match cfg.mode.name.as_str() {
         "k8s-kind" => {
             let repo_root = config::repo_root()?;
@@ -748,33 +764,32 @@ pub fn status(cfg: &Config) -> anyhow::Result<()> {
             let ns = &cfg.k8s.namespace;
             let release = &cfg.k8s.release_name;
 
-            let rc = Command::new("helm")
-                .current_dir(&repo_root)
-                .env("KUBECONFIG", kubeconfig.to_string_lossy().to_string())
-                .args(["-n", ns, "status", release])
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .context("helm status")?;
-            if !rc.success() {
-                return Err(anyhow!("helm status failed"));
-            }
+            let kubeconfig_str = kubeconfig.to_string_lossy().to_string();
 
-            let rc = Command::new("kubectl")
+            let mut out = String::new();
+            out.push_str(&format!("mode: {}\n", cfg.mode.name));
+            out.push_str(&format!("namespace: {}\n", ns));
+            out.push_str(&format!("release: {}\n\n", release));
+
+            out.push_str("== helm status ==\n");
+            let mut helm = Command::new("helm");
+            helm.current_dir(&repo_root)
+                .env("KUBECONFIG", &kubeconfig_str)
+                .args(["-n", ns, "status", release]);
+            out.push_str(&run_capture(helm, "helm status")?);
+            out.push('\n');
+
+            out.push_str("== kubectl get pods -o wide ==\n");
+            let mut kubectl = Command::new("kubectl");
+            kubectl
                 .current_dir(&repo_root)
-                .env("KUBECONFIG", kubeconfig.to_string_lossy().to_string())
-                .args(["-n", ns, "get", "pods", "-o", "wide"])
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .context("kubectl get pods")?;
-            if !rc.success() {
-                return Err(anyhow!("kubectl get pods failed"));
-            }
-            Ok(())
+                .env("KUBECONFIG", &kubeconfig_str)
+                .args(["-n", ns, "get", "pods", "-o", "wide"]);
+            out.push_str(&run_capture(kubectl, "kubectl get pods")?);
+
+            Ok(out)
         }
+        "docker-local" => deploy_docker_local::status_text(cfg),
         other => Err(anyhow!(
             "mode {} is not implemented in Rust quickstart yet",
             other
@@ -856,6 +871,7 @@ pub fn cleanup(cfg: &Config, scope_csv: &str, yes: bool) -> anyhow::Result<()> {
 
             Ok(())
         }
+        "docker-local" => deploy_docker_local::cleanup(cfg, &scope, yes),
         other => Err(anyhow!(
             "mode {} is not implemented in Rust quickstart yet",
             other

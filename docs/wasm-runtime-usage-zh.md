@@ -60,3 +60,44 @@ pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<
   - Rust：`cargo build --release --target wasm32-wasip1`
 - 对于通过 SMS 文件服务上传的模块，建议保留校验信息（`checksum_sha256`）
 - 在集成测试中显式提供合法模块字节，以验证入口函数选择与执行路径
+
+## 用户流（WebSocket <-> WASM）
+
+Spearlet 支持将外部客户端的双向流式数据桥接到 WASM 实例，WASM 侧使用 fd/epoll 模型进行读写。
+
+- WebSocket 端点：`GET /api/v1/executions/{execution_id}/streams/ws`
+- 如果 execution 无法直连，可通过 SMS gateway：
+  - `POST /api/v1/executions/{execution_id}/streams/session`
+  - `GET /api/v1/executions/{execution_id}/streams/ws?token=...`
+- 载荷：SSF v1 二进制帧（`SPST` magic）。详见：[wasm-user-stream-bridge-zh.md](./api/spear-hostcall/wasm-user-stream-bridge-zh.md)
+
+### WASM hostcalls
+
+- `user_stream_open(stream_id: i32, direction: i32) -> i32`
+- `user_stream_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32`
+- `user_stream_write(fd: i32, buf_ptr: i32, buf_len: i32) -> i32`
+- `user_stream_close(fd: i32) -> i32`
+- `user_stream_ctl_open() -> i32`
+- `user_stream_ctl_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32`
+
+direction 取值：
+
+- `1`：输入（client -> guest）
+- `2`：输出（guest -> client）
+- `3`：双向
+
+推荐用法：
+
+- 使用 `spear_epoll_create/spear_epoll_ctl/spear_epoll_wait` 等待 `EPOLLIN/EPOLLOUT`。
+- 将 `-EAGAIN` 视为背压，收到 epoll 就绪后再重试。
+
+stream 发现用法：
+
+- 通过 `user_stream_ctl_open()` 创建一个控制 fd，并用 `EPOLLIN` 注册到 epoll。
+- 控制 fd 可读时，调用 `user_stream_ctl_read()` 读取一个固定 8 字节事件：
+  - `u32 stream_id`（小端）
+  - `u32 kind`（小端），当前定义：
+    - `1`：stream connected
+    - `2`：session closed
+- 拿到 `stream_id` 后，再调用 `user_stream_open(stream_id, direction)` 绑定该 stream 的数据 fd。
+- 不再需要时，用 `user_stream_close(fd)` 关闭控制 fd。

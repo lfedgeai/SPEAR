@@ -22,6 +22,7 @@ SPEAR Node Service provides RESTful API and gRPC interfaces for node and task ma
 {
   "ip_address": "127.0.0.1",
   "port": 8081,
+  "http_port": 8080,
   "metadata": {
     "region": "us-west-1",
     "zone": "a",
@@ -33,6 +34,7 @@ SPEAR Node Service provides RESTful API and gRPC interfaces for node and task ma
 **Field Descriptions**:
 - `ip_address` (required): Node IP address, string type
 - `port` (required): Node port number, integer type
+- `http_port` (optional): Node HTTP gateway port (used for HTTP routing / stream proxy), integer type
 - `metadata` (optional): Additional metadata, key-value object
 
 **Success Response**:
@@ -87,6 +89,7 @@ curl http://localhost:8080/api/v1/nodes?status=active
       "uuid": "93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8",
       "ip_address": "127.0.0.1",
       "port": 8081,
+      "http_port": 8080,
       "status": "active",
       "last_heartbeat": 1757275996,
       "registered_at": 1757275996,
@@ -118,6 +121,7 @@ curl http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8
 {
   "ip_address": "192.168.1.100",
   "port": 8082,
+  "http_port": 8080,
   "status": "active",
   "metadata": {
     "region": "us-east-1",
@@ -125,6 +129,34 @@ curl http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f9a52b8
   }
 }
 ```
+
+## Execution Stream API
+
+These endpoints are used to establish a bidirectional WebSocket stream for a specific execution.
+
+### 1. Create Stream Session (Recommended)
+
+**Endpoint**: `POST /api/v1/executions/{execution_id}/streams/session`
+
+**Usage**: Returns a short-lived token and a `ws_url` that clients can directly connect to.
+
+**Response Example**:
+```json
+{
+  "execution_id": "exec-123",
+  "token": "<short-lived-token>",
+  "ws_url": "ws://localhost:8080/api/v1/executions/exec-123/streams/ws?token=<short-lived-token>",
+  "expires_in_ms": 60000
+}
+```
+
+### 2. WebSocket Stream (Data Plane)
+
+**Endpoint**: `GET /api/v1/executions/{execution_id}/streams/ws?token=...`
+
+**Notes**:
+- Clients SHOULD call `streams/session` first and then connect using the returned `ws_url`.
+- Each WebSocket binary message is one SSF frame.
 
 ### 5. Delete Node
 

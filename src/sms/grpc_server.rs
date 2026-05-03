@@ -18,6 +18,7 @@ use crate::proto::sms::{
     node_service_server::NodeServiceServer, placement_service_server::PlacementServiceServer,
     task_service_server::TaskServiceServer,
 };
+use crate::proto::spearlet::router_filter_service_server::RouterFilterServiceServer;
 
 use crate::sms::service::SmsServiceImpl;
 /// SMS gRPC server / SMS gRPC服务器
@@ -48,6 +49,7 @@ impl GrpcServer {
             .add_service(ModelDeploymentRegistryServiceServer::new(
                 sms_service.clone(),
             ))
+            .add_service(RouterFilterServiceServer::new(sms_service.clone()))
             .add_service(PlacementServiceServer::new(sms_service))
             .serve(addr);
 
@@ -80,6 +82,7 @@ impl GrpcServer {
             .add_service(ModelDeploymentRegistryServiceServer::new(
                 sms_service.clone(),
             ))
+            .add_service(RouterFilterServiceServer::new(sms_service.clone()))
             .add_service(PlacementServiceServer::new(sms_service))
             .serve_with_shutdown(addr, shutdown);
 

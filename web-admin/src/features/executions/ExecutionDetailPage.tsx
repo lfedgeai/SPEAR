@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
+import { terminateExecution } from '@/api/control'
 import { getExecution } from '@/api/instanceExecution'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import ExecutionLogsDialog from '@/features/executions/ExecutionLogsDialog'
 
 function formatMs(ts: number) {
@@ -55,6 +58,10 @@ export default function ExecutionDetailPage() {
   const { executionId } = useParams()
   const id = executionId || ''
   const [logsOpen, setLogsOpen] = useState(false)
+  const [terminateOpen, setTerminateOpen] = useState(false)
+  const [terminateReason, setTerminateReason] = useState('')
+  const [terminateLoading, setTerminateLoading] = useState(false)
+  const [terminateError, setTerminateError] = useState('')
 
   const q = useQuery({
     queryKey: ['execution-detail', id],
@@ -65,6 +72,8 @@ export default function ExecutionDetailPage() {
   const data = q.data
   const found = data?.success && data.found && data.execution
   const e = found ? data.execution : null
+  const canTerminate =
+    !!e && (String(e.status).toLowerCase() === 'running' || String(e.status).toLowerCase() === 'pending')
 
   return (
     <div className="space-y-4">
@@ -80,6 +89,17 @@ export default function ExecutionDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setTerminateError('')
+              setTerminateReason('')
+              setTerminateOpen(true)
+            }}
+            disabled={!canTerminate}
+          >
+            Terminate
+          </Button>
           <Button variant="secondary" onClick={() => q.refetch()}>
             Refresh
           </Button>
@@ -204,6 +224,69 @@ export default function ExecutionDetailPage() {
         onOpenChange={setLogsOpen}
         executionId={id}
       />
+
+      <Dialog open={terminateOpen} onOpenChange={setTerminateOpen}>
+        <DialogContent className="w-[min(520px,calc(100vw-24px))]">
+          <DialogHeader
+            title="Terminate execution"
+            description="Best-effort. This signals the running WASM/worker to stop."
+          />
+          <div className="space-y-3">
+            <div className="text-sm">
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">Execution</div>
+              <div className="font-mono text-xs">{id}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">Reason (optional)</div>
+              <Input
+                value={terminateReason}
+                onChange={(ev) => setTerminateReason(ev.target.value)}
+                placeholder="Reason"
+              />
+            </div>
+            {terminateError ? (
+              <div className="text-sm text-[hsl(var(--destructive))]">{terminateError}</div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setTerminateOpen(false)}
+                disabled={terminateLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={terminateLoading}
+                onClick={async () => {
+                  setTerminateError('')
+                  setTerminateLoading(true)
+                  try {
+                    const resp = await terminateExecution({
+                      execution_id: id,
+                      reason: terminateReason.trim() ? terminateReason.trim() : undefined,
+                    })
+                    if (!resp.success) {
+                      setTerminateError(resp.message || 'Terminate failed')
+                      return
+                    }
+                    setTerminateOpen(false)
+                    void q.refetch()
+                  } catch (err) {
+                    setTerminateError(
+                      String((err as { message?: string } | null)?.message || err || 'Terminate failed'),
+                    )
+                  } finally {
+                    setTerminateLoading(false)
+                  }
+                }}
+              >
+                {terminateLoading ? 'Terminating…' : 'Terminate'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

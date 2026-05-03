@@ -19,7 +19,7 @@ async fn test_update_task_status_persists_and_returns_updated_task() {
         description: "d".to_string(),
         priority: 2,
         node_uuid: "node-1".to_string(),
-        endpoint: "http://localhost".to_string(),
+        endpoint: "t".to_string(),
         version: "v1".to_string(),
         capabilities: vec![],
         metadata: std::collections::HashMap::new(),

@@ -182,6 +182,15 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             }),
         )
         .route(
+            "/admin/api/instances/{instance_id}/destroy",
+            post({
+                let state = state.clone();
+                move |p: Path<String>, body: axum::extract::Json<super::DestroyInstanceBody>| {
+                    super::destroy_instance_admin(state.clone(), p, body)
+                }
+            }),
+        )
+        .route(
             "/admin/api/invocations",
             post({
                 let state = state.clone();
@@ -204,6 +213,15 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             get({
                 let state = state.clone();
                 move |p: Path<String>| super::get_execution_admin(state.clone(), p)
+            }),
+        )
+        .route(
+            "/admin/api/executions/{execution_id}/terminate",
+            post({
+                let state = state.clone();
+                move |p: Path<String>, body: axum::extract::Json<super::TerminateExecutionBody>| {
+                    super::terminate_execution_admin(state.clone(), p, body)
+                }
             }),
         )
         .route(

@@ -93,16 +93,15 @@ data:
 
     {{- end }}
 
-    {{- if .Values.routerFilterAgent.enabled }}
+    {{- if .Values.routerFilter.enabled }}
 
     [spearlet.llm.router_grpc_filter_stream]
     enabled = true
-    decision_timeout_ms = {{ default 2000 .Values.routerFilterAgent.decisionTimeoutMs }}
-    fail_open = {{ .Values.routerFilterAgent.failOpen }}
-    content_fetch_enabled = {{ .Values.routerFilterAgent.contentFetchEnabled }}
-    content_fetch_max_bytes = {{ .Values.routerFilterAgent.contentFetchMaxBytes }}
-    content_fetch_cache_ttl_ms = {{ (.Values.routerFilterAgent.contentFetchCacheTtlMs | default 60000) | int }}
-    session_token_ttl_ms = {{ (.Values.routerFilterAgent.sessionTokenTtlMs | default 600000) | int }}
+    addr = {{ .Values.routerFilter.addr | quote }}
+    decision_timeout_ms = {{ default 2000 .Values.routerFilter.decisionTimeoutMs }}
+    fail_open = {{ .Values.routerFilter.failOpen }}
+    content_fetch_enabled = {{ .Values.routerFilter.contentFetchEnabled }}
+    content_fetch_max_bytes = {{ .Values.routerFilter.contentFetchMaxBytes }}
     {{- end }}
 
     {{- if .Values.e2e.enabled }}

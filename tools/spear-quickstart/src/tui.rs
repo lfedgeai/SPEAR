@@ -11,13 +11,15 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::prelude::*;
-use ratatui::text::{Line, Span};
-use ratatui::widgets::*;
-use unicode_width::UnicodeWidthChar;
 
 use crate::config;
 use crate::config::Config;
 use crate::deploy;
+
+#[path = "tui_menu.rs"]
+mod tui_menu;
+#[path = "tui_ui.rs"]
+mod tui_ui;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum UiMode {
@@ -56,6 +58,7 @@ enum ScopePart {
     Secret,
     Namespace,
     Kind,
+    Images,
 }
 
 impl ScopePart {
@@ -65,6 +68,7 @@ impl ScopePart {
             ScopePart::Secret => "secret",
             ScopePart::Namespace => "namespace",
             ScopePart::Kind => "kind",
+            ScopePart::Images => "images",
         }
     }
 }
@@ -72,8 +76,10 @@ impl ScopePart {
 #[derive(Clone)]
 enum Action {
     Back,
-    StartPortForward,
-    StopPortForward,
+    StartPortForwardWebAdmin,
+    StopPortForwardWebAdmin,
+    StartPortForwardConsole,
+    StopPortForwardConsole,
 }
 
 #[derive(Clone)]
@@ -99,6 +105,7 @@ struct MenuScreen {
     title: String,
     items: Vec<MenuItem>,
     selected: usize,
+    visible_when: Option<fn(&Config) -> bool>,
 }
 
 struct App {
@@ -108,7 +115,8 @@ struct App {
     mode: UiMode,
     dirty: bool,
     should_exit: bool,
-    port_forward: Option<PortForwardState>,
+    port_forward_web_admin: Option<PortForwardState>,
+    port_forward_console: Option<PortForwardState>,
     input: String,
     input_title: String,
     input_apply: Option<Arc<dyn Fn(&mut App, String) + Send + Sync>>,
@@ -130,8 +138,16 @@ enum PendingAction {
     Apply,
     Status,
     Cleanup,
-    StartPortForward,
-    StopPortForward,
+    StartPortForwardWebAdmin,
+    StopPortForwardWebAdmin,
+    StartPortForwardConsole,
+    StopPortForwardConsole,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PortForwardTarget {
+    WebAdmin,
+    Console,
 }
 
 struct PortForwardState {
@@ -163,7 +179,7 @@ pub fn edit_config_tui(cfg: &mut Config, config_path: &Path) -> anyhow::Result<(
 
 impl App {
     fn new(cfg: Config, config_path: PathBuf) -> Self {
-        let root = build_root_menu();
+        let root = tui_menu::build_root_menu(&cfg);
         let mut app = Self {
             cfg,
             config_path,
@@ -171,7 +187,8 @@ impl App {
             mode: UiMode::Menu,
             dirty: false,
             should_exit: false,
-            port_forward: None,
+            port_forward_web_admin: None,
+            port_forward_console: None,
             input: String::new(),
             input_title: String::new(),
             input_apply: None,
@@ -185,7 +202,7 @@ impl App {
             confirm_choice: ConfirmChoice::Ok,
             pending: None,
         };
-        refresh_current_values(&mut app);
+        tui_menu::refresh_current_values(&mut app);
         app
     }
 
@@ -214,7 +231,7 @@ fn run(
 ) -> anyhow::Result<App> {
     loop {
         refresh_port_forward_status(app);
-        terminal.draw(|f| ui(f, app)).context("draw")?;
+        terminal.draw(|f| tui_ui::ui(f, app)).context("draw")?;
 
         let ev = event::read().context("read event")?;
         match ev {
@@ -240,11 +257,67 @@ fn run(
         }
     }
 
-    stop_port_forward(app);
+    stop_port_forward(app, PortForwardTarget::WebAdmin);
+    stop_port_forward(app, PortForwardTarget::Console);
     Ok(std::mem::replace(
         app,
         App::new(app.cfg.clone(), app.config_path.clone()),
     ))
+}
+
+fn screen_is_available(cfg: &Config, screen: &MenuScreen) -> bool {
+    screen.visible_when.map(|f| f(cfg)).unwrap_or(true)
+}
+
+fn sanitize_cleanup_scope_for_mode(app: &mut App) {
+    let allowed: &[&str] = match app.cfg.mode.name.as_str() {
+        "k8s-kind" => &["release", "secret", "namespace", "kind"],
+        "k8s-existing" => &["release", "secret", "namespace"],
+        "docker-local" => &["release", "kind", "images"],
+        _ => &["release"],
+    };
+
+    let mut parts: Vec<String> = app
+        .cleanup_scope
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter(|s| allowed.iter().any(|a| a == s))
+        .map(|s| s.to_string())
+        .collect();
+
+    let order = ["release", "secret", "namespace", "kind", "images"];
+    parts.sort_by_key(|p| order.iter().position(|x| *x == p.as_str()).unwrap_or(99));
+    parts.dedup();
+
+    if parts.is_empty() {
+        app.cleanup_scope = "release".to_string();
+    } else {
+        app.cleanup_scope = parts.join(",");
+    }
+}
+
+fn rebuild_root_menu(app: &mut App) {
+    if app.stack.is_empty() {
+        return;
+    }
+
+    sanitize_cleanup_scope_for_mode(app);
+
+    let old_selected = app
+        .stack
+        .first()
+        .and_then(|s| s.items.get(s.selected))
+        .map(|it| it.label.clone());
+
+    let mut root = tui_menu::build_root_menu(&app.cfg);
+    if let Some(label) = old_selected {
+        if let Some(i) = root.items.iter().position(|it| it.label == label) {
+            root.selected = i;
+        }
+    }
+    app.stack.clear();
+    app.stack.push(root);
 }
 
 fn handle_menu_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
@@ -282,7 +355,7 @@ fn handle_menu_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
             let scope = app.cleanup_scope.trim();
             let dangerous = scope.split(',').any(|s| {
                 let s = s.trim();
-                s == "namespace" || s == "kind"
+                s == "namespace" || s == "kind" || s == "images"
             });
             app.confirm_title = "Cleanup / 清理".to_string();
             if dangerous {
@@ -318,22 +391,35 @@ fn handle_menu_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
             match item.kind {
                 ItemKind::Submenu(mut s) => {
                     s.selected = 0;
+                    if !screen_is_available(&app.cfg, &s) {
+                        app.view_title = "Not available / 不可用".to_string();
+                        app.view_text =
+                            "This menu is not available under the current mode.\n该菜单在当前模式下不可用。\n"
+                                .to_string();
+                        app.view_scroll = 0;
+                        app.mode = UiMode::ViewText;
+                        return Ok(());
+                    }
                     app.push(s);
-                    refresh_current_values(app);
+                    tui_menu::refresh_current_values(app);
                 }
                 ItemKind::ToggleBool(acc) => {
+                    let before_mode = app.cfg.mode.name.clone();
                     let before = (acc.get)(&app.cfg);
                     (acc.set)(&mut app.cfg, !before);
                     let after = (acc.get)(&app.cfg);
                     if after != before {
                         app.dirty = true;
                     }
-                    refresh_current_values(app);
+                    if before_mode != app.cfg.mode.name {
+                        rebuild_root_menu(app);
+                    }
+                    tui_menu::refresh_current_values(app);
                 }
                 ItemKind::ToggleScope(part) => {
-                    let before = scope_contains(&app.cleanup_scope, part.key());
-                    scope_set(&mut app.cleanup_scope, part.key(), !before);
-                    refresh_current_values(app);
+                    let before = tui_menu::scope_contains(&app.cleanup_scope, part.key());
+                    tui_menu::scope_set(&mut app.cleanup_scope, part.key(), !before);
+                    tui_menu::refresh_current_values(app);
                 }
                 ItemKind::EditString(acc) => {
                     app.mode = UiMode::EditText;
@@ -355,14 +441,25 @@ fn handle_menu_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
                 ItemKind::Action(Action::Back) => {
                     app.pop();
                 }
-                ItemKind::Action(Action::StartPortForward) => {
-                    app.pending = Some(PendingAction::StartPortForward);
+                ItemKind::Action(Action::StartPortForwardWebAdmin) => {
+                    app.pending = Some(PendingAction::StartPortForwardWebAdmin);
                 }
-                ItemKind::Action(Action::StopPortForward) => {
+                ItemKind::Action(Action::StopPortForwardWebAdmin) => {
                     app.confirm_title = "Stop port-forward / 停止端口转发".to_string();
                     app.confirm_text =
                         "Stop the running port-forward now?\n现在停止端口转发？".to_string();
-                    app.confirm_action = Some(PendingAction::StopPortForward);
+                    app.confirm_action = Some(PendingAction::StopPortForwardWebAdmin);
+                    app.confirm_choice = ConfirmChoice::Ok;
+                    app.mode = UiMode::Confirm;
+                }
+                ItemKind::Action(Action::StartPortForwardConsole) => {
+                    app.pending = Some(PendingAction::StartPortForwardConsole);
+                }
+                ItemKind::Action(Action::StopPortForwardConsole) => {
+                    app.confirm_title = "Stop port-forward / 停止端口转发".to_string();
+                    app.confirm_text =
+                        "Stop the running port-forward now?\n现在停止端口转发？".to_string();
+                    app.confirm_action = Some(PendingAction::StopPortForwardConsole);
                     app.confirm_choice = ConfirmChoice::Ok;
                     app.mode = UiMode::Confirm;
                 }
@@ -389,7 +486,7 @@ fn handle_input_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
             app.mode = UiMode::Menu;
             app.input.clear();
             app.input_title.clear();
-            refresh_current_values(app);
+            tui_menu::refresh_current_values(app);
         }
         KeyCode::Backspace => {
             app.input.pop();
@@ -479,827 +576,6 @@ fn handle_confirm_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn refresh_current_values(app: &mut App) {
-    for si in 0..app.stack.len() {
-        let kinds: Vec<ItemKind> = app.stack[si]
-            .items
-            .iter()
-            .map(|it| it.kind.clone())
-            .collect();
-        for (ii, kind) in kinds.into_iter().enumerate() {
-            let v = render_value(app, &kind);
-            app.stack[si].items[ii].value = v;
-        }
-    }
-}
-
-fn render_value(app: &App, kind: &ItemKind) -> String {
-    match kind {
-        ItemKind::ToggleBool(acc) => {
-            if (acc.get)(&app.cfg) {
-                "[*]".to_string()
-            } else {
-                "[ ]".to_string()
-            }
-        }
-        ItemKind::ToggleScope(part) => {
-            if scope_contains(&app.cleanup_scope, part.key()) {
-                "[*]".to_string()
-            } else {
-                "[ ]".to_string()
-            }
-        }
-        ItemKind::EditString(acc) => (acc.get)(&app.cfg),
-        ItemKind::EditAppString(acc) => (acc.get)(app),
-        ItemKind::Submenu(screen) => {
-            if screen.title.starts_with("Cleanup scope") {
-                app.cleanup_scope.to_string()
-            } else if screen.title.starts_with("Mode") {
-                app.cfg.mode.name.clone()
-            } else if screen.title.starts_with("Port forward") {
-                port_forward_summary(app)
-            } else {
-                "".to_string()
-            }
-        }
-        ItemKind::Action(_) => "".to_string(),
-    }
-}
-
-fn build_root_menu() -> MenuScreen {
-    MenuScreen {
-        title: "SPEAR Quickstart".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Mode / 模式".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_mode_menu()),
-            },
-            MenuItem {
-                label: "Cleanup scope / 清理范围".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_cleanup_scope_menu()),
-            },
-            MenuItem {
-                label: "Port forward / 端口转发".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_port_forward_menu()),
-            },
-            MenuItem {
-                label: "K8s / Kubernetes".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_k8s_menu()),
-            },
-            MenuItem {
-                label: "Build / 构建".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_build_menu()),
-            },
-            MenuItem {
-                label: "Images / 镜像".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_images_menu()),
-            },
-            MenuItem {
-                label: "Components / 组件".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_components_menu()),
-            },
-            MenuItem {
-                label: "Logging / 日志".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_logging_menu()),
-            },
-            MenuItem {
-                label: "Secrets / 密钥".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_secrets_menu()),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_port_forward_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Port forward / 端口转发".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Enabled / 启用".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.k8s.port_forward.enabled),
-                    set: Arc::new(|c, v| c.k8s.port_forward.enabled = v),
-                }),
-            },
-            MenuItem {
-                label: "Auto start after apply / 部署后自动启动".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.k8s.port_forward.auto_start),
-                    set: Arc::new(|c, v| c.k8s.port_forward.auto_start = v),
-                }),
-            },
-            MenuItem {
-                label: "Local port / 本地端口".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.k8s.port_forward.local_port.to_string()),
-                    set: Arc::new(|c, v| {
-                        if let Ok(p) = v.trim().parse::<u16>() {
-                            if p != 0 {
-                                c.k8s.port_forward.local_port = p;
-                            }
-                        }
-                    }),
-                }),
-            },
-            MenuItem {
-                label: "Remote port / 远端端口".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.k8s.port_forward.remote_port.to_string()),
-                    set: Arc::new(|c, v| {
-                        if let Ok(p) = v.trim().parse::<u16>() {
-                            if p != 0 {
-                                c.k8s.port_forward.remote_port = p;
-                            }
-                        }
-                    }),
-                }),
-            },
-            MenuItem {
-                label: "Start / 启动".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::StartPortForward),
-            },
-            MenuItem {
-                label: "Stop / 停止".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::StopPortForward),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_cleanup_scope_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Cleanup scope / 清理范围".to_string(),
-        items: vec![
-            MenuItem {
-                label: "release (helm uninstall)".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleScope(ScopePart::Release),
-            },
-            MenuItem {
-                label: "secret (k8s secret)".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleScope(ScopePart::Secret),
-            },
-            MenuItem {
-                label: "namespace (DANGEROUS)".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleScope(ScopePart::Namespace),
-            },
-            MenuItem {
-                label: "kind (DANGEROUS)".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleScope(ScopePart::Kind),
-            },
-            MenuItem {
-                label: "Raw csv / 原始csv".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditAppString(AccessorAppString {
-                    get: Arc::new(|a| a.cleanup_scope.clone()),
-                    set: Arc::new(|a, v| a.cleanup_scope = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_mode_menu() -> MenuScreen {
-    let mut items = vec![];
-
-    let set_mode = |mode: &'static str| -> AccessorBool {
-        let get = move |c: &Config| c.mode.name == mode;
-        let set = move |c: &mut Config, v: bool| {
-            if v {
-                c.mode.name = mode.to_string();
-            }
-        };
-        AccessorBool {
-            get: Arc::new(get),
-            set: Arc::new(set),
-        }
-    };
-
-    items.push(MenuItem {
-        label: "k8s-kind".to_string(),
-        value: "".to_string(),
-        kind: ItemKind::ToggleBool(set_mode("k8s-kind")),
-    });
-    items.push(MenuItem {
-        label: "k8s-existing".to_string(),
-        value: "".to_string(),
-        kind: ItemKind::ToggleBool(set_mode("k8s-existing")),
-    });
-    items.push(MenuItem {
-        label: "docker-local".to_string(),
-        value: "".to_string(),
-        kind: ItemKind::ToggleBool(set_mode("docker-local")),
-    });
-
-    items.push(MenuItem {
-        label: "Back / 返回".to_string(),
-        value: "".to_string(),
-        kind: ItemKind::Action(Action::Back),
-    });
-
-    MenuScreen {
-        title: "Mode / 模式".to_string(),
-        items,
-        selected: 0,
-    }
-}
-
-fn build_k8s_menu() -> MenuScreen {
-    MenuScreen {
-        title: "K8s / Kubernetes".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Namespace / 命名空间".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.k8s.namespace.clone()),
-                    set: Arc::new(|c, v| c.k8s.namespace = v),
-                }),
-            },
-            MenuItem {
-                label: "Release / 发布名".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.k8s.release_name.clone()),
-                    set: Arc::new(|c, v| c.k8s.release_name = v),
-                }),
-            },
-            MenuItem {
-                label: "Kind cluster name / kind 集群名".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.k8s.kind.cluster_name.clone()),
-                    set: Arc::new(|c, v| c.k8s.kind.cluster_name = v),
-                }),
-            },
-            MenuItem {
-                label: "Reuse existing kind cluster / 复用已有 kind 集群".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.k8s.kind.reuse_cluster),
-                    set: Arc::new(|c, v| c.k8s.kind.reuse_cluster = v),
-                }),
-            },
-            MenuItem {
-                label: "Keep kind cluster after run / 运行结束保留 kind 集群".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.k8s.kind.keep_cluster),
-                    set: Arc::new(|c, v| c.k8s.kind.keep_cluster = v),
-                }),
-            },
-            MenuItem {
-                label: "Kind kubeconfig file / kind kubeconfig 文件".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.k8s.kind.kubeconfig_file.clone()),
-                    set: Arc::new(|c, v| c.k8s.kind.kubeconfig_file = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_build_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Build / 构建".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Enabled / 启用".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.build.enabled),
-                    set: Arc::new(|c, v| c.build.enabled = v),
-                }),
-            },
-            MenuItem {
-                label: "Pull base / 拉取基础镜像".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.build.pull_base),
-                    set: Arc::new(|c, v| c.build.pull_base = v),
-                }),
-            },
-            MenuItem {
-                label: "No cache / 禁用缓存".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.build.no_cache),
-                    set: Arc::new(|c, v| c.build.no_cache = v),
-                }),
-            },
-            MenuItem {
-                label: "Debian suite / Debian版本".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.build.debian_suite.clone()),
-                    set: Arc::new(|c, v| c.build.debian_suite = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_images_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Images / 镜像".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Image tag / 镜像tag".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.images.tag.clone()),
-                    set: Arc::new(|c, v| c.images.tag = v),
-                }),
-            },
-            MenuItem {
-                label: "SMS repo".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.images.sms_repo.clone()),
-                    set: Arc::new(|c, v| c.images.sms_repo = v),
-                }),
-            },
-            MenuItem {
-                label: "Spearlet repo".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.images.spearlet_repo.clone()),
-                    set: Arc::new(|c, v| c.images.spearlet_repo = v),
-                }),
-            },
-            MenuItem {
-                label: "Router filter agent repo".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.images.router_filter_agent_repo.clone()),
-                    set: Arc::new(|c, v| c.images.router_filter_agent_repo = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_components_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Components / 组件".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Web admin / Web管理页".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.components.enable_web_admin),
-                    set: Arc::new(|c, v| c.components.enable_web_admin = v),
-                }),
-            },
-            MenuItem {
-                label: "Router filter agent / 路由过滤Agent".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.components.enable_router_filter_agent),
-                    set: Arc::new(|c, v| c.components.enable_router_filter_agent = v),
-                }),
-            },
-            MenuItem {
-                label: "E2E / 端到端".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.components.enable_e2e),
-                    set: Arc::new(|c, v| c.components.enable_e2e = v),
-                }),
-            },
-            MenuItem {
-                label: "Spearlet with Node / Spearlet含Node".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.components.spearlet_with_node),
-                    set: Arc::new(|c, v| c.components.spearlet_with_node = v),
-                }),
-            },
-            MenuItem {
-                label: "Llama server / Llama服务".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.components.spearlet_with_llama_server),
-                    set: Arc::new(|c, v| c.components.spearlet_with_llama_server = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_logging_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Logging / 日志".to_string(),
-        items: vec![
-            MenuItem {
-                label: "Debug / 调试模式".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.logging.debug),
-                    set: Arc::new(|c, v| c.logging.debug = v),
-                }),
-            },
-            MenuItem {
-                label: "Log level / 日志级别".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.logging.log_level.clone()),
-                    set: Arc::new(|c, v| c.logging.log_level = v),
-                }),
-            },
-            MenuItem {
-                label: "Log format / 日志格式".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.logging.log_format.clone()),
-                    set: Arc::new(|c, v| c.logging.log_format = v),
-                }),
-            },
-            MenuItem {
-                label: "Rollout timeout / 部署超时".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.timeouts.rollout.clone()),
-                    set: Arc::new(|c, v| c.timeouts.rollout = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_secrets_menu() -> MenuScreen {
-    MenuScreen {
-        title: "Secrets / 密钥".to_string(),
-        items: vec![
-            MenuItem {
-                label: "OpenAI source / OpenAI来源".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Submenu(build_openai_source_menu()),
-            },
-            MenuItem {
-                label: "OpenAI env / OpenAI环境变量".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.secrets.openai.env_name.clone()),
-                    set: Arc::new(|c, v| c.secrets.openai.env_name = v),
-                }),
-            },
-            MenuItem {
-                label: "k8s secret name / Secret名".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.secrets.openai.k8s_secret_name.clone()),
-                    set: Arc::new(|c, v| c.secrets.openai.k8s_secret_name = v),
-                }),
-            },
-            MenuItem {
-                label: "k8s secret key / Secret键".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.secrets.openai.k8s_secret_key.clone()),
-                    set: Arc::new(|c, v| c.secrets.openai.k8s_secret_key = v),
-                }),
-            },
-            MenuItem {
-                label: "Back / 返回".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::Action(Action::Back),
-            },
-        ],
-        selected: 0,
-    }
-}
-
-fn build_openai_source_menu() -> MenuScreen {
-    let set_source = |source: &'static str| -> AccessorBool {
-        let get = move |c: &Config| c.secrets.openai.source == source;
-        let set = move |c: &mut Config, v: bool| {
-            if v {
-                c.secrets.openai.source = source.to_string();
-            }
-        };
-        AccessorBool {
-            get: Arc::new(get),
-            set: Arc::new(set),
-        }
-    };
-
-    let items = vec![
-        MenuItem {
-            label: "from-env".to_string(),
-            value: "".to_string(),
-            kind: ItemKind::ToggleBool(set_source("from-env")),
-        },
-        MenuItem {
-            label: "skip".to_string(),
-            value: "".to_string(),
-            kind: ItemKind::ToggleBool(set_source("skip")),
-        },
-        MenuItem {
-            label: "Back / 返回".to_string(),
-            value: "".to_string(),
-            kind: ItemKind::Action(Action::Back),
-        },
-    ];
-
-    MenuScreen {
-        title: "OpenAI secret source".to_string(),
-        items,
-        selected: 0,
-    }
-}
-
-fn ui(frame: &mut Frame, app: &App) {
-    let bg = Color::Blue;
-    let fg = Color::White;
-    let accent = Color::LightCyan;
-    let highlight_bg = Color::Yellow;
-    let highlight_fg = Color::Black;
-
-    let size = frame.area();
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
-        .split(size);
-
-    frame.render_widget(Block::default().style(Style::default().bg(bg)), size);
-
-    let pf = port_forward_title(app);
-    let title = Line::from(vec![
-        Span::raw(format!(
-            "{}  (mode={}  ns={}  pf=",
-            app.current().title,
-            app.cfg.mode.name,
-            app.cfg.k8s.namespace
-        )),
-        Span::styled(
-            pf,
-            port_forward_status_style(app).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(format!("  dirty={})", app.dirty)),
-    ]);
-
-    let items: Vec<ListItem> = app
-        .current()
-        .items
-        .iter()
-        .enumerate()
-        .map(|(idx, it)| {
-            let selected = idx == app.current().selected && app.mode == UiMode::Menu;
-            let prefix = if selected { ">" } else { " " };
-            let label = pad_display_width(&it.label, 32);
-            let value = truncate_display_width(&it.value, 48);
-            let has_value = !value.is_empty();
-
-            let value_style = if is_port_forward_menu_item(&it.kind) {
-                port_forward_status_style(app).bg(Color::Black)
-            } else {
-                Style::default()
-                    .bg(Color::Black)
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            };
-            let line = Line::from(vec![
-                Span::raw(format!("{:<1} ", prefix)),
-                Span::raw(label),
-                Span::raw(" "),
-                Span::styled(
-                    if has_value {
-                        format!(" {} ", value)
-                    } else {
-                        value
-                    },
-                    if has_value {
-                        value_style
-                    } else {
-                        Style::default()
-                    },
-                ),
-            ]);
-            let style = if selected {
-                Style::default().bg(highlight_bg).fg(highlight_fg)
-            } else {
-                Style::default().bg(bg).fg(fg)
-            };
-            ListItem::new(line).style(style)
-        })
-        .collect();
-
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(accent).bg(bg))
-            .title(title)
-            .title_style(Style::default().fg(Color::Yellow).bg(bg)),
-    );
-    frame.render_widget(list, layout[0]);
-
-    let footer = match app.mode {
-        UiMode::Menu => {
-            let bar_bg = Color::Cyan;
-            let bar_fg = Color::Black;
-            let key_style = Style::default()
-                .bg(bar_bg)
-                .fg(bar_fg)
-                .add_modifier(Modifier::BOLD);
-            let label_style = Style::default().bg(bar_bg).fg(bar_fg);
-            let line = Line::from(vec![
-                Span::styled(" F1 ", key_style),
-                Span::styled("Help ", label_style),
-                Span::styled(" F2 ", key_style),
-                Span::styled("Save ", label_style),
-                Span::styled(" F3 ", key_style),
-                Span::styled("Plan ", label_style),
-                Span::styled(" F4 ", key_style),
-                Span::styled("Apply ", label_style),
-                Span::styled(" F5 ", key_style),
-                Span::styled("Status ", label_style),
-                Span::styled(" F6 ", key_style),
-                Span::styled("Cleanup ", label_style),
-                Span::styled(" F10 ", key_style),
-                Span::styled("Exit", label_style),
-            ]);
-            Paragraph::new(line).style(Style::default().bg(bar_bg).fg(bar_fg))
-        }
-        UiMode::EditText => {
-            Paragraph::new("Enter save  Esc cancel  F10 exit").style(Style::default().bg(bg).fg(fg))
-        }
-        UiMode::ViewText => Paragraph::new("↑/↓/PgUp/PgDn scroll  Enter OK  q/esc close  F10 exit")
-            .style(Style::default().bg(bg).fg(fg)),
-        UiMode::Confirm => Paragraph::new("Tab/←/→ switch  Enter confirm  Esc cancel  F10 exit")
-            .style(Style::default().bg(bg).fg(fg)),
-    };
-    frame.render_widget(footer, layout[1]);
-
-    if app.mode == UiMode::EditText {
-        let area = centered_rect(80, 20, size);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(accent).bg(bg))
-            .title(app.input_title.as_str())
-            .title_style(Style::default().fg(Color::Yellow).bg(bg))
-            .style(Style::default().bg(bg).fg(fg));
-        let p = Paragraph::new(app.input.as_str())
-            .style(Style::default().bg(bg).fg(fg))
-            .block(block);
-        frame.render_widget(Clear, area);
-        frame.render_widget(p, area);
-    }
-
-    if app.mode == UiMode::ViewText {
-        let area = centered_rect(90, 70, size);
-        let inner = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
-            .margin(1)
-            .split(area);
-
-        let p = Paragraph::new(app.view_text.as_str())
-            .wrap(Wrap { trim: false })
-            .scroll((app.view_scroll, 0))
-            .style(Style::default().bg(bg).fg(fg));
-
-        let btn_bg = Color::Cyan;
-        let btn_fg = Color::Black;
-        let ok_style = Style::default()
-            .bg(btn_bg)
-            .fg(btn_fg)
-            .add_modifier(Modifier::BOLD);
-
-        let buttons = Line::from(vec![Span::styled("[ OK ]", ok_style)]);
-        let buttons = Paragraph::new(buttons)
-            .alignment(Alignment::Center)
-            .style(Style::default().bg(bg).fg(fg));
-
-        let bordered = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(accent).bg(bg))
-            .title(app.view_title.as_str())
-            .title_style(Style::default().fg(Color::Yellow).bg(bg))
-            .style(Style::default().bg(bg).fg(fg));
-
-        frame.render_widget(Clear, area);
-        frame.render_widget(bordered, area);
-        frame.render_widget(p, inner[0]);
-        frame.render_widget(buttons, inner[1]);
-    }
-
-    if app.mode == UiMode::Confirm {
-        let area = centered_rect(70, 40, size);
-        let inner = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
-            .margin(1)
-            .split(area);
-
-        let p = Paragraph::new(app.confirm_text.as_str())
-            .wrap(Wrap { trim: false })
-            .style(Style::default().bg(bg).fg(fg));
-
-        let btn_bg = Color::Cyan;
-        let btn_fg = Color::Black;
-        let btn_sel_style = Style::default()
-            .bg(btn_bg)
-            .fg(btn_fg)
-            .add_modifier(Modifier::BOLD);
-        let btn_style = Style::default().bg(bg).fg(fg);
-
-        let ok_style = if app.confirm_choice == ConfirmChoice::Ok {
-            btn_sel_style
-        } else {
-            btn_style
-        };
-        let cancel_style = if app.confirm_choice == ConfirmChoice::Cancel {
-            btn_sel_style
-        } else {
-            btn_style
-        };
-
-        let buttons = Line::from(vec![
-            Span::styled("[ OK ]", ok_style),
-            Span::raw("  "),
-            Span::styled("[ Cancel ]", cancel_style),
-        ]);
-        let buttons = Paragraph::new(buttons)
-            .alignment(Alignment::Center)
-            .style(Style::default().bg(bg).fg(fg));
-
-        let bordered = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(accent).bg(bg))
-            .title(app.confirm_title.as_str())
-            .title_style(Style::default().fg(Color::Yellow).bg(bg))
-            .style(Style::default().bg(bg).fg(fg));
-
-        frame.render_widget(Clear, area);
-        frame.render_widget(bordered, area);
-        frame.render_widget(p, inner[0]);
-        frame.render_widget(buttons, inner[1]);
-    }
-}
-
 fn execute_pending(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
@@ -1326,19 +602,52 @@ fn execute_pending(
             let _ = config::save_config(&app.config_path, &app.cfg);
             suspend_tui(terminal).ok();
             let res = deploy::apply(&app.cfg, true);
+            let status_text = if res.is_ok() {
+                deploy::status_text(&app.cfg)
+            } else {
+                Ok(String::new())
+            };
             resume_tui(terminal).ok();
             match res {
                 Ok(()) => {
                     app.view_title = "Apply done / 部署完成".to_string();
                     app.view_text = "Apply finished.\n".to_string();
-                    if app.cfg.mode.name == "k8s-kind"
-                        && app.cfg.k8s.port_forward.enabled
-                        && app.cfg.k8s.port_forward.auto_start
-                    {
-                        if let Err(e) = start_port_forward(app) {
+                    match status_text {
+                        Ok(s) => {
+                            if !s.trim().is_empty() {
+                                app.view_text.push_str("\nStatus:\n");
+                                app.view_text.push_str(&s);
+                                if !app.view_text.ends_with('\n') {
+                                    app.view_text.push('\n');
+                                }
+                            }
+                        }
+                        Err(e) => {
                             app.view_text
-                                .push_str(&format!("\nPort-forward failed:\n{e:?}\n"));
-                        } else {
+                                .push_str(&format!("\nStatus failed:\n{e:?}\n"));
+                        }
+                    }
+                    if app.cfg.mode.name == "k8s-kind" {
+                        let mut any_started = false;
+                        if app.cfg.k8s.port_forward.enabled && app.cfg.k8s.port_forward.auto_start {
+                            match start_port_forward(app, PortForwardTarget::WebAdmin) {
+                                Ok(()) => any_started = true,
+                                Err(e) => app.view_text.push_str(&format!(
+                                    "\nPort-forward(web admin) failed:\n{e:?}\n"
+                                )),
+                            }
+                        }
+                        if app.cfg.k8s.port_forward_console.enabled
+                            && app.cfg.k8s.port_forward_console.auto_start
+                        {
+                            match start_port_forward(app, PortForwardTarget::Console) {
+                                Ok(()) => any_started = true,
+                                Err(e) => app.view_text.push_str(&format!(
+                                    "\nPort-forward(console) failed:\n{e:?}\n"
+                                )),
+                            }
+                        }
+                        if any_started {
                             app.view_text.push_str(&format!(
                                 "\nPort-forward: {}\n",
                                 port_forward_summary(app)
@@ -1357,12 +666,15 @@ fn execute_pending(
         }
         PendingAction::Status => {
             suspend_tui(terminal).ok();
-            let res = deploy::status(&app.cfg);
+            let res = deploy::status_text(&app.cfg);
             resume_tui(terminal).ok();
             match res {
-                Ok(()) => {
+                Ok(s) => {
                     app.view_title = "Status done / 状态完成".to_string();
-                    app.view_text = "Status finished.\n".to_string();
+                    app.view_text = s;
+                    if app.view_text.trim().is_empty() {
+                        app.view_text = "No status output.\n".to_string();
+                    }
                 }
                 Err(e) => {
                     app.view_title = "Status failed / 状态失败".to_string();
@@ -1375,7 +687,8 @@ fn execute_pending(
         }
         PendingAction::Cleanup => {
             let _ = config::save_config(&app.config_path, &app.cfg);
-            stop_port_forward(app);
+            stop_port_forward(app, PortForwardTarget::WebAdmin);
+            stop_port_forward(app, PortForwardTarget::Console);
             let scope = app.cleanup_scope.trim().to_string();
             suspend_tui(terminal).ok();
             let res = deploy::cleanup(&app.cfg, &scope, true);
@@ -1394,11 +707,11 @@ fn execute_pending(
             app.mode = UiMode::ViewText;
             Ok(())
         }
-        PendingAction::StartPortForward => {
-            match start_port_forward(app) {
+        PendingAction::StartPortForwardWebAdmin => {
+            match start_port_forward(app, PortForwardTarget::WebAdmin) {
                 Ok(()) => {
                     app.view_title = "Port-forward started / 端口转发已启动".to_string();
-                    if let Some(pf) = &app.port_forward {
+                    if let Some(pf) = &app.port_forward_web_admin {
                         app.view_text = format!(
                             "{}\nlog: {}\n",
                             port_forward_summary(app),
@@ -1413,14 +726,47 @@ fn execute_pending(
                     app.view_text = format!("{e:?}\n");
                 }
             }
-            refresh_current_values(app);
+            tui_menu::refresh_current_values(app);
             app.view_scroll = 0;
             app.mode = UiMode::ViewText;
             Ok(())
         }
-        PendingAction::StopPortForward => {
-            stop_port_forward(app);
-            refresh_current_values(app);
+        PendingAction::StopPortForwardWebAdmin => {
+            stop_port_forward(app, PortForwardTarget::WebAdmin);
+            tui_menu::refresh_current_values(app);
+            app.view_title = "Port-forward stopped / 端口转发已停止".to_string();
+            app.view_text = "Stopped.\n".to_string();
+            app.view_scroll = 0;
+            app.mode = UiMode::ViewText;
+            Ok(())
+        }
+        PendingAction::StartPortForwardConsole => {
+            match start_port_forward(app, PortForwardTarget::Console) {
+                Ok(()) => {
+                    app.view_title = "Port-forward started / 端口转发已启动".to_string();
+                    if let Some(pf) = &app.port_forward_console {
+                        app.view_text = format!(
+                            "{}\nlog: {}\n",
+                            port_forward_summary(app),
+                            pf.log_path.display()
+                        );
+                    } else {
+                        app.view_text = format!("{}\n", port_forward_summary(app));
+                    }
+                }
+                Err(e) => {
+                    app.view_title = "Port-forward failed / 端口转发失败".to_string();
+                    app.view_text = format!("{e:?}\n");
+                }
+            }
+            tui_menu::refresh_current_values(app);
+            app.view_scroll = 0;
+            app.mode = UiMode::ViewText;
+            Ok(())
+        }
+        PendingAction::StopPortForwardConsole => {
+            stop_port_forward(app, PortForwardTarget::Console);
+            tui_menu::refresh_current_values(app);
             app.view_title = "Port-forward stopped / 端口转发已停止".to_string();
             app.view_text = "Stopped.\n".to_string();
             app.view_scroll = 0;
@@ -1442,32 +788,6 @@ fn resume_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::
     execute!(terminal.backend_mut(), EnterAlternateScreen).context("enter alt screen")?;
     terminal.clear().ok();
     Ok(())
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_y) / 2),
-                Constraint::Percentage(percent_y),
-                Constraint::Percentage((100 - percent_y) / 2),
-            ]
-            .as_ref(),
-        )
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_x) / 2),
-                Constraint::Percentage(percent_x),
-                Constraint::Percentage((100 - percent_x) / 2),
-            ]
-            .as_ref(),
-        )
-        .split(popup_layout[1])[1]
 }
 
 fn help_text() -> String {
@@ -1493,27 +813,16 @@ fn help_text() -> String {
 }
 
 fn port_forward_title(app: &App) -> String {
-    match &app.port_forward {
-        Some(pf) => format!("On:{}", pf.local_port),
-        None => {
-            if app.cfg.k8s.port_forward.enabled {
-                "Off".to_string()
-            } else {
-                "Disabled".to_string()
-            }
-        }
-    }
-}
-
-fn is_port_forward_menu_item(kind: &ItemKind) -> bool {
-    matches!(kind, ItemKind::Submenu(screen) if screen.title.starts_with("Port forward"))
+    let console = port_forward_short(app, PortForwardTarget::Console);
+    let web = port_forward_short(app, PortForwardTarget::WebAdmin);
+    format!("c={console} w={web}")
 }
 
 fn port_forward_status_style(app: &App) -> Style {
-    if !app.cfg.k8s.port_forward.enabled {
+    if !app.cfg.k8s.port_forward.enabled && !app.cfg.k8s.port_forward_console.enabled {
         return Style::default().fg(Color::DarkGray);
     }
-    if app.port_forward.is_some() {
+    if app.port_forward_web_admin.is_some() || app.port_forward_console.is_some() {
         Style::default().fg(Color::LightGreen)
     } else {
         Style::default().fg(Color::LightRed)
@@ -1521,16 +830,63 @@ fn port_forward_status_style(app: &App) -> Style {
 }
 
 fn port_forward_summary(app: &App) -> String {
-    if !app.cfg.k8s.port_forward.enabled {
+    format!(
+        "console: {} | web_admin: {}",
+        port_forward_long(app, PortForwardTarget::Console),
+        port_forward_long(app, PortForwardTarget::WebAdmin),
+    )
+}
+
+fn port_forward_summary_web_admin(app: &App) -> String {
+    port_forward_long(app, PortForwardTarget::WebAdmin)
+}
+
+fn port_forward_summary_console(app: &App) -> String {
+    port_forward_long(app, PortForwardTarget::Console)
+}
+
+fn port_forward_short(app: &App, target: PortForwardTarget) -> String {
+    let (cfg, state) = match target {
+        PortForwardTarget::WebAdmin => (&app.cfg.k8s.port_forward, &app.port_forward_web_admin),
+        PortForwardTarget::Console => (
+            &app.cfg.k8s.port_forward_console,
+            &app.port_forward_console,
+        ),
+    };
+    if !cfg.enabled {
         return "Disabled".to_string();
     }
-    match &app.port_forward {
+    match state {
+        Some(pf) => format!("On:{}", pf.local_port),
+        None => {
+            if cfg.auto_start {
+                format!("Off(auto):{}", cfg.local_port)
+            } else {
+                format!("Off:{}", cfg.local_port)
+            }
+        }
+    }
+}
+
+fn port_forward_long(app: &App, target: PortForwardTarget) -> String {
+    let (cfg, state) = match target {
+        PortForwardTarget::WebAdmin => (&app.cfg.k8s.port_forward, &app.port_forward_web_admin),
+        PortForwardTarget::Console => (
+            &app.cfg.k8s.port_forward_console,
+            &app.port_forward_console,
+        ),
+    };
+
+    if !cfg.enabled {
+        return "Disabled".to_string();
+    }
+    match state {
         Some(pf) => format!("On {} ({}->{})", pf.url, pf.local_port, pf.remote_port),
         None => {
-            if app.cfg.k8s.port_forward.auto_start {
-                format!("Off (auto) :{}", app.cfg.k8s.port_forward.local_port)
+            if cfg.auto_start {
+                format!("Off (auto) :{}", cfg.local_port)
             } else {
-                format!("Off :{}", app.cfg.k8s.port_forward.local_port)
+                format!("Off :{}", cfg.local_port)
             }
         }
     }
@@ -1538,33 +894,54 @@ fn port_forward_summary(app: &App) -> String {
 
 fn refresh_port_forward_status(app: &mut App) {
     let mut changed = false;
-    if let Some(pf) = &mut app.port_forward {
+    if let Some(pf) = &mut app.port_forward_web_admin {
         if let Ok(Some(_)) = pf.child.try_wait() {
-            app.port_forward = None;
+            app.port_forward_web_admin = None;
+            changed = true;
+        }
+    }
+    if let Some(pf) = &mut app.port_forward_console {
+        if let Ok(Some(_)) = pf.child.try_wait() {
+            app.port_forward_console = None;
             changed = true;
         }
     }
     if changed {
-        refresh_current_values(app);
+        tui_menu::refresh_current_values(app);
     }
 }
 
-fn stop_port_forward(app: &mut App) {
-    if let Some(mut pf) = app.port_forward.take() {
+fn stop_port_forward(app: &mut App, target: PortForwardTarget) {
+    let state = match target {
+        PortForwardTarget::WebAdmin => &mut app.port_forward_web_admin,
+        PortForwardTarget::Console => &mut app.port_forward_console,
+    };
+    if let Some(mut pf) = state.take() {
         let _ = pf.child.kill();
         let _ = pf.child.wait();
     }
 }
 
-fn start_port_forward(app: &mut App) -> anyhow::Result<()> {
-    stop_port_forward(app);
+fn start_port_forward(app: &mut App, target: PortForwardTarget) -> anyhow::Result<()> {
+    stop_port_forward(app, target);
     if app.cfg.mode.name != "k8s-kind" {
         return Err(anyhow::anyhow!(
             "port-forward currently supports mode=k8s-kind only"
         ));
     }
-    if !app.cfg.k8s.port_forward.enabled {
-        return Err(anyhow::anyhow!("k8s.port_forward.enabled is false"));
+
+    let (cfg, log_name, url_path) = match target {
+        PortForwardTarget::WebAdmin => {
+            (&app.cfg.k8s.port_forward, "port-forward-web-admin.log", "/")
+        }
+        PortForwardTarget::Console => (
+            &app.cfg.k8s.port_forward_console,
+            "port-forward-console.log",
+            "/console",
+        ),
+    };
+    if !cfg.enabled {
+        return Err(anyhow::anyhow!("port-forward is disabled"));
     }
 
     let repo_root = config::repo_root()?;
@@ -1572,13 +949,13 @@ fn start_port_forward(app: &mut App) -> anyhow::Result<()> {
     let kubeconfig_str = kubeconfig.to_string_lossy().to_string();
     let ns = app.cfg.k8s.namespace.clone();
     let release = app.cfg.k8s.release_name.clone();
-    let local_port = app.cfg.k8s.port_forward.local_port;
-    let remote_port = app.cfg.k8s.port_forward.remote_port;
+    let local_port = cfg.local_port;
+    let remote_port = cfg.remote_port;
     let svc = format!("svc/{}-spear-sms", release);
 
     let log_dir = repo_root.join(&app.cfg.paths.state_dir);
     std::fs::create_dir_all(&log_dir).ok();
-    let log_path = log_dir.join("port-forward.log");
+    let log_path = log_dir.join(log_name);
     let log = OpenOptions::new()
         .create(true)
         .write(true)
@@ -1598,84 +975,18 @@ fn start_port_forward(app: &mut App) -> anyhow::Result<()> {
     cmd.stderr(Stdio::from(log_err));
     let child = cmd.spawn().context("spawn kubectl port-forward")?;
 
-    let url = format!("http://127.0.0.1:{}/", local_port);
-    app.port_forward = Some(PortForwardState {
+    let url = format!("http://127.0.0.1:{}{}", local_port, url_path);
+    let state = PortForwardState {
         child,
         local_port,
         remote_port,
         url,
         log_path,
-    });
-    refresh_current_values(app);
+    };
+    match target {
+        PortForwardTarget::WebAdmin => app.port_forward_web_admin = Some(state),
+        PortForwardTarget::Console => app.port_forward_console = Some(state),
+    }
+    tui_menu::refresh_current_values(app);
     Ok(())
-}
-
-fn truncate_display_width(s: &str, max: usize) -> String {
-    let mut out = String::new();
-    let mut w = 0usize;
-    for ch in s.chars() {
-        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if w + cw > max {
-            if max >= 1 {
-                out.push('…');
-            }
-            break;
-        }
-        out.push(ch);
-        w += cw;
-    }
-    out
-}
-
-fn pad_display_width(s: &str, width: usize) -> String {
-    let mut out = String::new();
-    let mut w = 0usize;
-    for ch in s.chars() {
-        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if w + cw > width {
-            if width >= 1 {
-                out.push('…');
-                w = width;
-            }
-            break;
-        }
-        out.push(ch);
-        w += cw;
-    }
-    if w < width {
-        out.push_str(&" ".repeat(width - w));
-    }
-    out
-}
-
-fn scope_contains(scope: &str, key: &str) -> bool {
-    scope
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .any(|s| s == key)
-}
-
-fn scope_set(scope: &mut String, key: &str, enabled: bool) {
-    let mut parts: Vec<String> = scope
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
-
-    parts.retain(|p| p != key);
-    if enabled {
-        parts.push(key.to_string());
-    }
-
-    let order = ["release", "secret", "namespace", "kind"];
-    parts.sort_by_key(|p| order.iter().position(|x| *x == p.as_str()).unwrap_or(99));
-    parts.dedup();
-
-    if parts.is_empty() {
-        *scope = "release".to_string();
-    } else {
-        *scope = parts.join(",");
-    }
 }

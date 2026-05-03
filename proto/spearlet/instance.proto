@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package spearlet;
+
+// Spearlet instance management service.
+// Spearlet 实例管理服务。
+
+message DestroyInstanceRequest {
+  // Target instance ID.
+  // 目标 instance ID。
+  string instance_id = 1;
+
+  // Best-effort destroy reason.
+  // best-effort 销毁原因。
+  string reason = 2;
+}
+
+message DestroyInstanceResponse {
+  // Whether destroy request is accepted.
+  // 是否接受销毁请求。
+  bool success = 1;
+
+  // Human readable message.
+  // 人类可读信息。
+  string message = 2;
+}
+
+service InstanceService {
+  // Destroy an instance and terminate all running executions on it.
+  // 销毁实例，并先终止该实例上所有运行中的执行。
+  rpc DestroyInstance(DestroyInstanceRequest) returns (DestroyInstanceResponse);
+}
+

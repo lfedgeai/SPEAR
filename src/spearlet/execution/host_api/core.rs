@@ -26,7 +26,7 @@ pub fn set_current_wasm_execution_id(execution_id: Option<String>) {
     });
 }
 
-fn current_wasm_execution_id() -> Option<String> {
+pub(crate) fn current_wasm_execution_id() -> Option<String> {
     CURRENT_WASM_EXECUTION_ID.with(|v| v.borrow().clone())
 }
 
@@ -205,6 +205,8 @@ pub struct DefaultHostApi {
     pub(super) mcp_task_policy: Option<Arc<McpTaskPolicy>>,
     pub(super) instance_id: Option<String>,
     pub(super) execution_id: Option<String>,
+    pub(super) exec_termination: Arc<super::termination::WasmTerminationRegistry>,
+    pub(super) instance_termination: Arc<super::termination::WasmTerminationRegistry>,
 }
 
 impl DefaultHostApi {
@@ -214,8 +216,17 @@ impl DefaultHostApi {
         let grpc_filter_stream = runtime_config
             .spearlet_config
             .as_ref()
-            .and_then(|cfg| cfg.llm.router_grpc_filter_stream.clone())
-            .map(crate::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub::init_global)
+            .and_then(|cfg| {
+                cfg.llm.router_grpc_filter_stream.clone().map(|mut f| {
+                    if f.enabled && f.addr.trim().is_empty() {
+                        f.addr = cfg.sms_grpc_addr.clone();
+                    }
+                    f
+                })
+            })
+            .map(
+                crate::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub::init_global,
+            )
             .or_else(crate::spearlet::execution::ai::router::grpc_filter_stream::RouterFilterStreamHub::global)
             .filter(|h| h.config.enabled);
         let router = Router::new_with_filter(registry, policy, grpc_filter_stream);
@@ -234,6 +245,8 @@ impl DefaultHostApi {
             mcp_task_policy: None,
             instance_id: None,
             execution_id: None,
+            exec_termination: super::termination::exec_registry(),
+            instance_termination: super::termination::instance_registry(),
         }
     }
 
@@ -250,6 +263,21 @@ impl DefaultHostApi {
     pub fn with_instance_id(mut self, instance_id: String) -> Self {
         self.instance_id = Some(instance_id);
         self
+    }
+
+    pub fn check_wasm_termination(&self) -> Option<super::termination::TerminationSnapshot> {
+        let exec_id = self.execution_id.clone().or_else(current_wasm_execution_id);
+        if let Some(execution_id) = exec_id.as_deref() {
+            if let Some(s) = self.exec_termination.check(execution_id) {
+                return Some(s);
+            }
+        }
+        if let Some(instance_id) = self.instance_id.as_deref() {
+            if let Some(s) = self.instance_termination.check(instance_id) {
+                return Some(s);
+            }
+        }
+        None
     }
 
     pub fn wasm_log_write(&self, level: &str, message: &str) {

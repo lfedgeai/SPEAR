@@ -66,7 +66,6 @@ InvokeFunctionRequest 接收
 根据执行模式分流
 ├── EXECUTION_MODE_SYNC → 同步执行
 ├── EXECUTION_MODE_ASYNC → 异步执行
-└── EXECUTION_MODE_STREAM → 流式执行
     ↓
 执行函数调用
 ├── 调用任务实例的指定函数
@@ -271,10 +270,6 @@ async fn execute_function(
                 execution_id,
                 // ... 其他字段
             })
-        },
-        ExecutionMode::Stream => {
-            // 流式执行（通过单独的 StreamFunction RPC 处理）
-            Err("Streaming mode should use StreamFunction RPC")
         },
         _ => Err("Unsupported execution mode"),
     }

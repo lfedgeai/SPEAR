@@ -7,13 +7,11 @@
 use super::connection_manager::{ConnectionManager, ConnectionManagerConfig};
 use super::protocol::{AuthRequest, MessageType, SpearMessage};
 use crate::spearlet::execution::instance::{InstanceConfig, TaskInstance};
-use crate::spearlet::execution::manager::{TaskExecutionManager, TaskExecutionManagerConfig};
-use crate::spearlet::execution::runtime::{RuntimeManager, RuntimeType};
+use crate::spearlet::execution::runtime::RuntimeType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::time::sleep;
-use uuid::Uuid;
 
 /// Test secret validation with fallback validator (simulating TaskExecutionManager integration)
 /// 测试使用回退验证器的 secret 验证（模拟 TaskExecutionManager 集成）

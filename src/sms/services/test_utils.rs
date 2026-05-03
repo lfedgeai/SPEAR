@@ -9,12 +9,10 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::config::base::StorageConfig;
 use crate::proto::sms::Node;
 use crate::sms::config::SmsConfig;
 use crate::sms::services::node_service::{NodeService, NodeStatus};
 use crate::sms::services::resource_service::NodeResourceInfo;
-use crate::storage::KvStoreConfig;
 
 /// Test data generator for creating sample nodes / 创建示例节点的测试数据生成器
 pub struct TestDataGenerator;

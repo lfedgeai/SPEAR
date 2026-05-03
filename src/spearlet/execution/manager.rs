@@ -2136,7 +2136,7 @@ mod tests {
     use crate::spearlet::execution::instance;
     use crate::spearlet::execution::runtime;
     use crate::spearlet::execution::runtime::{
-        Runtime, RuntimeCapabilities, RuntimeConfig, RuntimeType,
+        Runtime, RuntimeCapabilities, RuntimeType,
     };
     use async_trait::async_trait;
     use std::collections::HashMap as StdHashMap;

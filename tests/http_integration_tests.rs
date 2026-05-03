@@ -6,8 +6,10 @@
 
 use axum_test::TestServer;
 use serde_json::json;
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::create_gateway_router;
 use spear_next::sms::gateway::GatewayState;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -94,6 +96,7 @@ mod http_test_utils {
             );
         let model_deployment_registry_client = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel.clone());
         let state = GatewayState {
+            config: Arc::new(SmsConfig::default()),
             node_client: sms_client,
             task_client,
             placement_client,
@@ -279,6 +282,7 @@ async fn test_http_node_lifecycle() {
         );
     let model_deployment_registry_client_filter = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel_filter.clone());
     let filter_state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,
@@ -423,6 +427,7 @@ async fn test_http_resource_management() {
         );
     let model_deployment_registry_client_filter = spear_next::proto::sms::model_deployment_registry_service_client::ModelDeploymentRegistryServiceClient::new(channel_filter.clone());
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: sms_client_filter,
         task_client: task_client_filter,
         placement_client: placement_client_filter,

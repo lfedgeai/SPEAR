@@ -7,7 +7,6 @@ use tokio::time::timeout;
 
 use crate::config::base::ServerConfig;
 use crate::spearlet::config::{SpearletConfig, StorageConfig};
-use crate::spearlet::function_service::FunctionServiceImpl;
 use crate::spearlet::grpc_server::{GrpcServer, HealthService, HealthStatus};
 
 /// Create test configuration / 创建测试配置
@@ -273,7 +272,7 @@ async fn test_grpc_server_concurrent_creation() {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use tokio::time::sleep;
+    
 
     #[tokio::test]
     async fn test_grpc_server_lifecycle() {

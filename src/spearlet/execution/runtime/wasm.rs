@@ -1164,7 +1164,7 @@ mod wasm_runtime_thread_tests {
         InstanceConfig, InstanceResourceLimits, NetworkConfig,
     };
     #[cfg(feature = "wasmedge")]
-    use wasmedge_sdk::{params, wat2wasm, Module};
+    use wasmedge_sdk::Module;
 
     #[test]
     fn test_wasm_config_default() {

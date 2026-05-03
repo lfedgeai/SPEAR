@@ -4,7 +4,6 @@
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode},
-    Router,
 };
 use tower::ServiceExt;
 
@@ -511,7 +510,7 @@ async fn test_large_request_handling() {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use std::sync::Arc;
+    
 
     #[tokio::test]
     async fn test_concurrent_route_access() {

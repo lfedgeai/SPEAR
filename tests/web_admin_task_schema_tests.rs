@@ -1,6 +1,8 @@
 use axum_test::TestServer;
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::web_admin::create_admin_router;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -40,6 +42,7 @@ async fn test_admin_tasks_schema_contains_expected_fields() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: spear_next::proto::sms::node_service_client::NodeServiceClient::new(
             channel.clone(),
         ),

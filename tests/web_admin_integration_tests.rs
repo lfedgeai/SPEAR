@@ -4,9 +4,11 @@ use spear_next::proto::sms::{
     placement_service_server::PlacementServiceServer, task_service_server::TaskServiceServer, Node,
     NodeResource, RegisterNodeRequest, UpdateNodeResourceRequest,
 };
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::sms::web_admin::create_admin_router;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
@@ -115,6 +117,7 @@ async fn test_admin_list_nodes_empty() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -245,6 +248,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -370,6 +374,7 @@ async fn test_admin_stats() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -454,6 +459,7 @@ async fn test_admin_nodes_stream() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -574,6 +580,7 @@ async fn test_admin_node_detail_includes_resource() {
         .await
         .unwrap();
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -661,6 +668,7 @@ async fn test_admin_mcp_servers_crud() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,
@@ -776,6 +784,7 @@ async fn test_admin_mcp_servers_validation() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,

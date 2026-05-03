@@ -6,9 +6,11 @@ use spear_next::proto::sms::{
     model_deployment_registry_service_server::ModelDeploymentRegistryServiceServer, BackendHosting,
     BackendInfo, BackendStatus, NodeBackendSnapshot, ReportNodeBackendsRequest,
 };
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::sms::web_admin::create_admin_router;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
@@ -50,6 +52,7 @@ async fn create_admin_test_server(
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client: spear_next::proto::sms::node_service_client::NodeServiceClient::new(
             channel.clone(),
         ),

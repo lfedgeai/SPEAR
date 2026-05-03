@@ -203,7 +203,7 @@ fn debug_call_wasm_tool_by_offset(instance: &mut Instance, fn_offset: i32) {
         return;
     }
 
-    let mut func = std::mem::ManuallyDrop::new(unsafe { Function::from_raw(raw_func_ctx as _) });
+    let func = std::mem::ManuallyDrop::new(unsafe { Function::from_raw(raw_func_ctx as _) });
 
     let ty = func.ty();
     debug!(fn_offset, table_name, ty = ?ty, "cchat_write_fn: resolved tool function type");

@@ -10,6 +10,7 @@ use spear_next::proto::spearlet::{
     invocation_service_server::InvocationServiceServer, Execution, GetExecutionRequest,
     InvokeRequest, InvokeResponse, ListExecutionsRequest, ListExecutionsResponse,
 };
+use spear_next::sms::config::SmsConfig;
 use spear_next::sms::gateway::GatewayState;
 use spear_next::sms::service::SmsServiceImpl;
 use spear_next::sms::web_admin::create_admin_router;
@@ -355,6 +356,7 @@ async fn test_admin_execution_spillback_and_feedback_affects_next_placement() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client: placement_client.clone(),
@@ -540,6 +542,7 @@ async fn test_admin_does_not_spillback_on_invalid_argument() {
         .unwrap();
 
     let state = GatewayState {
+        config: Arc::new(SmsConfig::default()),
         node_client,
         task_client,
         placement_client,

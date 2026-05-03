@@ -1,16 +1,11 @@
 //! Tests for HTTP gateway module
 //! HTTP网关模块的测试
 
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-    Router,
-};
+use axum::Router;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::transport::Channel;
-use tower::ServiceExt;
 
 use crate::config::base::ServerConfig;
 use crate::spearlet::config::{HttpConfig, SpearletConfig, StorageConfig};

@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_channel_pool_management() {
-        let mut factory = CommunicationFactory::new();
+        let factory = CommunicationFactory::new();
 
         let instance_id1 = RuntimeInstanceId::new(RuntimeType::Process, "instance-1".to_string());
 

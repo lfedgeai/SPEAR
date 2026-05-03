@@ -514,7 +514,7 @@ mod integration_tests {
             last_heartbeat: 0,
             registered_at: 0,
             metadata: {
-                let mut m = HashMap::new();
+                let m = HashMap::new();
                 m
             },
         };

@@ -1,6 +1,6 @@
 //! Function service tests / 函数服务测试
 
-use crate::spearlet::function_service::{FunctionServiceImpl, FunctionServiceStats};
+use crate::spearlet::function_service::FunctionServiceImpl;
 use std::sync::Arc;
 
 #[tokio::test]

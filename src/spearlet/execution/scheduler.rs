@@ -540,9 +540,9 @@ impl InstanceScheduler {
 mod tests {
     use super::*;
     use crate::spearlet::execution::{
-        artifact::{Artifact, ArtifactSpec},
+        artifact::ArtifactSpec,
         instance::{InstanceConfig, InstanceResourceLimits},
-        task::{HealthCheckConfig, ScalingConfig, TaskSpec, TaskType, TimeoutConfig},
+        task::{TaskSpec, TaskType},
     };
     use std::collections::HashMap;
 

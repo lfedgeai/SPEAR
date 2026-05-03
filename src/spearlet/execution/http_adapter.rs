@@ -365,7 +365,7 @@ impl Default for HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spearlet::execution::runtime::{ExecutionMode, ExecutionStatus};
+    use crate::spearlet::execution::runtime::ExecutionMode;
 
     #[test]
     fn test_sync_response_conversion() {

@@ -7,7 +7,6 @@ use crate::spearlet::execution::ai::ir::{
     RoutingHints,
 };
 use crate::spearlet::execution::host_api::ChatSessionSnapshot;
-use crate::spearlet::mcp::policy::McpSessionParams;
 use crate::spearlet::param_keys::chat as chat_keys;
 
 pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalRequestEnvelope {
@@ -83,6 +82,7 @@ pub fn normalize_cchat_session(snapshot: &ChatSessionSnapshot) -> CanonicalReque
 mod tests {
     use super::*;
     use crate::spearlet::execution::ai::ir::ChatMessage;
+    use crate::spearlet::mcp::policy::McpSessionParams;
 
     #[test]
     fn test_normalize_minimal() {

@@ -2,6 +2,20 @@
 
 ARG RUST_VERSION=1.91
 ARG DEBIAN_SUITE=trixie
+ARG NODE_IMAGE=node:20-bookworm-slim
+
+FROM ${NODE_IMAGE} AS web_builder
+WORKDIR /work
+COPY web-admin/ web-admin/
+COPY web-console/ web-console/
+COPY assets/ assets/
+RUN cd /work/web-admin \
+  && (if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) \
+  && npm run build
+RUN cd /work/web-console \
+  && (if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) \
+  && npm run build
+
 FROM rust:${RUST_VERSION}-bookworm AS builder
 
 WORKDIR /work
@@ -39,6 +53,9 @@ COPY static/ static/
 COPY proto/ proto/
 COPY assets/ assets/
 COPY src/ src/
+
+COPY --from=web_builder /work/assets/admin assets/admin
+COPY --from=web_builder /work/assets/console assets/console
 
 RUN cargo build --release --locked --bin sms
 

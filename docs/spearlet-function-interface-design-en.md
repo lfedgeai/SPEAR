@@ -42,7 +42,6 @@ enum ExecutionMode {
   EXECUTION_MODE_UNKNOWN = 0;      // Unknown mode
   EXECUTION_MODE_SYNC = 1;         // Synchronous execution
   EXECUTION_MODE_ASYNC = 2;        // Asynchronous execution
-  EXECUTION_MODE_STREAM = 3;       // Streaming execution
 }
 ```
 
@@ -114,12 +113,12 @@ rpc GetExecutionStatus(GetExecutionStatusRequest) returns (GetExecutionStatusRes
 
 Used to query the status and results of asynchronous execution.
 
-#### CancelExecution - Cancel Execution
+#### TerminateExecution - Terminate Execution
 ```protobuf
-rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+rpc TerminateExecution(TerminateExecutionRequest) returns (TerminateExecutionResponse);
 ```
 
-Used to cancel running asynchronous tasks.
+Used to terminate running tasks (manual terminate, timeout, etc.).
 
 #### StreamFunction - Streaming Execution
 ```protobuf

@@ -25,6 +25,8 @@
 - **WASM 友好语义**：非阻塞 `read/write`（`-EAGAIN`），通过 epoll 避免 busy loop。
 - **安全边界**：WASM 不直接接触网络凭证；host 统一做鉴权/授权/配额/限流。
 
+说明：这里的 `EAGAIN/EBADF/...` 使用 **SPEAR 虚拟 errno 常量**（与 C/Rust WASM SDK 对齐，例如 `SPEAR_EAGAIN=11`），而不是宿主 OS 的 `libc` errno 值。这样可以避免 macOS 与 Linux 的 errno 数值差异导致 guest 侧无法识别错误码。
+
 ### 1.2 非目标（v1）
 
 - 完整 WASI sockets 兼容。
@@ -37,14 +39,21 @@
 
 ### 2.1 数据流
 
-客户端（浏览器/服务）连接到 Spearlet，并绑定到某个 execution 的 stream session：
+客户端（浏览器/服务）连接到 stream gateway，并绑定到某个 execution 的 stream session：
 
-1. 客户端 → Spearlet（WebSocket）：发送 `OPEN`（握手）+ `DATA` 帧。
-2. Spearlet：校验鉴权/授权，定位目标 execution，创建/绑定统一 `FdTable` 中的 **UserStreamFd**。
-3. WASM guest：通过 fd 风格的 `user_stream_*` hostcall 做 `read/write`，通过 `spear_epoll_*` 等待就绪。
-4. Spearlet → 客户端（WebSocket）：转发 WASM 写出的 outbound 帧。
+1. 客户端 → SMS（HTTP）：调用 `POST /api/v1/executions/{execution_id}/streams/session` 创建短期 stream session token。
+2. 客户端 → SMS（WebSocket）：连接 `GET /api/v1/executions/{execution_id}/streams/ws?token=...` 并发送 SSF 帧。
+3. SMS：校验 token，并将 WebSocket 代理到目标 spearlet。
+4. Spearlet：将 inbound SSF 帧写入 execution-local stream hub，并通过 fd/epoll hostcall 暴露给 WASM。
+5. WASM guest：通过 fd 风格的 `user_stream_*` hostcall 做 `read/write`，通过 `spear_epoll_*` 等待就绪。
+6. Spearlet → SMS → 客户端（WebSocket）：转发 WASM 写出的 outbound 帧。
 
 ### 2.2 为什么推荐 WASM 侧使用 “fd + epoll”
+
+### 2.3 Rust SDK 与 Boa JS 用法
+
+- Rust：`sdk/rust/crates/spear-wasm` 提供 `user_stream_*` / `user_stream_ctl_*` 的安全封装。
+- Boa JS：`sdk/rust/crates/spear-boa` 暴露 `Spear.userStream`，JS 可直接 open/read/write，而无需处理原始指针。
 
 向 WASM 实例交付 inbound 数据，常见有两种方案：
 
@@ -73,7 +82,9 @@
 
 推荐的 WebSocket 属性：
 
-- 路径（示例）：`GET /api/v1/executions/{execution_id}/streams/ws`
+- 路径（gateway，推荐）：`GET /api/v1/executions/{execution_id}/streams/ws?token=...`
+- Stream session 创建（gateway，推荐）：`POST /api/v1/executions/{execution_id}/streams/session`
+- 路径（spearlet，内网/直连）：`GET /api/v1/executions/{execution_id}/streams/ws`
 - 子协议：`Sec-WebSocket-Protocol: spear.stream.v1`
 - 数据面：**仅二进制帧**；文本帧可用于调试（非必须）。
 
@@ -82,7 +93,7 @@
 best practice：
 
 - 沿用现有 HTTP/gRPC gateway 的鉴权方式（token/cookie/mtls），但必须做**execution 级授权**。
-- 若 WS 暴露在公网，建议要求短期有效的 **stream session token**。
+- 对公网的 gateway WS 端点，建议要求短期有效的 **stream session token**。
 
 握手携带凭证的选项：
 
@@ -139,14 +150,15 @@ Body：
 
 ### 4.3 消息类型（v1）
 
-- `1 = OPEN`：
-  - `meta`：必填 JSON（UTF-8），描述 session 与 stream 默认配置。
-  - `data`：空。
+当前实现只要求 SSF v1 header 合法（magic/version/header_len），并使用 `stream_id` 做路由；`msg_type` 会被解析并透传给 guest，但 host 不解释其语义。
+
+推荐的 v1 约定：
+
 - `2 = DATA`：
   - `meta`：可选（每 chunk 覆盖；性能考虑建议常为空）。
   - `data`：raw bytes（音频/视频/文本或任意二进制）。
-- `3 = COMMIT`：
-  - 表示一个输入“turn”结束（对实时推理很有用）。
+
+其他消息类型（OPEN/COMMIT/CLOSE/ACK/ERROR 等）作为后续扩展预留。
 - `4 = CLOSE`：
   - 半关闭或全关闭（由 flags 决定）。
 - `5 = ACK`：
@@ -236,11 +248,13 @@ guest 侧通过以下方式感知背压：
 创建/打开：
 
 - `user_stream_open(stream_id: i32, direction: i32) -> i32`
+- `user_stream_ctl_open() -> i32`
 
 I/O：
 
 - `user_stream_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32`
 - `user_stream_write(fd: i32, buf_ptr: i32, buf_len: i32) -> i32`
+- `user_stream_ctl_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32`
 
 关闭：
 
@@ -296,9 +310,13 @@ Level-triggered 规则：
 
 推荐模式：
 
-1. 创建 fd：
-   - `in_fd = user_stream_open(1, USER_STREAM_DIR_IN)`
-   - `out_fd = user_stream_open(1, USER_STREAM_DIR_OUT)`（或 BIDI）
+1. （可选）发现可用 stream：
+   - `ctl_fd = user_stream_ctl_open()`
+   - 将 `ctl_fd` 用 `EPOLLIN` 注册到 epoll
+   - `user_stream_ctl_read` 返回固定 8 字节事件：`(u32 stream_id, u32 kind)`
+2. 创建数据 fd：
+   - `in_fd = user_stream_open(stream_id, USER_STREAM_DIR_IN)`
+   - `out_fd = user_stream_open(stream_id, USER_STREAM_DIR_OUT)`（或 BIDI）
 2. 注册到 epoll：
    - `epfd = spear_epoll_create()`
    - `spear_epoll_ctl(epfd, ADD, in_fd, EPOLLIN)`
@@ -347,9 +365,9 @@ pub struct UserStreamState {
 
 ### 7.2 WebSocket session manager
 
-建议模块：
+实现位置：
 
-- `src/spearlet/execution/stream/user_stream/ws_session.rs`
+- `src/spearlet/http_gateway.rs`（`user_stream_ws_loop`）
 
 核心职责：
 
@@ -378,9 +396,9 @@ async fn ws_loop(
 
 目的：解耦 WS transport 与 fd table entry，并允许受控 attach。
 
-建议模块：
+实现位置：
 
-- `src/spearlet/execution/stream/user_stream/hub.rs`
+- `src/spearlet/execution/host_api/user_stream.rs`（`ExecutionUserStreamHub`）
 
 核心 API：
 
@@ -492,4 +510,3 @@ impl DefaultHostApi {
   - 断连：`EPOLLHUP` 可观测
 
 文档版本：v1（2026-03-18）。
-

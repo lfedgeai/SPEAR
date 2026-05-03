@@ -26,13 +26,12 @@ RELEASE_NAME="${RELEASE_NAME:-spear}"
 
 SMS_IMAGE_REPO="${SMS_IMAGE_REPO:-spear-sms}"
 SPEARLET_IMAGE_REPO="${SPEARLET_IMAGE_REPO:-spear-spearlet}"
-ROUTER_FILTER_AGENT_IMAGE_REPO="${ROUTER_FILTER_AGENT_IMAGE_REPO:-spear-router-filter-agent}"
 IMAGE_TAG="${IMAGE_TAG:-local}"
 SPEARLET_WITH_NODE="${SPEARLET_WITH_NODE:-1}"
 SPEARLET_WITH_LLAMA_SERVER="${SPEARLET_WITH_LLAMA_SERVER:-1}"
 
 ENABLE_WEB_ADMIN="${ENABLE_WEB_ADMIN:-1}"
-ENABLE_ROUTER_FILTER_AGENT="${ENABLE_ROUTER_FILTER_AGENT:-1}"
+ENABLE_ROUTER_FILTER="${ENABLE_ROUTER_FILTER:-1}"
 ENABLE_E2E="${ENABLE_E2E:-0}"
 DEBIAN_SUITE="${DEBIAN_SUITE:-trixie}"
 DEBUG="${DEBUG:-1}"
@@ -100,17 +99,11 @@ if [[ "${SPEARLET_WITH_NODE}" == "1" ]]; then
 else
   docker build "${DOCKER_BUILD_FLAGS[@]}" -f deploy/docker/spearlet/Dockerfile --build-arg "DEBIAN_SUITE=${DEBIAN_SUITE}" -t "${SPEARLET_IMAGE_REPO}:${IMAGE_TAG}" .
 fi
-if [[ "${ENABLE_ROUTER_FILTER_AGENT}" == "1" ]]; then
-  docker build "${DOCKER_BUILD_FLAGS[@]}" -f deploy/docker/router-filter-agent/Dockerfile --build-arg "DEBIAN_SUITE=${DEBIAN_SUITE}" -t "${ROUTER_FILTER_AGENT_IMAGE_REPO}:${IMAGE_TAG}" .
-fi
 
 KIND_IMAGES=(
   "${SMS_IMAGE_REPO}:${IMAGE_TAG}"
   "${SPEARLET_IMAGE_REPO}:${IMAGE_TAG}"
 )
-if [[ "${ENABLE_ROUTER_FILTER_AGENT}" == "1" ]]; then
-  KIND_IMAGES+=("${ROUTER_FILTER_AGENT_IMAGE_REPO}:${IMAGE_TAG}")
-fi
 KUBECONFIG="$KUBECONFIG_FILE" kind load docker-image --name "$CLUSTER_NAME" "${KIND_IMAGES[@]}"
 
 k get namespace "$NAMESPACE" >/dev/null 2>&1 || k create namespace "$NAMESPACE" >/dev/null
@@ -159,17 +152,15 @@ if [[ "$ENABLE_WEB_ADMIN" != "1" ]]; then
   )
 fi
 
-if [[ "${ENABLE_ROUTER_FILTER_AGENT}" == "1" ]]; then
+if [[ "${ENABLE_ROUTER_FILTER}" == "1" ]]; then
   HELM_ARGS+=(
     --set
-    "routerFilterAgent.image.repository=${ROUTER_FILTER_AGENT_IMAGE_REPO}"
-    --set
-    "routerFilterAgent.image.tag=${IMAGE_TAG}"
+    "routerFilter.enabled=true"
   )
 else
   HELM_ARGS+=(
     --set
-    "routerFilterAgent.enabled=false"
+    "routerFilter.enabled=false"
   )
 fi
 if [[ "${ENABLE_E2E}" == "1" ]]; then
@@ -198,9 +189,16 @@ fi
 echo "kind cluster ready:"
 echo "  export KUBECONFIG=$KUBECONFIG_FILE"
 echo "  kubectl -n $NAMESPACE get pods -o wide"
-echo "web admin (optional):"
-echo "  kubectl -n $NAMESPACE port-forward svc/${RELEASE_NAME}-spear-sms 18082:8081"
-echo "  open http://127.0.0.1:18082/"
+echo "SPEAR Console:"
+echo "  kubectl -n $NAMESPACE port-forward svc/${RELEASE_NAME}-spear-sms 18080:8080"
+echo "  open http://127.0.0.1:18080/console"
+if [[ "$ENABLE_WEB_ADMIN" == "1" ]]; then
+  echo "web admin:"
+  echo "  kubectl -n $NAMESPACE port-forward svc/${RELEASE_NAME}-spear-sms 18082:8081"
+  echo "  open http://127.0.0.1:18082/"
+else
+  echo "web admin: disabled (ENABLE_WEB_ADMIN=0)"
+fi
 if [[ "$KEEP_CLUSTER" != "1" && "$REUSE_CLUSTER" != "1" ]]; then
   echo "note: cluster will be deleted on script exit (set KEEP_CLUSTER=1 to keep it)"
 fi

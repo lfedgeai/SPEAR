@@ -410,8 +410,6 @@ mod new_endpoints_tests {
     use axum::body::{to_bytes, Body};
     use axum::http::{Method, Request, StatusCode};
     use base64::{engine::general_purpose, Engine as _};
-    use futures::Stream;
-    use std::pin::Pin;
     use tonic::transport::{Endpoint, Server};
     use tonic::{Request as TonicRequest, Response as TonicResponse, Status};
     use tower::ServiceExt;
@@ -423,9 +421,9 @@ mod new_endpoints_tests {
         InvocationService, InvocationServiceServer,
     };
     use crate::proto::spearlet::{
-        CancelExecutionRequest, CancelExecutionResponse, ConsoleClientMessage,
-        ConsoleServerMessage, Execution, ExecutionStatus, GetExecutionRequest, InvokeRequest,
-        InvokeResponse, InvokeStreamChunk, ListExecutionsRequest, ListExecutionsResponse, Payload,
+        Execution, ExecutionStatus, GetExecutionRequest, InvokeRequest, InvokeResponse,
+        ListExecutionsRequest, ListExecutionsResponse, Payload, TerminateExecutionRequest,
+        TerminateExecutionResponse,
     };
     use crate::spearlet::execution::artifact::{InvocationType, ResourceLimits};
     use crate::spearlet::execution::task::{
@@ -533,30 +531,6 @@ mod new_endpoints_tests {
                 completed_at: None,
             }))
         }
-
-        type InvokeStreamStream =
-            Pin<Box<dyn Stream<Item = Result<InvokeStreamChunk, Status>> + Send>>;
-
-        async fn invoke_stream(
-            &self,
-            _request: TonicRequest<InvokeRequest>,
-        ) -> Result<TonicResponse<Self::InvokeStreamStream>, Status> {
-            Err(Status::unimplemented(
-                "invoke_stream not implemented in test",
-            ))
-        }
-
-        type OpenConsoleStream =
-            Pin<Box<dyn Stream<Item = Result<ConsoleServerMessage, Status>> + Send>>;
-
-        async fn open_console(
-            &self,
-            _request: TonicRequest<tonic::Streaming<ConsoleClientMessage>>,
-        ) -> Result<TonicResponse<Self::OpenConsoleStream>, Status> {
-            Err(Status::unimplemented(
-                "open_console not implemented in test",
-            ))
-        }
     }
 
     #[tonic::async_trait]
@@ -590,15 +564,15 @@ mod new_endpoints_tests {
             }))
         }
 
-        async fn cancel_execution(
+        async fn terminate_execution(
             &self,
-            request: TonicRequest<CancelExecutionRequest>,
-        ) -> Result<TonicResponse<CancelExecutionResponse>, Status> {
+            request: TonicRequest<TerminateExecutionRequest>,
+        ) -> Result<TonicResponse<TerminateExecutionResponse>, Status> {
             let req = request.into_inner();
-            Ok(TonicResponse::new(CancelExecutionResponse {
+            Ok(TonicResponse::new(TerminateExecutionResponse {
                 success: true,
-                final_status: ExecutionStatus::Cancelled as i32,
-                message: format!("cancelled {}", req.execution_id),
+                final_status: ExecutionStatus::Terminated as i32,
+                message: format!("terminated {}", req.execution_id),
             }))
         }
 
@@ -613,7 +587,7 @@ mod new_endpoints_tests {
         }
     }
 
-    async fn create_router_with_fake_grpc() -> Router {
+    pub(super) async fn create_router_with_fake_grpc() -> Router {
         let config = Arc::new(create_test_config());
         let object_service = Arc::new(ObjectServiceImpl::new_with_memory(1024 * 1024));
         let function_service = Arc::new(
@@ -765,7 +739,7 @@ mod new_endpoints_tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert!(json["success"].as_bool().unwrap());
-        assert_eq!(json["final_status"], "CANCELLED");
+        assert_eq!(json["final_status"], "TERMINATED");
     }
 
     #[tokio::test]
@@ -866,6 +840,9 @@ mod new_endpoints_tests {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use crate::spearlet::execution::hostcall::fd_table::EP_CTL_ADD;
+    use crate::spearlet::execution::hostcall::types::PollEvents;
+    use futures::{SinkExt, StreamExt};
 
     #[tokio::test]
     async fn test_gateway_lifecycle() {
@@ -984,5 +961,76 @@ mod integration_tests {
 
             // Each gateway should be created successfully / 每个网关都应该成功创建
         }
+    }
+
+    #[tokio::test]
+    async fn test_user_stream_ws_end_to_end() {
+        let router = super::new_endpoints_tests::create_router_with_fake_grpc().await;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let exec_id = "exec-ws-e2e";
+        let url = format!("ws://{}/api/v1/executions/{}/streams/ws", addr, exec_id);
+        let (mut ws, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+
+        let api = crate::spearlet::execution::host_api::DefaultHostApi::new(
+            crate::spearlet::execution::runtime::RuntimeConfig {
+                runtime_type: crate::spearlet::execution::runtime::RuntimeType::Wasm,
+                settings: HashMap::new(),
+                global_environment: HashMap::new(),
+                spearlet_config: None,
+                resource_pool: crate::spearlet::execution::runtime::ResourcePoolConfig::default(),
+            },
+        );
+
+        crate::spearlet::execution::host_api::set_current_wasm_execution_id(Some(
+            exec_id.to_string(),
+        ));
+
+        let epfd = api.spear_ep_create();
+        let in_fd = api.user_stream_open(1, 1);
+        assert_eq!(
+            api.spear_ep_ctl(epfd, EP_CTL_ADD, in_fd, PollEvents::IN.bits() as i32),
+            0
+        );
+
+        let inbound =
+            crate::spearlet::execution::host_api::ssf::build_ssf_v1_frame(1, 2, b"{}", b"hello");
+        ws.send(tokio_tungstenite::tungstenite::Message::Binary(
+            inbound.clone(),
+        ))
+        .await
+        .unwrap();
+
+        let api2 = api.clone();
+        let ready = tokio::task::spawn_blocking(move || api2.spear_ep_wait_ready(epfd, 500))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(ready
+            .iter()
+            .any(|(rfd, ev)| *rfd == in_fd && ((*ev as u32) & PollEvents::IN.bits()) != 0));
+
+        let got = api.user_stream_read(in_fd).unwrap();
+        assert_eq!(got, inbound);
+
+        let out_fd = api.user_stream_open(1, 2);
+        let outbound =
+            crate::spearlet::execution::host_api::ssf::build_ssf_v1_frame(1, 2, b"{}", b"world");
+        assert_eq!(api.user_stream_write(out_fd, &outbound), 0);
+
+        let msg = ws.next().await.unwrap().unwrap();
+        match msg {
+            tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                assert_eq!(b, outbound);
+            }
+            other => panic!("unexpected ws message: {other:?}"),
+        }
+
+        crate::spearlet::execution::host_api::set_current_wasm_execution_id(None);
     }
 }

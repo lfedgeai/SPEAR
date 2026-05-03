@@ -2,6 +2,7 @@
 //! spearlet的HTTP gateway实现
 
 use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Json},
@@ -9,6 +10,7 @@ use axum::{
     Router,
 };
 use base64::{engine::general_purpose, Engine as _};
+use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -20,9 +22,9 @@ use tracing::{debug, error, info};
 use crate::proto::spearlet::{
     execution_service_client::ExecutionServiceClient,
     invocation_service_client::InvocationServiceClient, object_service_client::ObjectServiceClient,
-    AddObjectRefRequest, CancelExecutionRequest, DeleteObjectRequest, GetExecutionRequest,
-    GetObjectRequest, InvokeRequest, ListObjectsRequest, PinObjectRequest, PutObjectRequest,
-    RemoveObjectRefRequest, UnpinObjectRequest,
+    AddObjectRefRequest, DeleteObjectRequest, GetExecutionRequest, GetObjectRequest, InvokeRequest,
+    ListObjectsRequest, PinObjectRequest, PutObjectRequest, RemoveObjectRefRequest,
+    TerminateExecutionRequest, UnpinObjectRequest,
 };
 use crate::spearlet::config::SpearletConfig;
 use crate::spearlet::function_service::FunctionServiceImpl;
@@ -94,7 +96,11 @@ pub(crate) fn build_router(state: AppState, swagger_enabled: bool) -> Router {
         .route("/tasks/{task_id}", get(get_task))
         .route("/tasks/{task_id}/executions", get(get_task_executions))
         .route("/monitoring/stats", get(get_stats))
-        .route("/monitoring/health", get(get_health_status));
+        .route("/monitoring/health", get(get_health_status))
+        .route(
+            "/api/v1/executions/{execution_id}/streams/ws",
+            get(user_stream_ws),
+        );
 
     if swagger_enabled {
         app = app
@@ -109,6 +115,87 @@ pub(crate) fn build_router(state: AppState, swagger_enabled: bool) -> Router {
     }
 
     app.with_state::<()>(state)
+}
+
+async fn user_stream_ws(
+    Path(execution_id): Path<String>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    if execution_id.is_empty() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    ws.on_upgrade(move |socket| user_stream_ws_loop(execution_id, socket))
+}
+
+async fn user_stream_ws_loop(execution_id: String, socket: WebSocket) {
+    let (mut ws_tx, mut ws_rx) = socket.split();
+    let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    let mut had_hub = false;
+
+    let writer = tokio::spawn(async move {
+        while let Some(msg) = out_rx.recv().await {
+            if ws_tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    loop {
+        if !had_hub
+            && crate::spearlet::execution::host_api::user_stream::ExecutionUserStreamHub::get(
+                &execution_id,
+            )
+            .is_some()
+        {
+            had_hub = true;
+        } else if had_hub
+            && crate::spearlet::execution::host_api::user_stream::ExecutionUserStreamHub::get(
+                &execution_id,
+            )
+            .is_none()
+        {
+            let _ = out_tx.send(Message::Close(None));
+            break;
+        }
+
+        tokio::select! {
+            msg = ws_rx.next() => {
+                let Some(Ok(msg)) = msg else {
+                    break;
+                };
+                match msg {
+                    Message::Binary(frame) => {
+                        let rc = crate::spearlet::execution::host_api::user_stream::ws_push_frame(
+                            &execution_id,
+                            frame.to_vec(),
+                        );
+                        if rc < 0 {
+                            let _ = out_tx.send(Message::Close(None));
+                            break;
+                        }
+                    }
+                    Message::Close(_) => break,
+                    Message::Ping(p) => {
+                        let _ = out_tx.send(Message::Pong(p));
+                    }
+                    _ => {}
+                }
+            }
+            _ = crate::spearlet::execution::host_api::user_stream::ws_wait_any_outbound(&execution_id) => {
+                while let Some(frame) =
+                    crate::spearlet::execution::host_api::user_stream::ws_pop_any_outbound(
+                        &execution_id,
+                    )
+                {
+                    let _ = out_tx.send(Message::Binary(prost::bytes::Bytes::from(frame)));
+                }
+            }
+        }
+    }
+
+    drop(out_tx);
+    let _ = writer.await;
+    crate::spearlet::execution::host_api::user_stream::map_ws_close_to_channels(&execution_id);
 }
 
 #[derive(Deserialize)]
@@ -160,8 +247,6 @@ async fn e2e_llm_router_filter(
         extra: HashMap::new(),
     };
 
-    hub.cache_request_for_fetch(req.clone());
-
     let runtime_config = crate::spearlet::execution::runtime::RuntimeConfig {
         runtime_type: crate::spearlet::execution::RuntimeType::Wasm,
         settings: HashMap::new(),
@@ -174,7 +259,7 @@ async fn e2e_llm_router_filter(
         crate::spearlet::execution::host_api::registry::build_registry_from_runtime_config(
             &runtime_config,
         );
-    let candidates = registry.candidates(&req);
+    let mut candidates = registry.candidates(&req);
     if candidates.len() < 2 {
         return (
             StatusCode::BAD_REQUEST,
@@ -184,7 +269,7 @@ async fn e2e_llm_router_filter(
     }
 
     let (resp, _trace) = match tokio::task::block_in_place(|| {
-        hub.try_filter_candidates_blocking(&req, &candidates, 1500)
+        hub.try_filter_candidates_blocking(&req, &mut candidates, 1500)
     }) {
         Ok(v) => v,
         Err(e) => {
@@ -335,7 +420,7 @@ fn proto_execution_status_to_str(status: i32) -> &'static str {
         x if x == ExecutionStatus::Running as i32 => "RUNNING",
         x if x == ExecutionStatus::Completed as i32 => "COMPLETED",
         x if x == ExecutionStatus::Failed as i32 => "FAILED",
-        x if x == ExecutionStatus::Cancelled as i32 => "CANCELLED",
+        x if x == ExecutionStatus::Terminated as i32 => "TERMINATED",
         x if x == ExecutionStatus::Timeout as i32 => "TIMEOUT",
         _ => "UNSPECIFIED",
     }
@@ -725,8 +810,6 @@ async fn execute_function(
     let proto_mode = match mode.as_str() {
         "sync" => crate::proto::spearlet::ExecutionMode::Sync as i32,
         "async" => crate::proto::spearlet::ExecutionMode::Async as i32,
-        "stream" => return Err(StatusCode::BAD_REQUEST),
-        "console" => return Err(StatusCode::BAD_REQUEST),
         _ => return Err(StatusCode::BAD_REQUEST),
     };
 
@@ -851,13 +934,13 @@ async fn cancel_execution(
 
     let reason = body.and_then(|b| b.0.reason).unwrap_or_default();
 
-    let req = CancelExecutionRequest {
+    let req = TerminateExecutionRequest {
         execution_id: execution_id.clone(),
         reason,
     };
 
     let mut client = state.execution_client.clone();
-    match client.cancel_execution(req).await {
+    match client.terminate_execution(req).await {
         Ok(response) => {
             let resp = response.into_inner();
             Ok(Json(serde_json::json!({
@@ -868,7 +951,7 @@ async fn cancel_execution(
             })))
         }
         Err(e) => {
-            error!("Failed to cancel execution {}: {}", execution_id, e);
+            error!("Failed to terminate execution {}: {}", execution_id, e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

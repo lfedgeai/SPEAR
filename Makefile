@@ -8,12 +8,22 @@ VERSION := $(shell git describe --tags --match "*" --always --dirty 2>/dev/null 
 REPO_ROOT := $(shell pwd)
 TARGET_DIR := $(REPO_ROOT)/target
 COVERAGE_DIR := $(TARGET_DIR)/coverage
+COVERAGE_ALL_FEATURES ?= 0
+
+ifeq ($(strip $(COVERAGE_ALL_FEATURES)),1)
+	COVERAGE_FEATURE_ARGS := --all-features
+else ifneq ($(strip $(FEATURES)),)
+	COVERAGE_FEATURE_ARGS := --features "$(FEATURES)"
+else
+	COVERAGE_FEATURE_ARGS :=
+endif
 
 # Rust configuration / Rust配置
 CARGO := cargo
 RUSTC_VERSION := $(shell rustc --version 2>/dev/null || echo "unknown")
 
 WEB_ADMIN_DIR := web-admin
+WEB_CONSOLE_DIR := web-console
 
 CLIPPY_DENY_WARNINGS ?= 0
 
@@ -26,7 +36,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean coverage coverage-quick coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-docker e2e-linux e2e-kind mac-build mac-build-release web-admin-build web-admin-lint web-admin-test keyword-filter-agent-build keyword-filter-agent-build-release router-filter-agent-build router-filter-agent-build-release samples
+.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean clean-coverage coverage coverage-quick coverage-llvm coverage-html coverage-lcov coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-docker e2e-linux e2e-kind mac-build mac-build-release web-admin-build web-admin-lint web-admin-test web-console-build web-console-lint web-console-test samples
 .DEFAULT_GOAL := build
 
 # Default target / 默认目标
@@ -42,6 +52,9 @@ help:
 	@echo "  test            - Run all tests / 运行所有测试"
 	@echo "  coverage        - Run comprehensive code coverage analysis / 运行全面代码覆盖率分析"
 	@echo "  coverage-quick  - Run quick code coverage analysis / 运行快速代码覆盖率分析"
+	@echo "  coverage-html   - Generate HTML coverage report (llvm-cov) / 生成HTML覆盖率报告（llvm-cov）"
+	@echo "  coverage-lcov   - Generate LCOV coverage report (llvm-cov) / 生成LCOV覆盖率报告（llvm-cov）"
+	@echo "  clean-coverage  - Clean coverage artifacts / 清理覆盖率产物"
 	@echo "  clean           - Clean build artifacts / 清理构建产物"
 	@echo "  format          - Format code / 格式化代码"
 	@echo "  lint            - Run linter / 运行代码检查"
@@ -56,7 +69,7 @@ help:
 	@echo "  web-admin-build - Build Web Admin assets / 构建Web Admin静态资源"
 	@echo "  web-admin-test  - Run Web Admin tests / 运行Web Admin测试"
 	@echo "  web-admin-lint  - Lint Web Admin / Web Admin代码检查"
-	@echo "  keyword-filter-agent-build - Build keyword filter agent / 构建keyword filter agent"
+	@echo "  web-console-build - Build SPEAR Console assets / 构建SPEAR Console静态资源"
 	@echo ""
 	@echo -e "$(YELLOW)Examples / 示例:$(NC)"
 	@echo "  make build                    # Build with default features / 使用默认特性构建"
@@ -69,6 +82,13 @@ help:
 # Install development dependencies / 安装开发依赖
 install-deps:
 	@echo -e "$(BLUE)📦 Installing development dependencies... / 安装开发依赖...$(NC)"
+	@if ! command -v cargo-llvm-cov >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)Installing cargo-llvm-cov... / 安装cargo-llvm-cov...$(NC)"; \
+		$(CARGO) install cargo-llvm-cov; \
+	fi
+	@if command -v rustup >/dev/null 2>&1; then \
+		rustup component add llvm-tools-preview >/dev/null 2>&1 || true; \
+	fi
 	@if ! command -v cargo-tarpaulin >/dev/null 2>&1; then \
 		echo -e "$(YELLOW)Installing cargo-tarpaulin... / 安装cargo-tarpaulin...$(NC)"; \
 		$(CARGO) install cargo-tarpaulin; \
@@ -84,7 +104,7 @@ install-deps:
 	@echo -e "$(GREEN)✅ Development dependencies installation completed / 开发依赖安装完成$(NC)"
 
 # Build the project / 构建项目
-build: web-admin-build keyword-filter-agent-build
+build: web-admin-build web-console-build
 	@echo -e "$(BLUE)🔨 Building $(PROJECT_NAME)... / 构建$(PROJECT_NAME)...$(NC)"
 	@if [ -n "$(FEATURES)" ]; then \
 		echo -e "$(YELLOW)Building with features: $(FEATURES) / 使用特性构建: $(FEATURES)$(NC)"; \
@@ -95,7 +115,7 @@ build: web-admin-build keyword-filter-agent-build
 	@echo -e "$(GREEN)✅ Build completed / 构建完成$(NC)"
 
 # Build release version / 构建发布版本
-build-release: web-admin-build keyword-filter-agent-build-release
+build-release: web-admin-build web-console-build
 	@echo -e "$(BLUE)🚀 Building release version... / 构建发布版本...$(NC)"
 	@if [ -n "$(FEATURES)" ]; then \
 		$(CARGO) build --release --features $(FEATURES); \
@@ -103,29 +123,6 @@ build-release: web-admin-build keyword-filter-agent-build-release
 		$(CARGO) build --release; \
 	fi
 	@echo -e "$(GREEN)✅ Release build completed / 发布版本构建完成$(NC)"
-
-# Build keyword filter agent / 构建 keyword filter agent
-keyword-filter-agent-build:
-	@echo -e "$(BLUE)🔨 Building keyword-filter-agent... / 构建keyword-filter-agent...$(NC)"
-	@if [ -n "$(FEATURES)" ]; then \
-		$(CARGO) build --bin keyword-filter-agent --features $(FEATURES); \
-	else \
-		$(CARGO) build --bin keyword-filter-agent; \
-	fi
-	@echo -e "$(GREEN)✅ keyword-filter-agent build completed / keyword-filter-agent构建完成$(NC)"
-
-# Build keyword filter agent (release) / 构建 keyword filter agent（release）
-keyword-filter-agent-build-release:
-	@echo -e "$(BLUE)🚀 Building keyword-filter-agent (release)... / 构建keyword-filter-agent（release）...$(NC)"
-	@if [ -n "$(FEATURES)" ]; then \
-		$(CARGO) build --release --bin keyword-filter-agent --features $(FEATURES); \
-	else \
-		$(CARGO) build --release --bin keyword-filter-agent; \
-	fi
-	@echo -e "$(GREEN)✅ keyword-filter-agent release build completed / keyword-filter-agent发布版构建完成$(NC)"
-
-router-filter-agent-build: keyword-filter-agent-build
-router-filter-agent-build-release: keyword-filter-agent-build-release
 
 # Run tests / 运行测试
 test:
@@ -140,9 +137,10 @@ test:
 		$(CARGO) test $$NOCAPTURE_ARGS; \
 	fi
 	@$(MAKE) web-admin-test
+	@$(MAKE) web-console-test
 	@echo -e "$(GREEN)✅ Tests completed / 测试完成$(NC)"
 
-.PHONY: web-admin-build web-admin-lint web-admin-test
+.PHONY: web-admin-build web-admin-lint web-admin-test web-console-build web-console-lint web-console-test
 web-admin-build:
 	@echo -e "$(BLUE)🔧 Building Web Admin assets... / 构建Web Admin静态资源...$(NC)"
 	@if ! command -v npm >/dev/null 2>&1; then \
@@ -158,6 +156,44 @@ web-admin-build:
 		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
 		npm run build
 	@echo -e "$(GREEN)✅ Web Admin assets built / Web Admin静态资源构建完成$(NC)"
+
+web-console-build:
+	@echo -e "$(BLUE)🔧 Building SPEAR Console assets... / 构建SPEAR Console静态资源...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		if [ -f "assets/console/index.html" ] && [ -f "assets/console/main.js" ] && [ -f "assets/console/main.css" ]; then \
+			echo -e "$(YELLOW)⚠️ npm not found, using existing assets/console/* / 未找到npm，使用已有assets/console/*$(NC)"; \
+			exit 0; \
+		else \
+			echo -e "$(RED)❌ npm not found and assets/console/* missing. Install npm or run in an environment with Node. / 未找到npm且assets/console/*不存在，请安装Node/npm$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@cd $(WEB_CONSOLE_DIR) && \
+		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
+		npm run build
+	@echo -e "$(GREEN)✅ SPEAR Console assets built / SPEAR Console静态资源构建完成$(NC)"
+
+web-console-lint:
+	@echo -e "$(BLUE)🔍 Linting SPEAR Console... / SPEAR Console代码检查...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)⚠️ npm not found, skipping SPEAR Console lint / 未找到npm，跳过SPEAR Console代码检查$(NC)"; \
+		exit 0; \
+	fi
+	@cd $(WEB_CONSOLE_DIR) && \
+		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
+		npm run lint
+	@echo -e "$(GREEN)✅ SPEAR Console lint completed / SPEAR Console代码检查完成$(NC)"
+
+web-console-test:
+	@echo -e "$(BLUE)🧪 Running SPEAR Console tests... / 运行SPEAR Console测试...$(NC)"
+	@if ! command -v npm >/dev/null 2>&1; then \
+		echo -e "$(YELLOW)⚠️ npm not found, skipping SPEAR Console tests / 未找到npm，跳过SPEAR Console测试$(NC)"; \
+		exit 0; \
+	fi
+	@cd $(WEB_CONSOLE_DIR) && \
+		(if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi) && \
+		npm test
+	@echo -e "$(GREEN)✅ SPEAR Console tests completed / SPEAR Console测试完成$(NC)"
 
 web-admin-lint:
 	@echo -e "$(BLUE)🔍 Linting Web Admin... / Web Admin代码检查...$(NC)"
@@ -247,7 +283,11 @@ test-all-features:
 # Run comprehensive code coverage analysis / 运行全面代码覆盖率分析
 coverage: install-deps
 	@echo -e "$(BLUE)📊 Running comprehensive code coverage analysis... / 运行全面代码覆盖率分析...$(NC)"
-	@./scripts/coverage.sh
+	@if command -v cargo-llvm-cov >/dev/null 2>&1; then \
+		$(MAKE) coverage-llvm COVERAGE_ALL_FEATURES="$(COVERAGE_ALL_FEATURES)" FEATURES="$(FEATURES)"; \
+	else \
+		./scripts/coverage.sh; \
+	fi
 	@echo -e "$(GREEN)✅ Coverage analysis completed / 覆盖率分析完成$(NC)"
 
 # Run quick code coverage analysis / 运行快速代码覆盖率分析
@@ -255,6 +295,23 @@ coverage-quick:
 	@echo -e "$(BLUE)📊 Running quick coverage analysis... / 运行快速覆盖率分析...$(NC)"
 	@./scripts/quick-coverage.sh
 	@echo -e "$(GREEN)✅ Quick coverage analysis completed / 快速覆盖率分析完成$(NC)"
+
+coverage-llvm: coverage-html
+
+coverage-html: install-deps clean-coverage
+	@echo -e "$(BLUE)📊 Running coverage (llvm-cov html)... / 运行覆盖率（llvm-cov html）...$(NC)"
+	@mkdir -p "$(COVERAGE_DIR)"
+	@$(CARGO) llvm-cov --workspace $(COVERAGE_FEATURE_ARGS) --html --output-dir "$(COVERAGE_DIR)"
+	@echo -e "$(GREEN)✅ Coverage report generated: $(COVERAGE_DIR)/index.html$(NC)"
+
+coverage-lcov: install-deps clean-coverage
+	@echo -e "$(BLUE)📊 Running coverage (llvm-cov lcov)... / 运行覆盖率（llvm-cov lcov）...$(NC)"
+	@mkdir -p "$(COVERAGE_DIR)"
+	@$(CARGO) llvm-cov --workspace $(COVERAGE_FEATURE_ARGS) --lcov --output-path "$(COVERAGE_DIR)/lcov.info"
+	@echo -e "$(GREEN)✅ Coverage report generated: $(COVERAGE_DIR)/lcov.info$(NC)"
+
+coverage-all-features:
+	@$(MAKE) coverage COVERAGE_ALL_FEATURES=1
 
 # Run coverage analysis without failure threshold / 运行覆盖率分析但不检查失败阈值
 coverage-no-fail:
@@ -278,6 +335,9 @@ coverage-open:
 	else \
 		echo -e "$(RED)❌ No coverage report found. Run 'make coverage' or 'make coverage-quick' first / 未找到覆盖率报告。请先运行'make coverage'或'make coverage-quick'$(NC)"; \
 	fi
+
+clean-coverage:
+	rm -rf "$(COVERAGE_DIR)"
 
 # Clean build artifacts / 清理构建产物
 clean:
@@ -306,6 +366,7 @@ lint:
 		$(CARGO) clippy --all-targets; \
 	fi
 	@$(MAKE) web-admin-lint
+	@$(MAKE) web-console-lint
 	@echo -e "$(GREEN)✅ Linting completed / 代码检查完成$(NC)"
 
 # Run cargo check / 运行cargo检查
@@ -335,7 +396,7 @@ samples:
 	@echo -e "$(BLUE)🔨 Building WASM samples... / 构建WASM示例...$(NC)"
 	@mkdir -p $(SAMPLES_BUILD)
 	@if command -v zig >/dev/null 2>&1; then \
-		for name in hello chat_completion chat_completion_tool_sum mic_rtasr mcp_fs; do \
+		for name in hello chat_completion chat_completion_tool_sum mic_rtasr mcp_fs user_stream_echo; do \
 			src="$(SAMPLES_DIR)/$$name.c"; \
 			out="$(SAMPLES_BUILD)/$$name.wasm"; \
 			extra_ld=""; \
@@ -347,7 +408,7 @@ samples:
 		done; \
 	else \
 		if command -v clang >/dev/null 2>&1 && [ -n "$(WASI_SYSROOT)" ]; then \
-			for name in hello chat_completion chat_completion_tool_sum mic_rtasr mcp_fs; do \
+			for name in hello chat_completion chat_completion_tool_sum mic_rtasr mcp_fs user_stream_echo; do \
 				src="$(SAMPLES_DIR)/$$name.c"; \
 				out="$(SAMPLES_BUILD)/$$name.wasm"; \
 				extra_ld=""; \
@@ -471,7 +532,7 @@ SAMPLES_CFLAGS ?=
 SAMPLES_JS_DIR ?= samples/wasm-js
 SAMPLES_JS_BUILD ?= $(SAMPLES_BUILD)/js
 JS_WASM_PREFIX ?= js-
-JS_SAMPLES ?= chat_completion chat_completion_tool_sum router_filter_keyword
+JS_SAMPLES ?= chat_completion chat_completion_tool_sum router_filter_keyword user_stream_echo
 BUILD_JS_SAMPLES ?= 1
 SAMPLES_RUST_DIR ?= $(SAMPLES_JS_DIR)
 RUST_SAMPLES ?= $(JS_SAMPLES)

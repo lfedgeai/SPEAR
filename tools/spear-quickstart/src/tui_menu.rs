@@ -3,8 +3,9 @@ use std::sync::Arc;
 use crate::config::Config;
 
 use super::{
-    port_forward_summary, AccessorAppString, AccessorBool, AccessorString, Action, App, ItemKind,
-    MenuItem, MenuScreen, ScopePart,
+    port_forward_summary, port_forward_summary_console, port_forward_summary_web_admin,
+    AccessorAppString, AccessorBool, AccessorString, Action, App, ItemKind, MenuItem, MenuScreen,
+    ScopePart,
 };
 
 pub(super) fn refresh_current_values(app: &mut App) {
@@ -44,6 +45,10 @@ fn render_value(app: &App, kind: &ItemKind) -> String {
                 app.cleanup_scope.to_string()
             } else if screen.title.starts_with("Mode") {
                 app.cfg.mode.name.clone()
+            } else if screen.title.starts_with("Port forward (web admin)") {
+                port_forward_summary_web_admin(app)
+            } else if screen.title.starts_with("Port forward (console)") {
+                port_forward_summary_console(app)
             } else if screen.title.starts_with("Port forward") {
                 port_forward_summary(app)
             } else if screen.title.starts_with("Docker local") {
@@ -198,7 +203,7 @@ fn build_docker_local_menu() -> MenuScreen {
                 }),
             },
             MenuItem {
-                label: "Publish SMS HTTP / 映射SMS HTTP".to_string(),
+                label: "Publish SMS HTTP (Console) / 映射SMS HTTP（控制台）".to_string(),
                 value: "".to_string(),
                 kind: ItemKind::EditString(AccessorString {
                     get: Arc::new(|c| c.docker_local.publish_sms_http.clone()),
@@ -235,6 +240,31 @@ fn build_docker_local_menu() -> MenuScreen {
 fn build_port_forward_menu() -> MenuScreen {
     MenuScreen {
         title: "Port forward / 端口转发".to_string(),
+        items: vec![
+            MenuItem {
+                label: "SMS Web Admin / 管理页".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::Submenu(build_port_forward_web_admin_menu()),
+            },
+            MenuItem {
+                label: "SPEAR Console / 控制台".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::Submenu(build_port_forward_console_menu()),
+            },
+            MenuItem {
+                label: "Back / 返回".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::Action(Action::Back),
+            },
+        ],
+        selected: 0,
+        visible_when: Some(vis_mode_k8s_kind),
+    }
+}
+
+fn build_port_forward_web_admin_menu() -> MenuScreen {
+    MenuScreen {
+        title: "Port forward (web admin) / 端口转发（管理页）".to_string(),
         items: vec![
             MenuItem {
                 label: "Enabled / 启用".to_string(),
@@ -283,12 +313,81 @@ fn build_port_forward_menu() -> MenuScreen {
             MenuItem {
                 label: "Start / 启动".to_string(),
                 value: "".to_string(),
-                kind: ItemKind::Action(Action::StartPortForward),
+                kind: ItemKind::Action(Action::StartPortForwardWebAdmin),
             },
             MenuItem {
                 label: "Stop / 停止".to_string(),
                 value: "".to_string(),
-                kind: ItemKind::Action(Action::StopPortForward),
+                kind: ItemKind::Action(Action::StopPortForwardWebAdmin),
+            },
+            MenuItem {
+                label: "Back / 返回".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::Action(Action::Back),
+            },
+        ],
+        selected: 0,
+        visible_when: Some(vis_mode_k8s_kind),
+    }
+}
+
+fn build_port_forward_console_menu() -> MenuScreen {
+    MenuScreen {
+        title: "Port forward (console) / 端口转发（控制台）".to_string(),
+        items: vec![
+            MenuItem {
+                label: "Enabled / 启用".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::ToggleBool(AccessorBool {
+                    get: Arc::new(|c| c.k8s.port_forward_console.enabled),
+                    set: Arc::new(|c, v| c.k8s.port_forward_console.enabled = v),
+                }),
+            },
+            MenuItem {
+                label: "Auto start after apply / 部署后自动启动".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::ToggleBool(AccessorBool {
+                    get: Arc::new(|c| c.k8s.port_forward_console.auto_start),
+                    set: Arc::new(|c, v| c.k8s.port_forward_console.auto_start = v),
+                }),
+            },
+            MenuItem {
+                label: "Local port / 本地端口".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::EditString(AccessorString {
+                    get: Arc::new(|c| c.k8s.port_forward_console.local_port.to_string()),
+                    set: Arc::new(|c, v| {
+                        if let Ok(p) = v.trim().parse::<u16>() {
+                            if p != 0 {
+                                c.k8s.port_forward_console.local_port = p;
+                            }
+                        }
+                    }),
+                }),
+            },
+            MenuItem {
+                label: "Remote port / 远端端口".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::EditString(AccessorString {
+                    get: Arc::new(|c| c.k8s.port_forward_console.remote_port.to_string()),
+                    set: Arc::new(|c, v| {
+                        if let Ok(p) = v.trim().parse::<u16>() {
+                            if p != 0 {
+                                c.k8s.port_forward_console.remote_port = p;
+                            }
+                        }
+                    }),
+                }),
+            },
+            MenuItem {
+                label: "Start / 启动".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::Action(Action::StartPortForwardConsole),
+            },
+            MenuItem {
+                label: "Stop / 停止".to_string(),
+                value: "".to_string(),
+                kind: ItemKind::Action(Action::StopPortForwardConsole),
             },
             MenuItem {
                 label: "Back / 返回".to_string(),
@@ -609,14 +708,6 @@ fn build_images_menu() -> MenuScreen {
                 }),
             },
             MenuItem {
-                label: "Router filter agent repo".to_string(),
-                value: "".to_string(),
-                kind: ItemKind::EditString(AccessorString {
-                    get: Arc::new(|c| c.images.router_filter_agent_repo.clone()),
-                    set: Arc::new(|c, v| c.images.router_filter_agent_repo = v),
-                }),
-            },
-            MenuItem {
                 label: "Back / 返回".to_string(),
                 value: "".to_string(),
                 kind: ItemKind::Action(Action::Back),
@@ -640,11 +731,11 @@ fn build_components_menu() -> MenuScreen {
                 }),
             },
             MenuItem {
-                label: "Router filter agent / 路由过滤Agent".to_string(),
+                label: "Router filter / 路由过滤".to_string(),
                 value: "".to_string(),
                 kind: ItemKind::ToggleBool(AccessorBool {
-                    get: Arc::new(|c| c.components.enable_router_filter_agent),
-                    set: Arc::new(|c, v| c.components.enable_router_filter_agent = v),
+                    get: Arc::new(|c| c.components.enable_router_filter),
+                    set: Arc::new(|c, v| c.components.enable_router_filter = v),
                 }),
             },
             MenuItem {

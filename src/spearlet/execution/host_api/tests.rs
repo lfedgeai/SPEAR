@@ -5,7 +5,7 @@ use crate::spearlet::execution::ai::ir::{
 };
 use crate::spearlet::execution::ai::streaming::StreamingPlan;
 use crate::spearlet::execution::hostcall::fd_table::EP_CTL_ADD;
-use crate::spearlet::execution::hostcall::types::PollEvents;
+use crate::spearlet::execution::hostcall::types::{FdInner, PollEvents};
 use crate::spearlet::execution::runtime::{ResourcePoolConfig, RuntimeConfig, RuntimeType};
 use std::collections::HashMap;
 
@@ -470,7 +470,7 @@ fn test_rtasr_write_backpressure_and_epollout() {
     assert!(ready2.is_empty());
 
     let one = vec![2u8; 1];
-    assert_eq!(api.rtasr_write(fd, &one), -libc::EAGAIN);
+    assert_eq!(api.rtasr_write(fd, &one), -super::errno::EAGAIN);
 }
 
 #[tokio::test]
@@ -521,7 +521,7 @@ async fn test_rtasr_read_epollin_and_eagain() {
                 assert!(v.get("type").is_some());
             }
             Err(e) => {
-                assert_eq!(e, -libc::EAGAIN);
+                assert_eq!(e, -super::errno::EAGAIN);
                 break;
             }
         }
@@ -1121,6 +1121,166 @@ async fn test_mic_stub_pcm16_base64_loops() {
     assert_eq!(bytes2, build_expected(4));
 
     assert_eq!(api.mic_close(mic_fd), 0);
+}
+
+#[tokio::test]
+async fn test_user_stream_inbound_read_epollin_and_eagain() {
+    let api = DefaultHostApi::new(RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: None,
+        resource_pool: ResourcePoolConfig::default(),
+    });
+
+    let exec_id = "exec-user-stream-in".to_string();
+    set_current_wasm_execution_id(Some(exec_id.clone()));
+
+    let epfd = api.spear_ep_create();
+    let fd = api.user_stream_open(1, 1);
+    assert!(fd > 0);
+    assert_eq!(
+        api.spear_ep_ctl(epfd, EP_CTL_ADD, fd, PollEvents::IN.bits() as i32),
+        0
+    );
+
+    let frame = super::ssf::build_ssf_v1_frame(1, 2, b"{}", b"hello");
+    let rc = super::user_stream::ws_push_frame(&exec_id, frame.clone());
+    assert_eq!(rc, 0);
+
+    let api2 = api.clone();
+    let ready = tokio::task::spawn_blocking(move || api2.spear_ep_wait_ready(epfd, 500))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready
+        .iter()
+        .any(|(rfd, ev)| *rfd == fd && ((*ev as u32) & PollEvents::IN.bits()) != 0));
+
+    let got = api.user_stream_read(fd).unwrap();
+    assert_eq!(got, frame);
+    assert_eq!(api.user_stream_read(fd).unwrap_err(), -super::errno::EAGAIN);
+
+    set_current_wasm_execution_id(None);
+}
+
+#[tokio::test]
+async fn test_user_stream_outbound_write_eagain_and_epollout() {
+    let api = DefaultHostApi::new(RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: None,
+        resource_pool: ResourcePoolConfig::default(),
+    });
+
+    let exec_id = "exec-user-stream-out".to_string();
+    set_current_wasm_execution_id(Some(exec_id.clone()));
+
+    let epfd = api.spear_ep_create();
+    let fd = api.user_stream_open(1, 2);
+    assert!(fd > 0);
+    assert_eq!(
+        api.spear_ep_ctl(epfd, EP_CTL_ADD, fd, PollEvents::OUT.bits() as i32),
+        0
+    );
+
+    super::user_stream::ExecutionUserStreamHub::get_or_create(&exec_id).mark_connected(1);
+
+    let frame_small = super::ssf::build_ssf_v1_frame(1, 2, b"{}", b"1234");
+
+    if let Some(entry) = api.fd_table.get(fd) {
+        let mut e = entry.lock().unwrap();
+        let FdInner::UserStream(st) = &mut e.inner else {
+            panic!("wrong fd kind");
+        };
+        let mut ch = st.channel.lock().unwrap();
+        ch.max_outbound_bytes = frame_small.len();
+        ch.max_frame_bytes = frame_small.len();
+    }
+
+    let api2 = api.clone();
+    let ready = tokio::task::spawn_blocking(move || api2.spear_ep_wait_ready(epfd, 200))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready
+        .iter()
+        .any(|(rfd, ev)| *rfd == fd && ((*ev as u32) & PollEvents::OUT.bits()) != 0));
+
+    assert_eq!(api.user_stream_write(fd, &frame_small), 0);
+    assert_eq!(api.user_stream_write(fd, &frame_small), -super::errno::EAGAIN);
+
+    let ready2 = api.spear_ep_wait_ready(epfd, 0).unwrap();
+    assert!(!ready2
+        .iter()
+        .any(|(rfd, ev)| *rfd == fd && ((*ev as u32) & PollEvents::OUT.bits()) != 0));
+
+    let drained = super::user_stream::ws_pop_any_outbound(&exec_id);
+    assert!(drained.is_some());
+
+    let api3 = api.clone();
+    let ready3 = tokio::task::spawn_blocking(move || api3.spear_ep_wait_ready(epfd, 200))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready3
+        .iter()
+        .any(|(rfd, ev)| *rfd == fd && ((*ev as u32) & PollEvents::OUT.bits()) != 0));
+
+    set_current_wasm_execution_id(None);
+}
+
+#[tokio::test]
+async fn test_user_stream_ctl_discovers_stream_ids() {
+    let api = DefaultHostApi::new(RuntimeConfig {
+        runtime_type: RuntimeType::Wasm,
+        settings: HashMap::new(),
+        global_environment: HashMap::new(),
+        spearlet_config: None,
+        resource_pool: ResourcePoolConfig::default(),
+    });
+
+    let exec_id = "exec-user-stream-ctl".to_string();
+    set_current_wasm_execution_id(Some(exec_id.clone()));
+
+    let epfd = api.spear_ep_create();
+    let ctl_fd = api.user_stream_ctl_open();
+    assert!(ctl_fd > 0);
+    assert_eq!(
+        api.spear_ep_ctl(epfd, EP_CTL_ADD, ctl_fd, PollEvents::IN.bits() as i32),
+        0
+    );
+
+    let frame = super::ssf::build_ssf_v1_frame(9, 2, b"{}", b"hello");
+    let rc = super::user_stream::ws_push_frame(&exec_id, frame.clone());
+    assert_eq!(rc, 0);
+
+    let api2 = api.clone();
+    let ready = tokio::task::spawn_blocking(move || api2.spear_ep_wait_ready(epfd, 500))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(ready
+        .iter()
+        .any(|(rfd, ev)| { *rfd == ctl_fd && ((*ev as u32) & PollEvents::IN.bits()) != 0 }));
+
+    let ev = api.user_stream_ctl_read(ctl_fd).unwrap();
+    let stream_id = u32::from_le_bytes([ev[0], ev[1], ev[2], ev[3]]);
+    let kind = u32::from_le_bytes([ev[4], ev[5], ev[6], ev[7]]);
+    assert_eq!(stream_id, 9);
+    assert_eq!(kind, 1);
+    assert_eq!(
+        api.user_stream_ctl_read(ctl_fd).unwrap_err(),
+        -super::errno::EAGAIN
+    );
+
+    let in_fd = api.user_stream_open(9, 1);
+    assert!(in_fd > 0);
+    let got = api.user_stream_read(in_fd).unwrap();
+    assert_eq!(got, frame);
+
+    set_current_wasm_execution_id(None);
 }
 
 #[cfg(feature = "mic-device")]

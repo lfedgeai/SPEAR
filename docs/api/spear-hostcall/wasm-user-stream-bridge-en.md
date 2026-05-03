@@ -25,6 +25,8 @@ This design intentionally builds on Spear’s existing fd/epoll subsystem and co
 - **WASM-friendly semantics**: non-blocking `read/write` with `-EAGAIN`, and epoll to avoid busy loops.
 - **Security boundaries**: WASM never directly sees network credentials; host enforces authz, quotas, limits.
 
+Note: `EAGAIN/EBADF/...` refers to **SPEAR virtual errno constants** (aligned with the C/Rust WASM SDK, e.g. `SPEAR_EAGAIN=11`), not the host OS `libc` errno values. This avoids macOS vs Linux errno number mismatches that can break guest-side error handling.
+
 ### 1.2 Non-goals (v1)
 
 - Full WASI sockets compatibility.
@@ -37,14 +39,21 @@ This design intentionally builds on Spear’s existing fd/epoll subsystem and co
 
 ### 2.1 Data flow
 
-Client (browser/service) connects to Spearlet and binds to an execution’s stream session:
+Client (browser/service) connects to the stream gateway and binds to an execution’s stream session:
 
-1. Client → Spearlet (WebSocket): sends `OPEN` (protocol handshake) + `DATA` frames.
-2. Spearlet: validates auth, resolves the target execution, creates/attaches **UserStreamFd** entries in the unified `FdTable`.
+1. Client → SMS (HTTP): creates a short-lived stream session token via `POST /api/v1/executions/{execution_id}/streams/session`.
+2. Client → SMS (WebSocket): connects to `GET /api/v1/executions/{execution_id}/streams/ws?token=...` and sends SSF frames.
+3. SMS: validates token and proxies the WebSocket to the target spearlet.
+4. Spearlet: routes inbound SSF frames into the execution-local stream hub and exposes them to WASM via fd/epoll hostcalls.
 3. WASM guest: uses `user_stream_*` hostcalls (fd-based) to `read/write` messages and `spear_epoll_*` to wait for readiness.
-4. Spearlet → Client (WebSocket): forwards outbound frames written by WASM.
+5. Spearlet → SMS → Client (WebSocket): forwards outbound frames written by WASM.
 
 ### 2.2 Why “fd + epoll” is the recommended WASM side model
+
+### 2.3 Rust SDK and Boa JS usage
+
+- Rust: `sdk/rust/crates/spear-wasm` provides safe wrappers for `user_stream_*` and `user_stream_ctl_*`.
+- Boa JS: `sdk/rust/crates/spear-boa` exposes `Spear.userStream` so JS code can open/read/write streams without manually dealing with raw pointers.
 
 Two options exist for delivering inbound data to a WASM instance:
 
@@ -73,7 +82,9 @@ Why WebSocket:
 
 Recommended WebSocket properties:
 
-- Path (example): `GET /api/v1/executions/{execution_id}/streams/ws`
+- Path (gateway, recommended): `GET /api/v1/executions/{execution_id}/streams/ws?token=...`
+- Stream session creation (gateway, recommended): `POST /api/v1/executions/{execution_id}/streams/session`
+- Path (spearlet, internal): `GET /api/v1/executions/{execution_id}/streams/ws`
 - Subprotocol: `Sec-WebSocket-Protocol: spear.stream.v1`
 - Frames: **binary only** for data plane; optional text frames for debugging (not required).
 
@@ -82,7 +93,7 @@ Recommended WebSocket properties:
 Best practice:
 
 - Use the same auth mechanism as the existing HTTP/gRPC gateway (token/cookie/mtls), but enforce **execution-level authorization**.
-- Require a short-lived **stream session token** if the WS endpoint is public-facing.
+- Require a short-lived **stream session token** for the public-facing gateway endpoint.
 
 Handshake options:
 
@@ -139,22 +150,15 @@ Constraints:
 
 ### 4.3 Message types (v1)
 
-- `1 = OPEN`:
-  - `meta`: required JSON (UTF-8) describing session and stream defaults.
-  - `data`: empty.
+Current implementation requires only a valid SSF v1 header (magic/version/header_len) and uses `stream_id` to route frames. `msg_type` is parsed and preserved for the guest but not interpreted by the host.
+
+Recommended v1 conventions:
+
 - `2 = DATA`:
   - `meta`: optional (per-chunk overrides; recommended to keep empty for performance).
   - `data`: raw bytes (audio/video/text or any binary).
-- `3 = COMMIT`:
-  - indicates end of an input “turn” (useful for realtime inference).
-- `4 = CLOSE`:
-  - half-close or full-close (controlled by flags).
-- `5 = ACK`:
-  - flow control acknowledgement / window update (see below).
-- `6 = ERROR`:
-  - `meta`: JSON error object; `data`: optional diagnostic bytes (capped).
-- `7 = PING`, `8 = PONG`:
-  - optional application-level keepalive in addition to WS ping/pong.
+
+Other message types (OPEN/COMMIT/CLOSE/ACK/ERROR/etc.) are reserved for future extensions.
 
 ### 4.4 Metadata conventions
 
@@ -206,10 +210,10 @@ To prevent a fast sender from overrunning the receiver even when TCP buffers abs
 - Receiver sends `ACK` to grant more credit:
   - `meta`: `{ "grant_bytes": <u64>, "ack_seq": <u64> }`
 
-A minimal v1 deployment may:
+A minimal deployment may:
 
-- Start with an initial `credit_bytes` in `OPEN.meta.limits.initial_credit_bytes`.
-- Use `ACK` only when queue consumption advances.
+- Use bounded queues + `-EAGAIN` backpressure (implemented).
+- Add `ACK`-based credit flow control later if needed (not implemented in current codebase).
 
 ### 5.3 Guest-visible backpressure
 
@@ -236,11 +240,13 @@ This section defines a new hostcall family **`user_stream_*`** that integrates w
 Create/open:
 
 - `user_stream_open(stream_id: i32, direction: i32) -> i32`
+- `user_stream_ctl_open() -> i32`
 
 I/O:
 
 - `user_stream_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32`
 - `user_stream_write(fd: i32, buf_ptr: i32, buf_len: i32) -> i32`
+- `user_stream_ctl_read(fd: i32, out_ptr: i32, out_len_ptr: i32) -> i32`
 
 Close:
 
@@ -296,9 +302,13 @@ Level-triggered rule:
 
 Recommended pattern:
 
-1. Create fds:
-   - `in_fd = user_stream_open(1, USER_STREAM_DIR_IN)`
-   - `out_fd = user_stream_open(1, USER_STREAM_DIR_OUT)` (or BIDI)
+1. (Optional) Discover available streams:
+   - `ctl_fd = user_stream_ctl_open()`
+   - register `ctl_fd` with epoll for `EPOLLIN`
+   - `user_stream_ctl_read` returns an 8-byte event: `(u32 stream_id, u32 kind)`
+2. Create data fds:
+   - `in_fd = user_stream_open(stream_id, USER_STREAM_DIR_IN)`
+   - `out_fd = user_stream_open(stream_id, USER_STREAM_DIR_OUT)` (or BIDI)
 2. Register with epoll:
    - `epfd = spear_epoll_create()`
    - `spear_epoll_ctl(epfd, ADD, in_fd, EPOLLIN)`
@@ -347,9 +357,9 @@ pub struct UserStreamState {
 
 ### 7.2 WebSocket session manager
 
-Recommended module:
+Implementation location:
 
-- `src/spearlet/execution/stream/user_stream/ws_session.rs`
+- `src/spearlet/http_gateway.rs` (`user_stream_ws_loop`)
 
 Key responsibilities:
 
@@ -378,9 +388,9 @@ async fn ws_loop(
 
 Purpose: decouple the WS transport from fd table entries and allow controlled attachment.
 
-Recommended module:
+Implementation location:
 
-- `src/spearlet/execution/stream/user_stream/hub.rs`
+- `src/spearlet/execution/host_api/user_stream.rs` (`ExecutionUserStreamHub`)
 
 Core API:
 
@@ -492,4 +502,3 @@ Expose `spear_fd_ctl(..., GET_STATUS/GET_METRICS, ...)` JSON for debugging.
   - Disconnect propagates `EPOLLHUP`
 
 Document version: v1 (2026-03-18).
-

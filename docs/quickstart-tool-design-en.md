@@ -12,7 +12,7 @@ The repository now ships a Rust quickstart tool at `tools/spear-quickstart/` (a 
 - `apply`: implemented for `mode=k8s-kind` and `mode=docker-local` (MVP); native Rust orchestration (docker/kind/helm + Kubernetes API + Docker API). `k8s-existing` not implemented
 - `state`: not implemented yet; cleanup is scope-driven (not state-driven)
 - Helm/values/secret: plumbed into `mode=k8s-kind` apply (namespace/release/values, logging overrides, images, optional OpenAI secret from env)
-  - docker-local (MVP): start `sms/spearlet` via Docker network + docker run; publish HTTP ports from config; OpenAI key is injected from env only; optional `keyword-filter-agent`
+-  - docker-local (MVP): start `sms/spearlet` via Docker network + docker run; publish HTTP ports from config; OpenAI key is injected from env only; optionally enable SMS built-in Router Filter (reserved for future plugin extensions)
 
 References (current state):
 - Legacy script (fallback): `../scripts/kind-openai-quickstart.sh`
@@ -23,7 +23,7 @@ References (current state):
 Today, `../scripts/kind-openai-quickstart.sh` essentially does:
 - Dependency checks: `docker/kind/kubectl/helm`
 - Kind cluster lifecycle: create/delete/reuse
-- Image builds: SMS / SPEARlet / Router Filter Agent (optional)
+- Image builds: SMS / SPEARlet (optional SMS built-in Router Filter)
 - Kind image loading: load local images into kind nodes
 - Helm install/upgrade: `helm upgrade --install` + values file + a few `--set` overrides
 - Readiness waits: rollout/wait ready
@@ -114,11 +114,10 @@ debian_suite = "trixie"
 tag = "local"
 sms_repo = "spear-sms"
 spearlet_repo = "spear-spearlet"
-router_filter_agent_repo = "spear-router-filter-agent"
 
 [components]
 enable_web_admin = true
-enable_router_filter_agent = true
+enable_router_filter = true
 enable_e2e = false
 spearlet_with_node = true
 spearlet_with_llama_server = true
@@ -174,7 +173,7 @@ Notes:
 Suggested main menu:
 1) Mode: `k8s-kind / k8s-existing / docker-local`
 2) Build: enable, pull_base, no_cache, debian_suite, tag/repo
-3) Components: web admin / router-filter-agent / e2e / spearlet targets
+3) Components: web admin / router filter / e2e / spearlet targets
 4) K8s/Helm (k8s-only): namespace, release, values files, timeouts, logging
 5) Kind (k8s-kind only): cluster name, reuse/keep, kubeconfig path
 6) Existing Cluster (k8s-existing only): kubeconfig/context

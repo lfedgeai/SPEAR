@@ -242,12 +242,28 @@ impl RegistrationService {
                 let v = v.trim();
                 if !v.is_empty() {
                     ip_address = v.to_string();
+                    info!(ip = %ip_address, "Using advertised IP from SPEARLET_ADVERTISE_IP");
                 }
             }
             if let Ok(v) = std::env::var("POD_IP") {
                 if let Ok(ip) = v.parse::<std::net::IpAddr>() {
                     ip_address = ip.to_string();
+                    info!(ip = %ip_address, "Using advertised IP from POD_IP");
                 }
+            }
+            if is_unspecified_ip_str(&ip_address) {
+                if let Some(ip) = detect_outbound_ipv4() {
+                    ip_address = ip.to_string();
+                    info!(ip = %ip_address, "Detected advertised IP from outbound route");
+                } else {
+                    warn!("Failed to detect advertised IP from outbound route");
+                }
+            }
+            if is_unspecified_ip_str(&ip_address) {
+                return Err(std::io::Error::other(
+                    "node advertise IP unresolved; set SPEARLET_ADVERTISE_IP (or POD_IP) to a reachable IP address",
+                )
+                .into());
             }
         }
         let node_uuid = config.compute_node_uuid();
@@ -255,6 +271,7 @@ impl RegistrationService {
             uuid: node_uuid,
             ip_address,
             port: node_addr.port() as i32,
+            http_port: config.http.server.addr.port() as i32,
             status: "online".to_string(),
             last_heartbeat: chrono::Utc::now().timestamp(),
             registered_at: chrono::Utc::now().timestamp(),
@@ -553,4 +570,27 @@ impl RegistrationService {
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
     }
+}
+
+fn is_unspecified_ip_str(ip: &str) -> bool {
+    match ip.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.is_unspecified(),
+        Ok(std::net::IpAddr::V6(v6)) => v6.is_unspecified(),
+        Err(_) => true,
+    }
+}
+
+fn detect_outbound_ipv4() -> Option<std::net::Ipv4Addr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    for target in ["8.8.8.8:80", "1.1.1.1:80"] {
+        if sock.connect(target).is_ok() {
+            if let Ok(std::net::SocketAddr::V4(local)) = sock.local_addr() {
+                let ip = *local.ip();
+                if !ip.is_unspecified() && !ip.is_loopback() {
+                    return Some(ip);
+                }
+            }
+        }
+    }
+    None
 }

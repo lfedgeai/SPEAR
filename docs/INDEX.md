@@ -65,6 +65,7 @@
 | Handlers to Services Refactor | [handlers-to-services-refactor-en.md](./handlers-to-services-refactor-en.md) | [handlers-to-services-refactor-zh.md](./handlers-to-services-refactor-zh.md) | 处理器到服务重构 |
 | Web Admin Overview | [web-admin-overview-en.md](./web-admin-overview-en.md) | [web-admin-overview-zh.md](./web-admin-overview-zh.md) | 管理页面概览 |
 | Web Admin UI Guide | [web-admin-ui-guide-en.md](./web-admin-ui-guide-en.md) | [web-admin-ui-guide-zh.md](./web-admin-ui-guide-zh.md) | 管理页面交互与使用指南 |
+| SPEAR Console Overview | [spear-console-overview-en.md](./spear-console-overview-en.md) | [spear-console-overview-zh.md](./spear-console-overview-zh.md) | 用户前端 Console 概览 |
 
 ### 🔌 gRPC Layer / gRPC层
 

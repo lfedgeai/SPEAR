@@ -11,17 +11,26 @@ use axum::{
 
 use super::gateway::GatewayState;
 use super::handlers::{
-    delete_file, delete_node, download_file, get_execution, get_file_meta, get_node,
-    get_node_resource, get_node_with_resource, get_task, health_check, heartbeat, list_files,
+    console_index, console_static, create_stream_session, delete_file, delete_node, download_file,
+    endpoint_ws_proxy, get_execution, get_file_meta, get_node, get_node_resource,
+    get_node_with_resource, get_task, health_check, heartbeat, list_files,
     list_instance_executions, list_node_resources, list_nodes, list_task_instances, list_tasks,
     openapi_spec, place_invocation, presign_upload, register_node, register_task,
-    report_invocation_outcome, swagger_ui, swagger_ui_assets, unregister_task, update_node,
-    update_node_resource, upload_file,
+    report_invocation_outcome, stream_ws_proxy, swagger_ui, swagger_ui_assets, unregister_task,
+    update_node, update_node_resource, upload_file,
 };
 
 /// Create HTTP routes / 创建HTTP路由
 pub(crate) fn create_routes(state: GatewayState) -> Router {
-    Router::new()
+    let mut r = Router::new();
+    if state.config.enable_console {
+        r = r
+            // SPEAR Console (user-facing) / 用户前端
+            .route("/console", get(console_index))
+            .route("/console/", get(console_index))
+            .route("/console/static/{*path}", get(console_static));
+    }
+    r
         // Node management endpoints / 节点管理端点
         .route("/api/v1/nodes", post(register_node))
         .route("/api/v1/nodes", get(list_nodes))
@@ -51,6 +60,17 @@ pub(crate) fn create_routes(state: GatewayState) -> Router {
             get(list_instance_executions),
         )
         .route("/api/v1/executions/{execution_id}", get(get_execution))
+        // Stream session / WS proxy endpoints / 流会话与WS代理端点
+        .route(
+            "/api/v1/executions/{execution_id}/streams/session",
+            post(create_stream_session),
+        )
+        .route(
+            "/api/v1/executions/{execution_id}/streams/ws",
+            get(stream_ws_proxy),
+        )
+        // Endpoint gateway / Endpoint 网关
+        .route("/e/{endpoint}/ws", get(endpoint_ws_proxy))
         .route(
             "/api/v1/placement/invocations/place",
             post(place_invocation),

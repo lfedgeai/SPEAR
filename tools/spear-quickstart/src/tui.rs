@@ -76,8 +76,10 @@ impl ScopePart {
 #[derive(Clone)]
 enum Action {
     Back,
-    StartPortForward,
-    StopPortForward,
+    StartPortForwardWebAdmin,
+    StopPortForwardWebAdmin,
+    StartPortForwardConsole,
+    StopPortForwardConsole,
 }
 
 #[derive(Clone)]
@@ -113,7 +115,8 @@ struct App {
     mode: UiMode,
     dirty: bool,
     should_exit: bool,
-    port_forward: Option<PortForwardState>,
+    port_forward_web_admin: Option<PortForwardState>,
+    port_forward_console: Option<PortForwardState>,
     input: String,
     input_title: String,
     input_apply: Option<Arc<dyn Fn(&mut App, String) + Send + Sync>>,
@@ -135,8 +138,16 @@ enum PendingAction {
     Apply,
     Status,
     Cleanup,
-    StartPortForward,
-    StopPortForward,
+    StartPortForwardWebAdmin,
+    StopPortForwardWebAdmin,
+    StartPortForwardConsole,
+    StopPortForwardConsole,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PortForwardTarget {
+    WebAdmin,
+    Console,
 }
 
 struct PortForwardState {
@@ -176,7 +187,8 @@ impl App {
             mode: UiMode::Menu,
             dirty: false,
             should_exit: false,
-            port_forward: None,
+            port_forward_web_admin: None,
+            port_forward_console: None,
             input: String::new(),
             input_title: String::new(),
             input_apply: None,
@@ -245,7 +257,8 @@ fn run(
         }
     }
 
-    stop_port_forward(app);
+    stop_port_forward(app, PortForwardTarget::WebAdmin);
+    stop_port_forward(app, PortForwardTarget::Console);
     Ok(std::mem::replace(
         app,
         App::new(app.cfg.clone(), app.config_path.clone()),
@@ -428,14 +441,25 @@ fn handle_menu_key(app: &mut App, code: KeyCode) -> anyhow::Result<()> {
                 ItemKind::Action(Action::Back) => {
                     app.pop();
                 }
-                ItemKind::Action(Action::StartPortForward) => {
-                    app.pending = Some(PendingAction::StartPortForward);
+                ItemKind::Action(Action::StartPortForwardWebAdmin) => {
+                    app.pending = Some(PendingAction::StartPortForwardWebAdmin);
                 }
-                ItemKind::Action(Action::StopPortForward) => {
+                ItemKind::Action(Action::StopPortForwardWebAdmin) => {
                     app.confirm_title = "Stop port-forward / 停止端口转发".to_string();
                     app.confirm_text =
                         "Stop the running port-forward now?\n现在停止端口转发？".to_string();
-                    app.confirm_action = Some(PendingAction::StopPortForward);
+                    app.confirm_action = Some(PendingAction::StopPortForwardWebAdmin);
+                    app.confirm_choice = ConfirmChoice::Ok;
+                    app.mode = UiMode::Confirm;
+                }
+                ItemKind::Action(Action::StartPortForwardConsole) => {
+                    app.pending = Some(PendingAction::StartPortForwardConsole);
+                }
+                ItemKind::Action(Action::StopPortForwardConsole) => {
+                    app.confirm_title = "Stop port-forward / 停止端口转发".to_string();
+                    app.confirm_text =
+                        "Stop the running port-forward now?\n现在停止端口转发？".to_string();
+                    app.confirm_action = Some(PendingAction::StopPortForwardConsole);
                     app.confirm_choice = ConfirmChoice::Ok;
                     app.mode = UiMode::Confirm;
                 }
@@ -603,14 +627,27 @@ fn execute_pending(
                                 .push_str(&format!("\nStatus failed:\n{e:?}\n"));
                         }
                     }
-                    if app.cfg.mode.name == "k8s-kind"
-                        && app.cfg.k8s.port_forward.enabled
-                        && app.cfg.k8s.port_forward.auto_start
-                    {
-                        if let Err(e) = start_port_forward(app) {
-                            app.view_text
-                                .push_str(&format!("\nPort-forward failed:\n{e:?}\n"));
-                        } else {
+                    if app.cfg.mode.name == "k8s-kind" {
+                        let mut any_started = false;
+                        if app.cfg.k8s.port_forward.enabled && app.cfg.k8s.port_forward.auto_start {
+                            match start_port_forward(app, PortForwardTarget::WebAdmin) {
+                                Ok(()) => any_started = true,
+                                Err(e) => app.view_text.push_str(&format!(
+                                    "\nPort-forward(web admin) failed:\n{e:?}\n"
+                                )),
+                            }
+                        }
+                        if app.cfg.k8s.port_forward_console.enabled
+                            && app.cfg.k8s.port_forward_console.auto_start
+                        {
+                            match start_port_forward(app, PortForwardTarget::Console) {
+                                Ok(()) => any_started = true,
+                                Err(e) => app.view_text.push_str(&format!(
+                                    "\nPort-forward(console) failed:\n{e:?}\n"
+                                )),
+                            }
+                        }
+                        if any_started {
                             app.view_text.push_str(&format!(
                                 "\nPort-forward: {}\n",
                                 port_forward_summary(app)
@@ -650,7 +687,8 @@ fn execute_pending(
         }
         PendingAction::Cleanup => {
             let _ = config::save_config(&app.config_path, &app.cfg);
-            stop_port_forward(app);
+            stop_port_forward(app, PortForwardTarget::WebAdmin);
+            stop_port_forward(app, PortForwardTarget::Console);
             let scope = app.cleanup_scope.trim().to_string();
             suspend_tui(terminal).ok();
             let res = deploy::cleanup(&app.cfg, &scope, true);
@@ -669,11 +707,11 @@ fn execute_pending(
             app.mode = UiMode::ViewText;
             Ok(())
         }
-        PendingAction::StartPortForward => {
-            match start_port_forward(app) {
+        PendingAction::StartPortForwardWebAdmin => {
+            match start_port_forward(app, PortForwardTarget::WebAdmin) {
                 Ok(()) => {
                     app.view_title = "Port-forward started / 端口转发已启动".to_string();
-                    if let Some(pf) = &app.port_forward {
+                    if let Some(pf) = &app.port_forward_web_admin {
                         app.view_text = format!(
                             "{}\nlog: {}\n",
                             port_forward_summary(app),
@@ -693,8 +731,41 @@ fn execute_pending(
             app.mode = UiMode::ViewText;
             Ok(())
         }
-        PendingAction::StopPortForward => {
-            stop_port_forward(app);
+        PendingAction::StopPortForwardWebAdmin => {
+            stop_port_forward(app, PortForwardTarget::WebAdmin);
+            tui_menu::refresh_current_values(app);
+            app.view_title = "Port-forward stopped / 端口转发已停止".to_string();
+            app.view_text = "Stopped.\n".to_string();
+            app.view_scroll = 0;
+            app.mode = UiMode::ViewText;
+            Ok(())
+        }
+        PendingAction::StartPortForwardConsole => {
+            match start_port_forward(app, PortForwardTarget::Console) {
+                Ok(()) => {
+                    app.view_title = "Port-forward started / 端口转发已启动".to_string();
+                    if let Some(pf) = &app.port_forward_console {
+                        app.view_text = format!(
+                            "{}\nlog: {}\n",
+                            port_forward_summary(app),
+                            pf.log_path.display()
+                        );
+                    } else {
+                        app.view_text = format!("{}\n", port_forward_summary(app));
+                    }
+                }
+                Err(e) => {
+                    app.view_title = "Port-forward failed / 端口转发失败".to_string();
+                    app.view_text = format!("{e:?}\n");
+                }
+            }
+            tui_menu::refresh_current_values(app);
+            app.view_scroll = 0;
+            app.mode = UiMode::ViewText;
+            Ok(())
+        }
+        PendingAction::StopPortForwardConsole => {
+            stop_port_forward(app, PortForwardTarget::Console);
             tui_menu::refresh_current_values(app);
             app.view_title = "Port-forward stopped / 端口转发已停止".to_string();
             app.view_text = "Stopped.\n".to_string();
@@ -742,23 +813,16 @@ fn help_text() -> String {
 }
 
 fn port_forward_title(app: &App) -> String {
-    match &app.port_forward {
-        Some(pf) => format!("On:{}", pf.local_port),
-        None => {
-            if app.cfg.k8s.port_forward.enabled {
-                "Off".to_string()
-            } else {
-                "Disabled".to_string()
-            }
-        }
-    }
+    let console = port_forward_short(app, PortForwardTarget::Console);
+    let web = port_forward_short(app, PortForwardTarget::WebAdmin);
+    format!("c={console} w={web}")
 }
 
 fn port_forward_status_style(app: &App) -> Style {
-    if !app.cfg.k8s.port_forward.enabled {
+    if !app.cfg.k8s.port_forward.enabled && !app.cfg.k8s.port_forward_console.enabled {
         return Style::default().fg(Color::DarkGray);
     }
-    if app.port_forward.is_some() {
+    if app.port_forward_web_admin.is_some() || app.port_forward_console.is_some() {
         Style::default().fg(Color::LightGreen)
     } else {
         Style::default().fg(Color::LightRed)
@@ -766,16 +830,63 @@ fn port_forward_status_style(app: &App) -> Style {
 }
 
 fn port_forward_summary(app: &App) -> String {
-    if !app.cfg.k8s.port_forward.enabled {
+    format!(
+        "console: {} | web_admin: {}",
+        port_forward_long(app, PortForwardTarget::Console),
+        port_forward_long(app, PortForwardTarget::WebAdmin),
+    )
+}
+
+fn port_forward_summary_web_admin(app: &App) -> String {
+    port_forward_long(app, PortForwardTarget::WebAdmin)
+}
+
+fn port_forward_summary_console(app: &App) -> String {
+    port_forward_long(app, PortForwardTarget::Console)
+}
+
+fn port_forward_short(app: &App, target: PortForwardTarget) -> String {
+    let (cfg, state) = match target {
+        PortForwardTarget::WebAdmin => (&app.cfg.k8s.port_forward, &app.port_forward_web_admin),
+        PortForwardTarget::Console => (
+            &app.cfg.k8s.port_forward_console,
+            &app.port_forward_console,
+        ),
+    };
+    if !cfg.enabled {
         return "Disabled".to_string();
     }
-    match &app.port_forward {
+    match state {
+        Some(pf) => format!("On:{}", pf.local_port),
+        None => {
+            if cfg.auto_start {
+                format!("Off(auto):{}", cfg.local_port)
+            } else {
+                format!("Off:{}", cfg.local_port)
+            }
+        }
+    }
+}
+
+fn port_forward_long(app: &App, target: PortForwardTarget) -> String {
+    let (cfg, state) = match target {
+        PortForwardTarget::WebAdmin => (&app.cfg.k8s.port_forward, &app.port_forward_web_admin),
+        PortForwardTarget::Console => (
+            &app.cfg.k8s.port_forward_console,
+            &app.port_forward_console,
+        ),
+    };
+
+    if !cfg.enabled {
+        return "Disabled".to_string();
+    }
+    match state {
         Some(pf) => format!("On {} ({}->{})", pf.url, pf.local_port, pf.remote_port),
         None => {
-            if app.cfg.k8s.port_forward.auto_start {
-                format!("Off (auto) :{}", app.cfg.k8s.port_forward.local_port)
+            if cfg.auto_start {
+                format!("Off (auto) :{}", cfg.local_port)
             } else {
-                format!("Off :{}", app.cfg.k8s.port_forward.local_port)
+                format!("Off :{}", cfg.local_port)
             }
         }
     }
@@ -783,9 +894,15 @@ fn port_forward_summary(app: &App) -> String {
 
 fn refresh_port_forward_status(app: &mut App) {
     let mut changed = false;
-    if let Some(pf) = &mut app.port_forward {
+    if let Some(pf) = &mut app.port_forward_web_admin {
         if let Ok(Some(_)) = pf.child.try_wait() {
-            app.port_forward = None;
+            app.port_forward_web_admin = None;
+            changed = true;
+        }
+    }
+    if let Some(pf) = &mut app.port_forward_console {
+        if let Ok(Some(_)) = pf.child.try_wait() {
+            app.port_forward_console = None;
             changed = true;
         }
     }
@@ -794,22 +911,37 @@ fn refresh_port_forward_status(app: &mut App) {
     }
 }
 
-fn stop_port_forward(app: &mut App) {
-    if let Some(mut pf) = app.port_forward.take() {
+fn stop_port_forward(app: &mut App, target: PortForwardTarget) {
+    let state = match target {
+        PortForwardTarget::WebAdmin => &mut app.port_forward_web_admin,
+        PortForwardTarget::Console => &mut app.port_forward_console,
+    };
+    if let Some(mut pf) = state.take() {
         let _ = pf.child.kill();
         let _ = pf.child.wait();
     }
 }
 
-fn start_port_forward(app: &mut App) -> anyhow::Result<()> {
-    stop_port_forward(app);
+fn start_port_forward(app: &mut App, target: PortForwardTarget) -> anyhow::Result<()> {
+    stop_port_forward(app, target);
     if app.cfg.mode.name != "k8s-kind" {
         return Err(anyhow::anyhow!(
             "port-forward currently supports mode=k8s-kind only"
         ));
     }
-    if !app.cfg.k8s.port_forward.enabled {
-        return Err(anyhow::anyhow!("k8s.port_forward.enabled is false"));
+
+    let (cfg, log_name, url_path) = match target {
+        PortForwardTarget::WebAdmin => {
+            (&app.cfg.k8s.port_forward, "port-forward-web-admin.log", "/")
+        }
+        PortForwardTarget::Console => (
+            &app.cfg.k8s.port_forward_console,
+            "port-forward-console.log",
+            "/console",
+        ),
+    };
+    if !cfg.enabled {
+        return Err(anyhow::anyhow!("port-forward is disabled"));
     }
 
     let repo_root = config::repo_root()?;
@@ -817,13 +949,13 @@ fn start_port_forward(app: &mut App) -> anyhow::Result<()> {
     let kubeconfig_str = kubeconfig.to_string_lossy().to_string();
     let ns = app.cfg.k8s.namespace.clone();
     let release = app.cfg.k8s.release_name.clone();
-    let local_port = app.cfg.k8s.port_forward.local_port;
-    let remote_port = app.cfg.k8s.port_forward.remote_port;
+    let local_port = cfg.local_port;
+    let remote_port = cfg.remote_port;
     let svc = format!("svc/{}-spear-sms", release);
 
     let log_dir = repo_root.join(&app.cfg.paths.state_dir);
     std::fs::create_dir_all(&log_dir).ok();
-    let log_path = log_dir.join("port-forward.log");
+    let log_path = log_dir.join(log_name);
     let log = OpenOptions::new()
         .create(true)
         .write(true)
@@ -843,14 +975,18 @@ fn start_port_forward(app: &mut App) -> anyhow::Result<()> {
     cmd.stderr(Stdio::from(log_err));
     let child = cmd.spawn().context("spawn kubectl port-forward")?;
 
-    let url = format!("http://127.0.0.1:{}/", local_port);
-    app.port_forward = Some(PortForwardState {
+    let url = format!("http://127.0.0.1:{}{}", local_port, url_path);
+    let state = PortForwardState {
         child,
         local_port,
         remote_port,
         url,
         log_path,
-    });
+    };
+    match target {
+        PortForwardTarget::WebAdmin => app.port_forward_web_admin = Some(state),
+        PortForwardTarget::Console => app.port_forward_console = Some(state),
+    }
     tui_menu::refresh_current_values(app);
     Ok(())
 }

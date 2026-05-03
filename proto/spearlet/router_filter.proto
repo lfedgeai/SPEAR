@@ -2,25 +2,19 @@ syntax = "proto3";
 
 package spearlet;
 
-// RouterFilterStreamService: Filter 进程作为 gRPC client 主动连接到 Spearlet 的 TCP gRPC 端口；
-// RouterFilterStreamService: The filter agent dials Spearlet's TCP gRPC port as a gRPC client;
-// Spearlet 作为 gRPC server 通过同一条双向 stream 下发过滤请求并接收响应。
-// Spearlet acts as a gRPC server and uses the same bidirectional stream to push filter requests
-// and receive decisions.
-service RouterFilterStreamService {
-  // Open establishes a long-lived bidirectional stream.
-  // Open 建立长连接双向 stream。
-  //
-  // Filter side sends: RegisterRequest / Heartbeat / FilterResponse
-  // Filter 侧发送：RegisterRequest / Heartbeat / FilterResponse
-  //
-  // Spearlet side sends: RegisterResponse / Ping / Reject / FilterRequest
-  // Spearlet 侧发送：RegisterResponse / Ping / Reject / FilterRequest
-  rpc Open(stream StreamClientMessage) returns (stream StreamServerMessage);
-
-  // FetchRequestById allows agent to fetch request payload by request_id with session_token.
-  // FetchRequestById 允许 agent 基于 request_id + session_token 受控拉取请求 payload。
-  rpc FetchRequestById(RequestFetchRequest) returns (RequestFetchResponse);
+// RouterFilterService: Router Filter is a server; Spearlet dials it as a gRPC client.
+// RouterFilterService：Router Filter 作为服务端；Spearlet 作为 gRPC client 主动连接并发起过滤请求。
+//
+// Best practice:
+// - Keep payload small and bounded (signals + optional payload snippet).
+// - Fail-open is controlled by Spearlet config.
+// 业界实践：
+// - 控制请求体积（signals + 可选 payload 片段），避免大包影响路由延迟。
+// - fail-open 策略由 Spearlet 配置控制。
+service RouterFilterService {
+  // Filter asks the server to filter/score candidates for a single routing decision.
+  // Filter 请求服务端对一次路由决策进行候选过滤/打分。
+  rpc Filter(FilterRequest) returns (FilterResponse);
 }
 
 // Operation is aligned with CanonicalRequestEnvelope.operation.
@@ -35,87 +29,11 @@ enum Operation {
   OPERATION_REALTIME_VOICE = 6;
 }
 
-// StreamClientMessage: messages sent from filter agent to spearlet.
-// StreamClientMessage：Filter agent -> Spearlet 的消息。
-message StreamClientMessage {
-  oneof msg {
-    RegisterRequest register = 1;
-    Heartbeat heartbeat = 2;
-    FilterResponse filter_response = 3;
-  }
-}
-
-// StreamServerMessage: messages sent from spearlet to filter agent.
-// StreamServerMessage：Spearlet -> Filter agent 的消息。
-message StreamServerMessage {
-  oneof msg {
-    RegisterResponse register_ok = 1;
-    Ping ping = 2;
-    Reject reject = 3;
-    FilterRequest filter_request = 4;
-  }
-}
-
-// RegisterRequest declares agent identity and capabilities.
-// RegisterRequest 声明 agent 标识与能力。
-message RegisterRequest {
-  // Filter process id for observability and routing.
-  // Filter 进程标识（用于观测与路由）。
-  string agent_id = 1;
-
-  // Optional declared supported operations.
-  // 可选：声明支持的 operation。
-  repeated Operation supported_operations = 2;
-
-  // Max in-flight requests the agent can process concurrently.
-  // agent 可并发处理的最大 in-flight 请求数。
-  uint32 max_inflight = 3;
-
-  // Preferred max candidates to receive per request (Spearlet may truncate).
-  // 期望每次请求最多接收的候选数（Spearlet 可能截断）。
-  uint32 max_candidates = 4;
-
-  // Protocol version supported by agent.
-  // agent 支持的协议版本。
-  uint32 protocol_version = 5;
-}
-
-// RegisterResponse acknowledges registration.
-// RegisterResponse 确认注册结果。
-message RegisterResponse {
-  uint32 protocol_version = 1;
-  bool accepted = 2;
-  string message = 3;
-  string session_token = 4;
-  int64 token_expire_at_ms = 5;
-}
-
-// Heartbeat keeps the stream alive and updates agent liveness.
-// Heartbeat 用于保活并更新 agent 存活状态。
-message Heartbeat {
-  // Optional wall clock timestamp (ms).
-  // 可选：毫秒时间戳。
-  int64 now_ms = 1;
-}
-
-// Ping is a server-side keepalive message.
-// Ping 是服务端的保活消息。
-message Ping {
-  int64 now_ms = 1;
-}
-
-// Reject asks agent to stop / disconnect with a reason.
-// Reject 要求 agent 停止/断开，并携带原因。
-message Reject {
-  string code = 1;
-  string message = 2;
-}
-
-// FilterRequest is pushed by spearlet to ask agent to filter/score candidates.
-// FilterRequest 由 Spearlet 下发，要求 agent 对候选集过滤/打分。
+// FilterRequest is sent by Spearlet to ask server to filter/score candidates.
+// FilterRequest 由 Spearlet 发送，要求服务端对候选集过滤/打分。
 message FilterRequest {
   // Correlation id used for multiplexing concurrent requests on a single stream.
-  // 用于在同一条 stream 上并发复用的关联 ID。
+  // 用于观测/排障关联一次路由决策的关联 ID。
   string correlation_id = 1;
 
   // CanonicalRequestEnvelope.request_id
@@ -149,6 +67,14 @@ message FilterRequest {
   // Candidate set after hard filtering and routing hints.
   // 硬过滤与 routing hints 后的候选集。
   repeated Candidate candidates = 9;
+
+  // Optional request payload snippet for filtering (size-bounded by Spearlet config).
+  // 可选：用于过滤的请求 payload 片段（大小由 Spearlet 配置限制）。
+  //
+  // For privacy and latency, this should be disabled by default and only enabled when needed.
+  // 出于隐私与延迟考虑，默认应关闭，仅在确有需要时开启。
+  string request_content_type = 10;
+  bytes request_payload = 11;
 }
 
 // RoutingHints describes hard routing constraints and requested model.
@@ -185,18 +111,6 @@ message RequestSignals {
   uint32 audio_channels = 12;
   uint32 audio_duration_ms = 13;
   string audio_language_hint = 14;
-}
-
-message RequestFetchRequest {
-  string request_id = 1;
-  string session_token = 2;
-  uint32 max_bytes = 3;
-}
-
-message RequestFetchResponse {
-  string request_id = 1;
-  string content_type = 2;
-  bytes payload = 3;
 }
 
 // Candidate describes a backend instance candidate.
@@ -256,8 +170,8 @@ message CandidateRuntimeHints {
   bool healthy = 4;
 }
 
-// FilterResponse is sent by agent to return decisions.
-// FilterResponse 由 agent 返回，携带决策结果。
+// FilterResponse is returned by server to carry decisions.
+// FilterResponse 由服务端返回，携带决策结果。
 message FilterResponse {
   // Must match FilterRequest.correlation_id.
   // 必须与 FilterRequest.correlation_id 一致。

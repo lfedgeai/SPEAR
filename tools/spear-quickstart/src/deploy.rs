@@ -56,10 +56,6 @@ fn env_for_kind(cfg: &Config) -> anyhow::Result<HashMap<String, String>> {
         "SPEARLET_IMAGE_REPO".to_string(),
         cfg.images.spearlet_repo.clone(),
     );
-    env.insert(
-        "ROUTER_FILTER_AGENT_IMAGE_REPO".to_string(),
-        cfg.images.router_filter_agent_repo.clone(),
-    );
     env.insert("IMAGE_TAG".to_string(), cfg.images.tag.clone());
     env.insert(
         "SPEARLET_WITH_NODE".to_string(),
@@ -74,8 +70,8 @@ fn env_for_kind(cfg: &Config) -> anyhow::Result<HashMap<String, String>> {
         bool01(cfg.components.enable_web_admin).to_string(),
     );
     env.insert(
-        "ENABLE_ROUTER_FILTER_AGENT".to_string(),
-        bool01(cfg.components.enable_router_filter_agent).to_string(),
+        "ENABLE_ROUTER_FILTER".to_string(),
+        bool01(cfg.components.enable_router_filter).to_string(),
     );
     env.insert(
         "ENABLE_E2E".to_string(),
@@ -415,7 +411,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
 
     let sms_image = format!("{}:{}", cfg.images.sms_repo, cfg.images.tag);
     let spearlet_image = format!("{}:{}", cfg.images.spearlet_repo, cfg.images.tag);
-    let router_image = format!("{}:{}", cfg.images.router_filter_agent_repo, cfg.images.tag);
 
     if cfg.build.enabled {
         ensure_tool("docker", &["version"])?;
@@ -457,23 +452,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
             run_checked(&mut cmd, "docker build spearlet")
         });
 
-        if cfg.components.enable_router_filter_agent {
-            apply_result = apply_result.and_then(|_| {
-                let mut cmd = Command::new("docker");
-                cmd.current_dir(&repo_root);
-                cmd.args(["build"]);
-                cmd.args(&build_flags);
-                cmd.args(["-f", "deploy/docker/router-filter-agent/Dockerfile"]);
-                cmd.args([
-                    "--build-arg",
-                    &format!("DEBIAN_SUITE={}", cfg.build.debian_suite),
-                ]);
-                cmd.args(["-t", &router_image]);
-                cmd.arg(".");
-                run_checked(&mut cmd, "docker build router-filter-agent")
-            });
-        }
-
         apply_result = apply_result.and_then(|_| {
             let rt = Runtime::new().context("create tokio runtime")?;
             rt.block_on(async {
@@ -481,9 +459,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
                     Docker::connect_with_local_defaults().context("connect docker daemon")?;
                 docker_assert_image_exists(&docker, &sms_image).await?;
                 docker_assert_image_exists(&docker, &spearlet_image).await?;
-                if cfg.components.enable_router_filter_agent {
-                    docker_assert_image_exists(&docker, &router_image).await?;
-                }
                 Ok::<(), anyhow::Error>(())
             })?;
 
@@ -493,9 +468,6 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
             cmd.args(["load", "docker-image", "--name", cluster_name]);
             cmd.arg(&sms_image);
             cmd.arg(&spearlet_image);
-            if cfg.components.enable_router_filter_agent {
-                cmd.arg(&router_image);
-            }
             run_checked(&mut cmd, "kind load docker-image")
         });
     }
@@ -560,18 +532,15 @@ fn apply_k8s_kind_native(cfg: &Config) -> anyhow::Result<()> {
         helm_args.push("sms.config.enableWebAdmin=false".to_string());
     }
 
-    if cfg.components.enable_router_filter_agent {
-        helm_args.push("--set".to_string());
-        helm_args.push(format!(
-            "routerFilterAgent.image.repository={}",
-            cfg.images.router_filter_agent_repo
-        ));
-        helm_args.push("--set".to_string());
-        helm_args.push(format!("routerFilterAgent.image.tag={}", cfg.images.tag));
-    } else {
-        helm_args.push("--set".to_string());
-        helm_args.push("routerFilterAgent.enabled=false".to_string());
-    }
+    helm_args.push("--set".to_string());
+    helm_args.push(format!(
+        "routerFilter.enabled={}",
+        if cfg.components.enable_router_filter {
+            "true"
+        } else {
+            "false"
+        }
+    ));
 
     if cfg.components.enable_e2e {
         helm_args.push("--set".to_string());

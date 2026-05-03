@@ -12,7 +12,7 @@
 - `apply`：已实现 `mode=k8s-kind` 与 `mode=docker-local`（MVP）；默认走 Rust 内置编排（docker/kind/helm + Kubernetes API + Docker API）；`k8s-existing` 尚未实现
 - `state`：尚未实现 state 落盘与基于 state 的安全 cleanup（目前 cleanup 主要按 scope 驱动，而非 state 驱动）
 - Helm/values/secret：已贯通到 `mode=k8s-kind` apply（namespace/release/values、日志覆盖、镜像配置、可选从 env 创建 OpenAI Secret）
-  - docker-local（MVP）：通过 Docker network + docker run 拉起 `sms/spearlet`，按配置映射 HTTP 端口；OpenAI key 仅从 env 注入容器 env；可选启动 `keyword-filter-agent`
+-  - docker-local（MVP）：通过 Docker network + docker run 拉起 `sms/spearlet`，按配置映射 HTTP 端口；OpenAI key 仅从 env 注入容器 env；可选启用 SMS 内置 Router Filter（预留插件扩展点）
 
 相关现状参考：
 - legacy 脚本（fallback）：`../scripts/kind-openai-quickstart.sh`
@@ -23,7 +23,7 @@
 当前 `../scripts/kind-openai-quickstart.sh` 的核心流程是：
 - 依赖检查：`docker/kind/kubectl/helm`
 - kind 集群：创建/删除/复用
-- 镜像构建：SMS / SPEARlet / Router Filter Agent（可选）
+- 镜像构建：SMS / SPEARlet（可选启用 SMS 内置 Router Filter）
 - kind load：把本机镜像加载到 kind 节点
 - Helm 安装：`helm upgrade --install` + values 文件 + 部分 `--set` 覆盖
 - 等待就绪：rollout/wait ready
@@ -114,11 +114,10 @@ debian_suite = "trixie"
 tag = "local"
 sms_repo = "spear-sms"
 spearlet_repo = "spear-spearlet"
-router_filter_agent_repo = "spear-router-filter-agent"
 
 [components]
 enable_web_admin = true
-enable_router_filter_agent = true
+enable_router_filter = true
 enable_e2e = false
 spearlet_with_node = true
 spearlet_with_llama_server = true
@@ -174,7 +173,7 @@ publish_spearlet_http = "18081:8081"
 主菜单建议：
 1) Mode：选择 `k8s-kind / k8s-existing / docker-local`
 2) Build：是否 build、pull_base、no_cache、debian_suite、tag/repo
-3) Components：web admin / router-filter-agent / e2e / spearlet target
+3) Components：web admin / router filter / e2e / spearlet target
 4) K8s/Helm（仅 k8s 模式）：namespace、release、values files、timeout、日志策略
 5) Kind（仅 k8s-kind）：cluster name、reuse/keep、kubeconfig 路径
 6) Existing Cluster（仅 k8s-existing）：kubeconfig/context

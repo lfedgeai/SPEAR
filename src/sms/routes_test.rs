@@ -20,6 +20,7 @@ use crate::proto::sms::{
 };
 use crate::sms::gateway::{create_gateway_router, GatewayState};
 use crate::sms::routes::create_routes;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -33,6 +34,7 @@ fn create_mock_gateway_state() -> GatewayState {
         .to_string();
 
     GatewayState {
+        config: Arc::new(crate::sms::config::SmsConfig::default()),
         node_client: NodeServiceClient::new(channel.clone()),
         task_client: TaskServiceClient::new(channel.clone()),
         placement_client: PlacementServiceClient::new(channel.clone()),
@@ -44,6 +46,8 @@ fn create_mock_gateway_state() -> GatewayState {
         model_deployment_registry_client: ModelDeploymentRegistryServiceClient::new(
             channel.clone(),
         ),
+        stream_sessions: crate::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir,
@@ -193,6 +197,55 @@ async fn test_resource_routes_structure() {
                 [
                     StatusCode::OK,
                     StatusCode::NOT_FOUND,
+                    StatusCode::INTERNAL_SERVER_ERROR
+                ]
+                .contains(&response.status()),
+                "Route {} {} should be matched",
+                method,
+                uri
+            );
+        } else {
+            assert_ne!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "Route {} {} should exist",
+                method,
+                uri
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_stream_routes_structure() {
+    // Test stream routes structure / 测试流相关路由结构
+    let state = create_mock_gateway_state();
+    let app = create_routes(state);
+
+    let test_cases = vec![
+        (Method::POST, "/api/v1/executions/exec-1/streams/session"),
+        (Method::GET, "/api/v1/executions/exec-1/streams/ws?token=t"),
+        (Method::GET, "/e/echo/ws"),
+    ];
+
+    for (method, uri) in test_cases {
+        let request = Request::builder()
+            .method(method.clone())
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+
+        let response = app.clone().oneshot(request).await.unwrap();
+        if uri.starts_with("/api/v1/executions/") {
+            assert!(
+                [
+                    StatusCode::OK,
+                    StatusCode::BAD_REQUEST,
+                    StatusCode::UNAUTHORIZED,
+                    StatusCode::FORBIDDEN,
+                    StatusCode::NOT_FOUND,
+                    StatusCode::BAD_GATEWAY,
                     StatusCode::INTERNAL_SERVER_ERROR
                 ]
                 .contains(&response.status()),

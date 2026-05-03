@@ -55,7 +55,6 @@ async fn example_basic_operations() -> Result<(), Box<dyn std::error::Error>> {
 /// Example 2: Working with Serialized Data
 /// 示例2：处理序列化数据
 async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
-    use spear_next::sms::services::node_service::NodeInfo;
     use spear_next::storage::{serialization, KvStore, MemoryKvStore};
 
     println!("=== Serialized Data Example ===");
@@ -64,14 +63,23 @@ async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
     let store = MemoryKvStore::new();
 
     // Create some nodes / 创建一些节点
-    let node1 = NodeInfo {
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+    struct ExampleNodeInfo {
+        uuid: String,
+        name: String,
+        address: String,
+        port: u16,
+        capabilities: Vec<String>,
+    }
+
+    let node1 = ExampleNodeInfo {
         uuid: uuid::Uuid::new_v4().to_string(),
         name: "node-1".to_string(),
         address: "192.168.1.10".to_string(),
         port: 8080,
         capabilities: vec!["storage".to_string(), "primary".to_string()],
     };
-    let node2 = NodeInfo {
+    let node2 = ExampleNodeInfo {
         uuid: uuid::Uuid::new_v4().to_string(),
         name: "node-2".to_string(),
         address: "192.168.1.11".to_string(),
@@ -93,7 +101,7 @@ async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
 
     // Retrieve and deserialize / 检索并反序列化
     if let Some(data) = store.get(&key1).await? {
-        let retrieved_node: NodeInfo = serialization::deserialize(&data)?;
+        let retrieved_node: ExampleNodeInfo = serialization::deserialize(&data)?;
         println!(
             "Retrieved node: {} at {}:{}",
             retrieved_node.uuid, retrieved_node.address, retrieved_node.port
@@ -109,7 +117,7 @@ async fn example_serialized_data() -> Result<(), Box<dyn std::error::Error>> {
     // Retrieve all nodes / 检索所有节点
     for key in all_node_keys {
         if let Some(data) = store.get(&key).await? {
-            let node: NodeInfo = serialization::deserialize(&data)?;
+            let node: ExampleNodeInfo = serialization::deserialize(&data)?;
             println!(
                 "Node {}: {}:{} (capabilities: {:?})",
                 node.uuid, node.address, node.port, node.capabilities
@@ -273,6 +281,7 @@ async fn example_kv_node_registry() -> Result<(), Box<dyn std::error::Error>> {
         uuid: uuid::Uuid::new_v4().to_string(),
         ip_address: "10.0.1.10".to_string(),
         port: 8080,
+        http_port: 0,
         status: "online".to_string(),
         last_heartbeat: chrono::Utc::now().timestamp(),
         registered_at: chrono::Utc::now().timestamp(),
@@ -282,6 +291,7 @@ async fn example_kv_node_registry() -> Result<(), Box<dyn std::error::Error>> {
         uuid: uuid::Uuid::new_v4().to_string(),
         ip_address: "10.0.1.11".to_string(),
         port: 8081,
+        http_port: 0,
         status: "online".to_string(),
         last_heartbeat: chrono::Utc::now().timestamp(),
         registered_at: chrono::Utc::now().timestamp(),
@@ -291,6 +301,7 @@ async fn example_kv_node_registry() -> Result<(), Box<dyn std::error::Error>> {
         uuid: uuid::Uuid::new_v4().to_string(),
         ip_address: "10.0.1.12".to_string(),
         port: 8082,
+        http_port: 0,
         status: "online".to_string(),
         last_heartbeat: chrono::Utc::now().timestamp(),
         registered_at: chrono::Utc::now().timestamp(),
@@ -404,7 +415,6 @@ async fn example_sled_persistence() -> Result<(), Box<dyn std::error::Error>> {
 /// 示例7：错误处理模式
 async fn example_error_handling() -> Result<(), Box<dyn std::error::Error>> {
     use spear_next::sms::error::SmsError;
-    use spear_next::sms::services::node_service::NodeInfo;
     use spear_next::storage::{serialization, KvStore, MemoryKvStore};
 
     println!("=== Error Handling Example ===");
@@ -420,8 +430,14 @@ async fn example_error_handling() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Example 2: Handling serialization errors / 示例2：处理序列化错误
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+    struct ExampleNodeInfo {
+        uuid: String,
+        name: String,
+    }
+
     let invalid_data = b"invalid json data";
-    match serialization::deserialize::<NodeInfo>(invalid_data) {
+    match serialization::deserialize::<ExampleNodeInfo>(invalid_data) {
         Ok(node) => println!("Deserialized node: {:?}", node),
         Err(SmsError::Serialization(message)) => {
             println!("Expected serialization error: {}", message);

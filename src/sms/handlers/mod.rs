@@ -5,7 +5,9 @@
 //! 此模块包含不同API端点的HTTP请求处理器
 
 pub mod common;
+pub mod console_ui;
 pub mod docs;
+pub mod endpoint_gateway;
 pub mod execution_index;
 pub mod execution_logs;
 pub mod files;
@@ -13,11 +15,14 @@ pub mod health;
 pub mod node;
 pub mod placement;
 pub mod resource;
+pub mod stream;
 pub mod task;
 
 // Re-export all public items from each module / 重新导出每个模块的所有公共项
 pub use common::*;
+pub use console_ui::*;
 pub use docs::*;
+pub use endpoint_gateway::*;
 pub use execution_index::*;
 pub use execution_logs::*;
 pub use files::*;
@@ -25,4 +30,5 @@ pub use health::*;
 pub use node::*;
 pub use placement::*;
 pub use resource::*;
+pub use stream::*;
 pub use task::*;

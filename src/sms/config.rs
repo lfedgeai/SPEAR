@@ -122,6 +122,18 @@ pub struct CliArgs {
     )]
     pub disable_web_admin: bool,
 
+    /// Enable SPEAR Console / 启用控制台
+    #[arg(long, help = "Enable SPEAR Console / 启用控制台")]
+    pub enable_console: bool,
+
+    /// Disable SPEAR Console / 禁用控制台
+    #[arg(
+        long,
+        help = "Disable SPEAR Console / 禁用控制台",
+        conflicts_with = "enable_console"
+    )]
+    pub disable_console: bool,
+
     /// Web Admin address / Web管理页面监听地址
     #[arg(
         long,
@@ -167,6 +179,8 @@ pub struct SmsConfig {
     pub database: DatabaseConfig,
     /// Enable Web Admin / 启用Web管理页面
     pub enable_web_admin: bool,
+    /// Enable SPEAR Console (/console) / 启用控制台（/console）
+    pub enable_console: bool,
     /// Web Admin server configuration / Web管理页面服务器配置
     pub web_admin: ServerConfig,
     /// Heartbeat timeout in seconds / 心跳超时时间（秒）
@@ -228,6 +242,11 @@ impl SmsConfig {
         if let Ok(v) = std::env::var("SMS_ENABLE_SWAGGER") {
             if let Ok(b) = v.parse::<bool>() {
                 config.enable_swagger = b;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_ENABLE_CONSOLE") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.enable_console = b;
             }
         }
 
@@ -370,6 +389,13 @@ impl SmsConfig {
             config.enable_swagger = false;
         }
 
+        // Console flags / 控制台标志
+        if args.enable_console {
+            config.enable_console = true;
+        } else if args.disable_console {
+            config.enable_console = false;
+        }
+
         // Web Admin flags / Web管理页面标志
         if args.enable_web_admin {
             config.enable_web_admin = true;
@@ -458,6 +484,7 @@ impl Default for SmsConfig {
                 pool_size: Some(10),
             },
             enable_web_admin: false,
+            enable_console: true,
             web_admin: ServerConfig {
                 addr: "127.0.0.1:8081".parse().unwrap(),
                 ..Default::default()

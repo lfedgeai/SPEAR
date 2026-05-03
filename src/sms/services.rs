@@ -40,6 +40,10 @@ pub mod error {
         #[error("Invalid request: {0}")]
         InvalidRequest(String),
 
+        /// Conflict / 冲突
+        #[error("Conflict: {0}")]
+        Conflict(String),
+
         /// Serialization error / 序列化错误
         #[error("Serialization error: {0}")]
         Serialization(String),
@@ -70,6 +74,9 @@ pub mod error {
                 }
                 SmsError::InvalidRequest(msg) => {
                     tonic::Status::invalid_argument(format!("Invalid request: {}", msg))
+                }
+                SmsError::Conflict(msg) => {
+                    tonic::Status::already_exists(format!("Conflict: {}", msg))
                 }
                 SmsError::Serialization(msg) => {
                     tonic::Status::internal(format!("Serialization error: {}", msg))

@@ -73,6 +73,8 @@ async fn create_admin_test_server(
         ),
         backend_registry_client: BackendRegistryServiceClient::new(channel.clone()),
         model_deployment_registry_client: ModelDeploymentRegistryServiceClient::new(channel.clone()),
+        stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+        execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
         files_dir: std::env::temp_dir()

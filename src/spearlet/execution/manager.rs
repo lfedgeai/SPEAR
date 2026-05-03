@@ -55,6 +55,8 @@ pub struct TaskExecutionManagerConfig {
     pub health_check_interval_ms: u64,
     /// Metrics collection interval / 指标收集间隔
     pub metrics_collection_interval_ms: u64,
+    /// Instance heartbeat interval to SMS / Instance 心跳上报间隔（给 SMS 刷新 last_seen）
+    pub instance_heartbeat_interval_ms: u64,
     /// Cleanup interval / 清理间隔
     pub cleanup_interval_ms: u64,
     /// Artifact idle timeout / Artifact 空闲超时
@@ -75,6 +77,7 @@ impl Default for TaskExecutionManagerConfig {
             instance_creation_timeout_ms: 30000,
             health_check_interval_ms: 10000,
             metrics_collection_interval_ms: 5000,
+            instance_heartbeat_interval_ms: 30000,
             cleanup_interval_ms: 60000,
             artifact_idle_timeout_ms: 300000, // 5 minutes
             task_idle_timeout_ms: 180000,     // 3 minutes
@@ -264,6 +267,11 @@ impl TaskExecutionManager {
 
         let manager_clone = manager.clone();
         tokio::spawn(async move {
+            manager_clone.as_ref().run_instance_heartbeat_loop().await;
+        });
+
+        let manager_clone = manager.clone();
+        tokio::spawn(async move {
             manager_clone.run_cleanup_loop().await;
         });
 
@@ -305,12 +313,6 @@ impl TaskExecutionManager {
         let execution_mode = match mode {
             ProtoExecutionMode::Sync => crate::spearlet::execution::runtime::ExecutionMode::Sync,
             ProtoExecutionMode::Async => crate::spearlet::execution::runtime::ExecutionMode::Async,
-            ProtoExecutionMode::Stream => {
-                crate::spearlet::execution::runtime::ExecutionMode::Stream
-            }
-            ProtoExecutionMode::Console => {
-                crate::spearlet::execution::runtime::ExecutionMode::Async
-            }
             ProtoExecutionMode::Unspecified => {
                 crate::spearlet::execution::runtime::ExecutionMode::Sync
             }
@@ -322,11 +324,6 @@ impl TaskExecutionManager {
         );
 
         let input = request.input.clone().unwrap_or_default();
-        let timeout_ms = if request.timeout_ms == 0 {
-            30000
-        } else {
-            request.timeout_ms
-        };
         let function_name = if request.function_name.is_empty() {
             DEFAULT_ENTRY_FUNCTION_NAME.to_string()
         } else {
@@ -343,7 +340,7 @@ impl TaskExecutionManager {
             function_name: function_name.clone(),
             payload: input.data,
             headers: request.headers.clone(),
-            timeout_ms,
+            timeout_ms: request.timeout_ms,
             execution_mode,
             wait,
             context_data,
@@ -454,6 +451,66 @@ impl TaskExecutionManager {
             .executions
             .get(execution_id)
             .map(|entry| entry.value().clone()))
+    }
+
+    pub async fn terminate_execution(
+        &self,
+        execution_id: &str,
+        reason: Option<String>,
+    ) -> ExecutionResult<()> {
+        if !self.executions.contains_key(execution_id) {
+            return Err(ExecutionError::InvalidRequest {
+                message: format!("execution not found: {}", execution_id),
+            });
+        }
+        crate::spearlet::execution::host_api::termination::mark_execution_terminated(
+            execution_id,
+            -libc::ECANCELED,
+            reason,
+        );
+        Ok(())
+    }
+
+    pub async fn destroy_instance(
+        &self,
+        instance_id: &str,
+        reason: Option<String>,
+    ) -> ExecutionResult<()> {
+        let instance = self
+            .instances
+            .get(instance_id)
+            .map(|e| e.value().clone())
+            .ok_or_else(|| ExecutionError::InstanceNotFound {
+                id: instance_id.to_string(),
+            })?;
+
+        crate::spearlet::execution::host_api::termination::mark_instance_destroyed(
+            instance_id,
+            -libc::ECANCELED,
+            reason.clone(),
+        );
+
+        let running_exec_ids: Vec<String> = self
+            .executions
+            .iter()
+            .filter(|e| e.value().instance_id == instance_id && e.value().status == "running")
+            .map(|e| e.key().clone())
+            .collect();
+
+        for execution_id in running_exec_ids {
+            crate::spearlet::execution::host_api::termination::mark_execution_terminated(
+                &execution_id,
+                -libc::ECANCELED,
+                reason
+                    .clone()
+                    .map(|r| format!("instance destroyed: {}", r))
+                    .or_else(|| Some("instance destroyed".to_string())),
+            );
+        }
+
+        self.stop_instance(&instance).await?;
+        self.instances.remove(instance_id);
+        Ok(())
     }
 
     pub fn list_executions(
@@ -612,6 +669,18 @@ impl TaskExecutionManager {
                 self.executions.insert(execution_id.clone(), resp.clone());
             }
             Err(e) => {
+                let status = match e {
+                    ExecutionError::ExecutionTimeout { .. } => "timeout",
+                    ExecutionError::ExecutionTerminated { .. } => "terminated",
+                    ExecutionError::InstanceDestroyed { .. } => "terminated",
+                    _ => "failed",
+                }
+                .to_string();
+                let instance_id = self
+                    .executions
+                    .get(&execution_id)
+                    .map(|entry| entry.value().instance_id.clone())
+                    .unwrap_or_default();
                 self.executions.insert(
                     execution_id.clone(),
                     super::ExecutionResponse {
@@ -619,9 +688,9 @@ impl TaskExecutionManager {
                         invocation_id: request.invocation_id.clone(),
                         task_id: request.task_id.clone(),
                         function_name,
-                        instance_id: String::new(),
+                        instance_id,
                         output_data: Vec::new(),
-                        status: "failed".to_string(),
+                        status,
                         error_message: Some(e.to_string()),
                         execution_time_ms,
                         metadata: std::collections::HashMap::new(),
@@ -668,14 +737,15 @@ impl TaskExecutionManager {
                 meta.insert("error_message".to_string(), e.to_string());
                 let task_id = request.task_id.clone();
                 if !task_id.is_empty() {
-                    self.publish_task_result(
-                        &task_id,
-                        "".to_string(),
-                        "failed".to_string(),
-                        completed_at,
-                        meta,
-                    )
-                    .await;
+                    let status = match e {
+                        ExecutionError::ExecutionTimeout { .. } => "timeout",
+                        ExecutionError::ExecutionTerminated { .. } => "terminated",
+                        ExecutionError::InstanceDestroyed { .. } => "terminated",
+                        _ => "failed",
+                    }
+                    .to_string();
+                    self.publish_task_result(&task_id, "".to_string(), status, completed_at, meta)
+                        .await;
                 }
             }
             _ => {}
@@ -728,7 +798,9 @@ impl TaskExecutionManager {
             instance.id().to_string(),
             execution_id.clone(),
             started_at_ms,
+            crate::proto::sms::InstanceStatus::Running as i32,
         );
+        instance.set_current_execution_id(Some(execution_id.clone()));
         self.report_execution_to_sms(
             invocation_id.clone(),
             instance.task_id.clone(),
@@ -806,7 +878,9 @@ impl TaskExecutionManager {
                     instance.id().to_string(),
                     execution_id.clone(),
                     completed_at_ms,
+                    crate::proto::sms::InstanceStatus::Running as i32,
                 );
+                instance.set_current_execution_id(None);
                 return Err(e);
             }
         };
@@ -905,7 +979,9 @@ impl TaskExecutionManager {
             instance.id().to_string(),
             execution_id.clone(),
             completed_at_ms,
+            crate::proto::sms::InstanceStatus::Running as i32,
         );
+        instance.set_current_execution_id(None);
 
         if instance.config.runtime_type == super::RuntimeType::Wasm {
             debug!(
@@ -1423,6 +1499,16 @@ impl TaskExecutionManager {
             })?;
         runtime.stop_instance(instance).await?;
 
+        let ts_ms = chrono::Utc::now().timestamp_millis();
+        let current_execution_id = instance.current_execution_id().unwrap_or_default();
+        self.report_instance_to_sms(
+            instance.task_id().to_string(),
+            instance.id().to_string(),
+            current_execution_id,
+            ts_ms,
+            crate::proto::sms::InstanceStatus::Terminated as i32,
+        );
+
         self.instances.remove(instance.id());
         self.scheduler.remove_instance(&instance.id).await?;
 
@@ -1486,6 +1572,10 @@ impl TaskExecutionManager {
             return Ok(());
         };
 
+        crate::spearlet::execution::host_api::user_stream::map_ws_close_to_channels(
+            &ev.execution_id,
+        );
+
         if let Some(inst) = self.instances.get(&pending.instance_id) {
             if inst.value().config.runtime_type == super::RuntimeType::Wasm {
                 if let Some(wasm_handle) = inst
@@ -1498,6 +1588,7 @@ impl TaskExecutionManager {
                     st.current_function = None;
                 }
             }
+            inst.value().set_current_execution_id(None);
         }
 
         let completed_at_ms = ev.completed_at_ms;
@@ -1522,6 +1613,11 @@ impl TaskExecutionManager {
             ev.execution_status,
             crate::spearlet::execution::runtime::ExecutionStatus::Failed
         );
+
+        if let Some(inst) = self.instances.get(&pending.instance_id) {
+            inst.value()
+                .record_request_completion(is_successful, ev.duration_ms as f64);
+        }
 
         let _ = self
             .append_execution_logs_to_sms(
@@ -1581,6 +1677,7 @@ impl TaskExecutionManager {
             pending.instance_id.clone(),
             ev.execution_id.clone(),
             completed_at_ms,
+            crate::proto::sms::InstanceStatus::Running as i32,
         );
         crate::spearlet::execution::host_api::clear_wasm_logs_by_execution(&ev.execution_id);
 
@@ -1679,6 +1776,34 @@ impl TaskExecutionManager {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    async fn run_instance_heartbeat_loop(&self) {
+        let mut interval = tokio::time::interval(Duration::from_millis(
+            self.config.instance_heartbeat_interval_ms.max(1),
+        ));
+
+        loop {
+            interval.tick().await;
+            let ts_ms = chrono::Utc::now().timestamp_millis();
+            let instances: Vec<Arc<TaskInstance>> =
+                self.instances.iter().map(|e| e.value().clone()).collect();
+
+            for instance in instances {
+                match instance.status() {
+                    InstanceStatus::Ready | InstanceStatus::Running | InstanceStatus::Busy => {}
+                    _ => continue,
+                }
+                let current_execution_id = instance.current_execution_id().unwrap_or_default();
+                self.report_instance_to_sms(
+                    instance.task_id.clone(),
+                    instance.id().to_string(),
+                    current_execution_id,
+                    ts_ms,
+                    crate::proto::sms::InstanceStatus::Running as i32,
+                );
             }
         }
     }
@@ -1806,6 +1931,7 @@ impl TaskExecutionManager {
         instance_id: String,
         current_execution_id: String,
         ts_ms: i64,
+        status: i32,
     ) {
         let channel = match self.sms_channel.clone() {
             Some(c) => c,
@@ -1819,7 +1945,7 @@ impl TaskExecutionManager {
             instance_id,
             task_id,
             node_uuid,
-            status: crate::proto::sms::InstanceStatus::Running as i32,
+            status,
             created_at_ms: ts_ms,
             updated_at_ms: ts_ms,
             last_seen_ms: ts_ms,

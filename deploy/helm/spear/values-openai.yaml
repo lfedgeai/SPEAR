@@ -43,9 +43,10 @@ spearlet:
           name: openai-api-key
           key: OPENAI_API_KEY
 
-routerFilterAgent:
-  enabled: true
+routerFilter:
+  enabled: false
+  addr: ""
   decisionTimeoutMs: 2000
-  failOpen: false
-  sessionTokenTtlMs: 3600000
-  contentFetchCacheTtlMs: 600000
+  failOpen: true
+  contentFetchEnabled: false
+  contentFetchMaxBytes: 65536

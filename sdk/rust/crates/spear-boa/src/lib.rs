@@ -317,6 +317,17 @@ pub fn install_native_bindings(context: &mut Context) {
     });
     let _ = context.register_global_builtin_callable(js_string!("__spear_print"), 1, print);
 
+    let sleep_ms = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+        let ms = args
+            .get(0)
+            .cloned()
+            .unwrap_or(JsValue::Undefined)
+            .to_number(ctx)? as u32;
+        spear_wasm::sleep_ms(ms);
+        Ok(JsValue::Undefined)
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_sleep_ms"), 1, sleep_ms);
+
     let tool_reg = NativeFunction::from_fn_ptr(|_this, args, ctx| {
         let fn_json = args
             .get(0)
@@ -357,6 +368,84 @@ pub fn install_native_bindings(context: &mut Context) {
         Ok(obj.into())
     });
     let _ = context.register_global_builtin_callable(js_string!("__spear_tool_register"), 2, tool_reg);
+
+    let user_stream_open = NativeFunction::from_fn_ptr(|_this, args, _ctx| {
+        let stream_id = args.get(0).cloned().unwrap_or(JsValue::Undefined);
+        let direction = args.get(1).cloned().unwrap_or(JsValue::Undefined);
+        let stream_id = stream_id.to_number(_ctx)? as i32;
+        let direction = direction.to_number(_ctx)? as i32;
+        let fd = spear_wasm::user_stream_open(
+            u32::try_from(stream_id).unwrap_or(0),
+            match direction {
+                1 => spear_wasm::UserStreamDirection::Inbound,
+                2 => spear_wasm::UserStreamDirection::Outbound,
+                _ => spear_wasm::UserStreamDirection::Bidirectional,
+            },
+        )
+        .map_err(|e| JsNativeError::error().with_message(e.to_string()))?;
+        Ok(JsValue::from(fd.raw()))
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_user_stream_open"), 2, user_stream_open);
+
+    let user_stream_close = NativeFunction::from_fn_ptr(|_this, args, _ctx| {
+        let fd = args.get(0).cloned().unwrap_or(JsValue::Undefined);
+        let fd = fd.to_number(_ctx)? as i32;
+        spear_wasm::user_stream_close(spear_wasm::Fd::from_raw(fd))
+            .map_err(|e| JsNativeError::error().with_message(e.to_string()))?;
+        Ok(JsValue::Undefined)
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_user_stream_close"), 1, user_stream_close);
+
+    let user_stream_write = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+        let fd = args.get(0).cloned().unwrap_or(JsValue::Undefined);
+        let data = args.get(1).cloned().unwrap_or(JsValue::Undefined);
+        let fd = fd.to_number(ctx)? as i32;
+        let s = data.to_string(ctx)?.to_std_string().map_err(|e| {
+            JsNativeError::error().with_message(format!("invalid string: {e}"))
+        })?;
+        let bytes = s.encode_utf16().map(|u| (u & 0xFF) as u8).collect::<Vec<u8>>();
+        spear_wasm::user_stream_write(spear_wasm::Fd::from_raw(fd), &bytes)
+            .map_err(|e| JsNativeError::error().with_message(e.to_string()))?;
+        Ok(JsValue::Undefined)
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_user_stream_write"), 2, user_stream_write);
+
+    let user_stream_read = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+        let fd = args.get(0).cloned().unwrap_or(JsValue::Undefined);
+        let fd = fd.to_number(ctx)? as i32;
+        let bytes = spear_wasm::user_stream_read_alloc(spear_wasm::Fd::from_raw(fd))
+            .map_err(|e| JsNativeError::error().with_message(e.to_string()))?;
+        let Some(bytes) = bytes else {
+            return Ok(JsValue::Null);
+        };
+        let u16s = bytes.into_iter().map(|b| b as u16).collect::<Vec<u16>>();
+        let s = String::from_utf16_lossy(&u16s);
+        Ok(JsValue::from(js_string!(s)))
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_user_stream_read"), 1, user_stream_read);
+
+    let ctl_open = NativeFunction::from_fn_ptr(|_this, _args, _ctx| {
+        let fd = spear_wasm::user_stream_ctl_open()
+            .map_err(|e| JsNativeError::error().with_message(e.to_string()))?;
+        Ok(JsValue::from(fd.raw()))
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_user_stream_ctl_open"), 0, ctl_open);
+
+    let ctl_read = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+        let fd = args.get(0).cloned().unwrap_or(JsValue::Undefined);
+        let fd = fd.to_number(ctx)? as i32;
+        let evt = spear_wasm::user_stream_ctl_read_event(spear_wasm::Fd::from_raw(fd))
+            .map_err(|e| JsNativeError::error().with_message(e.to_string()))?;
+        let Some(evt) = evt else {
+            return Ok(JsValue::Null);
+        };
+        let obj = ObjectInitializer::new(ctx)
+            .property(js_string!("streamId"), evt.stream_id as i32, Attribute::all())
+            .property(js_string!("kind"), evt.kind as i32, Attribute::all())
+            .build();
+        Ok(obj.into())
+    });
+    let _ = context.register_global_builtin_callable(js_string!("__spear_user_stream_ctl_read_event"), 1, ctl_read);
 }
 
 fn cchat_completion_impl(options_json: &str) -> Result<String, String> {
@@ -550,7 +639,9 @@ mod tests {
             r#"
 import { Spear } from "spear";
 export default async function main() {
-  return typeof Spear?.chat?.completions?.create === "function";
+  return typeof Spear?.chat?.completions?.create === "function"
+    && typeof Spear?.userStream?.open === "function"
+    && typeof Spear?.userStream?.ctlOpen === "function";
 }
 "#,
         );

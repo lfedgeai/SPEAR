@@ -6,6 +6,9 @@ enable_swagger = true
 # Enable Web Admin / 启用Web管理页面
 enable_web_admin = true
 
+# Enable SPEAR Console (/console) / 启用控制台（/console）
+enable_console = true
+
 # Heartbeat timeout / 心跳超时
 heartbeat_timeout = 90
 

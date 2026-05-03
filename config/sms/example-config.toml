@@ -8,6 +8,7 @@ enable_tls = false
 
 enable_swagger = true
 enable_web_admin = false
+enable_console = true
 heartbeat_timeout = 180
 cleanup_interval = 600
 max_upload_bytes = 67108864

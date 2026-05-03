@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InstanceDetailPage from '@/features/instances/InstanceDetailPage'
 
 const mockListInstanceExecutions = vi.fn()
+const mockGetExecution = vi.fn()
 
 vi.mock('@/api/instanceExecution', () => ({
   listInstanceExecutions: (input: unknown) => mockListInstanceExecutions(input),
+  getExecution: (executionId: string) => mockGetExecution(executionId),
 }))
 
 function LocationDisplay() {
@@ -36,6 +38,7 @@ function renderPage(initialPath: string) {
 describe('InstanceDetailPage', () => {
   beforeEach(() => {
     mockListInstanceExecutions.mockReset()
+    mockGetExecution.mockReset()
     mockListInstanceExecutions.mockResolvedValue({
       success: true,
       executions: [
@@ -49,6 +52,24 @@ describe('InstanceDetailPage', () => {
         },
       ],
       next_page_token: '',
+    })
+    mockGetExecution.mockResolvedValue({
+      success: true,
+      found: true,
+      execution: {
+        execution_id: 'e-1',
+        invocation_id: 'inv-1',
+        task_id: 't-1',
+        function_name: 'f1',
+        node_uuid: 'n-1',
+        instance_id: 'i-1',
+        status: 'completed',
+        started_at_ms: 1000,
+        completed_at_ms: 2000,
+        updated_at_ms: 2000,
+        metadata: {},
+        log_ref: null,
+      },
     })
   })
 

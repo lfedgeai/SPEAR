@@ -6,7 +6,7 @@ This guide describes how to build SPEAR container images and deploy a SPEAR clus
 
 - SMS: metadata/control-plane service (gRPC + HTTP).
 - SPEARlet: node agent / worker (gRPC + HTTP).
-- Router Filter Agent (optional): a sidecar that connects to SPEARlet for router-filter-stream.
+- Router Filter: a gRPC service provided by SMS (built-in by default; reserved for future plugin extensions).
 
 ## Prerequisites
 
@@ -16,12 +16,11 @@ This guide describes how to build SPEAR container images and deploy a SPEAR clus
 
 ## Build images
 
-Build three images (recommended for production):
+Build two images (recommended for production):
 
 ```bash
 docker build -f deploy/docker/sms/Dockerfile -t <REGISTRY>/spear-sms:<TAG> .
 docker build -f deploy/docker/spearlet/Dockerfile -t <REGISTRY>/spear-spearlet:<TAG> .
-docker build -f deploy/docker/router-filter-agent/Dockerfile -t <REGISTRY>/spear-router-filter-agent:<TAG> .
 ```
 
 Cargo registry note:
@@ -32,7 +31,6 @@ Cargo registry note:
 ```bash
 docker build -f deploy/docker/sms/Dockerfile -t <REGISTRY>/spear-sms:<TAG> --build-arg USE_CARGO_MIRROR=0 .
 docker build -f deploy/docker/spearlet/Dockerfile -t <REGISTRY>/spear-spearlet:<TAG> --build-arg USE_CARGO_MIRROR=0 .
-docker build -f deploy/docker/router-filter-agent/Dockerfile -t <REGISTRY>/spear-router-filter-agent:<TAG> --build-arg USE_CARGO_MIRROR=0 .
 ```
 
 Push them:
@@ -40,7 +38,6 @@ Push them:
 ```bash
 docker push <REGISTRY>/spear-sms:<TAG>
 docker push <REGISTRY>/spear-spearlet:<TAG>
-docker push <REGISTRY>/spear-router-filter-agent:<TAG>
 ```
 
 ## Install with Helm
@@ -68,15 +65,12 @@ kind create cluster --name spear
 
 docker build -f deploy/docker/sms/Dockerfile -t spear-sms:local .
 docker build -f deploy/docker/spearlet/Dockerfile -t spear-spearlet:local .
-docker build -f deploy/docker/router-filter-agent/Dockerfile -t spear-router-filter-agent:local .
 
-kind load docker-image --name spear spear-sms:local spear-spearlet:local spear-router-filter-agent:local
+kind load docker-image --name spear spear-sms:local spear-spearlet:local
 
 helm upgrade --install spear deploy/helm/spear -n spear --create-namespace \
   --set sms.image.repository=spear-sms --set sms.image.tag=local \
-  --set spearlet.image.repository=spear-spearlet --set spearlet.image.tag=local \
-  --set routerFilterAgent.enabled=true \
-  --set routerFilterAgent.image.repository=spear-router-filter-agent --set routerFilterAgent.image.tag=local
+  --set spearlet.image.repository=spear-spearlet --set spearlet.image.tag=local
 
 kubectl -n spear get pods -o wide
 kubectl -n spear wait --for=condition=Ready pod -l app.kubernetes.io/instance=spear --timeout=300s
@@ -208,13 +202,21 @@ Then open:
 
 - http://127.0.0.1:18082/
 
-### Enable keyword filter agent sidecar
+### Enable Router Filter
+
+By default, Router Filter server is provided by SMS (built-in, no-op by default). To enable SPEARlet routing-time filter calls:
 
 ```bash
 helm upgrade --install spear deploy/helm/spear \
-  --set routerFilterAgent.enabled=true \
-  --set routerFilterAgent.image.repository=<REGISTRY>/spear-router-filter-agent \
-  --set routerFilterAgent.image.tag=<TAG>
+  --set routerFilter.enabled=true
+```
+
+To override the router filter server address (host:port), set:
+
+```bash
+helm upgrade --install spear deploy/helm/spear \
+  --set routerFilter.enabled=true \
+  --set routerFilter.addr="<HOST>:<PORT>"
 ```
 
 ### Enable SPEARlet Kubernetes runtime RBAC

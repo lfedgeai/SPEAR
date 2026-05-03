@@ -66,7 +66,6 @@ Prepare Execution Environment
 Route Based on Execution Mode
 ├── EXECUTION_MODE_SYNC → Synchronous Execution
 ├── EXECUTION_MODE_ASYNC → Asynchronous Execution
-└── EXECUTION_MODE_STREAM → Streaming Execution
     ↓
 Execute Function Call
 ├── Invoke Specified Function on Task Instance
@@ -269,10 +268,6 @@ async fn execute_function(
                 execution_id,
                 // ... other fields
             })
-        },
-        ExecutionMode::Stream => {
-            // Streaming execution (handled by separate StreamFunction RPC)
-            Err("Streaming mode should use StreamFunction RPC")
         },
         _ => Err("Unsupported execution mode"),
     }

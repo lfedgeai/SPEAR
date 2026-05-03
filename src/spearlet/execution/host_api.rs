@@ -1,10 +1,14 @@
 mod cchat;
 mod core;
+pub(crate) mod errno;
 mod fd;
 mod iface;
 mod mic;
 pub(crate) mod registry;
 mod rtasr;
+pub(crate) mod ssf;
+pub(crate) mod termination;
+pub(crate) mod user_stream;
 mod util;
 
 #[cfg(test)]
@@ -16,3 +20,4 @@ pub use core::{
     DefaultHostApi, WasmLogEntry,
 };
 pub use iface::{HttpCallResult, SpearHostApi};
+pub use user_stream::{map_ws_close_to_channels, ws_pop_any_outbound, ws_push_frame};

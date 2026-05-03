@@ -162,23 +162,6 @@ impl Default for NodeService {
     }
 }
 
-/// Node information for registration / 节点注册信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NodeInfo {
-    pub uuid: String,
-    pub name: String,
-    pub address: String,
-    pub port: u16,
-    pub capabilities: Vec<String>,
-}
-
-impl NodeInfo {
-    /// Get the full address (address:port) / 获取完整地址（地址:端口）
-    pub fn address(&self) -> String {
-        format!("{}:{}", self.address, self.port)
-    }
-}
-
 /// Node status enumeration / 节点状态枚举
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeStatus {

@@ -64,7 +64,7 @@ int32_t sum(int32_t args_ptr, int32_t args_len, int32_t out_ptr, int32_t out_len
     char result[128];
     int n = snprintf(result, sizeof(result), "{\"sum\":%d}", s);
     if (n <= 0 || (size_t)n >= sizeof(result)) {
-        return -EIO;
+        return -SPEAR_EIO;
     }
 
     uint32_t need = (uint32_t)n;
@@ -72,7 +72,7 @@ int32_t sum(int32_t args_ptr, int32_t args_len, int32_t out_ptr, int32_t out_len
 
     if (cap < need) {
         *(uint32_t *)(uintptr_t)out_len_ptr = need;
-        return -ENOSPC;
+        return -SPEAR_ENOSPC;
     }
 
     memcpy((void *)(uintptr_t)out_ptr, result, need);

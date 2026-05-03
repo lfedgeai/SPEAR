@@ -6,12 +6,12 @@ package spearlet;
 // Spearlet 调用与执行服务。
 //
 // This file defines:
-// - InvocationService: submit an invocation and optionally stream output / console
-// - ExecutionService: query / cancel / list executions
+// - InvocationService: submit an invocation
+// - ExecutionService: query / terminate / list executions
 //
 // 该文件定义：
-// - InvocationService：提交一次调用，并可选流式输出 / console
-// - ExecutionService：查询 / 取消 / 列举执行记录
+// - InvocationService：提交一次调用
+// - ExecutionService：查询 / 终止 / 列举执行记录
 //
 // Terminology / 术语：
 // - invocation_id: client-side request correlation id / 客户端侧请求关联 ID
@@ -32,14 +32,6 @@ enum ExecutionMode {
   // Asynchronous invocation.
   // 异步调用。
   EXECUTION_MODE_ASYNC = 2;
-
-  // Streaming invocation.
-  // 流式调用。
-  EXECUTION_MODE_STREAM = 3;
-
-  // Interactive console session.
-  // 交互式 Console 会话。
-  EXECUTION_MODE_CONSOLE = 4;
 }
 
 enum ExecutionStatus {
@@ -63,9 +55,9 @@ enum ExecutionStatus {
   // 执行失败。
   EXECUTION_STATUS_FAILED = 4;
 
-  // Cancelled.
-  // 已取消。
-  EXECUTION_STATUS_CANCELLED = 5;
+  // Terminated.
+  // 已终止。
+  EXECUTION_STATUS_TERMINATED = 5;
 
   // Timed out.
   // 超时。
@@ -158,74 +150,10 @@ message InvokeResponse {
   google.protobuf.Timestamp completed_at = 8;
 }
 
-message InvokeStreamChunk {
-  string invocation_id = 1;
-  string execution_id = 2;
-  string instance_id = 3;
-
-  ExecutionStatus status = 4;
-  Payload chunk = 5;
-  bool is_final = 6;
-  Error error = 7;
-  map<string, string> metadata = 8;
-}
-
-message TerminalSize {
-  uint32 rows = 1;
-  uint32 cols = 2;
-}
-
-enum ConsoleSignal {
-  CONSOLE_SIGNAL_UNSPECIFIED = 0;
-  CONSOLE_SIGNAL_INT = 1;
-  CONSOLE_SIGNAL_TERM = 2;
-}
-
-message ConsoleOpen {
-  InvokeRequest invoke = 1;
-  TerminalSize initial_size = 2;
-}
-
-message ConsoleClientMessage {
-  oneof msg {
-    ConsoleOpen open = 1;
-    bytes stdin = 2;
-    TerminalSize resize = 3;
-    ConsoleSignal signal = 4;
-  }
-}
-
-message ConsoleExit {
-  int32 code = 1;
-  string message = 2;
-}
-
-message ConsoleServerMessage {
-  string invocation_id = 1;
-  string execution_id = 2;
-  string instance_id = 3;
-
-  oneof msg {
-    bytes stdout = 10;
-    bytes stderr = 11;
-    ExecutionStatus status = 12;
-    ConsoleExit exit = 13;
-    Error error = 14;
-  }
-}
-
 service InvocationService {
   // One-shot invocation.
   // 一次性调用。
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
-
-  // Streaming invocation output.
-  // 流式调用输出。
-  rpc InvokeStream(InvokeRequest) returns (stream InvokeStreamChunk);
-
-  // Interactive console session.
-  // 交互式 Console 会话。
-  rpc OpenConsole(stream ConsoleClientMessage) returns (stream ConsoleServerMessage);
 }
 
 message GetExecutionRequest {
@@ -280,23 +208,23 @@ message Execution {
   google.protobuf.Timestamp completed_at = 10;
 }
 
-message CancelExecutionRequest {
+message TerminateExecutionRequest {
   // Target execution ID.
   // 目标 execution ID。
   string execution_id = 1;
 
-  // Best-effort cancellation reason.
-  // best-effort 取消原因。
+  // Best-effort termination reason.
+  // best-effort 终止原因。
   string reason = 2;
 }
 
-message CancelExecutionResponse {
-  // Whether cancellation request is accepted.
-  // 是否接受取消请求。
+message TerminateExecutionResponse {
+  // Whether termination request is accepted.
+  // 是否接受终止请求。
   bool success = 1;
 
-  // Final status after cancellation (best-effort).
-  // 取消后的最终状态（best-effort）。
+  // Final status after termination (best-effort).
+  // 终止后的最终状态（best-effort）。
   ExecutionStatus final_status = 2;
 
   // Human readable message.
@@ -337,9 +265,9 @@ service ExecutionService {
   // 按 execution_id 获取执行记录。
   rpc GetExecution(GetExecutionRequest) returns (Execution);
 
-  // Cancel an execution.
-  // 取消执行。
-  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+  // Terminate an execution.
+  // 终止执行。
+  rpc TerminateExecution(TerminateExecutionRequest) returns (TerminateExecutionResponse);
 
   // List executions with optional filters.
   // 列举执行记录（支持可选过滤）。

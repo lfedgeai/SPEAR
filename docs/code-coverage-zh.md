@@ -6,19 +6,22 @@
 
 ## 工具选择
 
-我们使用 `cargo-tarpaulin` 作为主要的代码覆盖率工具，它是 Rust 生态系统中最流行和功能强大的覆盖率工具。
+我们使用 `cargo-llvm-cov` 作为主要的代码覆盖率工具。它跨平台（macOS/Linux）可用，并与 LLVM 工具链集成良好。
 
-### 安装 cargo-tarpaulin
+`cargo-tarpaulin` 仍然保留作为历史/备用方案（主要适用于 Linux 环境）。
+
+### 安装 cargo-llvm-cov
 
 ```bash
-cargo install cargo-tarpaulin
+cargo install cargo-llvm-cov
+rustup component add llvm-tools-preview
 ```
 
 ## 配置文件
 
 ### tarpaulin.toml
 
-项目根目录下的 `tarpaulin.toml` 文件包含了覆盖率测试的配置：
+项目根目录下的 `tarpaulin.toml` 文件包含 tarpaulin 的历史覆盖率配置：
 
 ```toml
 [report]
@@ -69,7 +72,7 @@ no-clean = false
 
 ### 1. 快速覆盖率测试
 
-使用提供的快速脚本：
+使用提供的快速脚本（基于 tarpaulin）：
 
 ```bash
 # 运行快速覆盖率测试
@@ -81,36 +84,30 @@ make coverage-quick
 
 ### 2. 完整覆盖率测试
 
-运行完整的覆盖率分析（包括所有特性）：
+运行完整覆盖率分析：
 
 ```bash
 # 运行完整覆盖率测试
-./scripts/coverage.sh
-
-# 或使用 Makefile
 make coverage
 ```
 
 ### 3. 手动运行
 
-直接使用 cargo-tarpaulin：
+直接使用 cargo-llvm-cov：
 
 ```bash
-# 基本覆盖率测试
-cargo tarpaulin --config tarpaulin.toml
+# HTML 报告（所有特性）
+cargo llvm-cov --workspace --all-features --html --output-dir target/coverage
 
-# 指定特性
-cargo tarpaulin --features sled --config tarpaulin.toml
-
-# 所有特性
-cargo tarpaulin --all-features --config tarpaulin.toml
+# LCOV 报告（所有特性）
+cargo llvm-cov --workspace --all-features --lcov --output-path target/coverage/lcov.info
 ```
 
 ## 输出格式
 
 ### HTML 报告
 
-- 位置：`target/coverage/tarpaulin-report.html`
+- 位置：`target/coverage/index.html`
 - 提供详细的可视化覆盖率报告
 - 可以查看每个文件的行级覆盖情况
 
@@ -121,19 +118,26 @@ cargo tarpaulin --all-features --config tarpaulin.toml
 
 ### JSON 格式
 
+tarpaulin 历史输出：
+
 - 位置：`target/coverage/tarpaulin-report.json`
-- 机器可读格式，适用于自动化处理
 
 ## Makefile 目标
 
 项目提供了以下 Makefile 目标：
 
 ```bash
+# 完整覆盖率（优先使用 cargo-llvm-cov）
+make coverage
+
+# HTML 覆盖率报告（llvm-cov）
+make coverage-html
+
+# LCOV 覆盖率报告（llvm-cov）
+make coverage-lcov
+
 # 快速覆盖率测试（默认特性）
 make coverage-quick
-
-# 完整覆盖率测试（所有特性）
-make coverage
 
 # 清理覆盖率数据
 make clean-coverage

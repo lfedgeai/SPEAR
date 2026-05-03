@@ -109,6 +109,8 @@ use crate::proto::sms::{
     ReportModelDeploymentStatusResponse,
     ReportNodeBackendsRequest,
     ReportNodeBackendsResponse,
+    ResolveEndpointRequest,
+    ResolveEndpointResponse,
     SubscribeEventsRequest,
     UnregisterTaskRequest,
     UnregisterTaskResponse,
@@ -128,6 +130,11 @@ use crate::proto::sms::{
     WatchMcpServersResponse,
     WatchModelDeploymentsRequest,
     WatchModelDeploymentsResponse,
+};
+
+use crate::proto::spearlet::router_filter_service_server::RouterFilterService as RouterFilterServiceTrait;
+use crate::proto::spearlet::{
+    FilterRequest as RouterFilterRequest, FilterResponse as RouterFilterResponse,
 };
 
 #[derive(Debug)]
@@ -209,6 +216,43 @@ pub struct SmsServiceImpl {
     mcp_registry: Arc<McpRegistryState>,
     backend_registry: Arc<BackendRegistryState>,
     model_deployment_registry: Arc<ModelDeploymentRegistryState>,
+    router_filter_engine: Arc<RouterFilterEngine>,
+}
+
+#[derive(Debug, Clone)]
+enum RouterFilterEngine {
+    Builtin(BuiltinRouterFilterEngine),
+}
+
+#[derive(Debug, Clone, Default)]
+struct BuiltinRouterFilterEngine {}
+
+impl RouterFilterEngine {
+    fn filter(&self, req: RouterFilterRequest) -> RouterFilterResponse {
+        match self {
+            RouterFilterEngine::Builtin(_) => {
+                debug!(
+                    correlation_id = %req.correlation_id,
+                    request_id = %req.request_id,
+                    operation = req.operation,
+                    candidates = req.candidates.len(),
+                    "router filter builtin noop"
+                );
+                let mut dbg = std::collections::HashMap::new();
+                dbg.insert("engine".to_string(), "sms_builtin".to_string());
+                dbg.insert("mode".to_string(), "noop".to_string());
+                dbg.insert("candidates".to_string(), req.candidates.len().to_string());
+                dbg.insert("operation".to_string(), req.operation.to_string());
+                RouterFilterResponse {
+                    correlation_id: req.correlation_id,
+                    decision_id: "sms_builtin".to_string(),
+                    decisions: Vec::new(),
+                    final_action: None,
+                    debug: dbg,
+                }
+            }
+        }
+    }
 }
 
 impl SmsServiceImpl {
@@ -518,50 +562,9 @@ impl SmsServiceImpl {
             mcp_registry: Arc::new(McpRegistryState::new(1024, 1024)),
             backend_registry: Arc::new(BackendRegistryState::new()),
             model_deployment_registry: Arc::new(ModelDeploymentRegistryState::new(1024, 1024)),
-        }
-    }
-
-    /// Convert proto Node to internal NodeInfo / 将proto Node转换为内部NodeInfo
-    #[allow(dead_code)]
-    fn proto_node_to_node_info(
-        proto_node: crate::proto::sms::Node,
-    ) -> crate::sms::services::node_service::NodeInfo {
-        use crate::sms::services::node_service::NodeInfo;
-
-        let uuid = proto_node.uuid.clone();
-        NodeInfo {
-            uuid: uuid.clone(),
-            name: format!("node-{}", uuid),
-            address: format!("{}:{}", proto_node.ip_address, proto_node.port),
-            port: proto_node.port as u16,
-            capabilities: vec!["storage".to_string(), "compute".to_string()],
-        }
-    }
-
-    /// Convert internal NodeInfo to proto Node / 将内部NodeInfo转换为proto Node
-    #[allow(dead_code)]
-    fn node_info_to_proto_node(
-        node_info: &crate::sms::services::node_service::NodeInfo,
-    ) -> crate::proto::sms::Node {
-        // Parse IP and port from address
-        let (ip, port) = if let Some(colon_pos) = node_info.address.rfind(':') {
-            let ip = node_info.address[..colon_pos].to_string();
-            let port = node_info.address[colon_pos + 1..]
-                .parse::<i32>()
-                .unwrap_or(8080);
-            (ip, port)
-        } else {
-            (node_info.address.clone(), 8080)
-        };
-
-        crate::proto::sms::Node {
-            uuid: node_info.uuid.clone(),
-            ip_address: ip,
-            port,
-            status: "online".to_string(),
-            last_heartbeat: chrono::Utc::now().timestamp(),
-            registered_at: chrono::Utc::now().timestamp(),
-            metadata: std::collections::HashMap::new(),
+            router_filter_engine: Arc::new(RouterFilterEngine::Builtin(
+                BuiltinRouterFilterEngine::default(),
+            )),
         }
     }
 
@@ -1469,7 +1472,7 @@ impl TaskServiceTrait for SmsServiceImpl {
         let req = request.into_inner();
 
         // Create task from request fields
-        let mut task = crate::proto::sms::Task {
+        let task = crate::proto::sms::Task {
             task_id: uuid::Uuid::new_v4().to_string(),
             name: req.name,
             description: req.description,
@@ -1603,6 +1606,29 @@ impl TaskServiceTrait for SmsServiceImpl {
                 Ok(Response::new(response))
             }
             Err(e) => Err(Status::internal(format!("Failed to get task: {}", e))),
+        }
+    }
+
+    /// Resolve task by endpoint / 通过 endpoint 解析任务
+    async fn resolve_endpoint(
+        &self,
+        request: Request<ResolveEndpointRequest>,
+    ) -> Result<Response<ResolveEndpointResponse>, Status> {
+        let req = request.into_inner();
+        let task_service = self.task_service.read().await;
+        match task_service.get_task_by_endpoint(&req.endpoint).await {
+            Ok(Some(task)) => Ok(Response::new(ResolveEndpointResponse {
+                found: true,
+                task: Some(task),
+            })),
+            Ok(None) => Ok(Response::new(ResolveEndpointResponse {
+                found: false,
+                task: None,
+            })),
+            Err(e) => Err(Status::internal(format!(
+                "Failed to resolve endpoint: {}",
+                e
+            ))),
         }
     }
 
@@ -2480,6 +2506,17 @@ async fn run_execution_projector(idx: Arc<InstanceExecutionIndex>, bus: Arc<Unif
             Err(broadcast::error::RecvError::Lagged(_)) => {}
             Err(broadcast::error::RecvError::Closed) => break,
         }
+    }
+}
+
+#[tonic::async_trait]
+impl RouterFilterServiceTrait for SmsServiceImpl {
+    async fn filter(
+        &self,
+        request: Request<RouterFilterRequest>,
+    ) -> Result<Response<RouterFilterResponse>, Status> {
+        let r = request.into_inner();
+        Ok(Response::new(self.router_filter_engine.filter(r)))
     }
 }
 

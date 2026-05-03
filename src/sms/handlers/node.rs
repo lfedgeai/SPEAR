@@ -26,6 +26,7 @@ use crate::sms::gateway::GatewayState;
 pub struct HttpRegisterNodeRequest {
     pub ip_address: String,
     pub port: i32,
+    pub http_port: Option<i32>,
     pub metadata: Option<HashMap<String, String>>,
 }
 
@@ -34,6 +35,7 @@ pub struct HttpRegisterNodeRequest {
 pub struct HttpUpdateNodeRequest {
     pub ip_address: Option<String>,
     pub port: Option<i32>,
+    pub http_port: Option<i32>,
     pub status: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
 }
@@ -61,6 +63,7 @@ pub async fn register_node(
         uuid: Uuid::new_v4().to_string(),
         ip_address: req.ip_address,
         port: req.port,
+        http_port: req.http_port.unwrap_or(0),
         status: "online".to_string(),
         last_heartbeat: chrono::Utc::now().timestamp(),
         registered_at: chrono::Utc::now().timestamp(),
@@ -128,6 +131,7 @@ pub async fn list_nodes(
                         "uuid": node.uuid,
                         "ip_address": node.ip_address,
                         "port": node.port,
+                        "http_port": node.http_port,
                         "status": node.status,
                         "last_heartbeat": node.last_heartbeat,
                         "registered_at": node.registered_at,
@@ -169,6 +173,7 @@ pub async fn get_node(
                         "uuid": node.uuid,
                         "ip_address": node.ip_address,
                         "port": node.port,
+                        "http_port": node.http_port,
                         "status": node.status,
                         "last_heartbeat": node.last_heartbeat,
                         "registered_at": node.registered_at,
@@ -258,6 +263,7 @@ pub async fn update_node(
         uuid: existing_node.uuid,
         ip_address: req.ip_address.unwrap_or(existing_node.ip_address),
         port: req.port.unwrap_or(existing_node.port),
+        http_port: req.http_port.unwrap_or(existing_node.http_port),
         status: req.status.unwrap_or(existing_node.status),
         last_heartbeat: chrono::Utc::now().timestamp(),
         registered_at: existing_node.registered_at,

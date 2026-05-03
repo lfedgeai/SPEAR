@@ -5,13 +5,17 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::proto::sms::Task;
-use crate::sms::error::SmsResult;
+use crate::sms::error::{SmsError, SmsResult};
+
+const ENDPOINT_MAX_LEN: usize = 64;
 
 /// Task service for managing distributed tasks / 管理分布式任务的服务
 #[derive(Debug, Clone)]
 pub struct TaskService {
     /// In-memory storage for tasks / 任务的内存存储
     tasks: Arc<RwLock<HashMap<String, Task>>>,
+    /// endpoint -> task_id index / endpoint -> task_id 索引
+    endpoint_index: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl TaskService {
@@ -19,11 +23,48 @@ impl TaskService {
     pub fn new() -> Self {
         Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
+            endpoint_index: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Register a task / 注册任务
-    pub async fn register_task(&mut self, task: Task) -> SmsResult<()> {
+    pub async fn register_task(&mut self, mut task: Task) -> SmsResult<()> {
+        let normalized_endpoint = normalize_endpoint(&task.endpoint)?;
+        task.endpoint = normalized_endpoint.clone();
+
+        let old_task = {
+            let tasks = self.tasks.read().await;
+            tasks.get(&task.task_id).cloned()
+        };
+
+        if !normalized_endpoint.is_empty() {
+            let mut idx = self.endpoint_index.write().await;
+            match idx.get(&normalized_endpoint) {
+                Some(existing_task_id) if existing_task_id != &task.task_id => {
+                    return Err(SmsError::Conflict(format!(
+                        "endpoint already exists: {}",
+                        normalized_endpoint
+                    )))
+                }
+                Some(_) => {}
+                None => {
+                    idx.insert(normalized_endpoint.clone(), task.task_id.clone());
+                }
+            }
+
+            if let Some(old) = old_task.as_ref() {
+                let old_norm = normalize_endpoint(&old.endpoint)?;
+                if !old_norm.is_empty()
+                    && old_norm != normalized_endpoint
+                    && idx
+                        .get(&old_norm)
+                        .map(|v| v == &task.task_id)
+                        .unwrap_or(false)
+                {
+                    idx.remove(&old_norm);
+                }
+            }
+        }
         let mut tasks = self.tasks.write().await;
         tasks.insert(task.task_id.clone(), task);
         Ok(())
@@ -33,6 +74,17 @@ impl TaskService {
     pub async fn get_task(&self, task_id: &str) -> SmsResult<Option<Task>> {
         let tasks = self.tasks.read().await;
         Ok(tasks.get(task_id).cloned())
+    }
+
+    /// Get a task by endpoint / 根据 endpoint 获取任务
+    pub async fn get_task_by_endpoint(&self, endpoint: &str) -> SmsResult<Option<Task>> {
+        let normalized = normalize_endpoint(endpoint)?;
+        let idx = self.endpoint_index.read().await;
+        if let Some(task_id) = idx.get(&normalized).cloned() {
+            drop(idx);
+            return self.get_task(&task_id).await;
+        }
+        Ok(None)
     }
 
     /// List all tasks / 列出所有任务
@@ -53,7 +105,16 @@ impl TaskService {
     /// Remove a task / 移除任务
     pub async fn remove_task(&mut self, task_id: &str) -> SmsResult<bool> {
         let mut tasks = self.tasks.write().await;
-        Ok(tasks.remove(task_id).is_some())
+        let removed = tasks.remove(task_id);
+        drop(tasks);
+        if let Some(task) = removed.as_ref() {
+            let normalized = normalize_endpoint(&task.endpoint)?;
+            if !normalized.is_empty() {
+                let mut idx = self.endpoint_index.write().await;
+                idx.remove(&normalized);
+            }
+        }
+        Ok(removed.is_some())
     }
 
     /// List tasks with filters / 使用过滤器列出任务
@@ -126,5 +187,115 @@ impl TaskService {
 impl Default for TaskService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn normalize_gateway_endpoint(v: &str) -> SmsResult<String> {
+    let trimmed = v.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if trimmed.len() > ENDPOINT_MAX_LEN {
+        return Err(SmsError::InvalidRequest(format!(
+            "endpoint too long: {} (max {})",
+            trimmed.len(),
+            ENDPOINT_MAX_LEN
+        )));
+    }
+    if !trimmed
+        .as_bytes()
+        .iter()
+        .all(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-')
+    {
+        return Err(SmsError::InvalidRequest(
+            "endpoint must match ^[A-Za-z0-9_-]+$".to_string(),
+        ));
+    }
+    Ok(trimmed.to_ascii_lowercase())
+}
+
+fn normalize_endpoint(v: &str) -> SmsResult<String> {
+    normalize_gateway_endpoint(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_task(task_id: &str, endpoint: &str) -> Task {
+        let mut t = Task::default();
+        t.task_id = task_id.to_string();
+        t.endpoint = endpoint.to_string();
+        t
+    }
+
+    #[tokio::test]
+    async fn endpoint_is_normalized_and_queryable() {
+        let mut svc = TaskService::new();
+        svc.register_task(make_task("t1", "Echo_01")).await.unwrap();
+
+        let t = svc.get_task_by_endpoint("echo_01").await.unwrap();
+        assert!(t.is_some());
+        assert_eq!(t.unwrap().task_id, "t1");
+
+        let t2 = svc.get_task_by_endpoint("ECHO_01").await.unwrap();
+        assert!(t2.is_some());
+        assert_eq!(t2.unwrap().endpoint, "echo_01");
+    }
+
+    #[tokio::test]
+    async fn endpoint_conflict_is_rejected() {
+        let mut svc = TaskService::new();
+        svc.register_task(make_task("t1", "echo")).await.unwrap();
+        let err = svc
+            .register_task(make_task("t2", "ECHO"))
+            .await
+            .err()
+            .unwrap();
+        match err {
+            SmsError::Conflict(_) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_task_removes_endpoint_index() {
+        let mut svc = TaskService::new();
+        svc.register_task(make_task("t1", "echo")).await.unwrap();
+        assert!(svc.get_task_by_endpoint("echo").await.unwrap().is_some());
+
+        let removed = svc.remove_task("t1").await.unwrap();
+        assert!(removed);
+        assert!(svc.get_task_by_endpoint("echo").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn invalid_endpoint_is_rejected() {
+        let mut svc = TaskService::new();
+        let err = svc
+            .register_task(make_task("t1", "a/b"))
+            .await
+            .err()
+            .unwrap();
+        match err {
+            SmsError::InvalidRequest(_) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn task_endpoint_name_is_accepted() {
+        let mut svc = TaskService::new();
+        svc.register_task(make_task("t1", "test")).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn endpoint_update_for_same_task_updates_index() {
+        let mut svc = TaskService::new();
+        svc.register_task(make_task("t1", "echo")).await.unwrap();
+        svc.register_task(make_task("t1", "echo2")).await.unwrap();
+
+        assert!(svc.get_task_by_endpoint("echo").await.unwrap().is_none());
+        assert!(svc.get_task_by_endpoint("echo2").await.unwrap().is_some());
     }
 }

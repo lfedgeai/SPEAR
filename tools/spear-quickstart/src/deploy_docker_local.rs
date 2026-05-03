@@ -121,7 +121,6 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
 
     let sms_image = format!("{}:{}", cfg.images.sms_repo, cfg.images.tag);
     let spearlet_image = format!("{}:{}", cfg.images.spearlet_repo, cfg.images.tag);
-    let router_image = format!("{}:{}", cfg.images.router_filter_agent_repo, cfg.images.tag);
 
     if cfg.build.enabled {
         let mut cmd = Command::new("docker");
@@ -157,21 +156,6 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
         cmd.args(["-t", &spearlet_image]);
         cmd.arg(".");
         super::run_checked(&mut cmd, "docker build spearlet")?;
-
-        if cfg.components.enable_router_filter_agent {
-            let mut cmd = Command::new("docker");
-            cmd.current_dir(&repo_root);
-            cmd.args(["build"]);
-            cmd.args(&build_flags);
-            cmd.args(["-f", "deploy/docker/router-filter-agent/Dockerfile"]);
-            cmd.args([
-                "--build-arg",
-                &format!("DEBIAN_SUITE={}", cfg.build.debian_suite),
-            ]);
-            cmd.args(["-t", &router_image]);
-            cmd.arg(".");
-            super::run_checked(&mut cmd, "docker build router-filter-agent")?;
-        }
     }
 
     let rt = Runtime::new().context("create tokio runtime")?;
@@ -179,9 +163,6 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
         let docker = Docker::connect_with_local_defaults().context("connect docker daemon")?;
         super::docker_assert_image_exists(&docker, &sms_image).await?;
         super::docker_assert_image_exists(&docker, &spearlet_image).await?;
-        if cfg.components.enable_router_filter_agent {
-            super::docker_assert_image_exists(&docker, &router_image).await?;
-        }
         Ok::<(), anyhow::Error>(())
     })?;
 
@@ -202,9 +183,6 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
 
     docker_remove_container(sms_name);
     docker_remove_container(spearlet_name);
-    if cfg.components.enable_router_filter_agent {
-        docker_remove_container("keyword-filter-agent");
-    }
 
     let (sms_http_host, sms_http_container) =
         parse_port_mapping(&cfg.docker_local.publish_sms_http)?;
@@ -263,7 +241,7 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
     cmd.args(["-e", "SPEARLET_AUTO_REGISTER=true"]);
     cmd.args(["-e", &format!("SPEARLET_LOG_LEVEL={}", level)]);
     cmd.args(["-e", &format!("SPEARLET_LOG_FORMAT={}", format)]);
-    if cfg.components.enable_router_filter_agent {
+    if cfg.components.enable_router_filter {
         cmd.args(["-e", "SPEARLET_LLM_ROUTER_GRPC_FILTER_STREAM_ENABLED=true"]);
     }
     if cfg.components.enable_e2e {
@@ -279,22 +257,6 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
     cmd.arg(&spearlet_image);
     cmd.arg("spearlet");
     super::run_checked(&mut cmd, "docker run spearlet")?;
-
-    if cfg.components.enable_router_filter_agent {
-        let mut cmd = Command::new("docker");
-        cmd.args(["run", "-d"]);
-        cmd.args(["--name", "keyword-filter-agent"]);
-        cmd.args(["--network", net]);
-        cmd.args(["-e", &format!("RUST_LOG={}", level)]);
-        cmd.arg(&router_image);
-        cmd.args([
-            "--addr",
-            &format!("{spearlet_name}:50052"),
-            "--agent-id",
-            "keyword-filter-agent-1",
-        ]);
-        super::run_checked(&mut cmd, "docker run keyword-filter-agent")?;
-    }
 
     let timeout = super::parse_timeout(&cfg.timeouts.rollout)?;
     let start = Instant::now();
@@ -431,7 +393,6 @@ pub(super) fn cleanup(cfg: &Config, scope: &[&str], yes: bool) -> anyhow::Result
     if remove_containers {
         docker_remove_container(sms_name);
         docker_remove_container(spearlet_name);
-        docker_remove_container("keyword-filter-agent");
     }
     if remove_network && !net.is_empty() {
         docker_network_remove(net);
@@ -441,11 +402,6 @@ pub(super) fn cleanup(cfg: &Config, scope: &[&str], yes: bool) -> anyhow::Result
         let spearlet_image = format!("{}:{}", cfg.images.spearlet_repo, cfg.images.tag);
         docker_remove_image(&sms_image);
         docker_remove_image(&spearlet_image);
-        if cfg.components.enable_router_filter_agent {
-            let router_image =
-                format!("{}:{}", cfg.images.router_filter_agent_repo, cfg.images.tag);
-            docker_remove_image(&router_image);
-        }
     }
     Ok(())
 }
@@ -454,7 +410,6 @@ pub(super) fn render_plan(cfg: &Config) -> anyhow::Result<String> {
     let repo_root = config::repo_root()?;
     let sms_image = format!("{}:{}", cfg.images.sms_repo, cfg.images.tag);
     let spearlet_image = format!("{}:{}", cfg.images.spearlet_repo, cfg.images.tag);
-    let router_image = format!("{}:{}", cfg.images.router_filter_agent_repo, cfg.images.tag);
 
     let mut out = String::new();
     out.push_str("# SPEAR quickstart plan\n\n");
@@ -501,18 +456,13 @@ pub(super) fn render_plan(cfg: &Config) -> anyhow::Result<String> {
     out.push_str(&format!("  - build.enabled: {}\n", cfg.build.enabled));
     out.push_str(&format!("  - sms image: {}\n", sms_image));
     out.push_str(&format!("  - spearlet image: {}\n", spearlet_image));
-    if cfg.components.enable_router_filter_agent {
-        out.push_str(&format!(
-            "  - router filter agent image: {}\n",
-            router_image
-        ));
-    }
+    out.push_str(&format!(
+        "  - enable router filter: {}\n",
+        cfg.components.enable_router_filter
+    ));
     out.push('\n');
 
     out.push_str("Phase D: Run Containers (docker-local)\n");
     out.push_str("  - docker run sms + spearlet on the same network\n");
-    if cfg.components.enable_router_filter_agent {
-        out.push_str("  - docker run keyword-filter-agent (optional)\n");
-    }
     Ok(out)
 }

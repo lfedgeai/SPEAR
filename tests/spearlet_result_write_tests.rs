@@ -123,7 +123,7 @@ async fn test_spearlet_writes_result_on_completion() {
         description: "d".to_string(),
         priority: 2,
         node_uuid: "node-1".to_string(),
-        endpoint: "http://localhost".to_string(),
+        endpoint: "t".to_string(),
         version: "v1".to_string(),
         capabilities: vec![],
         metadata: std::collections::HashMap::new(),

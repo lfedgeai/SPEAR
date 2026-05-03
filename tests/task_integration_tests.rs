@@ -119,6 +119,8 @@ mod task_test_utils {
             mcp_registry_client,
             backend_registry_client,
             model_deployment_registry_client,
+            stream_sessions: spear_next::sms::gateway::StreamSessionStore::new(),
+            execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
             files_dir: std::env::temp_dir()
@@ -140,7 +142,7 @@ mod task_test_utils {
             "name": "test-task",
             "description": "A test task for integration testing",
             "priority": "normal",
-            "endpoint": "http://localhost:8080/task",
+            "endpoint": "test-task",
             "version": "1.0.0",
             "capabilities": ["compute", "storage"],
             "config": {
@@ -179,7 +181,7 @@ async fn test_task_lifecycle() {
         "A test task for integration testing"
     );
     assert_eq!(task_details["priority"], "normal");
-    assert_eq!(task_details["endpoint"], "http://localhost:8080/task");
+    assert_eq!(task_details["endpoint"], "test-task");
     // Verify result fields exist with default values / 验证结果字段存在且为默认值
     assert!(task_details.get("result_uris").is_some());
     assert!(task_details["result_uris"].is_array());
@@ -236,7 +238,7 @@ async fn test_task_list_with_filters() {
         "name": "task-1",
         "description": "First test task",
         "priority": "high",
-        "endpoint": "http://localhost:8080/task1",
+        "endpoint": "task-1",
         "version": "1.0.0",
         "capabilities": ["compute"]
     });
@@ -245,7 +247,7 @@ async fn test_task_list_with_filters() {
         "name": "task-2",
         "description": "Second test task",
         "priority": "low",
-        "endpoint": "http://localhost:8080/task2",
+        "endpoint": "task-2",
         "version": "1.1.0",
         "capabilities": ["storage"]
     });
@@ -361,7 +363,7 @@ async fn test_task_sequential_operations() {
             "name": format!("sequential-task-{}", i),
             "description": format!("Sequential test task number {}", i),
             "priority": if i % 2 == 0 { "high" } else { "normal" },
-            "endpoint": format!("http://localhost:8080/task{}", i),
+            "endpoint": format!("sequential-task-{}", i),
             "version": "1.0.0",
             "capabilities": ["compute"]
         });

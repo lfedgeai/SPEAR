@@ -23,11 +23,10 @@ debian_suite = "trixie"
 tag = "local"
 sms_repo = "spear-sms"
 spearlet_repo = "spear-spearlet"
-router_filter_agent_repo = "spear-router-filter-agent"
 
 [components]
 enable_web_admin = true
-enable_router_filter_agent = true
+enable_router_filter = true
 enable_e2e = false
 spearlet_with_node = true
 spearlet_with_llama_server = true
@@ -51,6 +50,12 @@ enabled = false
 auto_start = false
 local_port = 18082
 remote_port = 8081
+
+[k8s.port_forward_console]
+enabled = false
+auto_start = false
+local_port = 18080
+remote_port = 8080
 
 [k8s.kind]
 cluster_name = "spear-openai"
@@ -116,13 +121,13 @@ pub struct ImagesConfig {
     pub tag: String,
     pub sms_repo: String,
     pub spearlet_repo: String,
-    pub router_filter_agent_repo: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentsConfig {
     pub enable_web_admin: bool,
-    pub enable_router_filter_agent: bool,
+    #[serde(default)]
+    pub enable_router_filter: bool,
     pub enable_e2e: bool,
     pub spearlet_with_node: bool,
     pub spearlet_with_llama_server: bool,
@@ -148,6 +153,11 @@ pub struct K8sConfig {
     pub values_files: Vec<String>,
     #[serde(default)]
     pub port_forward: K8sPortForwardConfig,
+    #[serde(
+        default = "default_k8s_port_forward_console",
+        alias = "port_forward_assistant"
+    )]
+    pub port_forward_console: K8sPortForwardConfig,
     pub kind: K8sKindConfig,
     pub existing: K8sExistingConfig,
 }
@@ -168,6 +178,15 @@ impl Default for K8sPortForwardConfig {
             local_port: 18082,
             remote_port: 8081,
         }
+    }
+}
+
+fn default_k8s_port_forward_console() -> K8sPortForwardConfig {
+    K8sPortForwardConfig {
+        enabled: false,
+        auto_start: false,
+        local_port: 18080,
+        remote_port: 8080,
     }
 }
 
@@ -277,6 +296,18 @@ pub fn validate(cfg: &Config) -> anyhow::Result<()> {
         }
         if cfg.k8s.port_forward.remote_port == 0 {
             return Err(anyhow!("k8s.port_forward.remote_port must not be 0"));
+        }
+    }
+    if cfg.k8s.port_forward_console.enabled {
+        if cfg.k8s.port_forward_console.local_port == 0 {
+            return Err(anyhow!(
+                "k8s.port_forward_console.local_port must not be 0"
+            ));
+        }
+        if cfg.k8s.port_forward_console.remote_port == 0 {
+            return Err(anyhow!(
+                "k8s.port_forward_console.remote_port must not be 0"
+            ));
         }
     }
     Ok(())

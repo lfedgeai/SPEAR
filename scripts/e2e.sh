@@ -30,6 +30,9 @@ for suite in "${suites[@]}"; do
   fi
 
   case "$suite" in
+    compose)
+      bash scripts/e2e-compose-rustfs.sh
+      ;;
     kind)
       bash scripts/e2e-kind.sh
       ;;

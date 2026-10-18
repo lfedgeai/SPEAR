@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { afterEach, beforeEach, describe, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockListTasks = vi.fn()
 const mockCreateTask = vi.fn()
-const mockListFiles = vi.fn()
+const mockListObjects = vi.fn()
 const mockListMcpServers = vi.fn()
 
 vi.mock('@/api/tasks', () => ({
@@ -13,8 +13,8 @@ vi.mock('@/api/tasks', () => ({
   createTask: (input: unknown) => mockCreateTask(input),
 }))
 
-vi.mock('@/api/files', () => ({
-  listFiles: (input: unknown) => mockListFiles(input),
+vi.mock('@/api/objects', () => ({
+  listObjects: (input: unknown) => mockListObjects(input),
 }))
 
 vi.mock('@/api/mcp', () => ({
@@ -47,7 +47,7 @@ describe('TasksPage', () => {
   beforeEach(() => {
     mockListTasks.mockReset()
     mockCreateTask.mockReset()
-    mockListFiles.mockReset()
+    mockListObjects.mockReset()
     mockListMcpServers.mockReset()
 
     mockListTasks.mockResolvedValue({
@@ -71,8 +71,9 @@ describe('TasksPage', () => {
       ],
       total_count: 1,
     })
-    mockListFiles.mockResolvedValue({ files: [], total_count: 0 })
+    mockListObjects.mockResolvedValue({ items: [], totalCount: 0 })
     mockListMcpServers.mockResolvedValue({ success: true, servers: [] })
+    mockCreateTask.mockResolvedValue({ success: true, task_id: 'task-new' })
   })
 
   afterEach(() => {
@@ -91,5 +92,37 @@ describe('TasksPage', () => {
     await screen.findByText('reconciling')
     await screen.findByText('active 1 / ready 1')
     await screen.findByText('3 x spread')
+  })
+
+  it('submits object executable references as structured payloads', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('tasks-open-create'))
+    fireEvent.change(await screen.findByPlaceholderText('Name'), {
+      target: { value: 'demo object task' },
+    })
+    fireEvent.change(screen.getByTestId('task-executable-type'), {
+      target: { value: 'wasm' },
+    })
+    fireEvent.change(screen.getByTestId('task-executable-object-key'), {
+      target: { value: 'artifacts/demo.wasm' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => {
+      expect(mockCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'demo object task',
+          executable: expect.objectContaining({
+            type: 'wasm',
+            reference: {
+              kind: 'object',
+              object_key: 'artifacts/demo.wasm',
+            },
+          }),
+        }),
+      )
+    })
   })
 })

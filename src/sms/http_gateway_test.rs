@@ -25,14 +25,14 @@ fn create_test_config(
     grpc_addr: SocketAddr,
     enable_swagger: bool,
     max_upload_bytes: u64,
-    files_dir: String,
+    objects_dir: String,
 ) -> Arc<SmsConfig> {
     let mut cfg = SmsConfig::default();
     cfg.http.addr = http_addr;
     cfg.grpc.addr = grpc_addr;
     cfg.enable_swagger = enable_swagger;
     cfg.max_upload_bytes = max_upload_bytes;
-    cfg.files_dir = files_dir;
+    cfg.object_storage.local_fs.root_dir = objects_dir;
     Arc::new(cfg)
 }
 
@@ -47,7 +47,7 @@ async fn test_http_gateway_creation() {
         false,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -70,7 +70,7 @@ async fn test_http_gateway_with_swagger() {
         true,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -99,7 +99,7 @@ async fn test_http_gateway_different_addresses() {
             false,
             64 * 1024 * 1024,
             std::env::temp_dir()
-                .join("spear-sms-files")
+                .join("spear-sms-objects")
                 .to_string_lossy()
                 .to_string(),
         );
@@ -120,7 +120,7 @@ async fn test_http_gateway_ipv6_addresses() {
         true,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -142,7 +142,7 @@ async fn test_http_gateway_port_zero() {
         false,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -167,7 +167,7 @@ async fn test_http_gateway_concurrent_creation() {
                 i % 2 == 0,
                 64 * 1024 * 1024,
                 std::env::temp_dir()
-                    .join("spear-sms-files")
+                    .join("spear-sms-objects")
                     .to_string_lossy()
                     .to_string(),
             );
@@ -201,7 +201,7 @@ async fn test_http_gateway_start_without_grpc_server() {
         false,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -232,7 +232,7 @@ async fn test_http_gateway_invalid_grpc_url() {
         false,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -256,7 +256,7 @@ async fn test_http_gateway_edge_cases() {
         true,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -273,7 +273,7 @@ async fn test_http_gateway_edge_cases() {
         false,
         64 * 1024 * 1024,
         std::env::temp_dir()
-            .join("spear-sms-files")
+            .join("spear-sms-objects")
             .to_string_lossy()
             .to_string(),
     );
@@ -297,7 +297,7 @@ async fn test_http_gateway_configuration_variations() {
             swagger_enabled,
             64 * 1024 * 1024,
             std::env::temp_dir()
-                .join("spear-sms-files")
+                .join("spear-sms-objects")
                 .to_string_lossy()
                 .to_string(),
         );
@@ -372,7 +372,7 @@ mod integration_tests {
                     false,
                     64 * 1024 * 1024,
                     std::env::temp_dir()
-                        .join("spear-sms-files")
+                        .join("spear-sms-objects")
                         .to_string_lossy()
                         .to_string(),
                 );
@@ -409,7 +409,7 @@ mod integration_tests {
             true,
             64 * 1024 * 1024,
             std::env::temp_dir()
-                .join("spear-sms-files")
+                .join("spear-sms-objects")
                 .to_string_lossy()
                 .to_string(),
         );
@@ -545,6 +545,10 @@ mod integration_tests {
 
         let sms_http_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let sms_http_addr = sms_http_listener.local_addr()?;
+        let objects_dir = std::env::temp_dir()
+            .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string();
         let state = GatewayState {
             config: Arc::new(SmsConfig::default()),
             node_client: NodeServiceClient::new(channel.clone()),
@@ -585,10 +589,7 @@ mod integration_tests {
             execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
-            files_dir: std::env::temp_dir()
-                .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-                .to_string_lossy()
-                .to_string(),
+            blob_store: crate::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
         };
         let app = create_gateway_router(state);
         tokio::spawn(async move {

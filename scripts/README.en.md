@@ -11,7 +11,7 @@ Chinese README: [README.md](./README.md)
 - Purpose: E2E entrypoint. Selects the kind / docker suite based on the host OS and `E2E_SUITES`.
 - Typical usage: `make e2e`
 - Environment variables:
-  - `E2E_SUITES=kind|docker|kind,docker` (default: `auto`)
+  - `E2E_SUITES=kind|docker|compose|kind,docker|compose,docker` (default: `auto`)
   - `E2E_LINUX=1` (on non-Linux, run Linux binaries + Docker via `make e2e-linux`)
 - Called by: Makefile `e2e` target.
 
@@ -26,6 +26,22 @@ Chinese README: [README.md](./README.md)
 - Purpose: Run `testcontainers_e2e` with Docker on Linux (non-Linux skips by default; use `E2E_LINUX=1` via `make e2e-linux`).
 - Typical usage: `make e2e-docker`
 - Called by: `e2e.sh` or Makefile `e2e-docker` target.
+
+### e2e-compose-rustfs.sh
+
+- Purpose: Start the local compose stack, validate the RustFS-backed object path, and verify admin credential operations with `SMS_CREDENTIAL_MASTER_KEY` enabled.
+- Typical usage: `make e2e-compose` or `E2E_SUITES=compose make e2e`
+- Notes:
+  - Uses `SMS_CREDENTIAL_MASTER_KEY=compose-e2e-master-key` by default unless overridden
+  - Restarts the `sms` service once to validate credential persistence across restart with the same configured key
+
+### compose-rustfs-smoke.sh
+
+- Purpose: Validate a running local `deploy/docker/compose.local.yaml` stack end-to-end through the SMS admin object API and RustFS health endpoint.
+- Typical usage: `make compose-rustfs-smoke`
+- Notes:
+  - Assumes the local compose stack is already up
+  - Uploads a temporary object, validates retain/pin/unpin/release/delete semantics, then removes it
 
 ### kind-openai-quickstart.sh
 
@@ -50,4 +66,3 @@ Chinese README: [README.md](./README.md)
 - Purpose: Faster coverage run (shorter timeout, less output).
 - Typical usage: `make quick-coverage`
 - Note: The script may attempt to install `cargo-tarpaulin` if it is missing.
-

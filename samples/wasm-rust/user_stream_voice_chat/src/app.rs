@@ -16,8 +16,8 @@ use spear_wasm_helper::{
     },
 };
 use spear_wasm::{
-    constants, log_info, user_stream_close, user_stream_ctl_open, user_stream_read_alloc, Fd,
-    SpearError,
+    constants, eprintln, user_stream_close, user_stream_ctl_open, user_stream_read_alloc, warnln,
+    Fd, SpearError,
 };
 
 use crate::{
@@ -35,23 +35,10 @@ enum VoiceState {
     Committing,
 }
 
-fn debug_guest(message: impl std::fmt::Display) {
-    let _ = log_info(&format!("[voice_chat] {message}"));
-}
-
 pub fn run() -> Result<(), String> {
-    // #region debug-point voice-chat-run
-    debug_guest("run start");
-    // #endregion
     let mut app = VoiceChatApp::new()?;
     let result = app.run_loop();
     app.close_all();
-    // #region debug-point voice-chat-run
-    match &result {
-        Ok(()) => debug_guest("run exit ok"),
-        Err(err) => debug_guest(format!("run exit err={err}")),
-    }
-    // #endregion
     result
 }
 
@@ -70,9 +57,6 @@ struct VoiceChatApp {
 
 impl VoiceChatApp {
     fn new() -> Result<Self, String> {
-        // #region debug-point voice-chat-init
-        debug_guest("app new start");
-        // #endregion
         let epoll = EpollDriver::new().map_err(render_error)?;
         let ctl_fd = user_stream_ctl_open().map_err(render_error)?;
         let app = Self {
@@ -93,9 +77,6 @@ impl VoiceChatApp {
                 constants::SPEAR_EPOLLIN | constants::SPEAR_EPOLLERR | constants::SPEAR_EPOLLHUP,
             )
             .map_err(render_error)?;
-        // #region debug-point voice-chat-init
-        debug_guest(format!("app new ok ctl_fd={}", ctl_fd.raw()));
-        // #endregion
         Ok(app)
     }
 
@@ -154,54 +135,33 @@ impl VoiceChatApp {
     }
 
     fn handle_stream_connected(&mut self, stream_id: u32) -> Result<(), String> {
-        // #region debug-point voice-chat-stream-connected
-        debug_guest(format!("stream_connected stream_id={stream_id}"));
-        // #endregion
         if stream_id == self.text_stream.stream_id() && !self.text_stream.is_connected() {
             let _ = self
                 .text_stream
                 .attach_runtime_fd(&self.epoll, true)
                 .map_err(render_error)?;
-            // #region debug-point voice-chat-stream-connected
-            debug_guest("text stream attached");
-            // #endregion
         } else if stream_id == self.voice_stream.stream_id() && !self.voice_stream.is_connected() {
             let _ = self
                 .voice_stream
                 .attach_runtime_fd(&self.epoll, false)
                 .map_err(render_error)?;
-            // #region debug-point voice-chat-stream-connected
-            debug_guest("voice stream attached");
-            // #endregion
         }
         Ok(())
     }
 
     fn handle_text_stream_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_flag(constants::SPEAR_EPOLLHUP) {
-            // #region debug-point voice-chat-text-ready
-            debug_guest("text stream hup");
-            // #endregion
             self.close_text_stream();
             return Ok(());
         }
 
         if event.has_flag(constants::SPEAR_EPOLLIN) {
-            // #region debug-point voice-chat-text-ready
-            debug_guest("text stream epollin");
-            // #endregion
             loop {
                 match self.text_stream.fd() {
                     Some(fd) => match user_stream_read_alloc(fd) {
                         Ok(Some(frame)) => {
-                            // #region debug-point voice-chat-text-ready
-                            debug_guest(format!("text frame bytes={}", frame.len()));
-                            // #endregion
                             if let Ok(IncomingStreamMessage::Ctrl(ctrl)) = parse_stream_message(&frame) {
                                 if is_open_handshake(&ctrl, self.text_stream.modality()) {
-                                    // #region debug-point voice-chat-text-ready
-                                    debug_guest("text ctrl open");
-                                    // #endregion
                                     self.text_stream.mark_protocol_opened();
                                 }
                             }
@@ -222,30 +182,19 @@ impl VoiceChatApp {
 
     fn handle_voice_stream_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_flag(constants::SPEAR_EPOLLHUP) {
-            // #region debug-point voice-chat-voice-ready
-            debug_guest("voice stream hup");
-            // #endregion
             self.close_voice_stream();
             return Ok(());
         }
         if !event.has_flag(constants::SPEAR_EPOLLIN) {
             return Ok(());
         }
-        // #region debug-point voice-chat-voice-ready
-        debug_guest("voice stream epollin");
-        // #endregion
 
         loop {
             let Some(fd) = self.voice_stream.fd() else {
                 return Ok(());
             };
             match user_stream_read_alloc(fd) {
-                Ok(Some(frame)) => {
-                    // #region debug-point voice-chat-voice-ready
-                    debug_guest(format!("voice frame bytes={}", frame.len()));
-                    // #endregion
-                    self.handle_voice_frame(&frame)?
-                }
+                Ok(Some(frame)) => self.handle_voice_frame(&frame)?,
                 Ok(None) => return Ok(()),
                 Err(err) => return Err(render_error(err)),
             }
@@ -256,11 +205,17 @@ impl VoiceChatApp {
         let message = match parse_stream_message(frame) {
             Ok(message) => message,
             Err(StreamMessageError::InvalidDataMeta) => {
-                self.warn_once("voice_bad_data_meta", "protocol: voice DATA meta invalid; dropping frame\n")?;
+                self.warn_once(
+                    "voice_bad_data_meta",
+                    "protocol: voice DATA meta invalid; dropping frame",
+                )?;
                 return Ok(());
             }
             Err(StreamMessageError::InvalidCommitMeta) => {
-                self.warn_once("voice_bad_commit_meta", "protocol: voice COMMIT meta invalid; dropping frame\n")?;
+                self.warn_once(
+                    "voice_bad_commit_meta",
+                    "protocol: voice COMMIT meta invalid; dropping frame",
+                )?;
                 return Ok(());
             }
             Err(StreamMessageError::InvalidFrame | StreamMessageError::InvalidCtrlMeta | StreamMessageError::UnsupportedType) => {
@@ -273,15 +228,12 @@ impl VoiceChatApp {
                 IncomingStreamMessage::Ctrl(ctrl)
                     if is_open_handshake(ctrl, self.voice_stream.modality()) =>
                 {
-                    // #region debug-point voice-chat-voice-frame
-                    debug_guest("voice ctrl open");
-                    // #endregion
                     self.voice_stream.mark_protocol_opened();
                 }
                 _ => {
                     self.warn_once(
                         "voice_missing_open",
-                        "protocol: voice stream missing CTRL(open); dropping frame\n",
+                        "protocol: voice stream missing CTRL(open); dropping frame",
                     )?;
                 }
             }
@@ -294,18 +246,12 @@ impl VoiceChatApp {
                     return Ok(());
                 }
                 if is_audio_utterance_begin(&ctrl) {
-                    // #region debug-point voice-chat-voice-frame
-                    debug_guest("voice utterance begin");
-                    // #endregion
                     self.begin_utterance()?;
                 }
             }
             IncomingStreamMessage::Data { meta, data } => {
                 let _ = meta;
                 if self.voice_state == VoiceState::Recording {
-                    // #region debug-point voice-chat-voice-frame
-                    debug_guest(format!("voice data bytes={}", data.len()));
-                    // #endregion
                     if let Some(session) = self.rtasr.as_mut() {
                         session.append_audio(&data).map_err(render_error)?;
                     }
@@ -314,9 +260,6 @@ impl VoiceChatApp {
             IncomingStreamMessage::Commit { meta } => {
                 let _ = meta;
                 if self.voice_state == VoiceState::Recording {
-                    // #region debug-point voice-chat-voice-frame
-                    debug_guest("voice commit");
-                    // #endregion
                     let Some(session) = self.rtasr.as_mut() else {
                         self.voice_state = VoiceState::Idle;
                         return Ok(());
@@ -335,6 +278,11 @@ impl VoiceChatApp {
 
     fn handle_rtasr_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_any_hup_or_err() {
+            if let Some(session) = self.rtasr.as_ref() {
+                // Keep transport diagnostics in debug logs instead of the user
+                // text stream so replies stay readable. / 把传输层诊断保留在 debug 日志，而不是用户文本流中，避免回复输出被诊断信息打断。
+                session.log_disconnect_reason("transport closed");
+            }
             self.close_rtasr();
             return Ok(());
         }
@@ -373,22 +321,13 @@ impl VoiceChatApp {
     }
 
     fn begin_utterance(&mut self) -> Result<(), String> {
-        // #region debug-point voice-chat-begin-utterance
-        debug_guest("begin_utterance start");
-        // #endregion
         self.voice_state = VoiceState::Recording;
         self.last_transcript.clear();
         if let Some(session) = self.rtasr.as_mut() {
-            // #region debug-point voice-chat-begin-utterance
-            debug_guest("begin_utterance reuse session");
-            // #endregion
             return session.prepare_for_new_utterance().map_err(render_error);
         }
         let session = VoiceTranscriptionSession::connect().map_err(render_error)?;
         let fd = session.fd().raw();
-        // #region debug-point voice-chat-begin-utterance
-        debug_guest(format!("begin_utterance new session fd={fd}"));
-        // #endregion
         self.epoll
             .add(fd, constants::SPEAR_EPOLLIN | constants::SPEAR_EPOLLERR | constants::SPEAR_EPOLLHUP)
             .map_err(render_error)?;
@@ -405,6 +344,7 @@ impl VoiceChatApp {
                 self.flush_text_output()
             }
             Err(err) => {
+                eprintln!("[voice_chat] chat completion failed: {}", render_error(err.clone()));
                 self.text_output
                     .write(format!("chat completion failed: {}\n", render_error(err)));
                 self.text_output.commit();
@@ -415,8 +355,10 @@ impl VoiceChatApp {
 
     fn warn_once(&mut self, key: &'static str, message: &'static str) -> Result<(), String> {
         if self.warned.insert(key) {
-            self.text_output.write(message);
-            self.flush_text_output()?;
+            // Keep protocol warnings in diagnostics instead of the user-facing
+            // text stream so sample output stays focused on transcript/reply
+            // content. / 把协议警告保留在诊断日志里，而不是写入面向用户的文本流，避免 sample 输出被转写/回复之外的信息淹没。
+            warnln!("[voice_chat] {message}");
         }
         Ok(())
     }

@@ -1,7 +1,9 @@
 use crate::spearlet::execution::{ExecutionError, ExecutionResult};
 use reqwest::StatusCode;
 
-pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>> {
+/// Fetch a task artifact from SMS over HTTP.
+/// 通过 HTTP 从 SMS 拉取任务产物。
+pub async fn fetch_sms_artifact(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>> {
     let url = if path.starts_with('/') {
         format!("http://{}{}", sms_http_addr, path)
     } else {
@@ -21,7 +23,7 @@ pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<
         .bytes()
         .await
         .map_err(|e| ExecutionError::RuntimeError {
-            message: format!("Failed to read SMS file body: {}", e),
+            message: format!("Failed to read SMS artifact body: {}", e),
         })?;
     Ok(body.to_vec())
 }

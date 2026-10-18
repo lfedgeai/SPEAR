@@ -30,6 +30,25 @@ pub struct SpearError {
     pub op: &'static str,
 }
 
+/// RTASR runtime status snapshot / RTASR 运行时状态快照
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+pub struct RtAsrStatus {
+    /// Connection state name exposed by host runtime / host 运行时暴露的连接状态名
+    pub state: String,
+    /// Last backend/runtime error when present / 最近一次后端或运行时错误
+    pub last_error: Option<String>,
+    /// Pending outbound bytes queued in host runtime / host 运行时里待发送的字节数
+    pub send_queue_bytes: usize,
+    /// Pending inbound bytes buffered for guest reads / 为 guest 读操作缓存的入站字节数
+    pub recv_queue_bytes: usize,
+    /// Max outbound queue bytes / 最大发送队列字节数
+    pub max_send_queue_bytes: usize,
+    /// Max inbound queue bytes / 最大接收队列字节数
+    pub max_recv_queue_bytes: usize,
+    /// Dropped backend events due to queue pressure / 因队列压力而丢弃的后端事件数
+    pub dropped_events: u64,
+}
+
 impl SpearError {
     pub fn is_code(&self, code: &str) -> bool {
         self.code == code
@@ -79,6 +98,91 @@ pub const LOG_INFO: i32 = 2;
 pub const LOG_WARN: i32 = 3;
 pub const LOG_ERROR: i32 = 4;
 
+#[doc(hidden)]
+pub fn __format_log_args(args: std::fmt::Arguments<'_>) -> Result<String, SpearError> {
+    use std::fmt::Write;
+
+    let mut rendered = String::new();
+    rendered.write_fmt(args).map_err(|_| SpearError {
+        code: "internal",
+        errno: -constants::SPEAR_EIO,
+        op: "log",
+    })?;
+    Ok(rendered)
+}
+
+#[doc(hidden)]
+pub fn __log_args(level: i32, args: std::fmt::Arguments<'_>) -> Result<(), SpearError> {
+    let rendered = __format_log_args(args)?;
+    log_write(level, &rendered)
+}
+
+/// Override-friendly `println!` for WASM guests / 适合覆盖使用的 WASM guest `println!` 宏
+#[macro_export]
+macro_rules! println {
+    () => {{
+        let _ = $crate::__log_args($crate::LOG_INFO, format_args!(""));
+    }};
+    ($($arg:tt)*) => {{
+        let _ = $crate::__log_args($crate::LOG_INFO, format_args!($($arg)*));
+    }};
+}
+
+/// Info-level print macro for WASM guests / 面向 WASM guest 的 info 级打印宏
+#[macro_export]
+macro_rules! infoln {
+    () => {{
+        let _ = $crate::__log_args($crate::LOG_INFO, format_args!(""));
+    }};
+    ($($arg:tt)*) => {{
+        let _ = $crate::__log_args($crate::LOG_INFO, format_args!($($arg)*));
+    }};
+}
+
+/// Debug-level print macro for WASM guests / 面向 WASM guest 的 debug 级打印宏
+#[macro_export]
+macro_rules! debugln {
+    () => {{
+        let _ = $crate::__log_args($crate::LOG_DEBUG, format_args!(""));
+    }};
+    ($($arg:tt)*) => {{
+        let _ = $crate::__log_args($crate::LOG_DEBUG, format_args!($($arg)*));
+    }};
+}
+
+/// Warn-level print macro for WASM guests / 面向 WASM guest 的 warn 级打印宏
+#[macro_export]
+macro_rules! warnln {
+    () => {{
+        let _ = $crate::__log_args($crate::LOG_WARN, format_args!(""));
+    }};
+    ($($arg:tt)*) => {{
+        let _ = $crate::__log_args($crate::LOG_WARN, format_args!($($arg)*));
+    }};
+}
+
+/// Override-friendly `eprintln!` for WASM guests / 适合覆盖使用的 WASM guest `eprintln!` 宏
+#[macro_export]
+macro_rules! eprintln {
+    () => {{
+        let _ = $crate::__log_args($crate::LOG_ERROR, format_args!(""));
+    }};
+    ($($arg:tt)*) => {{
+        let _ = $crate::__log_args($crate::LOG_ERROR, format_args!($($arg)*));
+    }};
+}
+
+/// Error-level print macro for WASM guests / 面向 WASM guest 的 error 级打印宏
+#[macro_export]
+macro_rules! errorln {
+    () => {{
+        let _ = $crate::__log_args($crate::LOG_ERROR, format_args!(""));
+    }};
+    ($($arg:tt)*) => {{
+        let _ = $crate::__log_args($crate::LOG_ERROR, format_args!($($arg)*));
+    }};
+}
+
 pub fn log_write(level: i32, msg: &str) -> Result<(), SpearError> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -91,8 +195,8 @@ pub fn log_write(level: i32, msg: &str) -> Result<(), SpearError> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         match level {
-            LOG_ERROR | LOG_WARN => eprintln!("{msg}"),
-            _ => println!("{msg}"),
+            LOG_ERROR | LOG_WARN => ::std::eprintln!("{msg}"),
+            _ => ::std::println!("{msg}"),
         }
         Ok(())
     }
@@ -604,6 +708,32 @@ fn rtasr_ctl_no_arg(fd: Fd, cmd: i32, op: &'static str) -> Result<(), SpearError
     }
 }
 
+fn rtasr_ctl_read_alloc(fd: Fd, cmd: i32, op: &'static str) -> Result<Vec<u8>, SpearError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        recv_alloc_with(
+            op,
+            |out_ptr, out_len| unsafe {
+                let out_ptr_i32 = out_ptr as usize as i32;
+                let out_len_ptr_i32 = (out_len as *mut u32) as usize as i32;
+                spear_wasm_sys::rtasr_ctl(fd.0, cmd, out_ptr_i32, out_len_ptr_i32)
+            },
+            256,
+            6,
+        )
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (fd, cmd);
+        Err(SpearError {
+            code: "unsupported_target",
+            errno: -libc::ENOSYS,
+            op,
+        })
+    }
+}
+
 /// Create a real-time ASR session / 创建实时语音识别会话
 pub fn rtasr_create() -> Result<Fd, SpearError> {
     #[cfg(target_arch = "wasm32")]
@@ -725,6 +855,16 @@ pub fn rtasr_set_param_string(fd: Fd, key: &str, value: &str) -> Result<(), Spea
 /// Connect RTASR to the configured backend / 连接 RTASR 到已配置后端
 pub fn rtasr_connect(fd: Fd) -> Result<(), SpearError> {
     rtasr_ctl_no_arg(fd, constants::SPEAR_RTA_CTL_CONNECT, "rtasr_ctl")
+}
+
+/// Query RTASR runtime status / 查询 RTASR 运行时状态
+pub fn rtasr_get_status(fd: Fd) -> Result<RtAsrStatus, SpearError> {
+    let bytes = rtasr_ctl_read_alloc(fd, constants::SPEAR_RTA_CTL_GET_STATUS, "rtasr_ctl")?;
+    serde_json::from_slice(&bytes).map_err(|_| SpearError {
+        code: "invalid_json",
+        errno: -constants::SPEAR_EIO,
+        op: "rtasr_ctl",
+    })
 }
 
 /// Flush the current utterance into RTASR / 刷新当前 utterance 到 RTASR
@@ -978,5 +1118,65 @@ mod tests {
     fn test_parse_epoll_events_rejects_partial_record() {
         let err = parse_epoll_events(&[1, 2, 3]).unwrap_err();
         assert_eq!(err.code, "invalid_epoll_buffer");
+    }
+
+    #[test]
+    fn test_rtasr_status_deserializes_from_host_json() {
+        let status: RtAsrStatus = serde_json::from_str(
+            r#"{
+                "state":"Error",
+                "last_error":"websocket connect failed: timeout",
+                "send_queue_bytes":0,
+                "recv_queue_bytes":64,
+                "max_send_queue_bytes":1024,
+                "max_recv_queue_bytes":2048,
+                "dropped_events":3
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(status.state, "Error");
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("websocket connect failed: timeout")
+        );
+        assert_eq!(status.recv_queue_bytes, 64);
+        assert_eq!(status.dropped_events, 3);
+    }
+
+    #[test]
+    fn test_format_log_args_preserves_display_formatting() {
+        let rendered = __format_log_args(format_args!("guest log {}", 7)).unwrap();
+        assert_eq!(rendered, "guest log 7");
+    }
+
+    #[test]
+    fn test_exported_print_macros_can_be_imported_for_shadowing() {
+        mod macro_scope {
+            use crate::{eprintln, println};
+
+            pub fn emit() {
+                println!("shadowed info {}", 1);
+                eprintln!("shadowed err {}", 2);
+            }
+        }
+
+        macro_scope::emit();
+    }
+
+    #[test]
+    fn test_exported_level_macros_can_be_imported() {
+        mod macro_scope {
+            use crate::{debugln, errorln, infoln, warnln};
+
+            pub fn emit() {
+                debugln!("shadowed debug {}", 1);
+                infoln!("shadowed info {}", 2);
+                warnln!("shadowed warn {}", 3);
+                errorln!("shadowed err {}", 4);
+            }
+        }
+
+        macro_scope::emit();
     }
 }

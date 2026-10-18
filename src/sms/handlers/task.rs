@@ -19,7 +19,7 @@ use crate::proto::sms::{DeleteTaskRequest, GetTaskRequest, ListTasksRequest, Tas
 use crate::sms::gateway::GatewayState;
 use crate::sms::task_api::{
     build_register_task_request, task_to_public_response, PublicTaskResponse, RegisterTaskSpec,
-    TaskExecutableSpec,
+    TaskExecutableReferenceSpec, TaskExecutableSpec,
 };
 use crate::sms::{parse_task_priority_public_str, parse_task_status_public_str, FilterState};
 
@@ -41,9 +41,16 @@ pub struct RegisterTaskParams {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskExecutableReferenceParams {
+    Object { object_key: String },
+    Uri { uri: String },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TaskExecutableParams {
     pub r#type: String,
-    pub uri: String,
+    pub reference: TaskExecutableReferenceParams,
     pub name: Option<String>,
     pub checksum_sha256: Option<String>,
     pub args: Option<Vec<String>>,
@@ -113,7 +120,14 @@ pub async fn register_task(
         config: params.config.unwrap_or_default(),
         executable: params.executable.map(|executable| TaskExecutableSpec {
             executable_type: executable.r#type,
-            uri: executable.uri,
+            reference: match executable.reference {
+                TaskExecutableReferenceParams::Object { object_key } => {
+                    TaskExecutableReferenceSpec::Object { object_key }
+                }
+                TaskExecutableReferenceParams::Uri { uri } => {
+                    TaskExecutableReferenceSpec::Uri { uri }
+                }
+            },
             name: executable.name,
             checksum_sha256: executable.checksum_sha256,
             args: executable.args,

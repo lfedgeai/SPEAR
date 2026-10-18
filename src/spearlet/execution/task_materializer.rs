@@ -20,6 +20,26 @@ use super::{
 
 /// Build a stable artifact id and spec from an SMS task definition.
 /// 从 SMS task 定义构建稳定的 artifact id 和 spec。
+fn executable_location_from_sms_task(
+    executable: &crate::proto::sms::TaskExecutable,
+) -> Option<String> {
+    match executable.reference.as_ref().and_then(|reference| reference.target.as_ref()) {
+        Some(crate::proto::sms::task_executable_reference::Target::Object(object))
+            if !object.key.is_empty() =>
+        {
+            Some(format!("object://{}", object.key))
+        }
+        Some(crate::proto::sms::task_executable_reference::Target::Uri(uri))
+            if !uri.uri.is_empty() =>
+        {
+            Some(uri.uri.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Build a stable artifact id and spec from an SMS task definition.
+/// 从 SMS task 定义构建稳定的 artifact id 和 spec。
 fn artifact_spec_from_sms_task(sms_task: &SmsTask) -> (String, ArtifactSpec) {
     let (runtime_type, location_opt, checksum_opt, env) =
         if let Some(executable) = &sms_task.executable {
@@ -28,11 +48,7 @@ fn artifact_spec_from_sms_task(sms_task: &SmsTask) -> (String, ArtifactSpec) {
                 4 => RuntimeType::Wasm,
                 _ => RuntimeType::Process,
             };
-            let location_opt = if executable.uri.is_empty() {
-                None
-            } else {
-                Some(executable.uri.clone())
-            };
+            let location_opt = executable_location_from_sms_task(executable);
             let checksum_opt = if executable.checksum_sha256.is_empty() {
                 None
             } else {
@@ -188,4 +204,57 @@ pub(super) async fn fetch_sms_task(
         });
     }
     Ok(sms_task)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proto::sms::{
+        task_executable_reference, TaskExecutable, TaskExecutableReference, TaskObjectReference,
+        TaskUriReference,
+    };
+
+    fn sms_task_with_executable(executable: TaskExecutable) -> SmsTask {
+        SmsTask {
+            task_id: "task-1".to_string(),
+            name: "demo".to_string(),
+            version: "v1".to_string(),
+            executable: Some(executable),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn artifact_spec_uses_object_reference_as_object_uri() {
+        let task = sms_task_with_executable(TaskExecutable {
+            r#type: 4,
+            reference: Some(TaskExecutableReference {
+                target: Some(task_executable_reference::Target::Object(
+                    TaskObjectReference {
+                        key: "artifact-a".to_string(),
+                    },
+                )),
+            }),
+            ..Default::default()
+        });
+
+        let (_, spec) = artifact_spec_from_sms_task(&task);
+        assert_eq!(spec.location.as_deref(), Some("object://artifact-a"));
+    }
+
+    #[test]
+    fn artifact_spec_keeps_uri_reference_verbatim() {
+        let task = sms_task_with_executable(TaskExecutable {
+            r#type: 5,
+            reference: Some(TaskExecutableReference {
+                target: Some(task_executable_reference::Target::Uri(TaskUriReference {
+                    uri: "https://example.com/bin".to_string(),
+                })),
+            }),
+            ..Default::default()
+        });
+
+        let (_, spec) = artifact_spec_from_sms_task(&task);
+        assert_eq!(spec.location.as_deref(), Some("https://example.com/bin"));
+    }
 }

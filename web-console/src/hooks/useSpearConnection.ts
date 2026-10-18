@@ -1,7 +1,13 @@
 import { useCallback, useRef } from 'react'
 import { SpearStreamClient, createStreamSession, sameOriginWebSocketUrl } from '../spearStream'
-import { type ChatMessage, guessTitleFromText, newId } from '../models/conversation'
+import {
+  type ChatMessage,
+  type Conversation,
+  guessTitleFromText,
+  newId,
+} from '../models/conversation'
 import { decodeAsUtf8, formatFramePrefix } from '../utils/text'
+import { formatDisconnectError } from '../utils/connection'
 import { SsfMsgType } from '../ssf'
 import type { AudioOpenMetaV1, TextCommitMetaV1, TextDataMetaV1, TextOpenMetaV1, VoiceConfig } from '../voice'
 
@@ -16,18 +22,16 @@ export function useSpearConnection(params: {
   getVoiceConfig: () => VoiceConfig
   updateConversation: (
     id: string,
-    fn: (c: {
-      title: string
-      messages: ChatMessage[]
-      conn_status?: 'disconnected' | 'connecting' | 'connected'
-      conn_error?: string
-    }) => any,
+    fn: (conversation: Conversation) => Conversation,
   ) => void
   patchConversation: (id: string, patch: Partial<{ conn_status: 'disconnected' | 'connecting' | 'connected'; conn_error: string }>) => void
   onBeforeDisconnect?: (conversationId: string) => void
 }) {
   const clientMapRef = useRef<Map<string, SpearStreamClient>>(new Map())
   const autoConnectKeyRef = useRef<Map<string, string>>(new Map())
+  // Track locally requested disconnects so close events from the same socket do
+  // not look like runtime failures in the UI. / 追踪本地触发的断开，避免同一 socket 的 close 事件被 UI 误判为运行时失败。
+  const intentionalDisconnectRef = useRef<Set<string>>(new Set())
 
   const appendAssistantChunk = useCallback(
     (conversationId: string, msgType: number, meta: string, chunk: string) => {
@@ -62,6 +66,7 @@ export function useSpearConnection(params: {
       params.onBeforeDisconnect?.(conversationId)
       const client = clientMapRef.current.get(conversationId)
       if (client) {
+        intentionalDisconnectRef.current.add(conversationId)
         client.disconnect()
         clientMapRef.current.delete(conversationId)
       }
@@ -118,6 +123,8 @@ export function useSpearConnection(params: {
           params.patchConversation(conversationId, { conn_status: 'connected', conn_error: '' })
         },
         onClose: (ev) => {
+          const wasReplaced = clientMapRef.current.get(conversationId) !== client
+          const wasIntentional = intentionalDisconnectRef.current.delete(conversationId)
           console.warn('[spear-conn] ws close', {
             conversationId,
             target,
@@ -125,10 +132,18 @@ export function useSpearConnection(params: {
             code: ev.code,
             reason: ev.reason,
             wasClean: ev.wasClean,
+            wasIntentional,
+            wasReplaced,
           })
+          if (wasReplaced) return
+          // Persist unexpected close details into conversation state so the
+          // header/inspector can render the failure and suppress auto reconnect.
+          // / 将非预期关闭详情写回会话状态，供 header/inspector 展示，并阻止自动重连吞掉错误。
+          const disconnectError = wasIntentional ? '' : formatDisconnectError(ev)
           params.updateConversation(conversationId, (conversation) => ({
             ...conversation,
             conn_status: 'disconnected',
+            conn_error: disconnectError,
             messages: conversation.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
           }))
         },

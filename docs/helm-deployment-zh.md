@@ -225,19 +225,34 @@ OPENAI_API_KEY=... ./scripts/kind-openai-quickstart.sh
 - [AI credential_ref 设计与落地](./implementation/llm-credentials-implementation-zh.md)
 - [Backends 配置模型](./backend-adapter/backends-zh.md)
 
-### Web Admin 文件上传目录（只读根文件系统注意事项）
+### Web Admin 对象上传目录（只读根文件系统注意事项）
 
-Helm chart 默认启用 `readOnlyRootFilesystem: true`。因此，Web Admin 的文件上传不能写到容器根目录下的相对路径。
+Helm chart 默认启用 `readOnlyRootFilesystem: true`。因此，Web Admin 的对象上传不能写到容器根目录下的相对路径。
 
-当前 SMS 会将上传文件写入 `files_dir`（独立配置）：
+当前 SMS 通过 `object_storage` 描述对象存储，本地兼容后端会将 Blob 写入 `object_storage.local_fs.root_dir`：
 
-- 本地默认值：`./data/files`
-- Helm chart 默认值：`/var/lib/spear/files`（同一个 PVC 会额外挂载到该目录，确保可写）
+- 本地默认值：`./data/objects`
+- Helm chart 默认值：`/var/lib/spear/objects`（同一个 PVC 会额外挂载到该目录，确保可写）
+
+Helm 渲染出来的 SMS 配置形态如下：
+
+```toml
+[object_storage]
+backend = "local_fs"
+
+[object_storage.local_fs]
+root_dir = "/var/lib/spear/objects"
+```
 
 如需覆盖上传目录，可以：
 
-- 在 `config.toml` 中设置 `files_dir = "/some/writable/path"`
-- 或通过环境变量 `SMS_FILES_DIR` 设置
+- 在 `config.toml` 中设置 `object_storage.local_fs.root_dir = "/some/writable/path"`
+- 或通过环境变量 `SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR` 设置
+
+清理说明：
+
+- `objects_dir` 与 `SMS_OBJECTS_DIR` 已从 SMS 主配置面移除。
+- 请改用 `object_storage.local_fs.root_dir` 或 `SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR`。
 
 ### 启用 SMS Web Admin
 

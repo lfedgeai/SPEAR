@@ -49,7 +49,7 @@ CanonicalRequestEnvelope
 Notes:
 
 - `payload` lives inside the envelope and should align with `operation` (typically 1:1). Payload skeletons are defined in `operations-en.md`.
-- Large binaries should not be embedded directly into JSON fields; use `MediaRef` (e.g., `sms_file`) to reference data locations (see Section 3).
+- Large binaries should not be embedded directly into JSON fields; use `MediaRef` (e.g., `object_ref`) to reference data locations (see Section 3).
 
 ### 2.2 CanonicalResponseEnvelope (recommended fields)
 
@@ -83,8 +83,8 @@ Multimodal operations frequently carry large binary data. Use `MediaRef` to indi
 
 - `inline_base64`: good for small data and debugging
   - `{ "kind": "inline_base64", "mime": "audio/wav", "data": "..." }`
-- `sms_file`: recommended production default for large data
-  - `{ "kind": "sms_file", "uri": "smsfile://<id>", "mime": "image/png" }`
+- `object_ref`: recommended production default for large data
+  - `{ "kind": "object_ref", "uri": "object://<key>", "mime": "image/png" }`
 - `http_url`: only if explicitly allowed by host security policy
   - `{ "kind": "http_url", "url": "https://...", "mime": "image/jpeg" }`
 
@@ -100,16 +100,16 @@ Multimodal operations frequently carry large binary data. Use `MediaRef` to indi
   - `image_generation`: return `images: Vec<MediaRef>`
   - `text_to_speech`: return `audio: MediaRef`
 
-Avoid embedding large binaries directly in response JSON; prefer returning `sms_file` and let callers fetch on demand.
+Avoid embedding large binaries directly in response JSON; prefer returning `object_ref` and let callers fetch on demand.
 
 ### 3.3 Normalization guidance
 
-- If hostcall input provides raw bytes, store them in object storage and emit `sms_file` to avoid memory spikes.
+- If hostcall input provides raw bytes, store them in object storage and emit `object_ref` to avoid memory spikes.
 - If a backend requires inline content, the adapter can read and encode on demand; the IR should not force inline.
 
 ### 3.4 Examples
 
-#### 3.4.1 ASR (`speech_to_text`) request: audio as `sms_file`
+#### 3.4.1 ASR (`speech_to_text`) request: audio as `object_ref`
 
 ```json
 {
@@ -124,8 +124,8 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
   "payload": {
     "model": "whisper-1",
     "audio": {
-      "kind": "sms_file",
-      "uri": "smsfile://01JFK...ABCD",
+      "kind": "object_ref",
+      "uri": "object://01JFK...ABCD",
       "mime": "audio/wav"
     },
     "language": "zh",
@@ -134,7 +134,7 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
 }
 ```
 
-#### 3.4.2 Image generation (`image_generation`) response: image as `sms_file`
+#### 3.4.2 Image generation (`image_generation`) response: image as `object_ref`
 
 ```json
 {
@@ -145,7 +145,7 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
   "result": {
     "payload": {
       "images": [
-        { "kind": "sms_file", "uri": "smsfile://01JFK...WXYZ", "mime": "image/png" }
+        { "kind": "object_ref", "uri": "object://01JFK...WXYZ", "mime": "image/png" }
       ]
     }
   }
@@ -166,7 +166,7 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
           { "type": "text", "text": "Describe this image" },
           {
             "type": "image",
-            "image": { "kind": "sms_file", "uri": "smsfile://01J...", "mime": "image/jpeg" }
+            "image": { "kind": "object_ref", "uri": "object://01J...", "mime": "image/jpeg" }
           }
         ]
       }
@@ -178,11 +178,11 @@ Avoid embedding large binaries directly in response JSON; prefer returning `sms_
 ### 3.5 Normalization and resolution responsibilities (recommended)
 
 - Normalize layer (host-side):
-  - If hostcall input is raw bytes, store it in object storage and emit a `MediaRef` of kind `sms_file`.
-  - Enforce security policy for `http_url` (reject or re-host into `sms_file` if disallowed).
+  - If hostcall input is raw bytes, store it in object storage and emit a `MediaRef` of kind `object_ref`.
+  - Enforce security policy for `http_url` (reject or re-host into `object_ref` if disallowed).
 - Backend adapter (before sending):
-  - Resolve `MediaRef` into bytes (fetch `sms_file`, decode `inline_base64`) and build multipart/base64/binary payloads as required.
-  - If a backend returns base64 image/audio, prefer storing into `sms_file` before producing the canonical response (unless inline is explicitly requested and size-limited).
+  - Resolve `MediaRef` into bytes (fetch `object_ref`, decode `inline_base64`) and build multipart/base64/binary payloads as required.
+  - If a backend returns base64 image/audio, prefer storing into `object_ref` before producing the canonical response (unless inline is explicitly requested and size-limited).
 - Router layer:
   - Does not parse media bytes, but can enforce capability/limit checks using metadata (e.g., `mime`, size/duration) such as `max_audio_seconds`.
 

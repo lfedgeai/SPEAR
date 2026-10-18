@@ -5,28 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { InstanceStatusBadge } from '@/features/shared/status-badges'
 import { cn } from '@/lib/utils'
+import { summarizeTaskInstances } from '@/features/tasks/taskInstanceSummary'
 
 function formatInstanceMs(ts?: number) {
   if (!ts) return '-'
   return new Date(ts).toLocaleString()
-}
-
-export function summarizeTaskInstances(instances: InstanceSummary[]) {
-  const ready = instances.filter((row) => {
-    const status = row.status.toLowerCase()
-    return status === 'running' || status === 'idle' || status === 'ready'
-  }).length
-  const activeExecutions = instances.filter((row) => !!row.current_execution_id).length
-  const terminating = instances.filter((row) => {
-    const status = row.status.toLowerCase()
-    return status === 'terminating' || status === 'stopping' || status === 'terminated'
-  }).length
-  return {
-    total: instances.length,
-    ready,
-    activeExecutions,
-    terminating,
-  }
 }
 
 export function TaskInstanceSummaryCards({ instances }: { instances: InstanceSummary[] }) {

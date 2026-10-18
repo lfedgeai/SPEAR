@@ -3,6 +3,7 @@
 
 use clap::Parser;
 use spear_next::config::init_tracing;
+use spear_next::sms::blob_store::build_blob_store;
 use spear_next::sms::config::{CliArgs, SmsConfig};
 use spear_next::sms::execution_logs::init_execution_logs_dir;
 use spear_next::sms::grpc_server::GrpcServer;
@@ -26,9 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = SmsConfig::load_with_cli(&args)?;
     let config = Arc::new(cfg);
 
-    if !config.files_dir.trim().is_empty() {
-        std::env::set_var("SMS_FILES_DIR", config.files_dir.as_str());
-    }
     init_execution_logs_dir(&config.execution_logs_dir);
 
     // Initialize logging with configuration / 使用配置初始化日志
@@ -95,12 +93,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Web Admin (optional) / 初始化Web管理页面（可选）
     let web_admin_enabled = config.enable_web_admin;
     let web_admin_addr = config.web_admin.addr;
+    let web_admin_blob_store = build_blob_store(&config).await?;
     let web_admin_server = WebAdminServer::new(
         web_admin_addr,
         config.grpc.addr,
         web_admin_enabled,
         config.max_upload_bytes as usize,
-        config.files_dir.clone(),
+        web_admin_blob_store,
     );
     let (shutdown_tx_admin, shutdown_rx_admin) = tokio::sync::oneshot::channel::<()>();
     let admin_handle = tokio::spawn(async move {

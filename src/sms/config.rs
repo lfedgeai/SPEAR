@@ -113,7 +113,7 @@ pub struct CliArgs {
     #[arg(
         long,
         value_name = "BYTES",
-        help = "Max upload bytes for embedded file server / 内嵌文件服务器的最大上传字节数"
+        help = "Max upload bytes for embedded object store / 内嵌对象存储的最大上传字节数"
     )]
     pub max_upload_bytes: Option<u64>,
 
@@ -159,13 +159,6 @@ pub struct CliArgs {
     #[arg(
         long,
         value_name = "PATH",
-        help = "Uploaded files directory / 上传文件存储目录"
-    )]
-    pub files_dir: Option<String>,
-
-    #[arg(
-        long,
-        value_name = "PATH",
         help = "Execution logs directory / 执行日志存储目录"
     )]
     pub execution_logs_dir: Option<String>,
@@ -196,14 +189,75 @@ pub struct SmsConfig {
     pub cleanup_interval: u64,
     /// Periodic task assignment reconcile interval in seconds / 周期性任务分配收敛间隔（秒）
     pub assignment_reconcile_interval: u64,
-    /// Max upload size in bytes for embedded file server / 内嵌文件服务器的最大上传字节数
+    /// Max upload size in bytes for embedded object store / 内嵌对象存储的最大上传字节数
     pub max_upload_bytes: u64,
-    pub files_dir: String,
+    /// Structured object storage backend configuration / 结构化对象存储后端配置
+    pub object_storage: ObjectStorageConfig,
+    /// Execution logs directory / 执行日志目录
     pub execution_logs_dir: String,
     /// Optional KV config for task events outbox / 任务事件Outbox的可选KV配置
     pub event_kv: Option<KvStoreConfig>,
 
     pub mcp: McpConfig,
+}
+
+/// Object storage backend kind / 对象存储后端类型
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectStorageBackend {
+    /// Local filesystem compatibility backend / 本地文件系统兼容后端
+    #[default]
+    LocalFs,
+    /// RustFS blob backend / RustFS Blob 后端
+    Rustfs,
+}
+
+/// Structured object storage configuration / 结构化对象存储配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ObjectStorageConfig {
+    /// Selected backend implementation / 选中的后端实现
+    pub backend: ObjectStorageBackend,
+    /// Local filesystem backend settings / 本地文件系统后端配置
+    pub local_fs: LocalFsObjectStorageConfig,
+    /// RustFS backend settings / RustFS 后端配置
+    pub rustfs: RustfsObjectStorageConfig,
+}
+
+/// Local filesystem blob store settings / 本地文件系统 BlobStore 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LocalFsObjectStorageConfig {
+    /// Root directory used by the local compatibility store / 本地兼容存储使用的根目录
+    pub root_dir: String,
+}
+
+/// RustFS blob store settings / RustFS BlobStore 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RustfsObjectStorageConfig {
+    /// RustFS service endpoint / RustFS 服务地址
+    pub endpoint: String,
+    /// RustFS bucket or namespace / RustFS bucket 或命名空间
+    pub bucket: String,
+    /// Optional key prefix inside the bucket / bucket 内的可选前缀
+    pub root: String,
+    /// S3-compatible region for RustFS requests / RustFS 请求使用的 S3-compatible region
+    pub region: String,
+    /// Optional static access key, empty means using the default credential chain / 可选静态 access key，留空表示使用默认凭证链
+    pub access_key: String,
+    /// Optional static secret key, empty means using the default credential chain / 可选静态 secret key，留空表示使用默认凭证链
+    pub secret_key: String,
+    /// Use S3 path-style addressing for RustFS / 对 RustFS 使用 S3 path-style 寻址
+    pub path_style: bool,
+    /// Connect timeout in milliseconds / 连接超时时间（毫秒）
+    pub connect_timeout_ms: u64,
+    /// Read timeout in milliseconds / 读取超时时间（毫秒）
+    pub read_timeout_ms: u64,
+    /// Write timeout in milliseconds / 写入超时时间（毫秒）
+    pub write_timeout_ms: u64,
+    /// Create bucket automatically when missing / 缺失时自动创建 bucket
+    pub create_bucket_if_missing: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,6 +269,42 @@ pub struct McpConfig {
 impl Default for McpConfig {
     fn default() -> Self {
         Self { dir: String::new() }
+    }
+}
+
+impl Default for ObjectStorageConfig {
+    fn default() -> Self {
+        Self {
+            backend: ObjectStorageBackend::LocalFs,
+            local_fs: LocalFsObjectStorageConfig::default(),
+            rustfs: RustfsObjectStorageConfig::default(),
+        }
+    }
+}
+
+impl Default for LocalFsObjectStorageConfig {
+    fn default() -> Self {
+        Self {
+            root_dir: "./data/objects".to_string(),
+        }
+    }
+}
+
+impl Default for RustfsObjectStorageConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: String::new(),
+            bucket: String::new(),
+            root: String::new(),
+            region: "us-east-1".to_string(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            path_style: true,
+            connect_timeout_ms: 3000,
+            read_timeout_ms: 10000,
+            write_timeout_ms: 10000,
+            create_bucket_if_missing: true,
+        }
     }
 }
 
@@ -231,6 +321,19 @@ pub struct DatabaseConfig {
 }
 
 impl SmsConfig {
+    /// Parse SMS config from TOML and normalize compatibility aliases.
+    /// 从 TOML 解析 SMS 配置并规范化兼容别名。
+    pub fn from_toml_str(toml_str: &str) -> anyhow::Result<Self> {
+        let mut config: Self = toml::from_str(toml_str)?;
+        config.normalize_object_storage_config();
+
+        if config.execution_logs_dir.trim().is_empty() {
+            config.execution_logs_dir = "./data/execution_logs".to_string();
+        }
+
+        Ok(config)
+    }
+
     /// Load configuration with CLI arguments override / 使用CLI参数覆盖加载配置
     pub fn load_with_cli(args: &CliArgs) -> anyhow::Result<Self> {
         // Start with default configuration / 从默认配置开始
@@ -308,14 +411,54 @@ impl SmsConfig {
                 config.web_admin.addr = a;
             }
         }
-        if let Ok(v) = std::env::var("SMS_FILES_DIR") {
-            if !v.is_empty() {
-                config.files_dir = v;
-            }
-        }
         if let Ok(v) = std::env::var("SMS_EXECUTION_LOGS_DIR") {
             if !v.is_empty() {
                 config.execution_logs_dir = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_BACKEND") {
+            if let Some(backend) = parse_object_storage_backend(&v) {
+                config.object_storage.backend = backend;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR") {
+            if !v.is_empty() {
+                config.object_storage.local_fs.root_dir = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_ENDPOINT") {
+            if !v.is_empty() {
+                config.object_storage.rustfs.endpoint = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_BUCKET") {
+            if !v.is_empty() {
+                config.object_storage.rustfs.bucket = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_ROOT") {
+            if !v.is_empty() {
+                config.object_storage.rustfs.root = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_REGION") {
+            if !v.is_empty() {
+                config.object_storage.rustfs.region = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_ACCESS_KEY") {
+            if !v.is_empty() {
+                config.object_storage.rustfs.access_key = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_SECRET_KEY") {
+            if !v.is_empty() {
+                config.object_storage.rustfs.secret_key = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SMS_OBJECT_STORAGE_RUSTFS_PATH_STYLE") {
+            if let Ok(b) = v.parse::<bool>() {
+                config.object_storage.rustfs.path_style = b;
             }
         }
 
@@ -332,7 +475,7 @@ impl SmsConfig {
                     .join("config.toml");
                 if home_path.exists() {
                     let cfg = std::fs::read_to_string(&home_path)?;
-                    match toml::from_str::<Self>(&cfg) {
+                    match Self::from_toml_str(&cfg) {
                         Ok(c) => {
                             config = c;
                         }
@@ -354,7 +497,7 @@ impl SmsConfig {
             let p = std::path::PathBuf::from(config_path);
             if p.exists() {
                 let cfg = std::fs::read_to_string(&p)?;
-                config = toml::from_str(&cfg)?;
+                config = Self::from_toml_str(&cfg)?;
             } else {
                 tracing::info!("Config file '{}' not found, using defaults", config_path);
             }
@@ -371,9 +514,6 @@ impl SmsConfig {
 
         if let Some(p) = &args.mcp_dir {
             config.mcp.dir = p.clone();
-        }
-        if let Some(p) = &args.files_dir {
-            config.files_dir = p.clone();
         }
         if let Some(p) = &args.execution_logs_dir {
             config.execution_logs_dir = p.clone();
@@ -466,6 +606,8 @@ impl SmsConfig {
             config.execution_logs_dir = "./data/execution_logs".to_string();
         }
 
+        config.normalize_object_storage_config();
+
         // Optional: load event KV from environment / 可选：从环境变量加载事件KV
         let ev_backend = std::env::var("SMS_EVENTS_KV_BACKEND").ok();
         let ev_path = std::env::var("SMS_EVENTS_KV_PATH").ok();
@@ -479,6 +621,15 @@ impl SmsConfig {
         }
 
         Ok(config)
+    }
+
+    /// Normalize structured object storage settings after layered overrides.
+    /// 在多层覆盖之后规范化结构化对象存储配置。
+    fn normalize_object_storage_config(&mut self) {
+        if self.object_storage.local_fs.root_dir.trim().is_empty() {
+            self.object_storage.local_fs.root_dir =
+                LocalFsObjectStorageConfig::default().root_dir;
+        }
     }
 }
 
@@ -510,7 +661,7 @@ impl Default for SmsConfig {
             cleanup_interval: 30,
             assignment_reconcile_interval: 60,
             max_upload_bytes: 64 * 1024 * 1024,
-            files_dir: "./data/files".to_string(),
+            object_storage: ObjectStorageConfig::default(),
             execution_logs_dir: String::new(),
             event_kv: None,
             mcp: McpConfig::default(),
@@ -525,5 +676,13 @@ impl Default for DatabaseConfig {
             path: "./data".to_string(),
             pool_size: Some(10),
         }
+    }
+}
+
+fn parse_object_storage_backend(value: &str) -> Option<ObjectStorageBackend> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "local_fs" | "local-fs" | "localfs" => Some(ObjectStorageBackend::LocalFs),
+        "rustfs" => Some(ObjectStorageBackend::Rustfs),
+        _ => None,
     }
 }

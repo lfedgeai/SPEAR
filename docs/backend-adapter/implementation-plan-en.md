@@ -152,7 +152,7 @@ And add `pub mod ai;` to `src/spearlet/execution/mod.rs`.
 ### 2.2 MediaRef types
 
 - File: `src/spearlet/execution/ai/media_ref.rs`
-  - `enum MediaRef { InlineBase64{mime,data}, SmsFile{mime,uri}, HttpUrl{mime,url} }`
+  - `enum MediaRef { InlineBase64{mime,data}, ObjectRef{mime,uri}, HttpUrl{mime,url} }`
   - Phase 1 is type-only; object storage integration comes later.
 
 ### 2.3 Minimal validation
@@ -370,7 +370,7 @@ MVP recommendation: merge `health_info` into node `metadata` so Web Admin `GET /
 - Add operations: `emb/img/asr/tts` normalization and backend branches
   - new files: `src/spearlet/execution/ai/normalize/{embeddings,image,asr,tts}.rs`
 - MediaRef + object storage integration:
-  - normalize converts bytes to `sms_file`
+  - normalize converts bytes to `object_ref`
   - adapters fetch/encode to match backend protocol
 - Realtime/streaming: add `src/spearlet/execution/ai/stream/` or integrate with `execution/communication`
 

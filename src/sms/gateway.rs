@@ -321,7 +321,7 @@ impl ExecutionStreamHub {
 }
 
 /// HTTP gateway state / HTTP网关状态
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GatewayState {
     pub config: Arc<crate::sms::config::SmsConfig>,
     pub node_client: NodeServiceClient<tonic::transport::Channel>,
@@ -341,7 +341,17 @@ pub struct GatewayState {
     pub execution_stream_pool: ExecutionStreamPool,
     pub cancel_token: CancellationToken,
     pub max_upload_bytes: usize,
-    pub files_dir: String,
+    /// Shared blob store used by object APIs / 对象 API 使用的共享 BlobStore
+    pub blob_store: crate::sms::blob_store::SharedBlobStore,
+}
+
+impl std::fmt::Debug for GatewayState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatewayState")
+            .field("config", &self.config)
+            .field("max_upload_bytes", &self.max_upload_bytes)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Create HTTP gateway router / 创建HTTP网关路由器

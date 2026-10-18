@@ -26,7 +26,10 @@ The Spearlet WASM runtime requires a valid WASM binary at instance creation. If 
   "config": {},
   "executable": {
     "type": "wasm",
-    "uri": "smsfile://<file_id>",
+    "reference": {
+      "kind": "object",
+      "object_key": "<object_key>"
+    },
     "name": "hello.wasm",
     "args": [],
     "env": {}
@@ -36,16 +39,17 @@ The Spearlet WASM runtime requires a valid WASM binary at instance creation. If 
 - The runtime downloads content from the artifact `location` during `create_instance`, validates the WASM magic header before loading, and then creates the WASM instance handle.
 - When built with the `wasmedge` feature enabled, `start_instance` starts a WASM worker that receives and executes subsequent invocation requests.
 
-### SMS File Scheme and Config Source
+### Object Scheme
 
-- Supported `smsfile` forms:
-  - Explicit override: `smsfile://<host:port>/<file_id>`
-  - Short form: `smsfile://<file_id>` (runtime uses `SpearletConfig.sms_http_addr` for the HTTP gateway)
-- The runtime constructs path `"/api/v1/files/<file_id>"`.
+- Supported object forms:
+  - `object://<host:port>/<object_key>`
+  - `object://<object_key>` (runtime uses `SpearletConfig.sms_http_addr` for the HTTP gateway)
+- The runtime constructs:
+  - `"/api/v1/objects/<object_key>/content"`
 - Download function:
 
 ```rust
-pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+pub async fn fetch_sms_artifact(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
 ```
 
 * Configuration is injected at runtime initialization: FunctionService passes the full `SpearletConfig` into each `Runtime` via `RuntimeConfig.spearlet_config`; `sms_http_addr` provides the HTTP gateway address for downloads.

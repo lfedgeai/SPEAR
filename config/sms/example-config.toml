@@ -13,8 +13,26 @@ heartbeat_timeout = 180
 cleanup_interval = 600
 assignment_reconcile_interval = 60
 max_upload_bytes = 67108864
-files_dir = "./data/files"
-execution_logs_dir = "./data/files/execution_logs"
+execution_logs_dir = "./data/execution_logs"
+
+[object_storage]
+backend = "local_fs"
+
+[object_storage.local_fs]
+root_dir = "./data/objects"
+
+[object_storage.rustfs]
+endpoint = ""
+bucket = ""
+root = ""
+region = "us-east-1"
+access_key = ""
+secret_key = ""
+path_style = true
+connect_timeout_ms = 3000
+read_timeout_ms = 10000
+write_timeout_ms = 10000
+create_bucket_if_missing = true
 
 [web_admin]
 addr = "0.0.0.0:8081"

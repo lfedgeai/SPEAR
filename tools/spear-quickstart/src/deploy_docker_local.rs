@@ -246,7 +246,7 @@ pub(super) fn apply(cfg: &Config) -> anyhow::Result<()> {
     cmd.args(["-e", "SMS_GRPC_ADDR=0.0.0.0:50051"]);
     cmd.args(["-e", "SMS_HTTP_ADDR=0.0.0.0:8080"]);
     cmd.args(["-e", "SMS_WEB_ADMIN_ADDR=0.0.0.0:8081"]);
-    cmd.args(["-e", "SMS_FILES_DIR=/tmp/sms-files"]);
+    cmd.args(["-e", "SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR=/tmp/sms-objects"]);
     cmd.args(["-e", "SMS_EXECUTION_LOGS_DIR=/tmp/sms-execution-logs"]);
     cmd.args([
         "-e",

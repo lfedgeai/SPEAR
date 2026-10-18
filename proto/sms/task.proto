@@ -37,13 +37,29 @@ enum ExecutableType {
 }
 
 // Executable descriptor / 可执行描述
+message TaskObjectReference {
+  string key = 1;                    // Object key in SMS object catalog / SMS 对象目录中的对象键
+}
+
+message TaskUriReference {
+  string uri = 1;                    // Canonical URI for non-object sources / 非对象来源使用的规范 URI
+}
+
+message TaskExecutableReference {
+  oneof target {
+    TaskObjectReference object = 1;  // Structured SMS object reference / 结构化 SMS 对象引用
+    TaskUriReference uri = 2;        // Generic URI reference for external sources / 外部来源的通用 URI 引用
+  }
+}
+
+// Executable descriptor / 可执行描述
 message TaskExecutable {
-  ExecutableType type = 1;          // Type of executable / 可执行类型
-  string uri = 2;                    // Canonical URI (e.g., docker://image:tag, http://...) / 规范URI
-  string name = 3;                   // Local name or alias / 本地名称或别名
-  string checksum_sha256 = 4;        // Optional integrity checksum / 可选完整性校验
-  repeated string args = 5;          // Default arguments / 默认参数
-  map<string, string> env = 6;       // Default environment variables / 默认环境变量
+  ExecutableType type = 1;               // Type of executable / 可执行类型
+  TaskExecutableReference reference = 2; // Structured executable source / 结构化可执行来源
+  string name = 3;                        // Local name or alias / 本地名称或别名
+  string checksum_sha256 = 4;             // Optional integrity checksum / 可选完整性校验
+  repeated string args = 5;               // Default arguments / 默认参数
+  map<string, string> env = 6;            // Default environment variables / 默认环境变量
 }
 
 // Task definition / 任务定义

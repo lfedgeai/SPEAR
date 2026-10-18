@@ -34,7 +34,7 @@ sms:
     heartbeatTimeout: 90
     cleanupInterval: 30
     maxUploadBytes: 67108864
-    filesDir: "/var/lib/spear/files"
+    objectsDir: "/var/lib/spear/objects"
     executionLogsDir: "/var/lib/spear/execution_logs"
   mcp:
     enabled: false

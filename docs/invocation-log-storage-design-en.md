@@ -62,7 +62,7 @@ Related docs:
    - Flushes to central storage in chunks.
 
 2. **SMS Log Storage (central)**
-   - **Blob store** for log chunks (append-only): object storage in production; the existing `smsfile://` store can be a dev/default backend.
+   - **Blob store** for log chunks (append-only): object storage in production; the local object store can remain the dev/default backend.
    - **Metadata store** for indices/cursors/retention: KV store (RocksDB/Sled) already exists in the project.
 
 3. **SMS Web Admin BFF**

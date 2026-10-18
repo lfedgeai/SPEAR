@@ -8,15 +8,23 @@ use crate::sms::query_support::{collect_task_instances_bounded, instance_is_acti
 use crate::sms::task_api::{
     build_register_task_request, task_to_admin_detail_response, task_to_admin_summary_response,
     task_to_deleted_snapshot, AdminDeletedTaskSnapshot, AdminTaskDetailResponse,
-    AdminTaskSummaryResponse, RegisterTaskSpec, TaskExecutableSpec,
+    AdminTaskSummaryResponse, RegisterTaskSpec, TaskExecutableReferenceSpec,
+    TaskExecutableSpec,
 };
 
 use super::types::ListQuery;
 
 #[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum CreateExecutableReferenceBody {
+    Object { object_key: String },
+    Uri { uri: String },
+}
+
+#[derive(serde::Deserialize)]
 pub(crate) struct CreateExecutableBody {
-    pub(crate) r#type: Option<String>,
-    pub(crate) uri: Option<String>,
+    pub(crate) r#type: String,
+    pub(crate) reference: CreateExecutableReferenceBody,
     pub(crate) name: Option<String>,
     pub(crate) checksum_sha256: Option<String>,
     pub(crate) args: Option<Vec<String>>,
@@ -197,8 +205,15 @@ pub(crate) async fn create_task(
         metadata: body.metadata.unwrap_or_default(),
         config: body.config.unwrap_or_default(),
         executable: body.executable.map(|executable| TaskExecutableSpec {
-            executable_type: executable.r#type.unwrap_or_default(),
-            uri: executable.uri.unwrap_or_default(),
+            executable_type: executable.r#type,
+            reference: match executable.reference {
+                CreateExecutableReferenceBody::Object { object_key } => {
+                    TaskExecutableReferenceSpec::Object { object_key }
+                }
+                CreateExecutableReferenceBody::Uri { uri } => {
+                    TaskExecutableReferenceSpec::Uri { uri }
+                }
+            },
             name: executable.name,
             checksum_sha256: executable.checksum_sha256,
             args: executable.args,

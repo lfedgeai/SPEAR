@@ -40,8 +40,8 @@ spec:
               value: /etc/sms/config.toml
             - name: HOME
               value: /tmp
-            - name: SMS_FILES_DIR
-              value: {{ .Values.sms.config.filesDir | quote }}
+            - name: SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR
+              value: {{ .Values.sms.config.objectsDir | quote }}
             - name: SMS_EXECUTION_LOGS_DIR
               value: {{ .Values.sms.config.executionLogsDir | quote }}
           {{- with .Values.sms.extraEnv }}
@@ -68,8 +68,8 @@ spec:
             - name: data
               mountPath: {{ .Values.sms.config.database.path }}
             - name: data
-              mountPath: {{ .Values.sms.config.filesDir }}
-            {{- if and (ne .Values.sms.config.executionLogsDir .Values.sms.config.filesDir) (ne .Values.sms.config.executionLogsDir .Values.sms.config.database.path) }}
+              mountPath: {{ .Values.sms.config.objectsDir }}
+            {{- if and (ne .Values.sms.config.executionLogsDir .Values.sms.config.objectsDir) (ne .Values.sms.config.executionLogsDir .Values.sms.config.database.path) }}
             - name: data
               mountPath: {{ .Values.sms.config.executionLogsDir }}
             {{- end }}

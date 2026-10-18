@@ -9,7 +9,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::proto::sms::{
-    ExecutableType, RegisterTaskRequest, Task, TaskExecutable, TaskSchedulingStrategy,
+    task_executable_reference, ExecutableType, RegisterTaskRequest, Task, TaskExecutable,
+    TaskExecutableReference, TaskObjectReference, TaskSchedulingStrategy, TaskUriReference,
 };
 use crate::sms::{task_priority_to_public_str, task_status_to_public_str};
 
@@ -50,14 +51,31 @@ fn scheduling_strategy_to_public_str(value: i32) -> &'static str {
     }
 }
 
+/// Structured executable reference spec shared by HTTP handlers and admin endpoints.
+/// HTTP 处理器与管理端接口共享的结构化可执行引用描述。
+#[derive(Debug, Clone)]
+pub(crate) enum TaskExecutableReferenceSpec {
+    Object { object_key: String },
+    Uri { uri: String },
+}
+
+/// Task executable spec used by HTTP handlers and admin endpoints.
+/// HTTP 处理器与管理端接口共享的可执行描述。
 #[derive(Debug, Clone)]
 pub(crate) struct TaskExecutableSpec {
     pub(crate) executable_type: String,
-    pub(crate) uri: String,
+    pub(crate) reference: TaskExecutableReferenceSpec,
     pub(crate) name: Option<String>,
     pub(crate) checksum_sha256: Option<String>,
     pub(crate) args: Option<Vec<String>>,
     pub(crate) env: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskExecutableReferenceResponse {
+    Object { object_key: String },
+    Uri { uri: String },
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +105,7 @@ pub(crate) fn build_register_task_request(spec: RegisterTaskSpec) -> RegisterTas
         config: spec.config,
         executable: spec.executable.map(|exec| TaskExecutable {
             r#type: executable_type_from_public_str(&exec.executable_type),
-            uri: exec.uri,
+            reference: Some(task_executable_reference_from_spec(exec.reference)),
             name: exec.name.unwrap_or_default(),
             checksum_sha256: exec.checksum_sha256.unwrap_or_default(),
             args: exec.args.unwrap_or_default(),
@@ -103,7 +121,7 @@ pub(crate) fn build_register_task_request(spec: RegisterTaskSpec) -> RegisterTas
 #[derive(Debug, Clone, Default)]
 struct TaskExecutableView {
     executable_type: String,
-    executable_uri: String,
+    executable_reference: Option<TaskExecutableReferenceResponse>,
     executable_name: String,
     executable_checksum: String,
     executable_args: Vec<String>,
@@ -118,7 +136,7 @@ impl From<Option<TaskExecutable>> for TaskExecutableView {
 
         Self {
             executable_type: executable_type_to_public_str(exec.r#type).to_string(),
-            executable_uri: exec.uri,
+            executable_reference: task_executable_reference_to_response(exec.reference),
             executable_name: exec.name,
             executable_checksum: exec.checksum_sha256,
             executable_args: exec.args,
@@ -199,6 +217,7 @@ pub struct PublicTaskResponse {
     pub last_heartbeat: i64,
     pub metadata: HashMap<String, String>,
     pub config: HashMap<String, String>,
+    pub executable_reference: Option<TaskExecutableReferenceResponse>,
     pub result_uris: Vec<String>,
     pub last_result_uri: String,
     pub last_result_status: String,
@@ -223,6 +242,7 @@ pub(crate) fn task_to_public_response(task: Task) -> PublicTaskResponse {
         last_heartbeat: presentation.last_heartbeat,
         metadata: presentation.metadata,
         config: presentation.config,
+        executable_reference: presentation.executable.executable_reference,
         result_uris: presentation.result_uris,
         last_result_uri: presentation.last_result_uri,
         last_result_status: presentation.last_result_status,
@@ -252,7 +272,7 @@ pub(crate) struct AdminTaskSummaryResponse {
     pub(crate) metadata: HashMap<String, String>,
     pub(crate) config: HashMap<String, String>,
     pub(crate) executable_type: String,
-    pub(crate) executable_uri: String,
+    pub(crate) executable_reference: Option<TaskExecutableReferenceResponse>,
     pub(crate) executable_name: String,
     pub(crate) result_uris: Vec<String>,
     pub(crate) last_result_uri: String,
@@ -290,7 +310,7 @@ pub(crate) fn task_to_admin_summary_response(
         metadata: presentation.metadata,
         config: presentation.config,
         executable_type: presentation.executable.executable_type,
-        executable_uri: presentation.executable.executable_uri,
+        executable_reference: presentation.executable.executable_reference,
         executable_name: presentation.executable.executable_name,
         result_uris: presentation.result_uris,
         last_result_uri: presentation.last_result_uri,
@@ -319,7 +339,7 @@ pub(crate) struct AdminTaskDetailResponse {
     pub(crate) metadata: HashMap<String, String>,
     pub(crate) config: HashMap<String, String>,
     pub(crate) executable_type: String,
-    pub(crate) executable_uri: String,
+    pub(crate) executable_reference: Option<TaskExecutableReferenceResponse>,
     pub(crate) executable_name: String,
     pub(crate) executable_checksum: String,
     pub(crate) executable_args: Vec<String>,
@@ -351,7 +371,7 @@ pub(crate) fn task_to_admin_detail_response(task: Task) -> AdminTaskDetailRespon
         metadata: presentation.metadata,
         config: presentation.config,
         executable_type: presentation.executable.executable_type,
-        executable_uri: presentation.executable.executable_uri,
+        executable_reference: presentation.executable.executable_reference,
         executable_name: presentation.executable.executable_name,
         executable_checksum: presentation.executable.executable_checksum,
         executable_args: presentation.executable.executable_args,
@@ -384,6 +404,38 @@ pub(crate) fn task_to_deleted_snapshot(task: Task) -> AdminDeletedTaskSnapshot {
     }
 }
 
+fn task_executable_reference_from_spec(
+    reference: TaskExecutableReferenceSpec,
+) -> TaskExecutableReference {
+    let target = match reference {
+        TaskExecutableReferenceSpec::Object { object_key } => {
+            task_executable_reference::Target::Object(TaskObjectReference { key: object_key })
+        }
+        TaskExecutableReferenceSpec::Uri { uri } => {
+            task_executable_reference::Target::Uri(TaskUriReference { uri })
+        }
+    };
+    TaskExecutableReference {
+        target: Some(target),
+    }
+}
+
+fn task_executable_reference_to_response(
+    reference: Option<TaskExecutableReference>,
+) -> Option<TaskExecutableReferenceResponse> {
+    match reference.and_then(|value| value.target) {
+        Some(task_executable_reference::Target::Object(object)) => {
+            Some(TaskExecutableReferenceResponse::Object {
+                object_key: object.key,
+            })
+        }
+        Some(task_executable_reference::Target::Uri(uri)) => {
+            Some(TaskExecutableReferenceResponse::Uri { uri: uri.uri })
+        }
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,7 +457,13 @@ mod tests {
             config: HashMap::from([("timeout".to_string(), "30".to_string())]),
             executable: Some(TaskExecutable {
                 r#type: ExecutableType::Wasm as i32,
-                uri: "file:///tmp/demo.wasm".to_string(),
+                reference: Some(TaskExecutableReference {
+                    target: Some(task_executable_reference::Target::Object(
+                        TaskObjectReference {
+                            key: "demo-object".to_string(),
+                        },
+                    )),
+                }),
                 name: "demo.wasm".to_string(),
                 checksum_sha256: "abc".to_string(),
                 args: vec!["--verbose".to_string()],
@@ -438,7 +496,9 @@ mod tests {
             config: HashMap::new(),
             executable: Some(TaskExecutableSpec {
                 executable_type: "wasm".to_string(),
-                uri: "file:///tmp/demo.wasm".to_string(),
+                reference: TaskExecutableReferenceSpec::Object {
+                    object_key: "demo-object".to_string(),
+                },
                 name: Some("demo.wasm".to_string()),
                 checksum_sha256: Some("abc".to_string()),
                 args: Some(vec!["--verbose".to_string()]),
@@ -456,7 +516,14 @@ mod tests {
         );
         let executable = request.executable.expect("executable should exist");
         assert_eq!(executable.r#type, ExecutableType::Wasm as i32);
-        assert_eq!(executable.uri, "file:///tmp/demo.wasm");
+        assert_eq!(
+            executable.reference.and_then(|reference| reference.target),
+            Some(task_executable_reference::Target::Object(
+                TaskObjectReference {
+                    key: "demo-object".to_string(),
+                },
+            ))
+        );
     }
 
     #[test]
@@ -472,6 +539,12 @@ mod tests {
     fn admin_detail_response_keeps_executable_fields() {
         let response = task_to_admin_detail_response(sample_task());
         assert_eq!(response.executable_type, "wasm");
+        assert_eq!(
+            response.executable_reference,
+            Some(TaskExecutableReferenceResponse::Object {
+                object_key: "demo-object".to_string(),
+            })
+        );
         assert_eq!(response.executable_name, "demo.wasm");
         assert_eq!(response.executable_checksum, "abc");
         assert_eq!(response.executable_args, vec!["--verbose".to_string()]);

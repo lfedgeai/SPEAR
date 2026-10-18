@@ -5,6 +5,11 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/debug-server/Dockerfile
+      args:
+        RUST_IMAGE: ${RUST_IMAGE:-rust:1.91-bookworm}
+        DEBIAN_IMAGE: ${DEBUG_SERVER_DEBIAN_IMAGE:-debian:bookworm-slim}
+        CARGO_BUILD_PROFILE: ${DEBUG_SERVER_CARGO_BUILD_PROFILE:-dev}
+        CARGO_OUTPUT_DIR: ${DEBUG_SERVER_CARGO_OUTPUT_DIR:-debug}
     image: spear-debug-server:local
     restart: unless-stopped
     command:
@@ -25,6 +30,20 @@ services:
     volumes:
       - ../../.dbg:/dbg
 
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    command:
+      - /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    ports:
+      - ${RUSTFS_API_PORT:-19000}:9000
+      - ${RUSTFS_CONSOLE_PORT:-19001}:9001
+    volumes:
+      - rustfs-data:/data
+
   sms:
     build:
       context: ../..
@@ -34,8 +53,12 @@ services:
         RUST_IMAGE: ${RUST_IMAGE:-rust:1.91-bookworm}
         DEBIAN_IMAGE: ${DEBIAN_IMAGE:-debian:trixie-slim}
         USE_CARGO_MIRROR: ${USE_CARGO_MIRROR:-1}
+        CARGO_BUILD_PROFILE: ${SMS_CARGO_BUILD_PROFILE:-dev}
+        CARGO_OUTPUT_DIR: ${SMS_CARGO_OUTPUT_DIR:-debug}
     image: spear-sms:local
     restart: unless-stopped
+    depends_on:
+      - rustfs
     command:
       - sms
       - --grpc-addr
@@ -50,16 +73,22 @@ services:
       - rocksdb
       - --db-path
       - /var/lib/sms/rocksdb
-      - --files-dir
-      - /var/lib/sms/files
       - --execution-logs-dir
       - /var/lib/sms/execution_logs
     environment:
       SMS_LOG_LEVEL: ${SMS_LOG_LEVEL:-info}
       SMS_LOG_FORMAT: ${SMS_LOG_FORMAT:-json}
-      SMS_CREDENTIAL_MASTER_KEY: ${SMS_CREDENTIAL_MASTER_KEY}
+      SMS_CREDENTIAL_MASTER_KEY: ${SMS_CREDENTIAL_MASTER_KEY:-local-dev-master-key}
       SMS_EVENTS_KV_BACKEND: rocksdb
       SMS_EVENTS_KV_PATH: /var/lib/sms/events-rocksdb
+      SMS_OBJECT_STORAGE_BACKEND: rustfs
+      SMS_OBJECT_STORAGE_RUSTFS_ENDPOINT: http://rustfs:9000
+      SMS_OBJECT_STORAGE_RUSTFS_BUCKET: ${SMS_OBJECT_STORAGE_RUSTFS_BUCKET:-sms-objects}
+      SMS_OBJECT_STORAGE_RUSTFS_ROOT: ${SMS_OBJECT_STORAGE_RUSTFS_ROOT:-local}
+      SMS_OBJECT_STORAGE_RUSTFS_REGION: ${SMS_OBJECT_STORAGE_RUSTFS_REGION:-us-east-1}
+      SMS_OBJECT_STORAGE_RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      SMS_OBJECT_STORAGE_RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      SMS_OBJECT_STORAGE_RUSTFS_PATH_STYLE: "true"
     ports:
       - ${SMS_GRPC_PORT:-50051}:50051
       - ${SMS_HTTP_PORT:-18080}:8080
@@ -77,6 +106,8 @@ services:
         RUST_IMAGE: ${RUST_IMAGE:-rust:1.91-bookworm}
         DEBIAN_IMAGE: ${DEBIAN_IMAGE:-debian:trixie-slim}
         USE_CARGO_MIRROR: ${USE_CARGO_MIRROR:-1}
+        CARGO_BUILD_PROFILE: ${SPEARLET_CARGO_BUILD_PROFILE:-dev}
+        CARGO_OUTPUT_DIR: ${SPEARLET_CARGO_OUTPUT_DIR:-debug}
     image: spear-spearlet:local
     restart: unless-stopped
     depends_on:
@@ -108,3 +139,4 @@ services:
 volumes:
   sms-data:
   spearlet-data:
+  rustfs-data:

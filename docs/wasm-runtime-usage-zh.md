@@ -26,7 +26,10 @@ Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制�
   "config": {},
   "executable": {
     "type": "wasm",
-    "uri": "smsfile://<file_id>",
+    "reference": {
+      "kind": "object",
+      "object_key": "<object_key>"
+    },
     "name": "hello.wasm",
     "args": [],
     "env": {}
@@ -36,16 +39,17 @@ Spearlet 的 WASM 运行时在实例创建阶段需要合法的 WASM 二进制�
 - 运行时将在 `create_instance` 中根据 artifact 的 `location` 下载内容，并在加载前校验 WASM 魔数；随后创建 WASM 实例句柄。
 - 在启用 `wasmedge` feature 时，`start_instance` 会启动 WASM worker（用于接收并执行后续的函数调用请求）。
 
-### SMS 文件协议与配置来源
+### 对象协议与配置来源
 
-- 支持 `smsfile` 下载协议：
-  - 显式覆盖：`smsfile://<host:port>/<file_id>`
-  - 简洁形式：`smsfile://<file_id>`（将使用 `SpearletConfig.sms_http_addr` 作为 HTTP 网关地址）
-- 运行时构造路径 `"/api/v1/files/<file_id>"`。
+- 支持 `object` 下载协议：
+  - `object://<host:port>/<object_key>`
+  - `object://<object_key>`（将使用 `SpearletConfig.sms_http_addr` 作为 HTTP 网关地址）
+- 运行时会构造：
+  - `"/api/v1/objects/<object_key>/content"`
 - 下载函数签名：
 
 ```rust
-pub async fn fetch_sms_file(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
+pub async fn fetch_sms_artifact(sms_http_addr: &str, path: &str) -> ExecutionResult<Vec<u8>>
 ```
 
 * 配置在运行时初始化阶段由 FunctionService 注入：通过 `RuntimeConfig.spearlet_config` 传递完整 `SpearletConfig`，其中 `sms_http_addr` 用于 HTTP 下载，避免在运行时中读取环境变量。

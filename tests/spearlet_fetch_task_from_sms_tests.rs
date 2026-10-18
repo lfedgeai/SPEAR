@@ -152,7 +152,15 @@ async fn test_spearlet_fetches_task_from_sms_when_missing_locally() {
             config: Default::default(),
             executable: Some(TaskExecutable {
                 r#type: 5,
-                uri: "file:///bin/foo".to_string(),
+                reference: Some(spear_next::proto::sms::TaskExecutableReference {
+                    target: Some(
+                        spear_next::proto::sms::task_executable_reference::Target::Uri(
+                            spear_next::proto::sms::TaskUriReference {
+                                uri: "file:///bin/foo".to_string(),
+                            },
+                        ),
+                    ),
+                }),
                 ..Default::default()
             }),
             desired_replicas: 1,

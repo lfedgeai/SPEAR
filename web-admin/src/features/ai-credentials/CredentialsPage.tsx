@@ -27,7 +27,10 @@ export default function CredentialsPage() {
     refetchInterval: 15_000,
   })
 
-  const credentials = query.data?.credentials || []
+  const credentials = useMemo(
+    () => query.data?.credentials ?? [],
+    [query.data?.credentials],
+  )
   const filteredCredentials = useMemo(() => {
     const needle = queryText.trim().toLowerCase()
     return [...credentials]

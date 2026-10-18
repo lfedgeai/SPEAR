@@ -137,7 +137,7 @@ impl TestDataGenerator {
     /// Create test configuration / 创建测试配置
     pub fn create_test_config() -> SmsConfig {
         use crate::config::base::{LogConfig, ServerConfig};
-        use crate::sms::config::DatabaseConfig;
+        use crate::sms::config::{DatabaseConfig, LocalFsObjectStorageConfig, ObjectStorageConfig};
 
         SmsConfig {
             grpc: ServerConfig {
@@ -165,8 +165,13 @@ impl TestDataGenerator {
             cleanup_interval: 30,
             assignment_reconcile_interval: 60,
             max_upload_bytes: 64 * 1024 * 1024,
-            files_dir: "./test_data/files".to_string(),
-            execution_logs_dir: "./test_data/files/execution_logs".to_string(),
+            object_storage: ObjectStorageConfig {
+                local_fs: LocalFsObjectStorageConfig {
+                    root_dir: "./test_data/objects".to_string(),
+                },
+                ..Default::default()
+            },
+            execution_logs_dir: "./test_data/objects/execution_logs".to_string(),
             event_kv: None,
             mcp: crate::sms::config::McpConfig::default(),
         }
@@ -179,7 +184,7 @@ impl TestDataGenerator {
         _heartbeat_timeout: u64,
     ) -> SmsConfig {
         use crate::config::base::{LogConfig, ServerConfig};
-        use crate::sms::config::DatabaseConfig;
+        use crate::sms::config::{DatabaseConfig, LocalFsObjectStorageConfig, ObjectStorageConfig};
 
         SmsConfig {
             grpc: ServerConfig {
@@ -207,8 +212,13 @@ impl TestDataGenerator {
             cleanup_interval: 30,
             assignment_reconcile_interval: 60,
             max_upload_bytes: 64 * 1024 * 1024,
-            files_dir: "./test_data/files".to_string(),
-            execution_logs_dir: "./test_data/files/execution_logs".to_string(),
+            object_storage: ObjectStorageConfig {
+                local_fs: LocalFsObjectStorageConfig {
+                    root_dir: "./test_data/objects".to_string(),
+                },
+                ..Default::default()
+            },
+            execution_logs_dir: "./test_data/objects/execution_logs".to_string(),
             event_kv: None,
             mcp: crate::sms::config::McpConfig::default(),
         }

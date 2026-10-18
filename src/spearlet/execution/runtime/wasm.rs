@@ -265,6 +265,28 @@ impl WasmRuntime {
         })
     }
 
+    /// Parse a supported task artifact URI into an SMS download path.
+    /// 将受支持的任务产物 URI 解析为 SMS 下载路径。
+    fn parse_artifact_sms_path(uri: &str) -> Option<(Option<String>, String, String)> {
+        if let Some(rest) = uri.strip_prefix("object://") {
+            let (override_host_port, key_part) = match rest.find('/') {
+                Some(pos) => (Some(rest[..pos].to_string()), rest[pos + 1..].to_string()),
+                None => (None, rest.to_string()),
+            };
+            let key = key_part.trim_start_matches('/').to_string();
+            if key.is_empty() {
+                return None;
+            }
+            return Some((
+                override_host_port,
+                format!("/api/v1/objects/{}/content", key),
+                key,
+            ));
+        }
+
+        None
+    }
+
     /// Load WASM module from bytes / 从字节加载 WASM 模块
     async fn load_wasm_module(&self, module_bytes: &[u8]) -> ExecutionResult<WasmModuleHandle> {
         if module_bytes.len() > self.config.max_module_size_bytes as usize {
@@ -728,47 +750,37 @@ impl Runtime for WasmRuntime {
 
         let module_bytes_vec: Vec<u8> = if let Some(snapshot) = &config.artifact {
             if let Some(uri) = &snapshot.location {
-                if let Some(rest) = uri.strip_prefix("smsfile://") {
-                    let (override_host_port, id_part) = match rest.find('/') {
-                        Some(pos) => (Some(rest[..pos].to_string()), rest[pos + 1..].to_string()),
-                        None => (None, rest.to_string()),
-                    };
-                    let id = id_part.trim_start_matches('/');
-                    let path = format!("/api/v1/files/{}", id);
-
-                    let cfg = self
-                        .runtime_config
-                        .spearlet_config
-                        .as_ref()
-                        .ok_or_else(|| ExecutionError::InvalidConfiguration {
-                            message: "Missing SpearletConfig".to_string(),
-                        })?;
-
-                    let sms_http_addr = if let Some(hp) = override_host_port {
-                        hp
-                    } else {
-                        cfg.sms_http_addr.clone()
-                    };
-
-                    debug!(
-                        task_id = %config.task_id,
-                        artifact_id = %config.artifact_id,
-                        sms_http_addr = %cfg.sms_http_addr,
-                        file_id = %id,
-                        "Fetching WASM module from SMS"
-                    );
-
-                    match artifact_fetch::fetch_sms_file(&sms_http_addr, &path).await {
-                        Ok(b) => b,
-                        Err(e) => {
-                            debug!(error = %e.to_string(), url = format!("http://{}{}", sms_http_addr, path), "Failed to fetch SMS file");
-                            return Err(e);
+                let (override_host_port, path, object_key) =
+                    Self::parse_artifact_sms_path(uri).ok_or_else(|| {
+                        ExecutionError::InvalidConfiguration {
+                            message: format!("Unsupported artifact URI scheme: {}", uri),
                         }
+                    })?;
+
+                let cfg = self
+                    .runtime_config
+                    .spearlet_config
+                    .as_ref()
+                    .ok_or_else(|| ExecutionError::InvalidConfiguration {
+                        message: "Missing SpearletConfig".to_string(),
+                    })?;
+
+                let sms_http_addr = override_host_port.unwrap_or_else(|| cfg.sms_http_addr.clone());
+
+                debug!(
+                    task_id = %config.task_id,
+                    artifact_id = %config.artifact_id,
+                    sms_http_addr = %sms_http_addr,
+                    object_key = %object_key,
+                    "Fetching WASM module from SMS"
+                );
+
+                match artifact_fetch::fetch_sms_artifact(&sms_http_addr, &path).await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        debug!(error = %e.to_string(), url = format!("http://{}{}", sms_http_addr, path), "Failed to fetch SMS artifact");
+                        return Err(e);
                     }
-                } else {
-                    return Err(ExecutionError::InvalidConfiguration {
-                        message: format!("Unsupported artifact URI scheme: {}", uri),
-                    });
                 }
             } else {
                 return Err(ExecutionError::InvalidConfiguration {
@@ -1195,6 +1207,19 @@ mod wasm_runtime_thread_tests {
 
         let runtime = runtime.unwrap();
         assert_eq!(runtime.runtime_type(), RuntimeType::Wasm);
+    }
+
+    #[test]
+    fn test_parse_artifact_sms_path_supports_object_uri() {
+        let object = WasmRuntime::parse_artifact_sms_path(
+            "object://123e4567-e89b-12d3-a456-426614174000",
+        )
+        .expect("object uri");
+        assert_eq!(
+            object.1,
+            "/api/v1/objects/123e4567-e89b-12d3-a456-426614174000/content"
+        );
+        assert_eq!(object.2, "123e4567-e89b-12d3-a456-426614174000");
     }
 
     #[tokio::test]

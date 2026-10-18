@@ -102,6 +102,10 @@ mod http_test_utils {
             spear_next::proto::sms::admin_credential_service_client::AdminCredentialServiceClient::new(
                 channel.clone(),
             );
+        let objects_dir = std::env::temp_dir()
+            .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string();
         let state = GatewayState {
             config: Arc::new(SmsConfig::default()),
             node_client: sms_client,
@@ -119,10 +123,7 @@ mod http_test_utils {
             execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
-            files_dir: std::env::temp_dir()
-                .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-                .to_string_lossy()
-                .to_string(),
+            blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
         };
         let app = create_gateway_router(state);
         (
@@ -297,6 +298,10 @@ async fn test_http_node_lifecycle() {
         spear_next::proto::sms::admin_credential_service_client::AdminCredentialServiceClient::new(
             channel_filter.clone(),
         );
+    let filter_objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let filter_state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client: sms_client_filter,
@@ -314,10 +319,7 @@ async fn test_http_node_lifecycle() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(filter_objects_dir.clone()),
     };
 
     let filter_app = create_gateway_router(filter_state);
@@ -451,6 +453,10 @@ async fn test_http_resource_management() {
         spear_next::proto::sms::admin_credential_service_client::AdminCredentialServiceClient::new(
             channel_filter.clone(),
         );
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client: sms_client_filter,
@@ -468,10 +474,7 @@ async fn test_http_resource_management() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_gateway_router(state);
 

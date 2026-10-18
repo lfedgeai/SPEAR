@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 
 import { listTaskInstances } from '@/api/instanceExecution'
 import type { InstanceSummary } from '@/api/types'
 
 export function useTaskInstances(taskId: string) {
-  const [destroyPendingIds, setDestroyPendingIds] = useState<string[]>([])
+  const [destroyPendingIdsState, setDestroyPendingIdsState] = useState<string[]>([])
 
   const query = useInfiniteQuery({
     queryKey: ['task-instances', taskId],
@@ -21,7 +21,7 @@ export function useTaskInstances(taskId: string) {
       if (!lastPage.success) return undefined
       return lastPage.next_page_token || undefined
     },
-    refetchInterval: destroyPendingIds.length > 0 ? 1_500 : 15_000,
+    refetchInterval: destroyPendingIdsState.length > 0 ? 1_500 : 15_000,
   })
 
   const instances: InstanceSummary[] = useMemo(() => {
@@ -34,11 +34,13 @@ export function useTaskInstances(taskId: string) {
     return all
   }, [query.data])
 
-  useEffect(() => {
-    setDestroyPendingIds((prev) =>
-      prev.filter((instanceId) => instances.some((row) => row.instance_id === instanceId)),
-    )
-  }, [instances])
+  const destroyPendingIds = useMemo(
+    () =>
+      destroyPendingIdsState.filter((instanceId) =>
+        instances.some((row) => row.instance_id === instanceId),
+      ),
+    [destroyPendingIdsState, instances],
+  )
 
   const displayedInstances = useMemo(
     () =>
@@ -54,7 +56,9 @@ export function useTaskInstances(taskId: string) {
   )
 
   function markDestroyPending(instanceId: string) {
-    setDestroyPendingIds((prev) => (prev.includes(instanceId) ? prev : [...prev, instanceId]))
+    setDestroyPendingIdsState((prev) =>
+      prev.includes(instanceId) ? prev : [...prev, instanceId],
+    )
   }
 
   return {

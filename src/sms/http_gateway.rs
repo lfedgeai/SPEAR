@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use tracing::{error, info};
 
+use crate::sms::blob_store::build_blob_store;
 use super::gateway::{create_gateway_router, GatewayState};
 use crate::proto::sms::{
     admin_credential_service_client::AdminCredentialServiceClient,
@@ -91,6 +92,7 @@ impl HttpGateway {
         let ai_backend_control_plane_client =
             crate::proto::sms::ai_backend_control_plane_service_client::AiBackendControlPlaneServiceClient::new(channel.clone());
         let admin_credential_client = AdminCredentialServiceClient::new(channel.clone());
+        let blob_store = build_blob_store(&self.config).await?;
 
         let state = GatewayState {
             config: self.config.clone(),
@@ -109,7 +111,7 @@ impl HttpGateway {
             execution_stream_pool: super::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: self.config.max_upload_bytes as usize,
-            files_dir: self.config.files_dir.clone(),
+            blob_store,
         };
         let app = create_gateway_router(state);
 

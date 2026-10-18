@@ -3,7 +3,8 @@
 
 use spear_wasm::{
     rtasr_clear, rtasr_close, rtasr_connect, rtasr_create, rtasr_flush, rtasr_read_alloc,
-    rtasr_set_autoflush_json, rtasr_set_param_string, rtasr_write, Fd, SpearError,
+    rtasr_get_status, rtasr_set_autoflush_json, rtasr_set_param_string, rtasr_write, Fd,
+    RtAsrStatus, SpearError,
 };
 
 use crate::rtasr_protocol::{parse_transcript_event, TranscriptEvent};
@@ -34,18 +35,31 @@ pub struct BaseRtasrSession {
 }
 
 impl BaseRtasrSession {
-    pub fn connect(options: RtasrConnectOptions) -> Result<Self, SpearError> {
+    pub fn create(options: RtasrConnectOptions) -> Result<Self, SpearError> {
         let fd = rtasr_create()?;
         if let Some(autoflush_json) = options.autoflush_json {
             rtasr_set_autoflush_json(fd, autoflush_json)?;
         }
         rtasr_set_param_string(fd, "transport", options.transport)?;
-        rtasr_connect(fd)?;
         Ok(Self { fd })
+    }
+
+    pub fn connect(options: RtasrConnectOptions) -> Result<Self, SpearError> {
+        let mut session = Self::create(options)?;
+        session.connect_transport()?;
+        Ok(session)
     }
 
     pub fn fd(&self) -> Fd {
         self.fd
+    }
+
+    pub fn connect_transport(&mut self) -> Result<(), SpearError> {
+        rtasr_connect(self.fd)
+    }
+
+    pub fn status(&self) -> Result<RtAsrStatus, SpearError> {
+        rtasr_get_status(self.fd)
     }
 
     pub fn clear(&mut self) -> Result<(), SpearError> {

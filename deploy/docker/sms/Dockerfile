@@ -22,8 +22,23 @@ FROM ${RUST_IMAGE} AS builder
 
 WORKDIR /work
 
+ARG USE_CARGO_MIRROR
+ARG CARGO_MIRROR_REGISTRY
+ARG CARGO_BUILD_JOBS
+ARG CARGO_NET_RETRY
+ARG CARGO_HTTP_TIMEOUT
+ARG CARGO_BUILD_PROFILE
+
 ARG USE_CARGO_MIRROR=1
 ARG CARGO_MIRROR_REGISTRY="sparse+https://rsproxy.cn/index/"
+ARG CARGO_BUILD_JOBS=1
+ARG CARGO_NET_RETRY=10
+ARG CARGO_HTTP_TIMEOUT=600
+ARG CARGO_BUILD_PROFILE=release
+ARG CARGO_OUTPUT_DIR=release
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+ENV CARGO_NET_RETRY=${CARGO_NET_RETRY}
+ENV CARGO_HTTP_TIMEOUT=${CARGO_HTTP_TIMEOUT}
 
 RUN mkdir -p /usr/local/cargo \
   && if [ "${USE_CARGO_MIRROR}" = "1" ]; then \
@@ -44,9 +59,16 @@ RUN mkdir -p /usr/local/cargo \
       > /usr/local/cargo/config.toml; \
   fi
 
-RUN apt-get update -o Acquire::Retries=3 \
-  && apt-get install -y --no-install-recommends ca-certificates clang libclang-dev \
-  && rm -rf /var/lib/apt/lists/*
+RUN set -e; \
+  i=1; \
+  while [ "$i" -le 5 ]; do \
+    apt-get update -o Acquire::Retries=3 \
+      && apt-get install -y --no-install-recommends ca-certificates clang libclang-dev \
+      && rm -rf /var/lib/apt/lists/* \
+      && break; \
+    i=$((i+1)); \
+    sleep 3; \
+  done
 
 COPY Cargo.toml Cargo.lock ./
 COPY build.rs ./
@@ -61,13 +83,24 @@ COPY sdk/rust/crates/spear-ssf/ sdk/rust/crates/spear-ssf/
 COPY --from=web_builder /work/assets/admin assets/admin
 COPY --from=web_builder /work/assets/console assets/console
 
-RUN cargo build --release --locked --features rocksdb --bin sms
+RUN if [ "${CARGO_BUILD_PROFILE}" = "release" ]; then \
+    cargo build --release --locked --no-default-features --features rocksdb,sms-rustfs --bin sms; \
+  else \
+    cargo build --profile "${CARGO_BUILD_PROFILE}" --locked --no-default-features --features rocksdb,sms-rustfs --bin sms; \
+  fi
 
 FROM ${DEBIAN_IMAGE} AS runtime
 
-RUN apt-get update -o Acquire::Retries=3 \
-  && apt-get install -y --no-install-recommends ca-certificates libssl3 \
-  && rm -rf /var/lib/apt/lists/*
+RUN set -e; \
+  i=1; \
+  while [ "$i" -le 5 ]; do \
+    apt-get update -o Acquire::Retries=3 \
+      && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+      && rm -rf /var/lib/apt/lists/* \
+      && break; \
+    i=$((i+1)); \
+    sleep 3; \
+  done
 
 ARG SMS_WITH_NODE=0
 RUN if [ "${SMS_WITH_NODE}" = "1" ]; then \
@@ -85,8 +118,8 @@ RUN if [ "${SMS_WITH_NODE}" = "1" ]; then \
     command -v npx >/dev/null 2>&1; \
   fi
 
-COPY --from=builder /work/target/release/sms /usr/local/bin/sms
-COPY --from=builder /work/target/release/build/wasmedge-sys-*/out/standalone/WasmEdge-*/lib64/ /usr/local/lib/
+ARG CARGO_OUTPUT_DIR=release
+COPY --from=builder /work/target/${CARGO_OUTPUT_DIR}/sms /usr/local/bin/sms
 COPY deploy/docker/entrypoints/sms.sh /entrypoint.sh
 
 ENV LD_LIBRARY_PATH=/usr/local/lib

@@ -1,21 +1,29 @@
+import type { RefObject } from 'react'
 import { type ChatMessage } from '../models/conversation'
 import { Button } from '../../../web-admin/src/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../web-admin/src/shared/components/ui/card'
 import { ChatBubble } from './ChatBubble'
-import type { RefObject } from 'react'
 
-export function ChatView(props: {
+type ChatViewProps = {
   hasActiveChat: boolean
   messages: ChatMessage[]
   endRef: RefObject<HTMLDivElement | null>
   onNewChat: () => void
   onNewChatAndConnect: () => void
-}) {
+}
+
+export function ChatView({
+  hasActiveChat,
+  messages,
+  endRef,
+  onNewChat,
+  onNewChatAndConnect,
+}: ChatViewProps) {
   return (
     <div className="cw-chat">
-      {props.messages.length ? (
-        props.messages.map((m) => <ChatBubble key={m.id} message={m} />)
-      ) : !props.hasActiveChat ? (
+      {messages.length ? (
+        messages.map((message) => <ChatBubble key={message.id} message={message} />)
+      ) : !hasActiveChat ? (
         <Card className="cw-empty">
           <CardHeader className="pb-2">
             <div className="cw-emptyEyebrow">Start Here</div>
@@ -26,11 +34,11 @@ export function ChatView(props: {
               Create a chat first, then connect it to an execution or endpoint when needed.
             </div>
             <div className="cw-emptyActions">
-              <Button variant="secondary" size="sm" onClick={props.onNewChat}>
+              <Button variant="secondary" size="sm" onClick={onNewChat}>
                 <span className="cw-btnGlyph">+</span>
                 <span className="cw-btnText">New chat</span>
               </Button>
-              <Button size="sm" onClick={props.onNewChatAndConnect}>
+              <Button size="sm" onClick={onNewChatAndConnect}>
                 <span className="cw-btnGlyph">↗</span>
                 <span className="cw-btnText">New chat and connect</span>
               </Button>
@@ -50,7 +58,7 @@ export function ChatView(props: {
           </CardContent>
         </Card>
       )}
-      <div ref={props.endRef} />
+      <div ref={endRef} />
     </div>
   )
 }

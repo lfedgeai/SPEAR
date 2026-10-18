@@ -226,19 +226,34 @@ Related docs:
 - [LLM credentials implementation](./implementation/llm-credentials-implementation-en.md)
 - [Backends config model](./backend-adapter/backends-en.md)
 
-### Web Admin file uploads (read-only root filesystem)
+### Web Admin object uploads (read-only root filesystem)
 
-The Helm chart enables `readOnlyRootFilesystem: true` by default. That means Web Admin file uploads must not write into the container root filesystem (relative paths).
+The Helm chart enables `readOnlyRootFilesystem: true` by default. That means Web Admin object uploads must not write into the container root filesystem (relative paths).
 
-SMS writes uploaded files into `files_dir` (separate config):
+SMS now models object storage through `object_storage`, and the local compatibility backend writes blobs into `object_storage.local_fs.root_dir`:
 
-- Local default: `./data/files`
-- Helm chart default: `/var/lib/spear/files` (the same PVC is also mounted there to keep it writable)
+- Local default: `./data/objects`
+- Helm chart default: `/var/lib/spear/objects` (the same PVC is also mounted there to keep it writable)
+
+The generated SMS config uses:
+
+```toml
+[object_storage]
+backend = "local_fs"
+
+[object_storage.local_fs]
+root_dir = "/var/lib/spear/objects"
+```
 
 To override the upload directory:
 
-- Set `files_dir = "/some/writable/path"` in `config.toml`, or
-- Set `SMS_FILES_DIR` as an environment variable.
+- Set `object_storage.local_fs.root_dir = "/some/writable/path"` in `config.toml`, or
+- Set `SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR` as an environment variable.
+
+Cleanup note:
+
+- `objects_dir` and `SMS_OBJECTS_DIR` have been removed from the primary SMS configuration surface.
+- Use `object_storage.local_fs.root_dir` or `SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR` instead.
 
 ### Enable SMS Web Admin
 

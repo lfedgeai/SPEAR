@@ -58,10 +58,11 @@ function saveActiveId(id: string) {
 export function useConversationStore() {
   const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations())
   const [activeId, setActiveId] = useState<string>(() => loadActiveId() ?? '')
+  const resolvedActiveId = activeId || conversations[0]?.id || ''
 
   const active = useMemo(
-    () => conversations.find((c) => c.id === activeId) ?? conversations[0],
-    [activeId, conversations],
+    () => conversations.find((c) => c.id === resolvedActiveId) ?? conversations[0],
+    [conversations, resolvedActiveId],
   )
 
   useEffect(() => {
@@ -69,16 +70,10 @@ export function useConversationStore() {
   }, [conversations])
 
   useEffect(() => {
-    if (activeId) {
-      saveActiveId(activeId)
+    if (resolvedActiveId) {
+      saveActiveId(resolvedActiveId)
     }
-  }, [activeId])
-
-  useEffect(() => {
-    if (!activeId && conversations.length > 0) {
-      setActiveId(conversations[0].id)
-    }
-  }, [activeId, conversations])
+  }, [resolvedActiveId])
 
   useEffect(() => {
     if (active?.executionId) {
@@ -146,7 +141,7 @@ export function useConversationStore() {
   return {
     conversations,
     active,
-    activeId,
+    activeId: resolvedActiveId,
     switchConversation,
     createAndActivateConversation,
     updateConversation,

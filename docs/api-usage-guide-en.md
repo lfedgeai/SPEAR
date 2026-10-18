@@ -230,7 +230,10 @@ curl -X DELETE http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f
   "priority": "high",
   "executable": {
     "type": "wasm",
-    "uri": "smsfile://<file_id>",
+    "reference": {
+      "kind": "object",
+      "object_key": "<object_key>"
+    },
     "name": "hello.wasm",
     "args": [],
     "env": {}
@@ -240,7 +243,9 @@ curl -X DELETE http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f
 
 **Executable Descriptor**:
 - `type`: One of `binary|script|container|wasm|process`
-- `uri`: Canonical URI (e.g. `smsfile://<id>`, `http://...`, `docker://image:tag`)
+- `reference`: Structured executable reference
+  - `{"kind":"object","object_key":"<key>"}` for SMS object catalog entries
+  - `{"kind":"uri","uri":"http://..."}` for external URI sources
 - `name`: Optional local alias
 - `checksum_sha256`: Optional integrity checksum
 - `args` and `env`: Default arguments and environment variables

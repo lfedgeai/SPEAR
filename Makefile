@@ -38,7 +38,7 @@ YELLOW := \033[1;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean clean-coverage coverage coverage-quick coverage-llvm coverage-html coverage-lcov coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-docker e2e-linux e2e-kind mac-build mac-build-release web-admin-build web-admin-lint web-admin-test web-console-build web-console-lint web-console-test samples samples-c samples-js samples-rust image-spear
+.PHONY: all build build-release test test-ui test-mic-device test-sled test-rocksdb test-all-features test-ui clean clean-coverage coverage coverage-quick coverage-llvm coverage-html coverage-lcov coverage-no-fail coverage-open install-deps format format-check lint check doc help bench audit outdated ci dev info e2e e2e-docker e2e-linux e2e-kind e2e-compose compose-rustfs-smoke mac-build mac-build-release web-admin-build web-admin-lint web-admin-test web-console-build web-console-lint web-console-test samples samples-c samples-js samples-rust image-spear
 .DEFAULT_GOAL := build
 
 # Default target / 默认目标
@@ -68,6 +68,8 @@ help:
 	@echo "  e2e             - Run all E2E tests / 运行所有端到端测试"
 	@echo "  e2e-docker      - Run Docker-based E2E tests / 运行基于Docker的端到端测试"
 	@echo "  e2e-kind        - Run kind+Helm E2E tests / 运行基于kind+Helm的端到端测试"
+	@echo "  e2e-compose     - Run local compose RustFS E2E / 运行本地compose RustFS端到端测试"
+	@echo "  compose-rustfs-smoke - Validate local compose RustFS path / 验证本地compose的RustFS链路"
 	@echo "  samples         - Build WASM samples / 构建WASM示例"
 	@echo "  web-admin-build - Build Web Admin assets / 构建Web Admin静态资源"
 	@echo "  web-admin-test  - Run Web Admin tests / 运行Web Admin测试"
@@ -583,6 +585,18 @@ e2e-kind:
 	@echo -e "$(BLUE)🧪 Running E2E tests with kind+Helm... / 使用kind+Helm运行端到端测试...$(NC)"
 	@bash scripts/e2e-kind.sh
 	@echo -e "$(GREEN)✅ E2E tests (kind) completed / 端到端测试（kind）完成$(NC)"
+
+.PHONY: e2e-compose
+e2e-compose:
+	@echo -e "$(BLUE)🧪 Running E2E tests with local compose RustFS... / 使用本地compose RustFS运行端到端测试...$(NC)"
+	@bash scripts/e2e-compose-rustfs.sh
+	@echo -e "$(GREEN)✅ E2E tests (compose RustFS) completed / 端到端测试（compose RustFS）完成$(NC)"
+
+.PHONY: compose-rustfs-smoke
+compose-rustfs-smoke:
+	@echo -e "$(BLUE)🧪 Validating local compose RustFS path... / 验证本地compose的RustFS链路...$(NC)"
+	@bash scripts/compose-rustfs-smoke.sh
+	@echo -e "$(GREEN)✅ Local compose RustFS smoke completed / 本地compose的RustFS冒烟验证完成$(NC)"
 
 .PHONY: e2e-linux
 e2e-linux:

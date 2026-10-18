@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 async fn make_router_with_limit(limit: usize) -> Router {
     let channel = tonic::transport::Channel::from_static("http://localhost:50051").connect_lazy();
-    let files_dir = std::env::temp_dir()
-        .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
         .to_string_lossy()
         .to_string();
     let state = GatewayState {
@@ -40,18 +40,18 @@ async fn make_router_with_limit(limit: usize) -> Router {
         execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: limit,
-        files_dir,
+        blob_store: crate::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     create_gateway_router(state)
 }
 
 #[tokio::test]
-async fn upload_small_file_succeeds() {
+async fn upload_small_object_succeeds() {
     let app = make_router_with_limit(1024 * 1024).await;
     let data = vec![1u8; 1024];
     let req = Request::builder()
         .method("POST")
-        .uri("/api/v1/files")
+        .uri("/api/v1/objects")
         .body(Body::from(data.clone()))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -64,7 +64,7 @@ async fn upload_small_file_succeeds() {
 
     let get_req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/files/{}", id))
+        .uri(format!("/api/v1/objects/{}/content", id))
         .body(Body::empty())
         .unwrap();
     let get_resp = app.clone().oneshot(get_req).await.unwrap();
@@ -81,7 +81,7 @@ async fn upload_exceeds_limit_fails() {
     let data = vec![0u8; 2048];
     let req = Request::builder()
         .method("POST")
-        .uri("/api/v1/files")
+        .uri("/api/v1/objects")
         .body(Body::from(data))
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
@@ -89,12 +89,12 @@ async fn upload_exceeds_limit_fails() {
 }
 
 #[tokio::test]
-async fn meta_endpoint_reports_size() {
+async fn object_meta_endpoint_reports_size() {
     let app = make_router_with_limit(1024 * 1024).await;
     let data = vec![3u8; 4096];
     let up_req = Request::builder()
         .method("POST")
-        .uri("/api/v1/files")
+        .uri("/api/v1/objects")
         .body(Body::from(data.clone()))
         .unwrap();
     let up_resp = app.clone().oneshot(up_req).await.unwrap();
@@ -107,7 +107,7 @@ async fn meta_endpoint_reports_size() {
 
     let meta_req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/files/{}/meta", id))
+        .uri(format!("/api/v1/objects/{}", id))
         .body(Body::empty())
         .unwrap();
     let meta_resp = app.clone().oneshot(meta_req).await.unwrap();
@@ -118,7 +118,7 @@ async fn meta_endpoint_reports_size() {
     let m: serde_json::Value = serde_json::from_slice(&m_bytes).unwrap();
     assert_eq!(m.get("found").and_then(|v| v.as_bool()), Some(true));
     assert_eq!(
-        m.get("len").and_then(|v| v.as_u64()),
+        m.get("size").and_then(|v| v.as_u64()),
         Some(data.len() as u64)
     );
 }

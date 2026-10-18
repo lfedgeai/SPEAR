@@ -36,6 +36,8 @@
 - 前端源码位于 `web-admin/`，构建后覆盖输出到 `assets/admin/*`
 - UI 采用 Radix primitives + Tailwind（shadcn/ui 风格），以企业控制台风为主
 - SSE 通过 `CancellationToken` 支持优雅关闭
+- 需要在重新打开时恢复干净草稿状态的对话框，会通过重建表单主体来重置状态，而不是依赖同步 `useEffect` 回填 state
+- 不是 React 组件的页面级共享辅助函数会拆到相邻的 `*.ts` 工具模块中，以保持 Fast Refresh lint 规则兼容
 
 ## 接口
 
@@ -91,7 +93,7 @@ Web Admin 将“创建任务（注册 Task）”与“执行任务（调度 + �
 - UI/控制面管理：backend instance 与 `credential_ref`（或 `credential_refs`）的映射
 - secret 值的落地：交由部署系统注入（Kubernetes Secret / Vault Agent / systemd drop-in）
 - 可观测性：仅展示“是否存在/可用”（例如由 spearlet 心跳上报 `HAS_ENV:<ENV_NAME>=true`），不展示值
-  - `executable_type`、`executable_uri`、`executable_name`
+  - `executable_type`、`executable_reference`、`executable_name`
   - `registered_at`、`last_heartbeat`、`metadata`、`config`
   - `result_uris`、`last_result_uri`、`last_result_status`、`last_completed_at`、`last_result_metadata`
 - `GET /admin/api/tasks/{task_id}` → 返回任务详情（字段同上）

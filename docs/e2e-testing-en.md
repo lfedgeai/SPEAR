@@ -26,8 +26,15 @@ cargo build
 DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
 ```
 
+To validate the real RustFS-backed BlobStore path, run:
+
+```bash
+cargo test --features sms-rustfs --test rustfs_blobstore_e2e -- --ignored --nocapture
+```
+
 ## File Locations
-- Test: `tests/e2e/testcontainers_e2e.rs`
+- Test: `tests/testcontainers_e2e.rs`
+- Test: `tests/rustfs_blobstore_e2e.rs`
 - Dev dependency: `Cargo.toml` → `testcontainers = "0.15"`
 
 ## Best Practices
@@ -35,7 +42,9 @@ DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
 - Prefer published images for repeatability in CI; current approach mounts host binaries for speed
 - Use `WaitFor` to avoid race conditions during container startup
 - Use `host.testcontainers.internal` to reach SMS via mapped host port from inside SPEARlet container
+- Keep Docker-based RustFS tests `#[ignore]` and let them create isolated buckets and roots per run
 
 ## Troubleshooting
 - If Docker is not available, test skips automatically
 - If logs do not contain expected messages, increase wait duration or verify container environment
+- The RustFS-backed BlobStore implementation is compiled behind the `sms-rustfs` Cargo feature so non-SMS binaries do not pull AWS/RustFS dependencies unnecessarily

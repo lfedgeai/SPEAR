@@ -12,8 +12,22 @@ data:
     heartbeat_timeout = {{ .Values.sms.config.heartbeatTimeout }}
     cleanup_interval = {{ .Values.sms.config.cleanupInterval }}
     max_upload_bytes = {{ .Values.sms.config.maxUploadBytes | int64 }}
-    files_dir = {{ .Values.sms.config.filesDir | quote }}
     execution_logs_dir = {{ .Values.sms.config.executionLogsDir | quote }}
+
+    [object_storage]
+    backend = "local_fs"
+
+    [object_storage.local_fs]
+    root_dir = {{ .Values.sms.config.objectsDir | quote }}
+
+    [object_storage.rustfs]
+    endpoint = ""
+    bucket = ""
+    root = ""
+    connect_timeout_ms = 3000
+    read_timeout_ms = 10000
+    write_timeout_ms = 10000
+    create_bucket_if_missing = true
 
     [grpc]
     addr = {{ .Values.sms.config.grpcAddr | quote }}

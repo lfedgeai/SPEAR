@@ -107,7 +107,15 @@ async fn test_existing_task_invocation_allowed() {
     sms_task.config = std::collections::HashMap::new();
     sms_task.executable = Some(spear_next::proto::sms::TaskExecutable {
         r#type: 5,
-        uri: "file:///bin/foo".to_string(),
+        reference: Some(spear_next::proto::sms::TaskExecutableReference {
+            target: Some(
+                spear_next::proto::sms::task_executable_reference::Target::Uri(
+                    spear_next::proto::sms::TaskUriReference {
+                        uri: "file:///bin/foo".to_string(),
+                    },
+                ),
+            ),
+        }),
         name: String::new(),
         checksum_sha256: String::new(),
         args: vec![],

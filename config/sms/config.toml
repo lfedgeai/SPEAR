@@ -21,9 +21,41 @@ assignment_reconcile_interval = 60
 # Max upload size / 最大上传字节数
 max_upload_bytes = 67108864
 
-# Uploaded files directory / 上传文件存储目录
-files_dir = "./data/files"
-execution_logs_dir = "./data/files/execution_logs"
+# Object storage configuration / 对象存储配置
+[object_storage]
+# Active backend: "local_fs" or "rustfs" / 当前后端："local_fs" 或 "rustfs"
+backend = "local_fs"
+
+[object_storage.local_fs]
+# Local compatibility blob root directory / 本地兼容 Blob 根目录
+root_dir = "./data/objects"
+
+[object_storage.rustfs]
+# RustFS service endpoint / RustFS 服务地址
+endpoint = ""
+# RustFS bucket or namespace / RustFS bucket 或命名空间
+bucket = ""
+# Optional key prefix inside the bucket / bucket 内的可选 key 前缀
+root = ""
+# S3-compatible region / S3-compatible region
+region = "us-east-1"
+# Optional static access key, empty means using default credential chain / 可选静态 access key，留空表示使用默认凭证链
+access_key = ""
+# Optional static secret key, empty means using default credential chain / 可选静态 secret key，留空表示使用默认凭证链
+secret_key = ""
+# Use path-style addressing for RustFS / 对 RustFS 使用 path-style 寻址
+path_style = true
+# Connect timeout in milliseconds / 连接超时时间（毫秒）
+connect_timeout_ms = 3000
+# Read timeout in milliseconds / 读取超时时间（毫秒）
+read_timeout_ms = 10000
+# Write timeout in milliseconds / 写入超时时间（毫秒）
+write_timeout_ms = 10000
+# Create bucket automatically when missing / 缺失时自动创建 bucket
+create_bucket_if_missing = true
+
+# Execution logs directory / 执行日志目录
+execution_logs_dir = "./data/execution_logs"
 
 [grpc]
 # gRPC bind address / gRPC绑定地址

@@ -1,7 +1,7 @@
 //! RTASR session orchestration for the Rust live caption sample.
 //! Rust 版实时字幕 sample 的 RTASR 会话编排。
 
-use spear_wasm::{Fd, SpearError};
+use spear_wasm::{errorln, warnln, Fd, RtAsrStatus, SpearError};
 use spear_wasm_helper::{
     rtasr_protocol::TranscriptEvent,
     rtasr_session::{BaseRtasrSession, RtasrConnectOptions},
@@ -13,8 +13,24 @@ use crate::{
     },
 };
 
-fn debug_guest(message: impl std::fmt::Display) {
-    eprintln!("[live_caption] {message}");
+fn report_guest_warn(message: impl std::fmt::Display) {
+    warnln!("[live_caption] {message}");
+}
+
+fn report_guest_error(message: impl std::fmt::Display) {
+    errorln!("[live_caption] {message}");
+}
+
+fn format_rtasr_status(status: Option<&RtAsrStatus>) -> String {
+    match status {
+        Some(status) => match status.last_error.as_deref() {
+            Some(last_error) if !last_error.trim().is_empty() => {
+                format!("state={} last_error={last_error}", status.state)
+            }
+            _ => format!("state={} last_error=<none>", status.state),
+        },
+        None => "state=<unavailable> last_error=<unavailable>".to_string(),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -68,11 +84,17 @@ pub struct LiveCaptionRtasr {
 
 impl LiveCaptionRtasr {
     pub fn connect() -> Result<Self, SpearError> {
-        debug_guest("rtasr connect start");
-        let base = BaseRtasrSession::connect(
+        let mut base = BaseRtasrSession::create(
             RtasrConnectOptions::new(RTASR_TRANSPORT).with_autoflush_json(RTASR_AUTOFLUSH_JSON),
         )?;
-        debug_guest(format!("rtasr connect ok fd={}", base.fd().raw()));
+        if let Err(err) = base.connect_transport() {
+            report_guest_error(format!(
+                "rtasr connect failed: err={err}; {}",
+                format_rtasr_status(base.status().ok().as_ref())
+            ));
+            let _ = base.close();
+            return Err(err);
+        }
         Ok(Self {
             base,
             pending_audio: PendingAudioBuffer::default(),
@@ -84,9 +106,13 @@ impl LiveCaptionRtasr {
     }
 
     pub fn prepare_for_new_utterance(&mut self) -> Result<(), SpearError> {
-        debug_guest("rtasr clear start");
-        self.base.clear()?;
-        debug_guest("rtasr clear ok");
+        if let Err(err) = self.base.clear() {
+            report_guest_error(format!(
+                "rtasr clear failed: err={err}; {}",
+                self.status_summary()
+            ));
+            return Err(err);
+        }
         self.pending_audio.clear();
         Ok(())
     }
@@ -102,23 +128,45 @@ impl LiveCaptionRtasr {
     pub fn flush_commit(&mut self) -> Result<(), SpearError> {
         self.write_pending_audio()?;
         if !self.pending_audio.can_flush_commit() {
-            debug_guest("rtasr flush skipped due to insufficient audio");
             return Ok(());
         }
-        debug_guest("rtasr flush start");
-        self.base.flush()?;
-        debug_guest("rtasr flush ok");
+        if let Err(err) = self.base.flush() {
+            report_guest_error(format!(
+                "rtasr flush failed: err={err}; {}",
+                self.status_summary()
+            ));
+            return Err(err);
+        }
         self.pending_audio.reset_flush_counter();
         Ok(())
     }
 
     pub fn drain_events(&mut self) -> Result<Vec<TranscriptEvent>, SpearError> {
-        debug_guest("rtasr read events start");
-        self.base.drain_transcript_events()
+        match self.base.drain_transcript_events() {
+            Ok(events) => Ok(events),
+            Err(err) => {
+                report_guest_error(format!(
+                    "rtasr read events failed: err={err}; {}",
+                    self.status_summary()
+                ));
+                Err(err)
+            }
+        }
     }
 
     pub fn close(self) -> Result<(), SpearError> {
         self.base.close()
+    }
+
+    pub fn log_disconnect_reason(&self, stage: &str) {
+        report_guest_warn(format!(
+            "rtasr {stage}: {}",
+            self.status_summary()
+        ));
+    }
+
+    pub fn status_summary(&self) -> String {
+        format_rtasr_status(self.base.status().ok().as_ref())
     }
 
     fn write_pending_audio(&mut self) -> Result<(), SpearError> {
@@ -126,9 +174,13 @@ impl LiveCaptionRtasr {
             return Ok(());
         };
         let written = audio.len();
-        debug_guest(format!("rtasr write_audio start bytes={written}"));
-        self.base.write_audio(&audio)?;
-        debug_guest(format!("rtasr write_audio ok bytes={written}"));
+        if let Err(err) = self.base.write_audio(&audio) {
+            report_guest_error(format!(
+                "rtasr write_audio failed bytes={written}: err={err}; {}",
+                self.status_summary()
+            ));
+            return Err(err);
+        }
         self.pending_audio.record_write(written);
         Ok(())
     }

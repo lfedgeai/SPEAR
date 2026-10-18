@@ -8,16 +8,16 @@
 
 ## Global Setup
 
-- `global-setup.ts` cleans `data/files` before each run to ensure deterministic file list, upload, and delete tests
+- `global-setup.ts` cleans `data/objects` before each run to ensure deterministic object list, upload, and delete tests
 
 ## Key Specs
 
-- `task_modal.spec.ts`: select `smsfile`, click `Use` in picker to fill URI
-- `task_modal_scheme_prefill.spec.ts`: scheme selection pre-fills `Executable URI`
+- `task_modal.spec.ts`: select `object`, click `Use` in picker to fill the object key
+- `task_modal_scheme_prefill.spec.ts`: URI source selection pre-fills `Executable URI`
 - `executable_select_unit.spec.ts`: uses hidden native `select` for stable type selection
-- `files.spec.ts`: upload a small file and copy URI
-- `files_delete.spec.ts`: delete a file and verify the list updates
-- `files_modified_tz.spec.ts`: human-readable timestamps in selected timezone
+- `objects.spec.ts`: upload a small object and copy the object URI
+- `objects_delete.spec.ts`: delete an object and verify the list updates
+- `objects_modified_tz.spec.ts`: human-readable timestamps in the selected timezone
 
 ## Environment
 

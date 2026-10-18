@@ -114,7 +114,7 @@ Key：
 
 LogRef 建议字段：
 
-- `backend: string`（sms_file / object_store / broker 等）
+- `backend: string`（object_ref / object_store / broker 等）
 - `uri_prefix: string`（例如 `smslog://executions/{execution_id}/`）
 - `content_type: string`（text/plain / application/x-ndjson 等）
 - `compression: string`（gzip 等）

@@ -154,6 +154,16 @@ curl -X POST http://localhost:8080/api/v1/tasks \
     "config": {
       "timeout": 300,
       "retries": 3
+    },
+    "executable": {
+      "type": "wasm",
+      "reference": {
+        "kind": "object",
+        "object_key": "<object_key>"
+      },
+      "name": "hello.wasm",
+      "args": [],
+      "env": {}
     }
   }'
 ```
@@ -196,6 +206,16 @@ The system supports the following priority levels:
 3. **Clearer Semantics**: Registration-based model is more intuitive
 4. **Easier Testing**: Simplified test scenarios and better test coverage
 5. **Maintainability**: Cleaner code structure and reduced complexity
+
+## Executable Descriptor
+
+- `type`: One of `binary|script|container|wasm|process`
+- `reference`: Structured executable reference
+  - `{"kind":"object","object_key":"<key>"}` references an object from the SMS object catalog
+  - `{"kind":"uri","uri":"http://..."}` references an external URI source
+- `name`: Optional local alias
+- `checksum_sha256`: Optional integrity checksum
+- `args` and `env`: Default arguments and environment variables
 
 ## Migration Notes
 

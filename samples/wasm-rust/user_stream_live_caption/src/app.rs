@@ -16,7 +16,8 @@ use spear_wasm_helper::{
     },
 };
 use spear_wasm::{
-    constants, user_stream_ctl_open, user_stream_read_alloc, Fd, SpearError,
+    constants, debugln, errorln, user_stream_ctl_open, user_stream_read_alloc, warnln, Fd,
+    SpearError,
 };
 
 use crate::{
@@ -24,13 +25,15 @@ use crate::{
     rtasr_session::LiveCaptionRtasr,
 };
 
-fn debug_guest(message: impl std::fmt::Display) {
-    eprintln!("[live_caption] {message}");
-}
-
 pub fn run() -> Result<(), String> {
     let mut app = LiveCaptionApp::new()?;
     let result = app.run_loop();
+    if let Err(err) = result.as_ref() {
+        errorln!(
+            "[live_caption] app run loop failed: err={err}; {}",
+            app.diagnostic_state()
+        );
+    }
     app.close_all();
     result
 }
@@ -107,6 +110,10 @@ impl LiveCaptionApp {
 
     fn handle_ctl_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_any_hup_or_err() {
+            warnln!(
+                "[live_caption] control stream closed unexpectedly; {}",
+                self.diagnostic_state()
+            );
             self.session_closed = true;
             return Ok(());
         }
@@ -115,6 +122,10 @@ impl LiveCaptionApp {
             match control_event {
                 ControlEvent::StreamConnected(stream_id) => self.handle_stream_connected(stream_id)?,
                 ControlEvent::SessionClosed => {
+                    debugln!(
+                        "[live_caption] session closed by runtime; {}",
+                        self.diagnostic_state()
+                    );
                     self.session_closed = true;
                     return Ok(());
                 }
@@ -125,23 +136,27 @@ impl LiveCaptionApp {
 
     fn handle_stream_connected(&mut self, stream_id: u32) -> Result<(), String> {
         if stream_id == self.text_stream.stream_id() && !self.text_stream.is_connected() {
-            debug_guest(format!("stream_connected text stream_id={stream_id}"));
             let _ = self
                 .text_stream
                 .attach_runtime_fd(&self.epoll, true)
                 .map_err(render_error)?;
+            debugln!("[live_caption] text stream connected stream_id={stream_id}");
         } else if stream_id == self.voice_stream.stream_id() && !self.voice_stream.is_connected() {
-            debug_guest(format!("stream_connected voice stream_id={stream_id}"));
             let _ = self
                 .voice_stream
                 .attach_runtime_fd(&self.epoll, false)
                 .map_err(render_error)?;
+            debugln!("[live_caption] voice stream connected stream_id={stream_id}");
         }
         Ok(())
     }
 
     fn handle_text_stream_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_flag(constants::SPEAR_EPOLLHUP) {
+            warnln!(
+                "[live_caption] text stream hung up; {}",
+                self.diagnostic_state()
+            );
             self.close_text_stream();
             return Ok(());
         }
@@ -172,6 +187,10 @@ impl LiveCaptionApp {
 
     fn handle_voice_stream_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_flag(constants::SPEAR_EPOLLHUP) {
+            warnln!(
+                "[live_caption] voice stream hung up; {}",
+                self.diagnostic_state()
+            );
             self.close_voice_stream();
             return Ok(());
         }
@@ -194,15 +213,10 @@ impl LiveCaptionApp {
     fn handle_voice_frame(&mut self, frame: &[u8]) -> Result<(), String> {
         let message = match parse_stream_message(frame) {
             Ok(message) => message,
-            Err(StreamMessageError::InvalidDataMeta) => {
-                self.warn_once("voice_bad_meta", "protocol: voice DATA meta invalid; dropping frame\n")?;
-                return Ok(());
-            }
-            Err(StreamMessageError::InvalidCommitMeta) => {
-                self.warn_once("voice_bad_commit_meta", "protocol: voice COMMIT meta invalid; dropping frame\n")?;
-                return Ok(());
-            }
-            Err(StreamMessageError::InvalidFrame | StreamMessageError::InvalidCtrlMeta | StreamMessageError::UnsupportedType) => {
+            Err(err) => {
+                if let Some((key, message)) = describe_stream_message_error(&err) {
+                    self.warn_once(key, message)?;
+                }
                 return Ok(());
             }
         };
@@ -212,7 +226,7 @@ impl LiveCaptionApp {
                 IncomingStreamMessage::Ctrl(ctrl) if is_open_handshake(ctrl, self.voice_stream.modality()) => {
                     self.voice_stream.mark_protocol_opened();
                 }
-                _ => self.warn_once("voice_missing_open", "protocol: voice stream missing CTRL(open); dropping frame\n")?,
+                _ => self.warn_once("voice_missing_open", "protocol: voice stream missing CTRL(open); dropping frame")?,
             }
             return Ok(());
         }
@@ -220,26 +234,32 @@ impl LiveCaptionApp {
         match message {
             IncomingStreamMessage::Ctrl(ctrl) => {
                 if is_open_handshake(&ctrl, self.voice_stream.modality()) {
-                    debug_guest("voice ctrl open handshake");
                     return Ok(());
                 }
                 if is_audio_utterance_begin(&ctrl) {
-                    debug_guest("voice ctrl utterance begin");
                     self.begin_utterance()?;
                 }
             }
             IncomingStreamMessage::Data { meta, data } => {
                 let _meta = meta;
                 if let Some(session) = self.rtasr.as_mut() {
-                    debug_guest(format!("voice data bytes={}", data.len()));
                     session.append_audio(&data).map_err(render_error)?;
+                } else {
+                    self.warn_once(
+                        "voice_data_without_session",
+                        "protocol: voice DATA received before utterance_begin/RTASR connect; dropping frame",
+                    )?;
                 }
             }
             IncomingStreamMessage::Commit { meta } => {
                 let _meta = meta;
                 if let Some(session) = self.rtasr.as_mut() {
-                    debug_guest("voice commit");
                     session.flush_commit().map_err(render_error)?;
+                } else {
+                    self.warn_once(
+                        "voice_commit_without_session",
+                        "protocol: voice COMMIT received before utterance_begin/RTASR connect; ignoring commit",
+                    )?;
                 }
             }
         }
@@ -248,6 +268,11 @@ impl LiveCaptionApp {
 
     fn handle_rtasr_ready(&mut self, event: ReadyEvent) -> Result<(), String> {
         if event.has_any_hup_or_err() {
+            if let Some(session) = self.rtasr.as_ref() {
+                // Mirror transport-level shutdown into guest logs so debug-server
+                // can show the last RTASR/OpenAI failure context. / 把传输层关闭镜像到 guest 日志，便于 debug-server 展示最近一次 RTASR/OpenAI 失败上下文。
+                session.log_disconnect_reason("transport closed");
+            }
             self.close_rtasr();
             return Ok(());
         }
@@ -258,7 +283,6 @@ impl LiveCaptionApp {
         let Some(session) = self.rtasr.as_mut() else {
             return Ok(());
         };
-        debug_guest("rtasr drain events");
         let transcript_events = session.drain_events().map_err(render_error)?;
         for event in transcript_events {
             match event {
@@ -296,25 +320,24 @@ impl LiveCaptionApp {
 
     fn begin_utterance(&mut self) -> Result<(), String> {
         if let Some(session) = self.rtasr.as_mut() {
-            debug_guest("begin_utterance existing session");
             return session.prepare_for_new_utterance().map_err(render_error);
         }
 
-        debug_guest("begin_utterance creating session");
         let session = LiveCaptionRtasr::connect().map_err(render_error)?;
         let fd = session.fd().raw();
-        debug_guest(format!("begin_utterance session fd={fd}"));
         self.epoll
             .add(fd, constants::SPEAR_EPOLLIN | constants::SPEAR_EPOLLERR | constants::SPEAR_EPOLLHUP)
             .map_err(render_error)?;
+        debugln!("[live_caption] rtasr session connected fd={fd}");
         self.rtasr = Some(session);
         Ok(())
     }
 
     fn warn_once(&mut self, key: &'static str, message: &'static str) -> Result<(), String> {
         if self.warned.insert(key) {
-            self.text_output.write(message);
-            self.flush_text_output()?;
+            // Keep protocol warnings in diagnostics instead of the user-facing
+            // text stream so sample output stays focused on captions. / 把协议警告保留在诊断日志里，而不是写入面向用户的文本流，避免 sample 输出被非业务信息淹没。
+            warnln!("[live_caption] {message}");
         }
         Ok(())
     }
@@ -347,8 +370,77 @@ impl LiveCaptionApp {
         let _ = spear_wasm::user_stream_close(self.ctl_fd);
         let _ = self.epoll.close();
     }
+
+    fn diagnostic_state(&self) -> String {
+        format!(
+            "text_connected={} voice_connected={} caption_open={} rtasr_active={} session_closed={}",
+            self.text_stream.is_connected(),
+            self.voice_stream.is_connected(),
+            self.caption_open,
+            self.rtasr.is_some(),
+            self.session_closed,
+        )
+    }
 }
 
 fn render_error(err: SpearError) -> String {
     err.to_string()
+}
+
+fn describe_stream_message_error(
+    err: &StreamMessageError,
+) -> Option<(&'static str, &'static str)> {
+    match err {
+        StreamMessageError::InvalidDataMeta => Some((
+            "voice_bad_meta",
+            "protocol: voice DATA meta invalid; dropping frame",
+        )),
+        StreamMessageError::InvalidCommitMeta => Some((
+            "voice_bad_commit_meta",
+            "protocol: voice COMMIT meta invalid; dropping frame",
+        )),
+        StreamMessageError::InvalidCtrlMeta => Some((
+            "voice_bad_ctrl_meta",
+            "protocol: voice CTRL meta invalid; dropping frame",
+        )),
+        StreamMessageError::InvalidFrame => Some((
+            "voice_invalid_frame",
+            "protocol: voice frame invalid; dropping frame",
+        )),
+        StreamMessageError::UnsupportedType => Some((
+            "voice_unsupported_type",
+            "protocol: voice frame type unsupported; dropping frame",
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_stream_message_error;
+    use spear_wasm_helper::user_stream_protocol::StreamMessageError;
+
+    #[test]
+    fn describe_stream_message_error_maps_known_protocol_failures() {
+        assert_eq!(
+            describe_stream_message_error(&StreamMessageError::InvalidDataMeta),
+            Some((
+                "voice_bad_meta",
+                "protocol: voice DATA meta invalid; dropping frame",
+            ))
+        );
+        assert_eq!(
+            describe_stream_message_error(&StreamMessageError::InvalidCtrlMeta),
+            Some((
+                "voice_bad_ctrl_meta",
+                "protocol: voice CTRL meta invalid; dropping frame",
+            ))
+        );
+        assert_eq!(
+            describe_stream_message_error(&StreamMessageError::UnsupportedType),
+            Some((
+                "voice_unsupported_type",
+                "protocol: voice frame type unsupported; dropping frame",
+            ))
+        );
+    }
 }

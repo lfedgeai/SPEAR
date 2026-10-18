@@ -47,6 +47,10 @@ async fn test_admin_tasks_include_result_fields() {
         .connect()
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client: NodeServiceClient::new(channel.clone()),
@@ -85,10 +89,7 @@ async fn test_admin_tasks_include_result_fields() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();

@@ -27,6 +27,7 @@ use crate::proto::sms::{
     mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
     placement_service_client::PlacementServiceClient, ListNodesRequest,
 };
+use crate::sms::blob_store::SharedBlobStore;
 use crate::sms::gateway::GatewayState;
 use crate::sms::node_api::{
     admin_node_detail_response, node_to_admin_list_item, AdminNodeListResponse,
@@ -80,7 +81,7 @@ pub struct WebAdminServer {
     grpc_addr: SocketAddr,
     enabled: bool,
     max_upload_bytes: usize,
-    files_dir: String,
+    blob_store: SharedBlobStore,
 }
 
 impl WebAdminServer {
@@ -89,14 +90,14 @@ impl WebAdminServer {
         grpc_addr: SocketAddr,
         enabled: bool,
         max_upload_bytes: usize,
-        files_dir: String,
+        blob_store: SharedBlobStore,
     ) -> Self {
         Self {
             addr,
             grpc_addr,
             enabled,
             max_upload_bytes,
-            files_dir,
+            blob_store,
         }
     }
 
@@ -166,7 +167,7 @@ impl WebAdminServer {
             execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: cancel_token.clone(),
             max_upload_bytes: self.max_upload_bytes,
-            files_dir: self.files_dir.clone(),
+            blob_store: self.blob_store.clone(),
         };
         let mut app = create_admin_router(state);
         if let Ok(token) = std::env::var("SMS_WEB_ADMIN_TOKEN") {

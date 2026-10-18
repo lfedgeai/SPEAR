@@ -4,6 +4,6 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MediaRef {
     InlineBase64 { mime: String, data: String },
-    SmsFile { mime: String, uri: String },
+    ObjectRef { mime: String, uri: String },
     HttpUrl { mime: String, url: String },
 }

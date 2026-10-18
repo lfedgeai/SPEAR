@@ -66,6 +66,8 @@ SPEAR Console 将 task/instance/execution 这类“连接信息”收敛到 Info
 - 共享主题 token 现在也覆盖了 Console 使用到的语义色与表面语义，例如 success/warning、遮罩层基色和阴影基色，因此 dark/light 切换时不只是背景前景一致，状态与层次也会一起保持协调。
 - Console 与 Admin 也共用同一个主题应用 Hook：`web-admin/src/shared/theme-mode.ts`，统一维护 `class`、`data-theme`、`color-scheme` 与本地持久化状态。
 - Console 直接复用 `web-admin/src/shared/components/ui/` 下的 Admin 风格基础组件，包括共享的 `Button`、`Input`、`Textarea`、`Card` 与 `Select`。
+- Console 组件在传递回调和 ref 时应优先使用显式 `Props` 类型与参数解构写法，这样新的 React hook lint 规则能把普通 props 与 ref 对象区分开，避免把渲染期 props 访问误判为 ref 读取。
+- 会话选中态应优先在渲染阶段从持久化状态或首个可用会话派生，而不是依赖一个立即 `setState` 的同步 `useEffect` 回填默认值。
 - Console 的语音控件也应尽量复用同一套按钮语言，使麦克风操作、split control 与模式菜单在视觉上继续与 Admin 基础控件保持一致。
 - `web-admin/src/index.css` 与 `web-console/src/index.css` 都会引入同一个共享主题入口，因此 light/dark 颜色、字号基线、间距节奏与基础控件高度会保持一致。
 - 顶部状态 chip 也应遵循同一套共享圆角语言，避免在周围控件都使用 Admin 盒状圆角时单独保留胶囊形态。
@@ -107,3 +109,19 @@ SPEAR Console 默认假设 same-origin，因此不暴露 “SMS Base URL” 输�
 - spearlet 是否正确“对外宣告” IP：
   - 本机跑：可设置 `SPEARLET_ADVERTISE_IP=127.0.0.1`
   - K8s：优先注入 `POD_IP`，或显式设置 `SPEARLET_ADVERTISE_IP=<PodIP/可达IP>`
+
+### Console 断开连接后看不到失败原因
+
+现在 Console 会把非预期 WebSocket 关闭事件写入 `conn_error`，因此顶部 Header 和 Inspector 都能展示最近一次断连原因，而不是静默进入自动重连。
+
+预期行为：
+
+- 用户手动点击断开时，UI 保持安静，并清空上一次连接错误。
+- 如果 close frame 自带 reason，UI 会显示 `websocket disconnected (code <code>): <reason>`。
+- 如果是异常关闭但没有 reason，UI 会显示类似 `connection closed unexpectedly` 的兜底文案。
+- 只有在会话处于 disconnected 且没有错误载荷时，自动重连才会继续生效。
+
+服务端可观测性：
+
+- SMS 现在会在 `stream_ws_proxy` 中记录客户端 close frame 的 `close_code` 和 `close_reason`。
+- 真正的 runtime 失败通常仍会更早出现在 spearlet 日志中；SMS 的 close 日志用于把前端断连与下游关闭顺序关联起来。

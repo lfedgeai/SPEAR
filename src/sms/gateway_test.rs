@@ -22,8 +22,8 @@ use uuid::Uuid;
 async fn create_mock_gateway_state() -> GatewayState {
     // Create a mock channel for testing / 创建用于测试的模拟通道
     let channel = tonic::transport::Channel::from_static("http://localhost:50051").connect_lazy();
-    let files_dir = std::env::temp_dir()
-        .join(format!("spear-sms-files-{}", Uuid::new_v4()))
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
         .to_string_lossy()
         .to_string();
 
@@ -45,7 +45,7 @@ async fn create_mock_gateway_state() -> GatewayState {
         execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir,
+        blob_store: crate::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     }
 }
 
@@ -172,6 +172,10 @@ async fn test_gateway_state_with_different_endpoints() {
         let backend_registry_client = BackendRegistryServiceClient::new(channel.clone());
         let admin_credential_client = AdminCredentialServiceClient::new(channel.clone());
 
+        let objects_dir = std::env::temp_dir()
+            .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string();
         let state = GatewayState {
             config: Arc::new(crate::sms::config::SmsConfig::default()),
             node_client,
@@ -190,10 +194,7 @@ async fn test_gateway_state_with_different_endpoints() {
             execution_stream_pool: crate::sms::gateway::ExecutionStreamPool::new(),
             cancel_token: CancellationToken::new(),
             max_upload_bytes: 64 * 1024 * 1024,
-            files_dir: std::env::temp_dir()
-                .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-                .to_string_lossy()
-                .to_string(),
+            blob_store: crate::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
         };
 
         // State should be created successfully with any endpoint / 任何端点都应该成功创建状态

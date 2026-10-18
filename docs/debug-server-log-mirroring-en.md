@@ -11,6 +11,9 @@ This keeps the original execution log behavior unchanged while making guest-side
 - `spear.log(...)` inside a WASM guest still writes to the local WASM log ring
 - those logs are still flushed to SMS execution logs with stream `wasm`
 - the same log entry is now also mirrored to the debug server
+- Rust guests can opt in to SDK-provided `println!` / `eprintln!` macro shadowing via `use spear_wasm::{println, eprintln};`, which routes guest info/error prints through the same mirrored WASM log path without changing the standard-library macros globally
+- Rust guests can use `spear_wasm::{infoln, debugln, warnln, errorln}` when they need explicit levels for mirrored diagnostics, while keeping `println!` / `eprintln!` available as the ergonomic default
+- The Rust samples keep protocol warnings and RTASR/chat failures on this mirrored debug surface, while leaving the visible text-stream output for transcript and reply content only
 
 ## Debug Server Event Shape
 

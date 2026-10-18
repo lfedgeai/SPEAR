@@ -39,6 +39,8 @@ tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "timeout"] }
 hyper = { version = "1", features = ["client", "http1"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
+aws-config = { version = "1", features = ["behavior-version-latest"], optional = true }
+aws-sdk-s3 = { version = "1", optional = true }
 
 # Configuration management / 配置管理
 figment = { version = "0.10", features = ["toml", "env"] }
@@ -143,5 +145,6 @@ rocksdb = ["dep:rocksdb"]
 evmap = ["dep:evmap"]
 wasmedge = ["dep:wasmedge-sdk", "dep:wasmedge-sys"]
 mic-device = ["dep:cpal"]
+sms-rustfs = ["dep:aws-config", "dep:aws-sdk-s3"]
 debug-reporter = []
 debug-server-bin = []

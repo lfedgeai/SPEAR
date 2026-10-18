@@ -1,6 +1,11 @@
 import { fetchJson } from '@/api/client'
 import { buildAdminPath } from '@/api/query'
-import type { DeleteTaskResponse, TaskDetail, TaskSummary } from '@/api/types'
+import type {
+  DeleteTaskResponse,
+  TaskDetail,
+  TaskExecutableReference,
+  TaskSummary,
+} from '@/api/types'
 
 export type ListTasksParams = {
   /** Query string for fuzzy search / 模糊搜索关键词 */
@@ -53,8 +58,8 @@ export type CreateTaskPayload = {
   executable?: {
     /** Executable type / 可执行类型 */
     type: string
-    /** Executable uri (optional) / 可执行 uri（可选） */
-    uri?: string
+    /** Executable reference / 可执行引用 */
+    reference: TaskExecutableReference
     /** Executable name (optional) / 可执行名称（可选） */
     name?: string
     /** SHA256 checksum (optional) / SHA256 校验（可选） */

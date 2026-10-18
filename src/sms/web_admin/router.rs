@@ -6,8 +6,9 @@ use axum::{
 
 use crate::sms::gateway::GatewayState;
 use crate::sms::handlers::{
-    delete_file, download_execution_logs_admin, download_file, get_execution_logs_admin,
-    get_file_meta, list_files, presign_upload, upload_file,
+    delete_object, download_execution_logs_admin, download_object, get_execution_logs_admin,
+    get_object_meta, get_object_storage_status, list_objects, pin_object, release_object,
+    retain_object, unpin_object, upload_object,
 };
 
 use super::types::{ListQuery, PageTokenQuery, StreamQuery};
@@ -328,11 +329,15 @@ pub fn create_admin_router(state: GatewayState) -> Router {
             "/admin/api/executions/{execution_id}/logs/download",
             get(download_execution_logs_admin),
         )
-        .route("/admin/api/files", get(list_files))
-        .route("/admin/api/files/presign-upload", post(presign_upload))
-        .route("/admin/api/files", post(upload_file))
-        .route("/admin/api/files/{id}", get(download_file))
-        .route("/admin/api/files/{id}", delete(delete_file))
-        .route("/admin/api/files/{id}/meta", get(get_file_meta))
+        .route("/admin/api/objects", get(list_objects))
+        .route("/admin/api/objects", post(upload_object))
+        .route("/admin/api/objects/{key}", get(get_object_meta))
+        .route("/admin/api/objects/{key}", delete(delete_object))
+        .route("/admin/api/objects/{key}/content", get(download_object))
+        .route("/admin/api/objects/{key}/retain", post(retain_object))
+        .route("/admin/api/objects/{key}/release", post(release_object))
+        .route("/admin/api/objects/{key}/pin", post(pin_object))
+        .route("/admin/api/objects/{key}/unpin", post(unpin_object))
+        .route("/admin/api/object-storage/status", get(get_object_storage_status))
         .with_state(state)
 }

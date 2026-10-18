@@ -77,6 +77,20 @@ export type NodeCredentialSyncDetail = {
   message?: string
 }
 
+export type TaskExecutableReference =
+  | {
+      /** Structured object reference / 结构化对象引用 */
+      kind: 'object'
+      /** Object key / 对象键 */
+      object_key: string
+    }
+  | {
+      /** Generic URI reference / 通用 URI 引用 */
+      kind: 'uri'
+      /** Canonical URI / 规范 URI */
+      uri: string
+    }
+
 export type TaskSummary = {
   /** Task ID / 任务 ID */
   task_id: string
@@ -106,8 +120,8 @@ export type TaskSummary = {
   version: string
   /** Executable type / 可执行类型 */
   executable_type?: string
-  /** Executable URI / 可执行 URI */
-  executable_uri?: string
+  /** Executable reference / 可执行引用 */
+  executable_reference?: TaskExecutableReference
   /** Executable name / 可执行名称 */
   executable_name?: string
   /** Registration timestamp (epoch seconds) / 注册时间戳（秒） */
@@ -140,7 +154,7 @@ export type TaskDetail = {
     metadata?: Record<string, string>
     config?: Record<string, string>
     executable_type?: string
-    executable_uri?: string
+    executable_reference?: TaskExecutableReference
     executable_name?: string
     executable_checksum?: string
     executable_args?: string[]

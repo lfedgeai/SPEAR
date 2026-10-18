@@ -98,6 +98,10 @@ async fn test_admin_list_nodes_empty() {
         )
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -115,10 +119,7 @@ async fn test_admin_list_nodes_empty() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -219,6 +220,10 @@ async fn test_admin_list_nodes_filter_and_sort() {
         )
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -236,10 +241,7 @@ async fn test_admin_list_nodes_filter_and_sort() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -353,6 +355,10 @@ async fn test_admin_stats() {
         )
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -370,10 +376,7 @@ async fn test_admin_stats() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -446,6 +449,10 @@ async fn test_admin_nodes_stream() {
         )
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -463,10 +470,7 @@ async fn test_admin_nodes_stream() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -575,6 +579,10 @@ async fn test_admin_node_detail_includes_resource() {
         )
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -592,10 +600,7 @@ async fn test_admin_node_detail_includes_resource() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -709,6 +714,10 @@ async fn test_admin_node_credential_sync_proxy() {
         )
         .await
         .unwrap();
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -726,10 +735,7 @@ async fn test_admin_node_credential_sync_proxy() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -808,6 +814,10 @@ async fn test_admin_mcp_servers_crud() {
         .await
         .unwrap();
 
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -825,10 +835,7 @@ async fn test_admin_mcp_servers_crud() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();
@@ -932,6 +939,10 @@ async fn test_admin_mcp_servers_validation() {
         .await
         .unwrap();
 
+    let objects_dir = std::env::temp_dir()
+        .join(format!("spear-sms-objects-{}", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
     let state = GatewayState {
         config: Arc::new(SmsConfig::default()),
         node_client,
@@ -949,10 +960,7 @@ async fn test_admin_mcp_servers_validation() {
         execution_stream_pool: spear_next::sms::gateway::ExecutionStreamPool::new(),
         cancel_token: CancellationToken::new(),
         max_upload_bytes: 64 * 1024 * 1024,
-        files_dir: std::env::temp_dir()
-            .join(format!("spear-sms-files-{}", Uuid::new_v4()))
-            .to_string_lossy()
-            .to_string(),
+        blob_store: spear_next::sms::blob_store::local_fs_blob_store(objects_dir.clone()),
     };
     let app = create_admin_router(state);
     let server = TestServer::new(app.into_make_service()).unwrap();

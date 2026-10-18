@@ -4,7 +4,7 @@ import type { AiBackendSummary } from '@/api/ai-backends'
 import {
   resolveBackendDetailSummary,
   resolveBackendProviderFields,
-} from '@/features/ai-backends/AiBackendDetailPage'
+} from '@/features/ai-backends/AiBackendDetailPage.utils'
 
 describe('AiBackendDetailPage helpers', () => {
   it('prefers typed remote config over legacy spec fields for detail summary', () => {

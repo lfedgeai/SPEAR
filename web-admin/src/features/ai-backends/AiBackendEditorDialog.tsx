@@ -3,7 +3,7 @@
  * 统一 AI backend 的编辑对话框。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
@@ -36,6 +36,27 @@ import LocalLlamaCppFields from './LocalLlamaCppFields'
 import PlacementSection from './PlacementSection'
 import RemoteBackendFields from './RemoteBackendFields'
 
+function deriveInitialFormState(props: {
+  backend?: AiBackendSummary | null
+  initialHosting?: AiBackendHosting
+}): FormState {
+  return props.backend
+    ? formFromBackend(props.backend)
+    : emptyForm(props.initialHosting ?? 'remote')
+}
+
+function applySingleNodePlacementDefault(
+  form: FormState,
+  nodes: Array<{ uuid: string }>,
+  isEditing: boolean,
+): FormState {
+  if (isEditing) return form
+  if (form.placement_scope !== 'single_node') return form
+  if (form.placement_node_uuid.trim()) return form
+  if (nodes.length !== 1) return form
+  return { ...form, placement_node_uuid: nodes[0].uuid }
+}
+
 export default function AiBackendEditorDialog(props: {
   open: boolean
   backend?: AiBackendSummary | null
@@ -46,56 +67,79 @@ export default function AiBackendEditorDialog(props: {
   onOpenChange: (open: boolean) => void
   onSubmit: (input: WriteAiBackendInput, placementPolicy?: PlacementPolicyInput) => Promise<void>
 }) {
-  const [form, setForm] = useState<FormState>(() =>
-    props.backend ? formFromBackend(props.backend) : emptyForm(props.initialHosting ?? 'remote'),
+  // Remount the dialog body on open/input identity changes so form state resets
+  // from props without a sync effect. / 当打开状态或输入对象变化时重建对话框主体，
+  // 让表单直接从 props 重新初始化，而不是依赖同步 effect。
+  const dialogKey = `${props.open ? 'open' : 'closed'}:${props.backend?.backend_id || 'create'}:${props.initialHosting || 'auto'}`
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      {props.open ? <AiBackendEditorDialogBody key={dialogKey} {...props} /> : null}
+    </Dialog>
   )
+}
+
+function AiBackendEditorDialogBody(props: {
+  open: boolean
+  backend?: AiBackendSummary | null
+  initialHosting?: AiBackendHosting
+  title?: string
+  description?: string
+  submitLabel?: string
+  onOpenChange: (open: boolean) => void
+  onSubmit: (input: WriteAiBackendInput, placementPolicy?: PlacementPolicyInput) => Promise<void>
+}) {
+  const [form, setForm] = useState<FormState>(() => deriveInitialFormState(props))
   const isEditing = !!props.backend?.backend_id
   const forcedHosting = !isEditing ? props.initialHosting : undefined
   const nodesQuery = useQuery({
     queryKey: ['nodes-for-placement'],
     queryFn: () => listNodes({ sort_by: 'last_heartbeat', order: 'desc', limit: 200 }),
-    enabled: props.open && !isEditing,
+    enabled: !isEditing,
     staleTime: 15_000,
   })
-  const nodes = nodesQuery.data?.nodes || []
-
-  useEffect(() => {
-    if (!props.open) return
-    setForm(props.backend ? formFromBackend(props.backend) : emptyForm(props.initialHosting ?? 'remote'))
-  }, [props.backend, props.initialHosting, props.open])
-
-  useEffect(() => {
-    if (!props.open || isEditing) return
-    if (form.placement_scope !== 'single_node') return
-    if (form.placement_node_uuid.trim()) return
-    if (nodes.length === 1) {
-      setForm((current) => ({ ...current, placement_node_uuid: nodes[0].uuid }))
-    }
-  }, [form.placement_node_uuid, form.placement_scope, isEditing, nodes, props.open])
+  const nodes = useMemo(
+    () => nodesQuery.data?.nodes ?? [],
+    [nodesQuery.data?.nodes],
+  )
+  const effectiveForm = useMemo(
+    () => applySingleNodePlacementDefault(form, nodes, isEditing),
+    [form, isEditing, nodes],
+  )
 
   const validationErrors = useMemo(
-    () => validateForm(form, { isEditing, nodes }),
-    [form, isEditing, nodes],
+    () => validateForm(effectiveForm, { isEditing, nodes }),
+    [effectiveForm, isEditing, nodes],
   )
   const canSubmit = validationErrors.length === 0
   const disableReason = validationErrors[0] || ''
-  const selectedOperations = useMemo(() => splitCsv(form.operations), [form.operations])
-  const selectedFeatures = useMemo(() => splitCsv(form.features), [form.features])
+  const selectedOperations = useMemo(
+    () => splitCsv(effectiveForm.operations),
+    [effectiveForm.operations],
+  )
+  const selectedFeatures = useMemo(
+    () => splitCsv(effectiveForm.features),
+    [effectiveForm.features],
+  )
   const selectedPlacementNodes = useMemo(
-    () => splitCsv(form.placement_node_uuids),
-    [form.placement_node_uuids],
+    () => splitCsv(effectiveForm.placement_node_uuids),
+    [effectiveForm.placement_node_uuids],
   )
   const providerOptions = useMemo(
-    () => providerOptionsForHosting(form.hosting, form.provider),
-    [form.hosting, form.provider],
+    () => providerOptionsForHosting(effectiveForm.hosting, effectiveForm.provider),
+    [effectiveForm.hosting, effectiveForm.provider],
   )
   const backendKindOptions = useMemo(
-    () => backendKindOptionsFor(form.hosting, form.provider, form.backend_kind),
-    [form.backend_kind, form.hosting, form.provider],
+    () =>
+      backendKindOptionsFor(
+        effectiveForm.hosting,
+        effectiveForm.provider,
+        effectiveForm.backend_kind,
+      ),
+    [effectiveForm.backend_kind, effectiveForm.hosting, effectiveForm.provider],
   )
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent>
         <DialogHeader
           title={props.title ?? (isEditing ? 'Edit AI backend' : 'Create AI backend')}
@@ -110,7 +154,7 @@ export default function AiBackendEditorDialog(props: {
             <div className="space-y-1">
               <div className="text-sm font-medium">Display name</div>
               <Input
-                value={form.display_name}
+                value={effectiveForm.display_name}
                 onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))}
                 placeholder="e.g. OpenAI Production"
               />
@@ -127,7 +171,7 @@ export default function AiBackendEditorDialog(props: {
                 <div className="text-sm font-medium">Hosting</div>
                 <select
                   className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
-                  value={form.hosting}
+                  value={effectiveForm.hosting}
                   onChange={(event) =>
                     setForm((current) => {
                       const hosting = event.target.value as AiBackendHosting
@@ -171,7 +215,7 @@ export default function AiBackendEditorDialog(props: {
               <div className="text-sm font-medium">Provider</div>
               <select
                 className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
-                value={form.provider}
+                value={effectiveForm.provider}
                 onChange={(event) =>
                   setForm((current) => {
                     const provider = event.target.value
@@ -200,7 +244,7 @@ export default function AiBackendEditorDialog(props: {
             <div className="space-y-1">
               <div className="text-sm font-medium">Model</div>
               <Input
-                value={form.model}
+                value={effectiveForm.model}
                 onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}
                 placeholder="e.g. gpt-4.1"
               />
@@ -212,7 +256,7 @@ export default function AiBackendEditorDialog(props: {
               <div className="text-sm font-medium">Backend kind</div>
               <select
                 className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
-                value={form.backend_kind}
+                value={effectiveForm.backend_kind}
                 onChange={(event) =>
                   setForm((current) => {
                     const backendKind = event.target.value
@@ -240,7 +284,7 @@ export default function AiBackendEditorDialog(props: {
               <div className="text-sm font-medium">Desired state</div>
               <select
                 className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
-                value={form.desired_state}
+                value={effectiveForm.desired_state}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -254,12 +298,12 @@ export default function AiBackendEditorDialog(props: {
             </div>
           </div>
 
-          {form.hosting === 'remote' ? (
-            <RemoteBackendFields form={form} setForm={setForm} />
+          {effectiveForm.hosting === 'remote' ? (
+            <RemoteBackendFields form={effectiveForm} setForm={setForm} />
           ) : null}
 
-          {form.hosting === 'local' && form.provider === 'llamacpp' ? (
-            <LocalLlamaCppFields form={form} setForm={setForm} />
+          {effectiveForm.hosting === 'local' && effectiveForm.provider === 'llamacpp' ? (
+            <LocalLlamaCppFields form={effectiveForm} setForm={setForm} />
           ) : null}
 
           <div className="space-y-1">
@@ -316,7 +360,7 @@ export default function AiBackendEditorDialog(props: {
               <div className="text-sm font-medium">Transports</div>
               <select
                 className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
-                value={form.transports}
+                value={effectiveForm.transports}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, transports: event.target.value }))
                 }
@@ -334,7 +378,7 @@ export default function AiBackendEditorDialog(props: {
             <div className="space-y-1">
               <div className="text-sm font-medium">Weight</div>
               <Input
-                value={form.weight}
+                value={effectiveForm.weight}
                 onChange={(event) => setForm((current) => ({ ...current, weight: event.target.value }))}
                 placeholder="100"
               />
@@ -342,7 +386,7 @@ export default function AiBackendEditorDialog(props: {
             <div className="space-y-1">
               <div className="text-sm font-medium">Priority</div>
               <Input
-                value={form.priority}
+                value={effectiveForm.priority}
                 onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
                 placeholder="0"
               />
@@ -354,7 +398,7 @@ export default function AiBackendEditorDialog(props: {
               <div className="text-sm font-medium">Labels</div>
               <textarea
                 className="min-h-[88px] w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm"
-                value={form.labels}
+                value={effectiveForm.labels}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, labels: event.target.value }))
                 }
@@ -368,7 +412,7 @@ export default function AiBackendEditorDialog(props: {
               <div className="text-sm font-medium">Metadata</div>
               <textarea
                 className="min-h-[88px] w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 font-mono text-xs"
-                value={form.metadata}
+                value={effectiveForm.metadata}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -383,7 +427,7 @@ export default function AiBackendEditorDialog(props: {
             </div>
           </div>
 
-          {form.hosting === 'local' && form.backend_kind.toLowerCase().includes('vllm') ? (
+          {effectiveForm.hosting === 'local' && effectiveForm.backend_kind.toLowerCase().includes('vllm') ? (
             <div className="rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">
               vLLM remains a scaffolded path in the current control plane. Keep it only for planned
               placeholders or external endpoint wiring.
@@ -392,7 +436,7 @@ export default function AiBackendEditorDialog(props: {
 
           {!isEditing ? (
             <PlacementSection
-              form={form}
+              form={effectiveForm}
               setForm={setForm}
               nodes={nodes}
               selectedPlacementNodes={selectedPlacementNodes}
@@ -418,8 +462,8 @@ export default function AiBackendEditorDialog(props: {
             onClick={async () => {
               try {
                 await props.onSubmit(
-                  buildPayload(form),
-                  !isEditing ? buildPlacementPolicy(form, nodes) : undefined,
+                  buildPayload(effectiveForm),
+                  !isEditing ? buildPlacementPolicy(effectiveForm, nodes) : undefined,
                 )
                 props.onOpenChange(false)
               } catch (error) {
@@ -431,6 +475,5 @@ export default function AiBackendEditorDialog(props: {
           </Button>
         </div>
       </DialogContent>
-    </Dialog>
   )
 }

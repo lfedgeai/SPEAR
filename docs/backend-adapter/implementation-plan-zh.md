@@ -152,7 +152,7 @@ src/spearlet/execution/
 ### 2.2 MediaRef 独立文件
 
 - 文件：`src/spearlet/execution/ai/media_ref.rs`
-  - `enum MediaRef { InlineBase64{mime,data}, SmsFile{mime,uri}, HttpUrl{mime,url} }`
+  - `enum MediaRef { InlineBase64{mime,data}, ObjectRef{mime,uri}, HttpUrl{mime,url} }`
   - 先只在类型层定义，不在 Phase 1 做对象存储联动。
 
 ### 2.3 最小校验函数
@@ -373,7 +373,7 @@ MVP 推荐：在 SMS 服务侧把 `health_info` 合并进 node `metadata`，这�
   - 新文件：`src/spearlet/execution/ai/normalize/{embeddings,image,asr,tts}.rs`
   - backend adapter 增加对应 `invoke_*` 分支
 - 引入 `MediaRef` 与对象存储联动：
-  - Normalize 层把 hostcall bytes 转为 `sms_file`
+  - Normalize 层把 hostcall bytes 转为 `object_ref`
   - adapter 层按需拉取并编码（multipart/base64）
 - realtime/streaming：新增 `src/spearlet/execution/ai/stream/` 或复用现有 `execution/communication` 子系统
 

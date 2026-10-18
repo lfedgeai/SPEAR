@@ -235,8 +235,9 @@ impl TaskEventSubscriber {
 mod tests {
     use super::*;
     use crate::proto::sms::{
-        task_service_server::TaskServiceServer, Task, TaskEvent, TaskEventKind, TaskExecutable,
-        TaskPriority, TaskStatus,
+        task_executable_reference, task_service_server::TaskServiceServer, Task, TaskEvent,
+        TaskEventKind, TaskExecutable, TaskExecutableReference, TaskPriority, TaskStatus,
+        TaskUriReference,
     };
     use crate::sms::service::SmsServiceImpl;
     use crate::spearlet::execution::instance;
@@ -250,6 +251,21 @@ mod tests {
 
     struct DummyRuntime {
         ty: RuntimeType,
+    }
+
+    fn uri_task_executable(uri: &str, checksum_sha256: &str) -> TaskExecutable {
+        TaskExecutable {
+            r#type: 5,
+            reference: Some(TaskExecutableReference {
+                target: Some(task_executable_reference::Target::Uri(TaskUriReference {
+                    uri: uri.to_string(),
+                })),
+            }),
+            name: String::new(),
+            checksum_sha256: checksum_sha256.to_string(),
+            args: vec![],
+            env: std::collections::HashMap::new(),
+        }
     }
 
     async fn start_task_sms_grpc() -> (tokio::task::JoinHandle<()>, String, Channel) {
@@ -390,14 +406,7 @@ mod tests {
             last_heartbeat: chrono::Utc::now().timestamp(),
             metadata: meta,
             config: std::collections::HashMap::new(),
-            executable: Some(TaskExecutable {
-                r#type: 5,
-                uri: "http://example/bin".to_string(),
-                name: String::new(),
-                checksum_sha256: "deadbeef".to_string(),
-                args: vec![],
-                env: std::collections::HashMap::new(),
-            }),
+            executable: Some(uri_task_executable("http://example/bin", "deadbeef")),
             result_uris: Vec::new(),
             last_result_uri: String::new(),
             last_result_status: String::new(),
@@ -464,14 +473,7 @@ mod tests {
             last_heartbeat: chrono::Utc::now().timestamp(),
             metadata: std::collections::HashMap::new(),
             config: std::collections::HashMap::new(),
-            executable: Some(TaskExecutable {
-                r#type: 5,
-                uri: uri.to_string(),
-                name: String::new(),
-                checksum_sha256: String::new(),
-                args: vec![],
-                env: std::collections::HashMap::new(),
-            }),
+            executable: Some(uri_task_executable(uri, "")),
             result_uris: Vec::new(),
             last_result_uri: String::new(),
             last_result_status: String::new(),
@@ -534,14 +536,7 @@ mod tests {
             last_heartbeat: chrono::Utc::now().timestamp(),
             metadata: std::collections::HashMap::new(),
             config: std::collections::HashMap::new(),
-            executable: Some(TaskExecutable {
-                r#type: 5,
-                uri: "http://example/delete".to_string(),
-                name: String::new(),
-                checksum_sha256: "deadbeef2".to_string(),
-                args: vec![],
-                env: std::collections::HashMap::new(),
-            }),
+            executable: Some(uri_task_executable("http://example/delete", "deadbeef2")),
             result_uris: Vec::new(),
             last_result_uri: String::new(),
             last_result_status: String::new(),

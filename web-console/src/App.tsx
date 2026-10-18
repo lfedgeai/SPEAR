@@ -61,6 +61,16 @@ export default function App() {
     getClient: conn.getClient,
     getVoiceConfig,
   })
+  const {
+    micMode,
+    setMicMode,
+    voiceRecording,
+    voiceError,
+    startHold,
+    endHold,
+    toggleOpenMic,
+    stopVoice,
+  } = voice
   const [sidebarMode, setSidebarMode] = useState<'expanded' | 'collapsed'>('expanded')
   const [inspectorMode, setInspectorMode] = useState<'expanded' | 'collapsed'>('expanded')
   const [sidebarWidth, setSidebarWidth] = useState(292)
@@ -79,9 +89,9 @@ export default function App() {
 
   useEffect(() => {
     beforeDisconnectRef.current = () => {
-      void voice.stopVoice()
+      void stopVoice()
     }
-  }, [voice.stopVoice])
+  }, [stopVoice])
 
   useEffect(() => {
     const prev = prevActiveConnRef.current
@@ -98,7 +108,7 @@ export default function App() {
       prev.conversationId === current.conversationId &&
       prev.status !== 'disconnected' &&
       current.status === 'disconnected' &&
-      voice.voiceRecording
+      voiceRecording
 
     prevActiveConnRef.current = current
 
@@ -109,8 +119,8 @@ export default function App() {
       previousStatus: prev?.status,
       currentStatus: activeStatus,
     })
-    void voice.stopVoice()
-  }, [activeId, activeStatus, voice.stopVoice, voice.voiceRecording])
+    void stopVoice()
+  }, [activeId, activeStatus, stopVoice, voiceRecording])
 
   const activeTargetText = useMemo(() => {
     if (activeConnectKind === 'endpoint' && activeGatewayEndpoint.trim()) {
@@ -282,10 +292,10 @@ export default function App() {
 
   const disconnectConversation = useCallback(
     (conversationId: string) => {
-      void voice.stopVoice()
+      void stopVoice()
       conn.disconnectConversation(conversationId)
     },
-    [conn, voice.stopVoice],
+    [conn, stopVoice],
   )
 
   return (
@@ -361,15 +371,15 @@ export default function App() {
           input={input}
           onChangeInput={setInput}
           onSend={send}
-          micMode={voice.micMode}
-          onChangeMicMode={voice.setMicMode}
-          voiceRecording={voice.voiceRecording}
-          onHoldStart={() => void voice.startHold()}
-          onHoldEnd={() => void voice.endHold()}
+          micMode={micMode}
+          onChangeMicMode={setMicMode}
+          voiceRecording={voiceRecording}
+          onHoldStart={() => void startHold()}
+          onHoldEnd={() => void endHold()}
           onToggleMic={() => {
-            void voice.toggleOpenMic()
+            void toggleOpenMic()
           }}
-          voiceError={voice.voiceError}
+          voiceError={voiceError}
           showCancel={activeMessages.some((m) => m.role === 'assistant' && m.streaming)}
           onCancel={() => disconnectConversation(activeId)}
         />
@@ -398,9 +408,9 @@ export default function App() {
           targetText={activeTargetText}
           status={activeStatus}
           error={activeError}
-          micMode={voice.micMode}
-          voiceRecording={voice.voiceRecording}
-          voiceError={voice.voiceError}
+          micMode={micMode}
+          voiceRecording={voiceRecording}
+          voiceError={voiceError}
         />
       </div>
       {isConnectOpen ? (

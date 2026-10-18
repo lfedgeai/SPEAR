@@ -11,7 +11,7 @@ export function useTheme() {
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
-  }, [])
+  }, [setTheme])
 
   const label = useMemo(() => (theme === 'dark' ? 'Dark' : 'Light'), [theme])
 

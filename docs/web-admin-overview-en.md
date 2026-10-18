@@ -36,6 +36,8 @@ This document summarizes the current Web Admin in `spear-next`.
 - UI source lives in `web-admin/` and build output overwrites `assets/admin/*`
 - UI stack: Radix primitives + Tailwind (shadcn/ui style), enterprise console look
 - SSE cancellation uses a `CancellationToken` to allow graceful shutdown
+- Dialog editors that need a fresh draft on reopen remount their form body instead of using synchronous `useEffect` state resets
+- Shared page helpers that are not React components live in adjacent `*.ts` utility modules so Fast Refresh lint rules stay compatible
 
 ## Endpoints
 
@@ -91,7 +93,7 @@ If you add an “API key configuration” component to Web Admin, design it as �
 - UI/control-plane manages: mapping between backend instances and `credential_ref` (or `credential_refs`)
 - Secret values are provisioned by: the deployment system (Kubernetes Secrets / Vault Agent / systemd drop-in)
 - Observability: show only “present/usable” (e.g., spearlet heartbeat reports `HAS_ENV:<ENV_NAME>=true`), never the value
-  - `executable_type`, `executable_uri`, `executable_name`
+  - `executable_type`, `executable_reference`, `executable_name`
   - `registered_at`, `last_heartbeat`, `metadata`, `config`
   - `result_uris`, `last_result_uri`, `last_result_status`, `last_completed_at`, `last_result_metadata`
 - `GET /admin/api/tasks/{task_id}` → returns detail with the same fields

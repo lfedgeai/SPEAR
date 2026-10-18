@@ -66,6 +66,8 @@ SPEAR Console keeps the main chat surface focused and moves task/instance/execut
 - Shared theme tokens now also cover semantic state and surface tokens used by Console, such as success/warning colors, overlay tone, and shadow color, so dark/light switching stays visually coherent beyond the base background/foreground pair.
 - Console and Admin also share the same theme-mode application hook: `web-admin/src/shared/theme-mode.ts`, which keeps `class`, `data-theme`, `color-scheme`, and persisted theme state aligned.
 - Console reuses Admin-oriented UI primitives from `web-admin/src/shared/components/ui/`, including shared `Button`, `Input`, `Textarea`, `Card`, and `Select`.
+- Console components should prefer explicit typed props with parameter destructuring, especially when passing callbacks and refs, so newer React hook lint rules can distinguish normal props from ref objects during render.
+- Conversation selection should be derived from stored state or the first available conversation during render, instead of using a synchronous `useEffect` fallback that immediately calls `setState`.
 - Voice controls in Console should also reuse the shared button language where possible, so microphone actions, split controls, and mode menus stay visually aligned with Admin controls.
 - `web-admin/src/index.css` and `web-console/src/index.css` both import the shared theme entry, so light/dark colors, typography baseline, spacing rhythm, and control height stay aligned.
 - Header status chips should follow the shared radius language as well, avoiding pill-only shapes when surrounding controls use the Admin box radius.
@@ -107,3 +109,19 @@ Check first:
 - Spearlet advertised IP:
   - Local: set `SPEARLET_ADVERTISE_IP=127.0.0.1`
   - Kubernetes: inject `POD_IP` or set `SPEARLET_ADVERTISE_IP=<reachable pod/service IP>`
+
+### Console disconnects but no failure reason is visible
+
+Console now persists unexpected WebSocket close details into `conn_error`, so the top header and inspector can show the last disconnect reason instead of silently falling back into auto reconnect.
+
+Expected behavior:
+
+- Manual disconnect keeps the UI quiet and clears the previous connection error.
+- Abnormal close with a close-frame reason shows `websocket disconnected (code <code>): <reason>`.
+- Abnormal close without a reason shows a fallback such as `connection closed unexpectedly`.
+- Auto reconnect only applies when the conversation is disconnected without an error payload.
+
+Server-side observability:
+
+- SMS logs client close frames from `stream_ws_proxy` with `close_code` and `close_reason`.
+- spearlet/runtime failures may still appear earlier in spearlet logs; SMS close logs help correlate the frontend disconnect with the downstream close sequence.

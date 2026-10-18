@@ -4,22 +4,26 @@ import { useQuery } from '@tanstack/react-query'
 
 import { destroyInstance } from '@/api/control'
 import { getTaskDetail } from '@/api/tasks'
-import type { TaskDetail as TaskDetailResponse } from '@/api/types'
+import type { TaskDetail as TaskDetailResponse, TaskExecutableReference } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ReasonConfirmDialog } from '@/features/shared/ReasonConfirmDialog'
 import { TaskStatusBadge } from '@/features/shared/status-badges'
-import {
-  summarizeTaskInstances,
-  TaskInstancesPanel,
-} from '@/features/tasks/TaskInstancesSection'
+import { TaskInstancesPanel } from '@/features/tasks/TaskInstancesSection'
+import { summarizeTaskInstances } from '@/features/tasks/taskInstanceSummary'
 import DeleteTaskDialog from '@/features/tasks/DeleteTaskDialog'
 import { useTaskInstances } from '@/features/tasks/useTaskInstances'
 
 function formatSec(ts: number | undefined) {
   if (!ts) return '-'
   return new Date(ts * 1000).toLocaleString()
+}
+
+function formatExecutableReference(reference: TaskExecutableReference | undefined) {
+  if (!reference) return '-'
+  if (reference.kind === 'object') return `object:${reference.object_key}`
+  return reference.uri || '-'
 }
 
 export default function TaskDetailPage() {
@@ -176,6 +180,12 @@ export default function TaskDetailPage() {
                 <div>
                   <div className="text-xs text-[hsl(var(--muted-foreground))]">Executable</div>
                   <div className="text-sm">{task.executable_type || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">Executable Source</div>
+                  <div className="break-all font-mono text-xs">
+                    {formatExecutableReference(task.executable_reference)}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-[hsl(var(--muted-foreground))]">Last result</div>

@@ -84,7 +84,7 @@ Cleanup:
 - **Bind vs advertise address**: spearlet binds to `0.0.0.0:50052` inside containers, but must not register `0.0.0.0` as a reachable address in SMS. In docker-local we set `SPEARLET_ADVERTISE_IP=spear-spearlet` so SMS stores a resolvable/reachable address (container name DNS on user-defined bridge), avoiding `all candidates failed` during placement.
 - **docker-local entry commands**: SMS/Spearlet images require a subcommand (`sms` / `spearlet`) for the entrypoint. docker-local apply always passes the subcommand so containers keep running.
 - **Writable directories**: docker-local injects writable paths to avoid permission-related failures (Web Admin upload 500, execution logs, llama local model download):
-  - SMS: `SMS_FILES_DIR=/tmp/sms-files`, `SMS_EXECUTION_LOGS_DIR=/tmp/sms-execution-logs`
+  - SMS: `SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR=/tmp/sms-objects`, `SMS_EXECUTION_LOGS_DIR=/tmp/sms-execution-logs`
   - Spearlet: `SPEARLET_LOCAL_MODELS_DIR=/tmp/spearlet-local-models`, `SPEARLET_STORAGE_DATA_DIR=/tmp/spearlet-storage`
   - These are not persistent across container recreation; add a bind-mount/volume if you need persistence.
 - **Cleanup scope**:

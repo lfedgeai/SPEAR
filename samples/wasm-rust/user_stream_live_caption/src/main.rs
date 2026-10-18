@@ -5,6 +5,8 @@ mod app;
 mod config;
 mod rtasr_session;
 
+use spear_wasm::eprintln;
+
 fn main() {
     if let Err(err) = app::run() {
         eprintln!("{err}");

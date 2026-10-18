@@ -49,7 +49,7 @@
   - Tasks
   - Backends
   - MCP Servers
-  - Files（如现有）
+  - Objects（如现有对象管理）
 - Tasks 列表页（/admin/tasks）
   - 点击某条 Task 进入 Task 详情页（/admin/tasks/:taskId）
 - Task 详情页（/admin/tasks/:taskId）
@@ -205,4 +205,3 @@ P0 阶段建议对用户强调一条路径：
   - API：`GET /api/v1/executions/{execution_id}`
 
 备注：当前 Admin UI 既有数据接口多为 `/admin/api/...`。P0 推荐直接复用 `/api/v1/...` 这组新接口（同源调用更直接）；如需统一风格，可在后端增加 `/admin/api/...` 的薄封装路由，返回相同 JSON 结构。
-

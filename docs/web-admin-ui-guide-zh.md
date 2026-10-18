@@ -21,14 +21,18 @@
 - SSE：后端 `GET /admin/api/nodes/stream`，用于实时刷新统计与列表
 - 工具栏：包含搜索框、排序选择、Admin Token 输入框与 `Apply Token` 按钮
 
-## 文件（Files）
+## 对象（Objects）
 
-- 选择文件：点击 `Choose File` 打开系统文件选择器（隐藏原生 `<input type="file">`，前端使用按钮触发）
-- 上传：点击 `Upload` 上传到内置对象服务；成功后收到 `Uploaded: <id>` 提示
+- 选择文件：点击 `Choose files` 打开系统文件选择器（隐藏原生 `<input type="file">`，前端使用按钮触发）
+- 上传：点击 `Upload` 将本地文件上传为对象；当前兼容模式下对象 key 由后端适配层生成
 - 列表操作：
-  - `Download`：直接下载
-  - `Copy URI`：复制 `smsfile://<id>` 到剪贴板
-  - `Delete`：删除后立即刷新（React Query 失效+本地过滤）
+  - `Details`：进入对象详情页查看 metadata
+  - `Download`：直接下载对象内容
+  - `Pin / Unpin`：切换对象的删除保护状态
+  - `Retain / Release`：调整对象引用计数
+  - `Delete`：删除后立即刷新
+- 页面默认展示 metadata，不在列表页直接展示对象内容
+- 当对象被引用或已被 pin 时，前端会禁用删除按钮
 
 ## 任务创建（Tasks → Create Task）
 
@@ -42,12 +46,11 @@
   - 可滚动 body
   - 固定 footer 操作区
 - 可执行类型：`No Executable | Binary | Script | Container | WASM | Process`
-- Scheme：`smsfile | s3 | minio | https`
-  - 切到 `smsfile` 会自动预填 `smsfile://`
-  - 从非 `smsfile` 切回时不会重置为占位项
-- 选择本地 SMS 文件：
-  - 点击 `Choose Local` 打开文件选择弹窗
-  - 点击 `Use` 将 `Executable URI = smsfile://<id>` 与 `Executable Name` 带回表单
+- Executable Source：`object | s3 | minio | https`
+- 选择对象资源：
+  - 点击 `Choose Object` 打开对象选择弹窗
+  - 点击 `Use` 将对象 key 带回表单
+- 提交任务时会写入结构化 `reference`，对象来源使用 `{ "kind": "object", "object_key": "<key>" }`
 - 参数：`Capabilities`（逗号分隔）、`Args`（逗号分隔）、`Env`（每行 `key=value`）
 
 ## AI Models
@@ -133,8 +136,8 @@
 ## 常见问题
 
 - 下拉长期悬浮：已移除强制 `open`，恢复默认交互
-- Scheme 重置：当 URI 不包含 `://` 不再重置；`smsfile` 会预填 `smsfile://`
-- 文件对话框溢出：设置了固定宽度与列宽，长文本省略显示
+- Scheme 重置：当 URI 不包含 `://` 不再重置；对象资源统一使用对象引用，不再依赖 legacy 文件 URI
+- 对象选择弹窗：支持按对象 key 过滤、分页浏览与快速选择
 
 ## 相关文档
 

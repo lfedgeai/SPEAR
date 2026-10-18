@@ -49,7 +49,7 @@ CanonicalRequestEnvelope
 说明：
 
 - `payload` 放在 Envelope 内部，且与 `operation` 对齐（通常 1:1），各操作的 payload 字段骨架定义见 `operations-zh.md`。
-- 大体积二进制不建议直接进入 `payload` 的 JSON 字段；应通过 `MediaRef`（如 `sms_file`）表达数据位置，见本文件第 3 节。
+- 大体积二进制不建议直接进入 `payload` 的 JSON 字段；应通过 `MediaRef`（如 `object_ref`）表达数据位置，见本文件第 3 节。
 
 ### 2.2 CanonicalResponseEnvelope（字段建议）
 
@@ -83,8 +83,8 @@ CanonicalRequestEnvelope
 
 - `inline_base64`：适合小数据、调试、兼容性强
   - `{ "kind": "inline_base64", "mime": "audio/wav", "data": "..." }`
-- `sms_file`：推荐生产默认（大数据）
-  - `{ "kind": "sms_file", "uri": "smsfile://<id>", "mime": "image/png" }`
+- `object_ref`：推荐生产默认（大数据）
+  - `{ "kind": "object_ref", "uri": "object://<key>", "mime": "image/png" }`
 - `http_url`：仅在明确允许时使用（受 host 安全策略约束）
   - `{ "kind": "http_url", "url": "https://...", "mime": "image/jpeg" }`
 
@@ -100,16 +100,16 @@ CanonicalRequestEnvelope
   - `image_generation`：返回 `images: Vec<MediaRef>`
   - `text_to_speech`：返回 `audio: MediaRef`
 
-建议避免把大体积二进制直接内嵌在 response JSON 中；优先返回 `sms_file`，并在需要时由调用方再拉取。
+建议避免把大体积二进制直接内嵌在 response JSON 中；优先返回 `object_ref`，并在需要时由调用方再拉取。
 
 ### 3.3 规范化建议
 
-- hostcall 输入为字节数组时：优先落盘/对象存储并转为 `sms_file`，避免内存峰值。
+- hostcall 输入为字节数组时：优先落盘/对象存储并转为 `object_ref`，避免内存峰值。
 - backend adapter 需要 inline 时：由 adapter 决定临时读取并编码，而不是 IR 固定为 inline。
 
 ### 3.4 示例
 
-#### 3.4.1 ASR（`speech_to_text`）请求：音频作为 `sms_file`
+#### 3.4.1 ASR（`speech_to_text`）请求：音频作为 `object_ref`
 
 ```json
 {
@@ -124,8 +124,8 @@ CanonicalRequestEnvelope
   "payload": {
     "model": "whisper-1",
     "audio": {
-      "kind": "sms_file",
-      "uri": "smsfile://01JFK...ABCD",
+      "kind": "object_ref",
+      "uri": "object://01JFK...ABCD",
       "mime": "audio/wav"
     },
     "language": "zh",
@@ -134,7 +134,7 @@ CanonicalRequestEnvelope
 }
 ```
 
-#### 3.4.2 图像生成（`image_generation`）响应：图片作为 `sms_file`
+#### 3.4.2 图像生成（`image_generation`）响应：图片作为 `object_ref`
 
 ```json
 {
@@ -145,7 +145,7 @@ CanonicalRequestEnvelope
   "result": {
     "payload": {
       "images": [
-        { "kind": "sms_file", "uri": "smsfile://01JFK...WXYZ", "mime": "image/png" }
+        { "kind": "object_ref", "uri": "object://01JFK...WXYZ", "mime": "image/png" }
       ]
     }
   }
@@ -166,7 +166,7 @@ CanonicalRequestEnvelope
           { "type": "text", "text": "描述这张图片" },
           {
             "type": "image",
-            "image": { "kind": "sms_file", "uri": "smsfile://01J...", "mime": "image/jpeg" }
+            "image": { "kind": "object_ref", "uri": "object://01J...", "mime": "image/jpeg" }
           }
         ]
       }
@@ -178,11 +178,11 @@ CanonicalRequestEnvelope
 ### 3.5 规范化/解析职责边界（建议）
 
 - Normalize 层（host 侧）职责：
-  - 当 hostcall 输入为原始字节时，优先写入对象存储/文件服务并生成 `sms_file` 类型的 `MediaRef`。
-  - 对 `http_url` 做安全策略校验（若不允许则拒绝或转存为 `sms_file`）。
+  - 当 hostcall 输入为原始字节时，优先写入对象存储并生成 `object_ref` 类型的 `MediaRef`。
+  - 对 `http_url` 做安全策略校验（若不允许则拒绝或转存为 `object_ref`）。
 - Backend adapter（发送前）职责：
-  - 根据后端协议需求把 `MediaRef` 解析为 bytes（拉取 `sms_file`、解码 `inline_base64`），并组装成 multipart/base64/二进制请求体。
-  - 若后端返回 base64 图片/音频，优先转存为 `sms_file` 再写入 Canonical Response（除非明确要求 inline 且受大小限制）。
+  - 根据后端协议需求把 `MediaRef` 解析为 bytes（拉取 `object_ref`、解码 `inline_base64`），并组装成 multipart/base64/二进制请求体。
+  - 若后端返回 base64 图片/音频，优先转存为 `object_ref` 再写入 Canonical Response（除非明确要求 inline 且受大小限制）。
 - Router 层职责：
   - 不解析媒体内容本身，但可以基于 `mime`、媒体大小/时长等元信息做能力过滤与限制控制（如 `max_audio_seconds`）。
 

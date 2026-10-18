@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Files, Server, Workflow } from 'lucide-react'
+import { Activity, Package, Server, Workflow } from 'lucide-react'
 
 import { getStats } from '@/api/stats'
 import { Button } from '@/components/ui/button'
@@ -68,7 +68,7 @@ export default function DashboardPage() {
         <StatCard
           title="Recent (60s)"
           value={s.recent_60s_count}
-          icon={<Files className="h-5 w-5" />}
+          icon={<Package className="h-5 w-5" />}
         />
       </div>
 

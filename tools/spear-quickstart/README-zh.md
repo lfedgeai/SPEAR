@@ -84,7 +84,7 @@ export SPEAR_QUICKSTART_USE_SCRIPT=1
 - **监听地址 vs 广播地址**：spearlet 在容器内监听 `0.0.0.0:50052`（bind），但向 SMS 注册时不能把 `0.0.0.0` 当作可达地址。docker-local 下通过 `SPEARLET_ADVERTISE_IP=spear-spearlet` 让 SMS 记录一个可解析/可达的地址（容器名在 user-defined bridge 网络里可 DNS 解析），避免 placement 时出现 `all candidates failed`。
 - **docker-local 启动命令**：SMS/Spearlet 镜像的 entrypoint 需要子命令（`sms` / `spearlet`），否则容器会直接退出；docker-local apply 会显式传入子命令，保证容器常驻运行。
 - **可写目录（容器内权限）**：docker-local 默认注入可写路径，避免 Web Admin 上传、执行日志、llama 本地模型下载因权限导致 500/写入失败：
-  - SMS：`SMS_FILES_DIR=/tmp/sms-files`、`SMS_EXECUTION_LOGS_DIR=/tmp/sms-execution-logs`
+  - SMS：`SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR=/tmp/sms-objects`、`SMS_EXECUTION_LOGS_DIR=/tmp/sms-execution-logs`
   - Spearlet：`SPEARLET_LOCAL_MODELS_DIR=/tmp/spearlet-local-models`、`SPEARLET_STORAGE_DATA_DIR=/tmp/spearlet-storage`
   - 这些目录在容器重启后不保证持久化；如需持久化可考虑后续增加 bind-mount/volume 方案。
 - **清理范围（Cleanup scope）**：

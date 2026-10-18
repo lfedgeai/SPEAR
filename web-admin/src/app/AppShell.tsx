@@ -12,8 +12,6 @@ import NodeDetailPage from '@/features/nodes/NodeDetailPage'
 import TasksPage from '@/features/tasks/TasksPage'
 import TaskDetailPage from '@/features/tasks/TaskDetailPage'
 import TaskInstancesPage from '@/features/tasks/TaskInstancesPage'
-import FilesPage from '@/features/files/FilesPage'
-import FileDetailPage from '@/features/files/FileDetailPage'
 import AiBackendsPage from '@/features/ai-backends/AiBackendsPage'
 import AiBackendDetailPage from '@/features/ai-backends/AiBackendDetailPage'
 import CredentialsPage from '@/features/ai-credentials/CredentialsPage'
@@ -25,6 +23,8 @@ import SettingsPage from '@/features/settings/SettingsPage'
 import InstanceDetailPage from '@/features/instances/InstanceDetailPage'
 import ExecutionHistoryPage from '@/features/executions/ExecutionHistoryPage'
 import ExecutionDetailPage from '@/features/executions/ExecutionDetailPage'
+import ObjectsPage from '@/features/objects/ObjectsPage'
+import ObjectDetailPage from '@/features/objects/ObjectDetailPage'
 
 type NavItem = {
   label: string
@@ -42,7 +42,7 @@ function Shell() {
       { to: '/nodes', label: 'Nodes', icon: Server },
       { to: '/tasks', label: 'Tasks', icon: ListTodo },
       { to: '/executions', label: 'Execution History', icon: History },
-      { to: '/files', label: 'Files', icon: FileBox },
+      { to: '/objects', label: 'Objects', icon: FileBox },
       {
         label: 'AI Backends',
         icon: Boxes,
@@ -184,8 +184,8 @@ function Shell() {
                 <Route path="/instances/:instanceId" element={<InstanceDetailPage />} />
                 <Route path="/executions" element={<ExecutionHistoryPage />} />
                 <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
-                <Route path="/files" element={<FilesPage />} />
-                <Route path="/files/:id" element={<FileDetailPage />} />
+                <Route path="/objects" element={<ObjectsPage />} />
+                <Route path="/objects/:key" element={<ObjectDetailPage />} />
                 <Route path="/ai-backends" element={<AiBackendsPage />} />
                 <Route path="/ai-backends/:backendId" element={<AiBackendDetailPage />} />
                 <Route path="/ai-backends/credentials" element={<CredentialsPage />} />

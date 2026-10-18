@@ -32,7 +32,6 @@ mod tests {
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -101,7 +100,6 @@ mod tests {
             cleanup_interval: Some(60),
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -131,6 +129,71 @@ assignment_reconcile_interval = 15
     }
 
     #[test]
+    fn test_sms_config_reads_structured_local_fs_root_dir() {
+        // Structured local_fs.root_dir should be the single local object root / 结构化 local_fs.root_dir 应作为唯一对象根目录
+        let cfg = SmsConfig::from_toml_str(
+            r#"
+[object_storage]
+backend = "local_fs"
+
+[object_storage.local_fs]
+root_dir = "/tmp/structured-objects"
+"#,
+        )
+        .expect("parse config");
+
+        assert_eq!(cfg.object_storage.local_fs.root_dir, "/tmp/structured-objects");
+    }
+
+    #[test]
+    fn test_sms_config_fills_default_local_fs_root_dir_when_missing() {
+        // Missing local_fs.root_dir should fall back to the default object root / 缺失 local_fs.root_dir 时应回退到默认对象根目录
+        let cfg = SmsConfig::from_toml_str(
+            r#"
+[object_storage]
+backend = "local_fs"
+"#,
+        )
+        .expect("parse config");
+
+        assert_eq!(cfg.object_storage.local_fs.root_dir, "./data/objects");
+    }
+
+    #[test]
+    fn test_sms_config_parses_rustfs_storage_settings() {
+        // RustFS settings should parse as a structured backend config / RustFS 配置应能解析为结构化后端配置
+        let cfg = SmsConfig::from_toml_str(
+            r#"
+[object_storage]
+backend = "rustfs"
+
+[object_storage.rustfs]
+endpoint = "http://127.0.0.1:9000"
+bucket = "sms-objects"
+root = "tenant-a"
+region = "us-east-1"
+access_key = "ak"
+secret_key = "sk"
+path_style = true
+connect_timeout_ms = 3000
+read_timeout_ms = 10000
+write_timeout_ms = 10000
+create_bucket_if_missing = true
+"#,
+        )
+        .expect("parse config");
+
+        assert_eq!(cfg.object_storage.backend, ObjectStorageBackend::Rustfs);
+        assert_eq!(cfg.object_storage.rustfs.endpoint, "http://127.0.0.1:9000");
+        assert_eq!(cfg.object_storage.rustfs.bucket, "sms-objects");
+        assert_eq!(cfg.object_storage.rustfs.root, "tenant-a");
+        assert_eq!(cfg.object_storage.rustfs.region, "us-east-1");
+        assert_eq!(cfg.object_storage.rustfs.access_key, "ak");
+        assert_eq!(cfg.object_storage.rustfs.secret_key, "sk");
+        assert!(cfg.object_storage.rustfs.path_style);
+    }
+
+    #[test]
     fn test_sms_config_load_with_disable_swagger() {
         // Test loading config with disable swagger flag / 测试禁用Swagger标志的配置加载
         let args = CliArgs {
@@ -155,7 +218,6 @@ assignment_reconcile_interval = 15
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -191,7 +253,6 @@ assignment_reconcile_interval = 15
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -224,7 +285,6 @@ assignment_reconcile_interval = 15
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -275,7 +335,6 @@ assignment_reconcile_interval = 15
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -348,7 +407,6 @@ pool_size = 20
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -398,7 +456,6 @@ pool_size = 20
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -415,6 +472,110 @@ pool_size = 20
         std::env::remove_var("SMS_HTTP_ADDR");
         std::env::remove_var("SMS_LOG_LEVEL");
         std::env::remove_var("SMS_ENABLE_SWAGGER");
+    }
+
+    #[test]
+    #[serial]
+    fn test_sms_object_storage_env_overrides_sync_compat_aliases() {
+        // New object storage env should stay aligned with the legacy alias / 新对象存储环境变量应与旧别名保持同步
+        std::env::remove_var("SMS_HOME");
+        std::env::remove_var("HOME");
+        std::env::set_var(
+            "SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR",
+            "/tmp/env-structured-objects",
+        );
+
+        let args = CliArgs {
+            config: None,
+            grpc_addr: None,
+            http_addr: None,
+            db_type: None,
+            db_path: None,
+            db_pool_size: None,
+            enable_swagger: false,
+            disable_swagger: false,
+            enable_web_admin: false,
+            disable_web_admin: false,
+            enable_console: false,
+            disable_console: false,
+            web_admin_addr: None,
+            mcp_dir: None,
+            log_level: None,
+            log_format: None,
+            log_file: None,
+            heartbeat_timeout: None,
+            cleanup_interval: None,
+            assignment_reconcile_interval: None,
+            max_upload_bytes: None,
+            execution_logs_dir: None,
+        };
+
+        let cfg = SmsConfig::load_with_cli(&args).expect("load config");
+        assert_eq!(
+            cfg.object_storage.local_fs.root_dir,
+            "/tmp/env-structured-objects"
+        );
+        std::env::remove_var("SMS_OBJECT_STORAGE_LOCAL_FS_ROOT_DIR");
+    }
+
+    #[test]
+    #[serial]
+    fn test_sms_rustfs_env_overrides_apply_structured_settings() {
+        // RustFS env overrides should populate the structured backend config / RustFS 环境变量覆盖应写入结构化后端配置
+        std::env::remove_var("SMS_HOME");
+        std::env::remove_var("HOME");
+        std::env::set_var("SMS_OBJECT_STORAGE_BACKEND", "rustfs");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_ENDPOINT", "http://127.0.0.1:9000");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_BUCKET", "sms-objects");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_ROOT", "tenant-a");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_REGION", "us-east-1");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_ACCESS_KEY", "ak");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_SECRET_KEY", "sk");
+        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_PATH_STYLE", "true");
+
+        let args = CliArgs {
+            config: None,
+            grpc_addr: None,
+            http_addr: None,
+            db_type: None,
+            db_path: None,
+            db_pool_size: None,
+            enable_swagger: false,
+            disable_swagger: false,
+            enable_web_admin: false,
+            disable_web_admin: false,
+            enable_console: false,
+            disable_console: false,
+            web_admin_addr: None,
+            mcp_dir: None,
+            log_level: None,
+            log_format: None,
+            log_file: None,
+            heartbeat_timeout: None,
+            cleanup_interval: None,
+            assignment_reconcile_interval: None,
+            max_upload_bytes: None,
+            execution_logs_dir: None,
+        };
+
+        let cfg = SmsConfig::load_with_cli(&args).expect("load config");
+        assert_eq!(cfg.object_storage.backend, ObjectStorageBackend::Rustfs);
+        assert_eq!(cfg.object_storage.rustfs.endpoint, "http://127.0.0.1:9000");
+        assert_eq!(cfg.object_storage.rustfs.bucket, "sms-objects");
+        assert_eq!(cfg.object_storage.rustfs.root, "tenant-a");
+        assert_eq!(cfg.object_storage.rustfs.region, "us-east-1");
+        assert_eq!(cfg.object_storage.rustfs.access_key, "ak");
+        assert_eq!(cfg.object_storage.rustfs.secret_key, "sk");
+        assert!(cfg.object_storage.rustfs.path_style);
+
+        std::env::remove_var("SMS_OBJECT_STORAGE_BACKEND");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_ENDPOINT");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_BUCKET");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_ROOT");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_REGION");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_ACCESS_KEY");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_SECRET_KEY");
+        std::env::remove_var("SMS_OBJECT_STORAGE_RUSTFS_PATH_STYLE");
     }
 
     #[test]
@@ -474,7 +635,6 @@ addr = "127.0.0.1:9100"
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -515,7 +675,6 @@ addr = "127.0.0.1:9100"
             cleanup_interval: Some(1),
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 
@@ -554,7 +713,6 @@ addr = "127.0.0.1:9100"
             cleanup_interval: None,
             assignment_reconcile_interval: None,
             max_upload_bytes: None,
-            files_dir: None,
             execution_logs_dir: None,
         };
 

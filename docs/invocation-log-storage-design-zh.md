@@ -62,7 +62,7 @@
    - 按 chunk 刷写到中心存储。
 
 2. **SMS Log Storage（中心存储）**
-   - **Blob 存储**保存日志分片（append-only）：生产建议对象存储；开发/默认可复用现有 `smsfile://` 文件存储。
+   - **Blob 存储**保存日志分片（append-only）：生产建议对象存储；开发/默认可继续使用本地对象存储实现。
    - **元数据存储**保存索引与 cursor：复用项目已有 KV（RocksDB/Sled）。
 
 3. **SMS Web Admin BFF**

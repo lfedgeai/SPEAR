@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { createTask, listTasks } from '@/api/tasks'
-import { listFiles } from '@/api/files'
 import { listMcpServers } from '@/api/mcp'
 import type { TaskSummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import ObjectPickerModal from '@/features/objects/ObjectPickerModal'
 import { TaskStatusBadge } from '@/features/shared/status-badges'
 import DeleteTaskDialog from '@/features/tasks/DeleteTaskDialog'
 import { cn, isValidEndpointName, normalizeEndpointName } from '@/lib/utils'
@@ -40,6 +40,7 @@ type CreateForm = {
   version: string
   capabilities: string
   executable_type: string
+  executable_object_key: string
   executable_uri: string
   executable_name: string
   checksum: string
@@ -50,13 +51,14 @@ type CreateForm = {
   mcp_tool_denylist: string
 }
 
-type UriScheme = 'smsfile' | 'https' | 's3' | 'minio'
+type UriScheme = 'object' | 'https' | 's3' | 'minio'
 
 function schemePrefix(s: UriScheme) {
+  if (s === 'object') return ''
   if (s === 'https') return 'https://'
   if (s === 's3') return 's3://'
   if (s === 'minio') return 'minio://'
-  return 'smsfile://'
+  return ''
 }
 
 function parseCsv(v: string) {
@@ -135,35 +137,8 @@ function CreateTaskDialog(props: {
     staleTime: 10_000,
   })
 
-  const [scheme, setScheme] = useState<UriScheme>('smsfile')
+  const [scheme, setScheme] = useState<UriScheme>('object')
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [fileQ, setFileQ] = useState('')
-  const [fileOffset, setFileOffset] = useState(0)
-  const fileLimit = 60
-  const [fileRows, setFileRows] = useState<import('@/api/types').FileItem[]>([])
-  const [fileTotal, setFileTotal] = useState<number | null>(null)
-  const filesQuery = useQuery({
-    queryKey: ['files-for-task', fileQ, fileOffset, pickerOpen],
-    queryFn: () => listFiles({ q: fileQ || undefined, limit: fileLimit, offset: fileOffset }),
-    enabled: pickerOpen,
-    staleTime: 5_000,
-  })
-
-  useEffect(() => {
-    if (!pickerOpen) return
-    if (!filesQuery.data) return
-    setFileTotal(filesQuery.data.total_count ?? null)
-    if (fileOffset === 0) {
-      setFileRows(filesQuery.data.files || [])
-    } else {
-      setFileRows((cur) => [...cur, ...(filesQuery.data.files || [])])
-    }
-  }, [filesQuery.data, fileOffset, pickerOpen])
-
-  useEffect(() => {
-    if (!pickerOpen) return
-    setFileOffset(0)
-  }, [fileQ, pickerOpen])
 
   const [form, setForm] = useState<CreateForm>({
     name: '',
@@ -175,6 +150,7 @@ function CreateTaskDialog(props: {
     version: 'v1',
     capabilities: '',
     executable_type: 'no-executable',
+    executable_object_key: '',
     executable_uri: '',
     executable_name: '',
     checksum: '',
@@ -202,12 +178,8 @@ function CreateTaskDialog(props: {
 
   useEffect(() => {
     if (!props.open) return
-    setScheme('smsfile')
+    setScheme('object')
     setPickerOpen(false)
-    setFileQ('')
-    setFileOffset(0)
-    setFileRows([])
-    setFileTotal(null)
     setEndpointTouched(false)
     setMcpAllowed(new Set())
     setMcpDefault(new Set())
@@ -222,6 +194,7 @@ function CreateTaskDialog(props: {
       version: 'v1',
       capabilities: '',
       executable_type: 'no-executable',
+      executable_object_key: '',
       executable_uri: '',
       executable_name: '',
       checksum: '',
@@ -243,7 +216,13 @@ function CreateTaskDialog(props: {
   )
 
   const mcpCanSubmit = !form.mcp_enabled || mcpDefaultIds.length > 0
-  const canSubmit = !!(form.name && endpointOk && form.version && mcpCanSubmit)
+  const executableOk =
+    form.executable_type === 'no-executable'
+      ? true
+      : scheme === 'object'
+        ? !!form.executable_object_key
+        : !!form.executable_uri
+  const canSubmit = !!(form.name && endpointOk && form.version && mcpCanSubmit && executableOk)
 
   const filteredMcpServers = useMemo(() => {
     const needle = mcpFilter.trim().toLowerCase()
@@ -524,10 +503,14 @@ function CreateTaskDialog(props: {
                       setForm((f) => ({
                         ...f,
                         executable_type: nextType,
+                        executable_object_key:
+                          nextType === 'no-executable' ? '' : f.executable_object_key,
                         executable_uri:
                           nextType === 'no-executable'
                             ? ''
-                            : f.executable_uri || schemePrefix(scheme),
+                            : scheme === 'object'
+                              ? ''
+                              : f.executable_uri || schemePrefix(scheme),
                       }))
                       setPickerOpen(false)
                     }}
@@ -546,7 +529,7 @@ function CreateTaskDialog(props: {
                 {form.executable_type !== 'no-executable' ? (
                   <>
                     <div className="col-span-2 grid grid-cols-3 gap-2">
-                      <CreateTaskField label="Artifact Scheme">
+                      <CreateTaskField label="Executable Source">
                         <select
                           className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
                           value={scheme}
@@ -556,15 +539,14 @@ function CreateTaskDialog(props: {
                             setForm((f) => {
                               const nextPrefix = schemePrefix(next)
                               const knownPrefixes = [
-                                schemePrefix('smsfile'),
                                 schemePrefix('https'),
                                 schemePrefix('s3'),
                                 schemePrefix('minio'),
                               ]
-                              if (
-                                !f.executable_uri ||
-                                knownPrefixes.includes(f.executable_uri)
-                              ) {
+                              if (next === 'object') {
+                                return { ...f, executable_uri: '' }
+                              }
+                              if (!f.executable_uri || knownPrefixes.includes(f.executable_uri)) {
                                 return { ...f, executable_uri: nextPrefix }
                               }
                               return f
@@ -574,119 +556,62 @@ function CreateTaskDialog(props: {
                           data-testid="task-uri-scheme"
                           aria-label="Scheme"
                         >
-                          <option value="smsfile">smsfile</option>
+                          <option value="object">object</option>
                           <option value="https">https</option>
                           <option value="s3">s3</option>
                           <option value="minio">minio</option>
                         </select>
                       </CreateTaskField>
-                      <CreateTaskField label="Executable URI" className="col-span-2">
-                        <Input
-                          placeholder="Executable URI"
-                          value={form.executable_uri}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, executable_uri: e.target.value }))
-                          }
-                          data-testid="task-executable-uri"
-                        />
-                      </CreateTaskField>
+                      {scheme === 'object' ? (
+                        <CreateTaskField
+                          label="Object Key"
+                          className="col-span-2"
+                          hint="Select an object from the catalog."
+                        >
+                          <Input
+                            placeholder="Object key"
+                            value={form.executable_object_key}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, executable_object_key: e.target.value }))
+                            }
+                            data-testid="task-executable-object-key"
+                          />
+                        </CreateTaskField>
+                      ) : (
+                        <CreateTaskField label="Executable URI" className="col-span-2">
+                          <Input
+                            placeholder="Executable URI"
+                            value={form.executable_uri}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, executable_uri: e.target.value }))
+                            }
+                            data-testid="task-executable-uri"
+                          />
+                        </CreateTaskField>
+                      )}
                     </div>
 
-                    {scheme === 'smsfile' ? (
+                    {scheme === 'object' ? (
                       <div className="col-span-2">
                         <div className="flex items-center justify-between rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2">
                           <div className="text-xs text-[hsl(var(--muted-foreground))]">
-                            Pick an embedded file and insert smsfile:// URI
+                            Pick an object from the catalog and attach it to this task.
                           </div>
                           <Button
                             variant="secondary"
                             size="sm"
                             onClick={() => setPickerOpen((v) => !v)}
-                            data-testid="task-choose-local"
+                            data-testid="task-choose-object"
                           >
-                            Choose Local
+                            Choose Object
                           </Button>
                         </div>
-
-                        {pickerOpen ? (
-                          <div className="mt-2 overflow-hidden rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
-                            <div className="border-b border-[hsl(var(--border))] bg-[hsl(var(--background))] p-2">
-                              <Input
-                                value={fileQ}
-                                onChange={(e) => setFileQ(e.target.value)}
-                                placeholder="Filter by name or id"
-                                data-testid="task-file-filter"
-                              />
+                        {form.executable_object_key ? (
+                          <div className="mt-2 rounded-[var(--radius)] border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">
+                            Selected object:
+                            <div className="mt-1 break-all font-mono text-[hsl(var(--foreground))]">
+                              {form.executable_object_key}
                             </div>
-                            <div className="grid grid-cols-12 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
-                              <div className="col-span-7">Name / ID</div>
-                              <div className="col-span-3">Modified</div>
-                              <div className="col-span-2">Action</div>
-                            </div>
-                            {filesQuery.isLoading ? (
-                              <div className="p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                                Loading...
-                              </div>
-                            ) : filesQuery.isError ? (
-                              <div className="p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                                Failed to load files
-                              </div>
-                            ) : fileRows.length === 0 ? (
-                              <div className="p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                                No files
-                              </div>
-                            ) : (
-                              <div className="max-h-[220px] overflow-auto">
-                                {fileRows.map((f) => (
-                                  <div
-                                    key={f.id}
-                                    className="grid grid-cols-12 items-center gap-2 border-b border-[hsl(var(--border))] px-3 py-2 text-sm last:border-b-0"
-                                  >
-                                    <div className="col-span-7 min-w-0">
-                                      <div className="truncate font-medium">
-                                        {f.name || '(unknown)'}
-                                      </div>
-                                      <div className="mt-1 truncate text-xs text-[hsl(var(--muted-foreground))]">
-                                        {f.id}
-                                      </div>
-                                    </div>
-                                    <div className="col-span-3 text-xs text-[hsl(var(--muted-foreground))]">
-                                      {formatTs(f.modified_at)}
-                                    </div>
-                                    <div className="col-span-2 flex justify-end">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => {
-                                          setForm((cur) => ({
-                                            ...cur,
-                                            executable_uri: `smsfile://${f.id}`,
-                                            executable_name: f.name || cur.executable_name,
-                                          }))
-                                          setPickerOpen(false)
-                                        }}
-                                        data-testid={`task-use-file-${f.id}`}
-                                      >
-                                        Use
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ))}
-                                {fileTotal !== null && fileRows.length < fileTotal ? (
-                                  <div className="flex items-center justify-end border-t border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2">
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => setFileOffset((v) => v + fileLimit)}
-                                      disabled={filesQuery.isFetching}
-                                      data-testid="task-files-load-more"
-                                    >
-                                      Load more
-                                    </Button>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )}
                           </div>
                         ) : null}
                       </div>
@@ -778,7 +703,16 @@ function CreateTaskDialog(props: {
                       ? undefined
                       : {
                           type: form.executable_type,
-                          uri: form.executable_uri || undefined,
+                          reference:
+                            scheme === 'object'
+                              ? {
+                                  kind: 'object' as const,
+                                  object_key: form.executable_object_key,
+                                }
+                              : {
+                                  kind: 'uri' as const,
+                                  uri: form.executable_uri,
+                                },
                           name: form.executable_name || undefined,
                           checksum_sha256: form.checksum || undefined,
                           args: parseCsv(form.args),
@@ -801,6 +735,17 @@ function CreateTaskDialog(props: {
           </Button>
         </div>
       </DialogContent>
+      <ObjectPickerModal
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(object) => {
+          setForm((current) => ({
+            ...current,
+            executable_object_key: object.key,
+            executable_name: current.executable_name || object.name || current.executable_name,
+          }))
+        }}
+      />
     </Dialog>
   )
 }

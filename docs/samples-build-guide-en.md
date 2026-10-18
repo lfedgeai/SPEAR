@@ -77,6 +77,11 @@ WASM-Rust samples:
 - The live-caption and voice-chat samples accept both `input_audio_transcription.*` and `conversation.item.input_audio_transcription.*` RTASR event names.
 - Current Console defaults are `16000Hz`, mono, `chunkMs=300`; the JS live-caption sample uses `server_vad` with `silence_ms=600` and also aggregates about `240ms` of PCM before each `rtasr.writeAudio()` call.
 - The Rust live-caption sample mirrors the same protocol behavior, but uses Rust SDK `epoll` wrappers and typed modules instead of the Boa JS runner.
+- Rust WASM samples now opt in to `spear_wasm::{println, eprintln}` macro shadowing, so unqualified `println!` / `eprintln!` inside the sample crate are mirrored to debug-server as guest info/error logs.
+- Rust WASM samples can also use `spear_wasm::{infoln, debugln, warnln, errorln}` when the log level should be explicit; this keeps sample diagnostics readable without inventing extra ad-hoc logging helpers.
+- Rust WASM samples now keep user-facing `text_stream` output focused on transcript/reply content; protocol warnings and RTASR/chat failures are mirrored to debug-server instead of being mixed into the visible text stream.
+- The Rust live-caption sample now mirrors RTASR `state` / `last_error` into guest runtime logs when RTASR connect, clear, write, flush, read, or transport-close paths fail, so debug-server can surface upstream causes such as OpenAI websocket connectivity failures.
+- The Rust live-caption sample now also mirrors app-level diagnostic edges such as control-stream shutdown, stream hangup, invalid voice protocol frames, and DATA/COMMIT arriving before RTASR session setup, so debug-server exposes more failure context even when the task exits early.
 - The Rust voice-chat sample mirrors the JS voice-chat behavior: wait for voice COMMIT, finish RTASR transcription, then invoke downstream Chat Completion and write the response back to `stream_id=1`.
 
 ## Runtime integration

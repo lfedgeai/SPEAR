@@ -273,7 +273,25 @@ async fn stream_ws_proxy_loop(state: GatewayState, execution_id: String, socket:
                         }
                     }
                     Message::Text(_) => {}
-                    Message::Close(_) => {
+                    Message::Close(frame) => {
+                        // Preserve close-frame details in SMS logs so compose-based
+                        // debugging can correlate UI disconnects with client intent.
+                        // / 在 SMS 日志中保留 close frame 细节，方便在 compose 环境里把 UI 断连与客户端关闭动作关联起来。
+                        if let Some(frame) = frame.as_ref() {
+                            tracing::info!(
+                                execution_id = %execution_id,
+                                client_id = %client_id,
+                                close_code = frame.code,
+                                close_reason = %frame.reason,
+                                "stream_ws_proxy received client close frame"
+                            );
+                        } else {
+                            tracing::info!(
+                                execution_id = %execution_id,
+                                client_id = %client_id,
+                                "stream_ws_proxy received client close frame without details"
+                            );
+                        }
                         break "client_ws_close_frame".to_string()
                     },
                     Message::Ping(p) => { let _ = out_tx.send(Message::Pong(p)); }

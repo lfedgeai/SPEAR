@@ -26,8 +26,15 @@ cargo build
 DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
 ```
 
+如需验证真实 RustFS 后端的 BlobStore 路径，可执行：
+
+```bash
+cargo test --features sms-rustfs --test rustfs_blobstore_e2e -- --ignored --nocapture
+```
+
 ## 文件位置
-- 测试代码：`tests/e2e/testcontainers_e2e.rs`
+- 测试代码：`tests/testcontainers_e2e.rs`
+- 测试代码：`tests/rustfs_blobstore_e2e.rs`
 - 开发依赖：`Cargo.toml` → `testcontainers = "0.15"`
 
 ## 最佳实践
@@ -35,7 +42,9 @@ DOCKER=1 cargo test --test testcontainers_e2e -- --ignored --nocapture
 - 生产 CI 建议先构建并发布镜像，测试直接拉取镜像，提升一致性与可复用性
 - 使用 `WaitFor` 避免容器启动竞态
 - 在容器内通过 `host.testcontainers.internal` 访问宿主机映射端口，实现容器间通信
+- RustFS 集成测试应为每次运行创建独立 bucket 与 root，避免不同测试之间相互污染
 
 ## 故障排查
 - 若本机没有 Docker，测试会自动跳过
 - 若日志不含预期信息，可以增加等待时间或检查容器环境配置
+- RustFS BlobStore 实现现在通过 `sms-rustfs` Cargo feature 编译进入 SMS，避免非 SMS 二进制无谓拉入 AWS/RustFS 依赖

@@ -53,6 +53,12 @@ impl AesGcmSecretCipher {
                 SMS_CREDENTIAL_MASTER_KEY_ENV
             ))
         })?;
+        if secret.trim().is_empty() {
+            return Err(Status::failed_precondition(format!(
+                "{} must not be empty",
+                SMS_CREDENTIAL_MASTER_KEY_ENV
+            )));
+        }
         let digest = Sha256::digest(secret.as_bytes());
         let key = Key::<Aes256Gcm>::from_slice(&digest);
         Ok(Self {
@@ -341,8 +347,10 @@ fn material_from_record(
 mod tests {
     use super::*;
     use crate::storage::kv::MemoryKvStore;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn cipher_roundtrip() {
         std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "test-master-key");
         let cipher = AesGcmSecretCipher::from_env().expect("cipher");
@@ -352,6 +360,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn upsert_and_list_credentials() {
         std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "test-master-key");
         let kv = Arc::new(MemoryKvStore::new());
@@ -373,6 +382,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn upsert_existing_credential_keeps_secret_when_secret_is_empty() {
         std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "test-master-key");
         let kv = Arc::new(MemoryKvStore::new());
@@ -397,5 +407,73 @@ mod tests {
         let (_, materials) = state.list_materials().await.expect("list materials");
         assert_eq!(materials.len(), 1);
         assert_eq!(materials[0].secret, "sk-test");
+    }
+
+    #[test]
+    #[serial]
+    fn empty_master_key_is_rejected() {
+        std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "");
+        let error = match AesGcmSecretCipher::from_env() {
+            Ok(_) => panic!("empty key must fail"),
+            Err(error) => error,
+        };
+        assert!(error.message().contains("must not be empty"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn missing_master_key_blocks_secret_management() {
+        std::env::remove_var(SMS_CREDENTIAL_MASTER_KEY_ENV);
+        let kv = Arc::new(MemoryKvStore::new());
+        let state = AdminCredentialsState::new(kv).await.expect("state");
+
+        let error = state
+            .upsert("openai_default", "sk-test", "primary", false)
+            .await
+            .expect_err("missing key must block upsert");
+        assert!(error.message().contains("must be configured"));
+
+        let error = state
+            .list_materials()
+            .await
+            .expect_err("missing key must block material reads");
+        assert!(error.message().contains("must be configured"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn persisted_credentials_can_be_decrypted_after_restart_with_same_master_key() {
+        std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "test-master-key");
+        let kv = Arc::new(MemoryKvStore::new());
+        let state = AdminCredentialsState::new(kv.clone()).await.expect("state");
+        state
+            .upsert("openai_default", "sk-test", "primary", false)
+            .await
+            .expect("seed");
+
+        let reloaded = AdminCredentialsState::new(kv).await.expect("reload state");
+        let (_, materials) = reloaded.list_materials().await.expect("list materials");
+        assert_eq!(materials.len(), 1);
+        assert_eq!(materials[0].secret, "sk-test");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn persisted_credentials_fail_to_decrypt_with_different_master_key() {
+        std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "test-master-key");
+        let kv = Arc::new(MemoryKvStore::new());
+        let state = AdminCredentialsState::new(kv.clone()).await.expect("state");
+        state
+            .upsert("openai_default", "sk-test", "primary", false)
+            .await
+            .expect("seed");
+
+        std::env::set_var(SMS_CREDENTIAL_MASTER_KEY_ENV, "different-master-key");
+        let reloaded = AdminCredentialsState::new(kv).await.expect("reload state");
+        let error = reloaded
+            .list_materials()
+            .await
+            .expect_err("wrong key must fail decrypt");
+        assert!(error.message().contains("decrypt credential failed"));
     }
 }

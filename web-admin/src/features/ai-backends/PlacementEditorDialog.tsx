@@ -3,7 +3,7 @@
  * 统一 AI backend 的 placement 编辑对话框。
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 
 import type { AiBackendPlacement, WriteAiBackendPlacementInput } from '@/api/ai-backends'
@@ -42,17 +42,27 @@ export default function PlacementEditorDialog(props: {
   onOpenChange: (open: boolean) => void
   onSubmit: (input: WriteAiBackendPlacementInput) => Promise<void>
 }) {
-  const [form, setForm] = useState<FormState>(() => formFromPlacement(props.placement))
+  const dialogKey = `${props.open ? 'open' : 'closed'}:${props.placement?.placement_id || 'new'}`
 
-  useEffect(() => {
-    if (!props.open) return
-    setForm(formFromPlacement(props.placement))
-  }, [props.open, props.placement])
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      {props.open ? <PlacementEditorDialogBody key={dialogKey} {...props} /> : null}
+    </Dialog>
+  )
+}
+
+function PlacementEditorDialogBody(props: {
+  open: boolean
+  backendId: string
+  placement?: AiBackendPlacement | null
+  onOpenChange: (open: boolean) => void
+  onSubmit: (input: WriteAiBackendPlacementInput) => Promise<void>
+}) {
+  const [form, setForm] = useState<FormState>(() => formFromPlacement(props.placement))
 
   const canSubmit = !!props.backendId.trim() && !!form.node_uuid.trim()
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent>
         <DialogHeader
           title={props.placement ? 'Edit placement' : 'Add placement'}
@@ -140,6 +150,5 @@ export default function PlacementEditorDialog(props: {
           </div>
         </div>
       </DialogContent>
-    </Dialog>
   )
 }

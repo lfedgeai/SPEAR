@@ -43,6 +43,9 @@ pub mod admin_credentials;
 pub(crate) mod ai_admin_api;
 mod ai_backend_rpc;
 pub mod ai_backends;
+pub mod blob_store;
+#[cfg(feature = "sms-rustfs")]
+mod blob_store_rustfs;
 pub mod config;
 pub mod execution_logs;
 pub mod gateway;
@@ -73,7 +76,7 @@ pub mod web_admin;
 #[cfg(test)]
 pub mod config_test;
 #[cfg(test)]
-pub mod file_service_test;
+pub mod object_service_test;
 #[cfg(test)]
 pub mod gateway_test;
 #[cfg(test)]

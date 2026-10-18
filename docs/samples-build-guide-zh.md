@@ -18,7 +18,6 @@
 - 源码：`samples/wasm-rust/user_stream_voice_chat/src/main.rs`（Rust guest SDK 编译为 WASM；运行模块化、epoll 驱动的语音对话状态机）
 - 共享 SDK helper crate：`sdk/rust/crates/spear-wasm-helper/src/lib.rs`（承载 Rust-first 示例共享的 user stream 状态、SSF 解析、RTASR 事件解析，以及 RTASR 基础会话骨架）
 - 产物：`samples/build/hello.wasm`
-  - WASM-JS 产物：`samples/build/js/js-*.wasm`（兼容：`samples/build/rust/*.wasm`）
   - WASM-JS 产物：`samples/build/js/js-*.wasm`
   - WASM-Rust 产物：`samples/build/rust/*.wasm`
 
@@ -78,6 +77,11 @@ WASM-Rust 示例：
 - `live_caption` 与 `voice_chat` 示例同时兼容 `input_audio_transcription.*` 和 `conversation.item.input_audio_transcription.*` 两套 RTASR 事件名。
 - 当前 Console 默认配置为 `16000Hz`、单声道、`chunkMs=300`；JS 版 `live_caption` 使用 `server_vad` 且 `silence_ms=600`，并会先聚合约 `240ms` 的 PCM，再执行一次 `rtasr.writeAudio()`。
 - Rust 版 `live_caption` 在协议行为上与之保持一致，但实现方式改为 Rust SDK `epoll` wrapper + 强类型模块拆分，而不是依赖 Boa JS runner。
+- Rust WASM samples 现在会通过 `use spear_wasm::{println, eprintln};` 显式启用 SDK 提供的宏遮蔽能力，使 sample crate 内未限定路径的 `println!` / `eprintln!` 自动镜像到 debug-server 的 guest info/error 日志。
+- Rust WASM samples 也可以在需要显式表达日志级别时直接使用 `spear_wasm::{infoln, debugln, warnln, errorln}`，这样既能保持诊断语义清晰，也不需要再额外封装零散的自定义日志 helper。
+- Rust WASM samples 现在会让面向用户的 `text_stream` 输出只保留转写/回复等业务内容；协议 warning 和 RTASR/Chat 失败会改为镜像到 debug-server，避免和用户可见文本混在一起。
+- Rust 版 `live_caption` 现在会在 RTASR connect、clear、write、flush、read 或 transport 关闭失败时，把 RTASR `state` / `last_error` 镜像到 guest runtime log，便于 debug-server 直接看到 OpenAI websocket 连通性等上游错误原因。
+- Rust 版 `live_caption` 现在还会把 control stream 关闭、stream hangup、voice 协议帧非法，以及在 RTASR 会话尚未建立前收到 DATA/COMMIT 等应用层诊断边界镜像到 debug-server，便于任务提前退出时也能看到更多失败上下文。
 - Rust 版 `voice_chat` 在协议行为上与 JS 版保持一致：等待 voice COMMIT，完成 RTASR 转写，再调用下游 Chat Completion，并将结果写回 `stream_id=1`。
 
 ## 与运行时集成

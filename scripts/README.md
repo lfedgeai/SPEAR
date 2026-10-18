@@ -11,7 +11,7 @@ English README: [README.en.md](./README.en.md)
 - 用途：E2E 总入口，根据宿主 OS 与 `E2E_SUITES` 选择执行 kind / docker 套件。
 - 典型用法：`make e2e`
 - 相关环境变量：
-  - `E2E_SUITES=kind|docker|kind,docker`（默认 `auto`）
+  - `E2E_SUITES=kind|docker|compose|kind,docker|compose,docker`（默认 `auto`）
   - `E2E_LINUX=1`（在非 Linux 上通过 `make e2e-linux` 走 Linux 二进制 + Docker）
 - 调用关系：被 Makefile 的 `e2e` target 调用。
 
@@ -26,6 +26,22 @@ English README: [README.en.md](./README.en.md)
 - 用途：在 Linux 上使用 Docker 运行 `testcontainers_e2e`（非 Linux 默认跳过；可通过 `E2E_LINUX=1` 走 `make e2e-linux`）。
 - 典型用法：`make e2e-docker`
 - 调用关系：被 `e2e.sh` 或 Makefile 的 `e2e-docker` target 调用。
+
+### e2e-compose-rustfs.sh
+
+- 用途：启动本地 compose 栈，验证 RustFS 对象链路，并在启用 `SMS_CREDENTIAL_MASTER_KEY` 的前提下验证管理台凭证操作。
+- 典型用法：`make e2e-compose` 或 `E2E_SUITES=compose make e2e`
+- 说明：
+  - 默认使用 `SMS_CREDENTIAL_MASTER_KEY=compose-e2e-master-key`，可通过环境变量覆盖
+  - 会在中途重启一次 `sms` 服务，验证同一 master key 下凭证在重启后的可持续管理能力
+
+### compose-rustfs-smoke.sh
+
+- 用途：对已经启动的本地 `deploy/docker/compose.local.yaml` 栈执行端到端校验，覆盖 SMS 管理台对象 API 与 RustFS 健康端点。
+- 典型用法：`make compose-rustfs-smoke`
+- 说明：
+  - 假定本地 compose 栈已经启动
+  - 会上传一个临时对象，并验证 retain/pin/unpin/release/delete 语义后自动删除
 
 ### kind-openai-quickstart.sh
 

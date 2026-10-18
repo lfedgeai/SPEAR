@@ -11,13 +11,13 @@ use axum::{
 
 use super::gateway::GatewayState;
 use super::handlers::{
-    console_index, console_static, create_stream_session, delete_file, delete_node, delete_task,
-    download_file, endpoint_ws_proxy, get_execution, get_file_meta, get_instance, get_node,
-    get_node_resource, get_node_with_resource, get_task, health_check, heartbeat, list_files,
-    list_instance_executions, list_node_resources, list_nodes, list_task_instances, list_tasks,
-    openapi_spec, place_invocation, presign_upload, register_node, register_task,
+    console_index, console_static, create_stream_session, delete_node, delete_object, delete_task,
+    download_object, endpoint_ws_proxy, get_execution, get_instance, get_node, get_node_resource,
+    get_node_with_resource, get_object_meta, get_task, health_check, heartbeat,
+    list_instance_executions, list_node_resources, list_nodes, list_objects, list_task_instances,
+    list_tasks, openapi_spec, place_invocation, register_node, register_task,
     report_invocation_outcome, stream_ws_proxy, swagger_ui, swagger_ui_assets, update_node,
-    update_node_resource, upload_file,
+    update_node_resource, upload_object,
 };
 
 /// Create HTTP routes / 创建HTTP路由
@@ -86,11 +86,10 @@ pub(crate) fn create_routes(state: GatewayState) -> Router {
         .route("/swagger-ui/{*file}", get(swagger_ui_assets))
         // Health check endpoint / 健康检查端点
         .route("/health", get(health_check))
-        .route("/api/v1/files/presign-upload", post(presign_upload))
-        .route("/api/v1/files", get(list_files))
-        .route("/api/v1/files", post(upload_file))
-        .route("/api/v1/files/{id}", get(download_file))
-        .route("/api/v1/files/{id}", delete(delete_file))
-        .route("/api/v1/files/{id}/meta", get(get_file_meta))
+        .route("/api/v1/objects", get(list_objects))
+        .route("/api/v1/objects", post(upload_object))
+        .route("/api/v1/objects/{key}", get(get_object_meta))
+        .route("/api/v1/objects/{key}", delete(delete_object))
+        .route("/api/v1/objects/{key}/content", get(download_object))
         .with_state(state)
 }

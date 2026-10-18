@@ -10,10 +10,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ReasonConfirmDialog } from '@/features/shared/ReasonConfirmDialog'
 import {
-  summarizeTaskInstances,
   TaskInstanceSummaryCards,
   TaskInstancesPanel,
 } from '@/features/tasks/TaskInstancesSection'
+import { summarizeTaskInstances } from '@/features/tasks/taskInstanceSummary'
 import { useTaskInstances } from '@/features/tasks/useTaskInstances'
 
 function formatSec(ts: number | undefined) {

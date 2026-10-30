@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (check, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libasound2-dev clang libclang-dev
+
+    # Not blocking yet: main has formatting diffs, see #100.
+    - name: Format check
+      run: cargo fmt --check
+      continue-on-error: true
+
+    # Not blocking yet: main has existing clippy warnings.
+    - name: Clippy
+      run: cargo clippy --all-targets
+      continue-on-error: true
+
+    - name: Check all features
+      run: cargo check --all-features --all-targets
+
+    - name: Pull docker images used by tests
+      run: docker pull docker.io/library/alpine:latest
+
+    - name: Test
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+        DOCKER_API_VERSION: '1.45'
+      run: make test
+
+  frontend:
+    name: Frontend (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [web-admin, web-console]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+
+    - run: npm ci
+    - run: npm run lint
+    - run: npm run build
+    - run: npm test
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    # Not blocking yet: report only until existing advisories are triaged.
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-audit
+    - run: cargo audit
+
+  # Single required check for branch protection.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [rust, frontend]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Fail if a required job failed
+      run: |
+        [ "${{ needs.rust.result }}" = "success" ] && [ "${{ needs.frontend.result }}" = "success" ]

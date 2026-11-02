@@ -22,7 +22,7 @@ jobs:
     name: Rust (check, clippy, test)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - uses: dtolnay/rust-toolchain@stable
       with:
@@ -37,13 +37,11 @@ jobs:
 
     # Not blocking yet: main has formatting diffs, see #100.
     - name: Format check
-      run: cargo fmt --check
-      continue-on-error: true
+      run: cargo fmt --check || echo "::warning::cargo fmt found diffs (#100)"
 
     # Not blocking yet: main has existing clippy warnings.
     - name: Clippy
-      run: cargo clippy --all-targets
-      continue-on-error: true
+      run: cargo clippy --all-targets || echo "::warning::cargo clippy failed"
 
     - name: Check all features
       run: cargo check --all-features --all-targets
@@ -67,9 +65,9 @@ jobs:
       run:
         working-directory: ${{ matrix.dir }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: 22
         cache: npm
@@ -85,14 +83,13 @@ jobs:
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
-    # Not blocking yet: report only until existing advisories are triaged.
-    continue-on-error: true
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-audit
-    - run: cargo audit
+    # Not blocking yet: report only until existing advisories are triaged.
+    - run: cargo audit || echo "::warning::cargo audit found advisories"
 
   # Single required check for branch protection.
   ci-ok:

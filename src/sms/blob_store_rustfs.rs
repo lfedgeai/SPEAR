@@ -4,8 +4,8 @@ use crate::sms::blob_store::{
 };
 use crate::sms::config::RustfsObjectStorageConfig;
 use async_trait::async_trait;
-use aws_config::BehaviorVersion;
 use aws_config::timeout::TimeoutConfig;
+use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials, Region};
 use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::operation::create_bucket::CreateBucketError;
@@ -29,7 +29,9 @@ use tokio::sync::Mutex;
 
 /// Build a shared RustFS blob store handle backed by an S3-compatible client.
 /// 构建基于 S3-compatible client 的共享 RustFS BlobStore 句柄。
-pub async fn rustfs_blob_store(config: RustfsObjectStorageConfig) -> anyhow::Result<SharedBlobStore> {
+pub async fn rustfs_blob_store(
+    config: RustfsObjectStorageConfig,
+) -> anyhow::Result<SharedBlobStore> {
     let store = RustFsBlobStore::new(config).await?;
     Ok(Arc::new(store))
 }
@@ -117,7 +119,10 @@ impl RustFsBlobStore {
             .map(|_| ())
     }
 
-    async fn read_sidecar_metadata(&self, key: &str) -> Result<Option<RustfsBlobMeta>, BlobStoreError> {
+    async fn read_sidecar_metadata(
+        &self,
+        key: &str,
+    ) -> Result<Option<RustfsBlobMeta>, BlobStoreError> {
         match self
             .object_client
             .get_object(&self.metadata_object_key(key))
@@ -221,7 +226,9 @@ impl BlobStore for RustFsBlobStore {
             return Err(BlobStoreError::Conflict("Pinned objects cannot be deleted"));
         }
         if meta.ref_count > 0 {
-            return Err(BlobStoreError::Conflict("Referenced objects cannot be deleted"));
+            return Err(BlobStoreError::Conflict(
+                "Referenced objects cannot be deleted",
+            ));
         }
 
         self.object_client
@@ -248,7 +255,9 @@ impl BlobStore for RustFsBlobStore {
             .await?;
         let mut items = Vec::new();
         for object_key in metadata_keys {
-            let Some(key) = decode_blob_key_from_metadata_object(&self.metadata_prefix(), &object_key) else {
+            let Some(key) =
+                decode_blob_key_from_metadata_object(&self.metadata_prefix(), &object_key)
+            else {
                 continue;
             };
             let meta = match self.read_sidecar_metadata(&key).await? {
@@ -339,7 +348,11 @@ impl BlobStore for RustFsBlobStore {
                 "Using RustFsBlobStore at {} bucket={} root={}",
                 self.endpoint,
                 self.bucket,
-                if self.root.is_empty() { "/" } else { self.root.as_str() }
+                if self.root.is_empty() {
+                    "/"
+                } else {
+                    self.root.as_str()
+                }
             ),
         })
     }
@@ -914,7 +927,9 @@ mod tests {
         assert_eq!(retained.ref_count, 1);
         assert!(matches!(
             store.delete_blob(&created.key).await,
-            Err(BlobStoreError::Conflict("Referenced objects cannot be deleted"))
+            Err(BlobStoreError::Conflict(
+                "Referenced objects cannot be deleted"
+            ))
         ));
 
         let released = store

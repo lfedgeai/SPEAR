@@ -142,7 +142,10 @@ root_dir = "/tmp/structured-objects"
         )
         .expect("parse config");
 
-        assert_eq!(cfg.object_storage.local_fs.root_dir, "/tmp/structured-objects");
+        assert_eq!(
+            cfg.object_storage.local_fs.root_dir,
+            "/tmp/structured-objects"
+        );
     }
 
     #[test]
@@ -525,7 +528,10 @@ pool_size = 20
         std::env::remove_var("SMS_HOME");
         std::env::remove_var("HOME");
         std::env::set_var("SMS_OBJECT_STORAGE_BACKEND", "rustfs");
-        std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_ENDPOINT", "http://127.0.0.1:9000");
+        std::env::set_var(
+            "SMS_OBJECT_STORAGE_RUSTFS_ENDPOINT",
+            "http://127.0.0.1:9000",
+        );
         std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_BUCKET", "sms-objects");
         std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_ROOT", "tenant-a");
         std::env::set_var("SMS_OBJECT_STORAGE_RUSTFS_REGION", "us-east-1");

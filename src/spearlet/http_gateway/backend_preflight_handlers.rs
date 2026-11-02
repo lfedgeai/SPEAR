@@ -196,15 +196,14 @@ impl BackendPreflightProviderFamily {
 
     /// Wrap one typed outcome into the provider-family result.
     /// 将一个强类型 outcome 包装成 provider-family 结果。
-    fn wrap(self, outcome: BackendPreflightOutcomeResponse) -> BackendPreflightProviderResultResponse {
+    fn wrap(
+        self,
+        outcome: BackendPreflightOutcomeResponse,
+    ) -> BackendPreflightProviderResultResponse {
         match self {
-            Self::OpenAiCompatible => {
-                BackendPreflightProviderResultResponse::OpenAiCompatible {
-                    outcome: BackendPreflightOpenAiCompatibleOutcomeResponse::from_generic(
-                        outcome,
-                    ),
-                }
-            }
+            Self::OpenAiCompatible => BackendPreflightProviderResultResponse::OpenAiCompatible {
+                outcome: BackendPreflightOpenAiCompatibleOutcomeResponse::from_generic(outcome),
+            },
             Self::Ollama => BackendPreflightProviderResultResponse::Ollama {
                 outcome: BackendPreflightOllamaOutcomeResponse::from_generic(outcome),
             },
@@ -356,15 +355,16 @@ fn backend_preflight_failure_response(
         success: false,
         result: BackendPreflightProviderFamily::parse(&provider, &backend_kind).wrap(
             BackendPreflightOutcomeResponse::Failure {
-            phase,
-            error_code,
-            resolved_endpoint: None,
-            http_status: None,
-            provider_code: None,
-            checks: vec![],
-            auth_valid: None,
-            model_accessible: None,
-        }),
+                phase,
+                error_code,
+                resolved_endpoint: None,
+                http_status: None,
+                provider_code: None,
+                checks: vec![],
+                auth_valid: None,
+                model_accessible: None,
+            },
+        ),
         message,
         latency_ms: None,
     }

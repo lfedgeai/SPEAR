@@ -128,7 +128,10 @@ async fn test_admin_ai_model_views_lists_local_and_remote_models() {
         .await
         .json();
     assert!(local_backend["success"].as_bool().unwrap());
-    assert_eq!(local_backend["backend"]["local"]["provider_family"], "llama_cpp");
+    assert_eq!(
+        local_backend["backend"]["local"]["provider_family"],
+        "llama_cpp"
+    );
     assert_eq!(
         local_backend["backend"]["local"]["config"]["model_path"],
         "/models/llama3.gguf"

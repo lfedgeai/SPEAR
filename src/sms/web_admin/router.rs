@@ -338,6 +338,9 @@ pub fn create_admin_router(state: GatewayState) -> Router {
         .route("/admin/api/objects/{key}/release", post(release_object))
         .route("/admin/api/objects/{key}/pin", post(pin_object))
         .route("/admin/api/objects/{key}/unpin", post(unpin_object))
-        .route("/admin/api/object-storage/status", get(get_object_storage_status))
+        .route(
+            "/admin/api/object-storage/status",
+            get(get_object_storage_status),
+        )
         .with_state(state)
 }

@@ -226,8 +226,7 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("managed_externally".to_string(), "true".to_string());
 
-        let endpoint =
-            resolve_vllm_external_endpoint(&spec, &params).expect("external endpoint");
+        let endpoint = resolve_vllm_external_endpoint(&spec, &params).expect("external endpoint");
         assert_eq!(endpoint.base_url, "http://127.0.0.1:8002/v1");
         assert_eq!(endpoint.source, VllmEndpointSource::ManagedExternally);
     }

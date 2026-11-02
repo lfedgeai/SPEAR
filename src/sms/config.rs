@@ -627,8 +627,7 @@ impl SmsConfig {
     /// 在多层覆盖之后规范化结构化对象存储配置。
     fn normalize_object_storage_config(&mut self) {
         if self.object_storage.local_fs.root_dir.trim().is_empty() {
-            self.object_storage.local_fs.root_dir =
-                LocalFsObjectStorageConfig::default().root_dir;
+            self.object_storage.local_fs.root_dir = LocalFsObjectStorageConfig::default().root_dir;
         }
     }
 }

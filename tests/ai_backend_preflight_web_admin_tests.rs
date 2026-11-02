@@ -333,7 +333,10 @@ async fn test_admin_ai_backend_preflight_supports_remote_backends() {
         results[0]["details"]["result"]["outcome"]["outcome_kind"],
         "model_access_verified"
     );
-    assert_eq!(results[0]["details"]["result"]["outcome"]["auth_valid"], true);
+    assert_eq!(
+        results[0]["details"]["result"]["outcome"]["auth_valid"],
+        true
+    );
     assert_eq!(
         results[0]["details"]["result"]["outcome"]["model_accessible"],
         true
@@ -418,8 +421,14 @@ async fn test_admin_ai_backend_preflight_surfaces_openai_auth_failure_shape() {
         results[0]["details"]["result"]["outcome"]["outcome_kind"],
         "auth_failed"
     );
-    assert_eq!(results[0]["details"]["result"]["outcome"]["error_code"], "auth_invalid");
-    assert_eq!(results[0]["details"]["result"]["outcome"]["auth_valid"], false);
+    assert_eq!(
+        results[0]["details"]["result"]["outcome"]["error_code"],
+        "auth_invalid"
+    );
+    assert_eq!(
+        results[0]["details"]["result"]["outcome"]["auth_valid"],
+        false
+    );
 
     spearlet_handle.abort();
     grpc_handle.abort();

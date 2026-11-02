@@ -8,8 +8,7 @@ use crate::sms::query_support::{collect_task_instances_bounded, instance_is_acti
 use crate::sms::task_api::{
     build_register_task_request, task_to_admin_detail_response, task_to_admin_summary_response,
     task_to_deleted_snapshot, AdminDeletedTaskSnapshot, AdminTaskDetailResponse,
-    AdminTaskSummaryResponse, RegisterTaskSpec, TaskExecutableReferenceSpec,
-    TaskExecutableSpec,
+    AdminTaskSummaryResponse, RegisterTaskSpec, TaskExecutableReferenceSpec, TaskExecutableSpec,
 };
 
 use super::types::ListQuery;

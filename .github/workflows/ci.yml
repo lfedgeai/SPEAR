@@ -51,8 +51,6 @@ jobs:
 
     - name: Test
       env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
         DOCKER_API_VERSION: '1.45'
       run: make test
 

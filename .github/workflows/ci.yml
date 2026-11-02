@@ -14,6 +14,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # librocksdb-sys misses <cstdint> on newer gcc
+  CXXFLAGS: -include cstdint
 
 jobs:
   rust:
@@ -74,6 +76,8 @@ jobs:
         cache-dependency-path: ${{ matrix.dir }}/package-lock.json
 
     - run: npm ci
+    # web-console builds against web-admin/src/shared, which needs react from web-admin
+    - run: npm ci --prefix ../web-admin
     - run: npm run lint
     - run: npm run build
     - run: npm test

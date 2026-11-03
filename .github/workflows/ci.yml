@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # librocksdb-sys misses <cstdint> on newer gcc
+  CXXFLAGS: -include cstdint
+
+jobs:
+  rust:
+    name: Rust (fmt, check, test)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libasound2-dev clang libclang-dev
+
+    - name: Format check
+      run: cargo fmt --check
+
+    - name: Check all features
+      run: cargo check --all-features --all-targets
+
+    - name: Pull docker images used by tests
+      run: docker pull docker.io/library/alpine:latest
+
+    - name: Test
+      env:
+        DOCKER_API_VERSION: '1.45'
+      run: make test
+
+  frontend:
+    name: Frontend (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [web-admin, web-console]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+
+    - run: npm ci
+    # web-console builds against web-admin/src/shared, which needs react from web-admin
+    - run: npm ci --prefix ../web-admin
+    - run: npm run lint
+    - run: npm run build
+    - run: npm test
+
+  # Single required check for branch protection.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [rust, frontend]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Fail if a required job failed
+      run: |
+        [ "${{ needs.rust.result }}" = "success" ] && [ "${{ needs.frontend.result }}" = "success" ]

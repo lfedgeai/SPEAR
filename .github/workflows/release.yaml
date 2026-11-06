@@ -16,18 +16,15 @@ jobs:
         fetch-depth: 0 # 拉取完整提交历史
         fetch-tags: true # 关键：拉取所有标签
 
-    - name: Install system dependencies & build release
-      run: |
-        sudo apt update
-        sudo apt install portaudio19-dev libx11-dev libxtst-dev
-        make build-release
+    - name: Build release
+      run: make build-release
 
     - name: Create GitHub Release
       id: create_release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
         body: |
           SPEAR release version ${{ github.ref_name }}.
         files: |

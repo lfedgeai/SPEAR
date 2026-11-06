@@ -562,11 +562,6 @@ pub mod serialization {
         "node:"
     }
 
-    /// Generate key prefix for resources / 生成资源的键前缀
-    pub fn resource_prefix() -> &'static str {
-        "resource:"
-    }
-
     /// Extract UUID from node key / 从节点键中提取UUID
     pub fn extract_uuid_from_node_key(key: &str) -> Result<Uuid, SmsError> {
         if let Some(uuid_str) = key.strip_prefix("node:") {
@@ -575,19 +570,6 @@ pub mod serialization {
         } else {
             Err(SmsError::Serialization(
                 "Invalid node key format".to_string(),
-            ))
-        }
-    }
-
-    /// Extract UUID from resource key / 从资源键中提取UUID
-    pub fn extract_uuid_from_resource_key(key: &str) -> Result<Uuid, SmsError> {
-        if let Some(uuid_str) = key.strip_prefix("resource:") {
-            Uuid::parse_str(uuid_str).map_err(|e| {
-                SmsError::Serialization(format!("Invalid UUID in resource key: {}", e))
-            })
-        } else {
-            Err(SmsError::Serialization(
-                "Invalid resource key format".to_string(),
             ))
         }
     }

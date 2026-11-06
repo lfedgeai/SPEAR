@@ -1,9 +1,9 @@
-//! Storage module for spear-next
+//! Storage module for SPEAR
 //!
 //! This module contains all storage-related abstractions and implementations.
 //! It provides a unified interface for different storage backends.
 //!
-//! spear-next的存储模块
+//! SPEAR的存储模块
 //!
 //! 此模块包含所有与存储相关的抽象和实现。
 //! 它为不同的存储后端提供统一的接口。

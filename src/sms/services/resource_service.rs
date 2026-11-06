@@ -133,33 +133,6 @@ impl ResourceService {
         Self { kv_store }
     }
 
-    /// Create a new resource service with RocksDB backend / 创建使用RocksDB后端的新资源服务
-    #[cfg(feature = "rocksdb")]
-    pub fn new_with_rocksdb(db_path: &str) -> Result<Self, SmsError> {
-        let kv_store = crate::storage::create_kv_store(crate::storage::KvStoreType::RocksDb {
-            path: db_path.to_string(),
-        })?;
-        Ok(Self {
-            kv_store: Arc::from(kv_store),
-        })
-    }
-
-    /// Create a new resource service with Sled backend / 创建使用Sled后端的新资源服务
-    #[cfg(feature = "sled")]
-    pub fn new_with_sled(db_path: &str) -> Result<Self, SmsError> {
-        let kv_store = crate::storage::create_kv_store(crate::storage::KvStoreType::Sled {
-            path: db_path.to_string(),
-        })?;
-        Ok(Self {
-            kv_store: Arc::from(kv_store),
-        })
-    }
-
-    /// Create a new resource service with custom KV store / 创建使用自定义KV存储的新资源服务
-    pub fn with_kv_store(kv_store: Arc<dyn KvStore>) -> Self {
-        Self { kv_store }
-    }
-
     /// Update resource information / 更新资源信息
     pub async fn update_resource(&self, mut resource: NodeResourceInfo) -> Result<(), SmsError> {
         resource.update_timestamp();

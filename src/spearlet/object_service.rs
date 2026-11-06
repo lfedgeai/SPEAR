@@ -292,35 +292,6 @@ impl ObjectServiceImpl {
         self.scan_object_stats().await.pinned_count
     }
 
-    /// Cleanup objects with zero references / 清理零引用对象
-    pub async fn cleanup_objects(&self) -> usize {
-        match self
-            .kv_store
-            .scan_prefix(object_keys::object_prefix())
-            .await
-        {
-            Ok(pairs) => {
-                let mut cleaned_count = 0;
-                for pair in pairs {
-                    if let Ok(stored_obj) = serialization::deserialize::<StoredObject>(&pair.value)
-                    {
-                        if stored_obj.ref_count <= 0
-                            && !stored_obj.pinned
-                            && self.kv_store.delete(&pair.key).await.is_ok()
-                        {
-                            cleaned_count += 1;
-                        }
-                    }
-                }
-                if cleaned_count > 0 {
-                    info!("Cleaned up {} objects with zero references", cleaned_count);
-                }
-                cleaned_count
-            }
-            Err(_) => 0,
-        }
-    }
-
     /// Get service statistics / 获取服务统计信息
     pub async fn get_stats(&self) -> ObjectServiceStats {
         let stats = self.scan_object_stats().await;

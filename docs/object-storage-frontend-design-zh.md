@@ -390,7 +390,6 @@ type ExecutableSource =
 - `web-admin/src/features/objects/ObjectPickerModal.tsx`
 - `web-admin/src/features/objects/object-types.ts`
 - `web-admin/src/features/objects/object-format.ts`
-- `web-admin/src/features/objects/object-query.ts`
 
 Tasks 页中与对象选择相关的部分应复用对象域组件，而不是复制一套本地选择逻辑。
 

@@ -581,12 +581,6 @@ impl InstancePool {
         Ok(())
     }
 
-    /// Get pool metrics for task / 获取任务的池指标
-    pub fn get_task_metrics(&self, task_id: &TaskId) -> Option<PoolMetrics> {
-        let pools = self.pools.read();
-        pools.get(task_id).map(|state| state.metrics.clone())
-    }
-
     /// Get global pool metrics / 获取全局池指标
     pub fn get_global_metrics(&self) -> PoolMetrics {
         self.global_metrics.read().clone()

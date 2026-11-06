@@ -27,6 +27,7 @@ impl BenchmarkConfig {
     /// Create benchmark configurations for all available backends
     /// 为所有可用后端创建基准测试配置
     fn create_all() -> Vec<Self> {
+        #[allow(unused_mut)]
         let mut configs = vec![BenchmarkConfig {
             name: "memory",
             config: KvStoreConfig::memory(),
@@ -486,7 +487,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
             BenchmarkId::new("concurrent_set", config.name),
             &config.name,
             |b, _| {
-                let mut counter = std::sync::atomic::AtomicUsize::new(0);
+                let counter = std::sync::atomic::AtomicUsize::new(0);
                 b.to_async(&rt).iter(|| async {
                     let tasks: Vec<_> = (0..10)
                         .map(|task_id| {
@@ -524,7 +525,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
             BenchmarkId::new("concurrent_get", config.name),
             &config.name,
             |b, _| {
-                let mut counter = std::sync::atomic::AtomicUsize::new(0);
+                let counter = std::sync::atomic::AtomicUsize::new(0);
                 b.to_async(&rt).iter(|| async {
                     let tasks: Vec<_> = (0..10)
                         .map(|_| {

@@ -98,15 +98,6 @@ impl TaskService {
         Ok(tasks.values().cloned().collect())
     }
 
-    /// Update task heartbeat / 更新任务心跳
-    pub async fn update_task_heartbeat(&mut self, task_id: &str, timestamp: i64) -> SmsResult<()> {
-        let mut tasks = self.tasks.write().await;
-        if let Some(task) = tasks.get_mut(task_id) {
-            task.last_heartbeat = timestamp;
-        }
-        Ok(())
-    }
-
     /// Remove a task / 移除任务
     pub async fn remove_task(&mut self, task_id: &str) -> SmsResult<bool> {
         let mut tasks = self.tasks.write().await;

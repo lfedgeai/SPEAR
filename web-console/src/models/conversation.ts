@@ -1,4 +1,4 @@
-export type ChatRole = 'user' | 'assistant' | 'system'
+type ChatRole = 'user' | 'assistant' | 'system'
 
 export type ChatMessage = {
   id: string

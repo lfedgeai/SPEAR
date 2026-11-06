@@ -156,7 +156,6 @@ compression = "true"
 - [KV 存储架构文档](./unified-kv-architecture-zh.md)
 - [KV 工厂模式文档](./kv-factory-pattern-zh.md)
 - [API 使用指南](./api-usage-guide-zh.md)
-- [配置文件说明](./config-guide-zh.md)
 
 ## 故障排除
 

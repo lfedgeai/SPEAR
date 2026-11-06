@@ -1,5 +1,7 @@
 # Config Service Refactoring
 
+> Note: This is a historical record. `AppConfig::load()` and the `figment` dependency have since been removed; configuration is now loaded via `AppConfig::load_with_cli`.
+
 ## Overview
 This document describes the refactoring of the configuration loading functionality in the `ConfigService` to eliminate code duplication and improve maintainability.
 

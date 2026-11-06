@@ -33,7 +33,7 @@ export type NodeSummary = {
   metadata?: Record<string, string>
 }
 
-export type NodeResource = {
+type NodeResource = {
   /** CPU usage percent / CPU 使用率百分比 */
   cpu_usage_percent?: number
   /** Memory usage percent / 内存使用率百分比 */
@@ -57,7 +57,7 @@ export type NodeDetail = {
   resource?: NodeResource
 }
 
-export type CredentialSyncSnapshot = {
+type CredentialSyncSnapshot = {
   status: string
   started: boolean
   watch_connected: boolean
@@ -185,16 +185,6 @@ export type DeleteTaskResponse = {
   } | null
 }
 
-export type FileItem = {
-  /** Object ID / 对象 ID */
-  id: string
-  /** File name (optional) / 文件名（可选） */
-  name?: string | null
-  /** Length in bytes / 字节长度 */
-  len: number
-  /** Modified time (epoch seconds) / 修改时间（秒） */
-  modified_at: number
-}
 
 export type InstanceSummary = {
   instance_id: string
@@ -220,14 +210,14 @@ export type ExecutionSummary = {
   function_name: string
 }
 
-export type LogRef = {
+type LogRef = {
   backend: string
   uri_prefix: string
   content_type: string
   compression: string
 }
 
-export type ExecutionDetail = {
+type ExecutionDetail = {
   execution_id: string
   invocation_id: string
   task_id: string
@@ -242,7 +232,7 @@ export type ExecutionDetail = {
   log_ref?: LogRef | null
 }
 
-export type InstanceDetail = {
+type InstanceDetail = {
   instance_id: string
   task_id: string
   node_uuid: string

@@ -239,31 +239,6 @@ curl -X DELETE http://localhost:8080/api/v1/nodes/93f9a7ca-e033-4bb7-8b5a-c0899f
 - `status`: 按状态过滤
 - `priority`: 按优先级过滤
 
-## 集群统计 API
-
-### 获取集群统计信息
-
-**端点**: `GET /api/v1/cluster/stats`
-
-**响应**:
-```json
-{
-  "stats": {
-    "total_nodes": 5,
-    "active_nodes": 4,
-    "inactive_nodes": 1,
-    "unhealthy_nodes": 0,
-    "nodes_with_resources": 3,
-    "average_cpu_usage": 45.6,
-    "average_memory_usage": 67.2,
-    "total_memory_bytes": 42949672960,
-    "total_used_memory_bytes": 28858370048,
-    "high_load_nodes": 1
-  },
-  "success": true
-}
-```
-
 ## 健康检查
 
 **端点**: `GET /health`
@@ -355,8 +330,6 @@ curl -X POST http://localhost:8080/api/v1/tasks \
     "priority": "medium"
   }'
 
-# 7. 获取集群统计
-curl -s http://localhost:8080/api/v1/cluster/stats | jq .
 ```
 
 ## 使用 Swagger UI

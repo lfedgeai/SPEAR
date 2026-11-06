@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::proto::sms::Node;
 use crate::sms::config::SmsConfig;
-use crate::sms::services::node_service::{NodeService, NodeStatus};
+use crate::sms::services::node_service::NodeService;
 use crate::sms::services::resource_service::NodeResourceInfo;
 
 /// Test data generator for creating sample nodes / 创建示例节点的测试数据生成器
@@ -24,20 +24,6 @@ impl TestDataGenerator {
             uuid: Uuid::new_v4().to_string(),
             ip_address: "127.0.0.1".to_string(),
             port: 8080,
-            http_port: 0,
-            status: "online".to_string(),
-            last_heartbeat: Utc::now().timestamp(),
-            registered_at: Utc::now().timestamp(),
-            metadata: HashMap::new(),
-        }
-    }
-
-    /// Create a node with specific address / 创建具有特定地址的节点
-    pub fn create_node_with_address(ip: &str, port: u16) -> Node {
-        Node {
-            uuid: Uuid::new_v4().to_string(),
-            ip_address: ip.to_string(),
-            port: port as i32,
             http_port: 0,
             status: "online".to_string(),
             last_heartbeat: Utc::now().timestamp(),
@@ -62,26 +48,6 @@ impl TestDataGenerator {
             .collect()
     }
 
-    /// Create a node with specific status / 创建具有特定状态的节点
-    pub fn create_node_with_status(status: NodeStatus) -> Node {
-        let status_str = match status {
-            NodeStatus::Online => "online",
-            NodeStatus::Offline => "offline",
-            NodeStatus::Maintenance => "maintenance",
-        };
-
-        Node {
-            uuid: Uuid::new_v4().to_string(),
-            ip_address: "127.0.0.1".to_string(),
-            port: 8080,
-            http_port: 0,
-            status: status_str.to_string(),
-            last_heartbeat: Utc::now().timestamp(),
-            registered_at: Utc::now().timestamp(),
-            metadata: HashMap::new(),
-        }
-    }
-
     /// Create an unhealthy node (old heartbeat) / 创建不健康的节点（旧心跳）
     pub fn create_unhealthy_node(age_seconds: i64) -> Node {
         Node {
@@ -94,25 +60,6 @@ impl TestDataGenerator {
             registered_at: Utc::now().timestamp(),
             metadata: HashMap::new(),
         }
-    }
-
-    /// Create a node with metadata / 创建带有元数据的节点
-    pub fn create_node_with_metadata(metadata: HashMap<String, String>) -> Node {
-        Node {
-            uuid: Uuid::new_v4().to_string(),
-            ip_address: "127.0.0.1".to_string(),
-            port: 8080,
-            http_port: 0,
-            status: "online".to_string(),
-            last_heartbeat: Utc::now().timestamp(),
-            registered_at: Utc::now().timestamp(),
-            metadata,
-        }
-    }
-
-    /// Create sample resource info / 创建示例资源信息
-    pub fn create_sample_resource(node_uuid: Uuid) -> NodeResourceInfo {
-        NodeResourceInfo::new(node_uuid)
     }
 
     /// Create resource info with custom values / 创建具有自定义值的资源信息
@@ -162,53 +109,6 @@ impl TestDataGenerator {
                 ..Default::default()
             },
             heartbeat_timeout: 90,
-            cleanup_interval: 30,
-            assignment_reconcile_interval: 60,
-            max_upload_bytes: 64 * 1024 * 1024,
-            object_storage: ObjectStorageConfig {
-                local_fs: LocalFsObjectStorageConfig {
-                    root_dir: "./test_data/objects".to_string(),
-                },
-                ..Default::default()
-            },
-            execution_logs_dir: "./test_data/objects/execution_logs".to_string(),
-            event_kv: None,
-            mcp: crate::sms::config::McpConfig::default(),
-        }
-    }
-
-    /// Create test configuration with custom values / 创建具有自定义值的测试配置
-    pub fn create_config_with_values(
-        grpc_addr: &str,
-        http_addr: &str,
-        _heartbeat_timeout: u64,
-    ) -> SmsConfig {
-        use crate::config::base::{LogConfig, ServerConfig};
-        use crate::sms::config::{DatabaseConfig, LocalFsObjectStorageConfig, ObjectStorageConfig};
-
-        SmsConfig {
-            grpc: ServerConfig {
-                addr: grpc_addr.parse().unwrap(),
-                ..Default::default()
-            },
-            http: ServerConfig {
-                addr: http_addr.parse().unwrap(),
-                ..Default::default()
-            },
-            logging: LogConfig::default(),
-            enable_swagger: false,
-            database: DatabaseConfig {
-                db_type: "memory".to_string(),
-                path: "./test_data".to_string(),
-                pool_size: Some(5),
-            },
-            enable_web_admin: false,
-            enable_console: true,
-            web_admin: ServerConfig {
-                addr: "127.0.0.1:8081".parse().unwrap(),
-                ..Default::default()
-            },
-            heartbeat_timeout: _heartbeat_timeout,
             cleanup_interval: 30,
             assignment_reconcile_interval: 60,
             max_upload_bytes: 64 * 1024 * 1024,
@@ -273,15 +173,6 @@ impl TestHelpers {
         Self::assert_timestamps_close(timestamp, Utc::now(), tolerance_seconds);
     }
 
-    /// Create a temporary test file with content / 创建包含内容的临时测试文件
-    pub fn create_temp_config_file(content: &str) -> tempfile::NamedTempFile {
-        use std::io::Write;
-        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-        temp_file.write_all(content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
-        temp_file
-    }
-
     /// Generate random UUID for testing / 生成用于测试的随机UUID
     pub fn generate_test_uuid() -> Uuid {
         Uuid::new_v4()
@@ -304,29 +195,6 @@ impl TestHelpers {
         health_info.insert("load".to_string(), "0.5".to_string());
         health_info
     }
-}
-
-/// Constants for testing / 测试常量
-pub mod test_constants {
-    /// Default test timeout in seconds / 默认测试超时时间（秒）
-    pub const DEFAULT_TIMEOUT: u64 = 60;
-
-    /// Test gRPC address / 测试gRPC地址
-    pub const TEST_GRPC_ADDR: &str = "127.0.0.1:50051";
-
-    /// Test HTTP address / 测试HTTP地址
-    pub const TEST_HTTP_ADDR: &str = "127.0.0.1:8080";
-
-    /// Test node IP addresses / 测试节点IP地址
-    pub const TEST_NODE_IPS: &[&str] = &["127.0.0.1", "127.0.0.2", "127.0.0.3"];
-
-    /// Test node ports / 测试节点端口
-    pub const TEST_NODE_PORTS: &[u16] = &[8080, 8081, 8082];
-
-    /// High load thresholds / 高负载阈值
-    pub const HIGH_CPU_THRESHOLD: f64 = 80.0;
-    pub const HIGH_MEMORY_THRESHOLD: f64 = 85.0;
-    pub const HIGH_DISK_THRESHOLD: f64 = 90.0;
 }
 
 #[cfg(test)]

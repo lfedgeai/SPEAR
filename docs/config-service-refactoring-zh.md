@@ -1,5 +1,7 @@
 # 配置服务重构
 
+> 注意：本文为历史记录。`AppConfig::load()` 与 `figment` 依赖已被移除，现在通过 `AppConfig::load_with_cli` 加载配置。
+
 ## 概述
 本文档描述了对 `ConfigService` 中配置加载功能的重构，以消除代码重复并提高可维护性。
 

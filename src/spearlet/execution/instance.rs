@@ -7,7 +7,6 @@
 use super::{ArtifactId, RuntimeType, TaskId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
@@ -211,16 +210,12 @@ pub struct TaskInstance {
     pub runtime_handle: Arc<parking_lot::RwLock<Option<Box<dyn std::any::Any + Send + Sync>>>>,
     /// Instance secret for authentication / 实例认证密钥
     pub secret: Arc<parking_lot::RwLock<Option<String>>>,
-    /// Listening address for communication / 通信监听地址
-    pub listening_address: Arc<parking_lot::RwLock<Option<String>>>,
     /// Creation timestamp / 创建时间戳
     pub created_at: SystemTime,
     /// Last updated timestamp / 最后更新时间戳
     pub updated_at: Arc<parking_lot::RwLock<SystemTime>>,
     /// Current execution id (best-effort) / 当前执行ID（尽力维护）
     pub current_execution_id: Arc<parking_lot::RwLock<Option<String>>>,
-    /// Request counter for generating unique request IDs / 请求计数器用于生成唯一请求ID
-    request_counter: AtomicU64,
 }
 
 impl TaskInstance {
@@ -238,11 +233,9 @@ impl TaskInstance {
             metrics: Arc::new(parking_lot::RwLock::new(InstanceMetrics::default())),
             runtime_handle: Arc::new(parking_lot::RwLock::new(None)),
             secret: Arc::new(parking_lot::RwLock::new(None)),
-            listening_address: Arc::new(parking_lot::RwLock::new(None)),
             created_at: now,
             updated_at: Arc::new(parking_lot::RwLock::new(now)),
             current_execution_id: Arc::new(parking_lot::RwLock::new(None)),
-            request_counter: AtomicU64::new(0),
         }
     }
 
@@ -324,23 +317,6 @@ impl TaskInstance {
     /// Get instance secret / 获取实例密钥
     pub fn get_secret(&self) -> Option<String> {
         self.secret.read().clone()
-    }
-
-    /// Set listening address / 设置监听地址
-    pub fn set_listening_address(&self, address: String) {
-        *self.listening_address.write() = Some(address);
-        *self.updated_at.write() = SystemTime::now();
-    }
-
-    /// Get listening address / 获取监听地址
-    pub fn get_listening_address(&self) -> Option<String> {
-        self.listening_address.read().clone()
-    }
-
-    /// Generate a unique request ID / 生成唯一的请求 ID
-    pub fn generate_request_id(&self) -> String {
-        let counter = self.request_counter.fetch_add(1, Ordering::SeqCst);
-        format!("{}-req-{}", self.id, counter)
     }
 
     /// Check if instance is ready to accept requests / 检查实例是否准备接受请求

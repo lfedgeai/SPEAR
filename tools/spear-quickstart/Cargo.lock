@@ -2208,7 +2208,6 @@ dependencies = [
  "kube",
  "ratatui",
  "serde",
- "serde_json",
  "tokio",
  "toml",
  "unicode-width 0.1.14",

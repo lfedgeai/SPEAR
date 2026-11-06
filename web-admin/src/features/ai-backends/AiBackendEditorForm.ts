@@ -334,7 +334,7 @@ export function formatNodeLabel(node: NodeSummary) {
   return node.uuid
 }
 
-export function parseLabels(value: string): Record<string, string> {
+function parseLabels(value: string): Record<string, string> {
   const labels: Record<string, string> = {}
   for (const line of value.split('\n')) {
     const trimmed = line.trim()
@@ -353,7 +353,7 @@ export function parseLabels(value: string): Record<string, string> {
   return labels
 }
 
-export function parseMetadata(value: string): Record<string, unknown> {
+function parseMetadata(value: string): Record<string, unknown> {
   const trimmed = value.trim()
   if (!trimmed) return {}
   const parsed = JSON.parse(trimmed) as unknown

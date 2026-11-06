@@ -524,21 +524,6 @@ impl Task {
             .duration_since(last_update)
             .unwrap_or_default()
     }
-
-    /// Check if cooldown period has passed since last scaling / 检查自上次扩缩容以来是否已过冷却期
-    pub fn is_scaling_cooldown_over(&self) -> bool {
-        let metrics = self.metrics.read();
-        if let Some(last_scaling) = metrics.last_scaling_time {
-            let cooldown_duration =
-                Duration::from_millis(self.spec.scaling_config.cooldown_period_ms);
-            SystemTime::now()
-                .duration_since(last_scaling)
-                .unwrap_or_default()
-                >= cooldown_duration
-        } else {
-            true // No previous scaling operation / 没有之前的扩缩容操作
-        }
-    }
 }
 
 #[cfg(test)]

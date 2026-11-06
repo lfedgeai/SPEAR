@@ -352,14 +352,6 @@ impl RuntimeExecutionResponse {
         }
     }
 
-    /// Check if execution is in progress / 检查执行是否正在进行
-    pub fn is_in_progress(&self) -> bool {
-        matches!(
-            self.execution_status,
-            ExecutionStatus::Pending | ExecutionStatus::Running
-        )
-    }
-
     /// Check if execution has failed / 检查执行是否失败
     pub fn has_failed(&self) -> bool {
         self.error.is_some()

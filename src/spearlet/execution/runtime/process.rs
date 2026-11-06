@@ -500,9 +500,6 @@ impl Runtime for ProcessRuntime {
 
         // Start listening and get the address / 启动监听并获取地址
         if let Some(listening_addr) = self.start_listening(&listening_config).await? {
-            // Store the listening address in the instance / 将监听地址存储在实例中
-            instance.set_listening_address(listening_addr.to_string());
-
             info!(
                 "Instance {} listening on {} with secret authentication enabled",
                 instance.id, listening_addr

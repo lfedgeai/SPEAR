@@ -4,6 +4,19 @@
 
 This document records the dead code cleanup work performed on the spear-next project, aimed at improving code quality, reducing maintenance burden, and optimizing compilation performance.
 
+## 2026-10 Cleanup (Legacy Leftovers)
+
+### Changes
+- Removed unused `connect_sms_channel_once` / `connect_sms_channel_retry` from the spearlet SMS connector.
+- Removed write-only `TaskInstance.listening_address` and its setter.
+- Dropped stale `task-node` assertions from UI tests (node picker removed in #94) and assert it is absent.
+- Fixed docs referencing removed `media_ref.rs`, `AppConfig::load()` and `figment`.
+
+### Verification
+- `cargo check --all-features --all-targets`: clean
+- `cargo test --all-features`: 700 passed, 0 failed
+- `make test`: 630 passed, 0 failed
+
 ## 2026-05 Cleanup (Repository Hygiene)
 
 ### Changes

@@ -6,6 +6,19 @@
 
 This document records the dead code cleanup work performed on the spear-next project, aimed at improving code quality, reducing maintenance burden, and optimizing compilation performance.
 
+## 2026-10 清理（遗留代码） / 2026-10 Cleanup (Legacy Leftovers)
+
+### 变更
+- 移除 spearlet SMS connector 中未使用的 `connect_sms_channel_once` / `connect_sms_channel_retry`。
+- 移除只写不读的 `TaskInstance.listening_address` 及其 setter。
+- 移除 UI 测试中过时的 `task-node` 断言（#94 已移除节点选择器），并改为断言其不存在。
+- 修正文档中对已移除的 `media_ref.rs`、`AppConfig::load()` 与 `figment` 的引用。
+
+### 验证
+- `cargo check --all-features --all-targets`：通过
+- `cargo test --all-features`：700 通过，0 失败
+- `make test`：630 通过，0 失败
+
 ## 2026-05 清理（仓库卫生） / 2026-05 Cleanup (Repository Hygiene)
 
 ### 变更 / Changes

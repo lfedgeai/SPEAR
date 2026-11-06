@@ -390,7 +390,6 @@ To keep object-domain boundaries clean, add:
 - `web-admin/src/features/objects/ObjectPickerModal.tsx`
 - `web-admin/src/features/objects/object-types.ts`
 - `web-admin/src/features/objects/object-format.ts`
-- `web-admin/src/features/objects/object-query.ts`
 
 Task creation should reuse object-domain components instead of duplicating local selection logic.
 

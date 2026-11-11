@@ -12,18 +12,19 @@
 
 ## 设计原则
 
-- `kind` 表示 backend adapter 类型，例如 `openai_chat_completion`
+- `kind` 表示 backend adapter family，例如 `chat_http`
 - `operations` 表示该 backend 对外声明的能力，例如 `chat_completions`
 - backend 能否参与路由，不只取决于 `operations` 是否能解析，还取决于该 `kind` 是否真的实现了这些 operation
 - 当前装配层已经对 `kind` 和 `operations` 做了一致性校验；不匹配的 backend 不会注册进运行时
 
 ## 当前内建支持矩阵
 
-| Kind | Hosting | Transport | 当前支持的 operations | 说明 |
+| Backend family | Hosting | Transport | 当前支持的 operations | 说明 |
 |---|---|---|---|---|
-| `openai_chat_completion` | remote | `http` | `chat_completions` | 标准 OpenAI Chat Completions 风格 HTTP adapter |
+| `chat_http` | remote | `http` | `chat_completions` | OpenAI 与 Qwen 共享的 provider-neutral HTTP chat adapter |
 | `ollama_chat` | local / node-local | `http` | `chat_completions` | Ollama 本地聊天 adapter |
-| `openai_realtime_ws` | remote | `websocket` | `speech_to_text` | 当前只支持流式 ASR，不支持通用 realtime voice agent |
+| `rt_asr_openai_ws` | remote | `websocket` | `speech_to_text` | OpenAI 风格 realtime websocket ASR adapter |
+| `rt_asr_qwen_ws` | remote | `websocket` | `speech_to_text` | Qwen realtime websocket ASR adapter |
 | `stub` | local / internal | in-process | `chat_completions` | 仅用于测试 / 开发，不是面向生产的 backend |
 
 ## Web Admin 当前创建能力
@@ -35,19 +36,21 @@
 
 ### Remote
 
-当前 remote 创建流支持的 provider / kind 组合：
+当前 remote 创建流支持的 provider / backend family 组合：
 
-| Hosting | Provider | Backend Kind | 默认 / 常见 operations | 说明 |
+| Hosting | Provider | Backend family | 默认 / 常见 operations | 说明 |
 |---|---|---|---|---|
-| `remote` | `openai` | `openai_chat_completion` | `chat_completions` | 标准 OpenAI HTTP chat backend |
-| `remote` | `openai` | `openai_realtime_ws` | `speech_to_text` | 当前 realtime websocket ASR backend |
+| `remote` | `openai` | `chat_http` | `chat_completions` | 标准 OpenAI HTTP chat backend |
+| `remote` | `openai` | `rt_asr_openai_ws` | `speech_to_text` | 当前 realtime websocket ASR backend |
+| `remote` | `qwen` | `chat_http` | `chat_completions` | 通过共享 HTTP chat adapter 访问 Qwen chat |
+| `remote` | `qwen` | `rt_asr_qwen_ws` | `speech_to_text` | Qwen realtime websocket ASR backend |
 | `remote` | `ollama` | `ollama_chat` | `chat_completions` | 指向外部 Ollama-compatible endpoint |
 
 ### Local
 
-当前 local 创建流支持的 provider / kind 组合：
+当前 local 创建流支持的 provider / backend family 组合：
 
-| Hosting | Provider | Backend Kind | 当前能力 | 说明 |
+| Hosting | Provider | Backend family | 当前能力 | 说明 |
 |---|---|---|---|---|
 | `local` | `llamacpp` | `llamacpp` | `chat_completions` | 节点本地 `llama-server` 管理模式 |
 | `local` | `vllm` | `vllm` | scaffolded / external-endpoint oriented | 当前更偏脚手架与 external endpoint 场景，不是完整托管进程模式 |
@@ -84,19 +87,21 @@
 ## 当前推荐用法
 
 - 如果要创建标准文本聊天 backend，使用：
-  - `kind = openai_chat_completion`
+  - `kind = chat_http`
   - `operations = ["chat_completions"]`
 - 如果要创建 realtime ASR backend，使用：
-  - `kind = openai_realtime_ws`
+  - `kind = rt_asr_openai_ws` 或 `rt_asr_qwen_ws`
   - `operations = ["speech_to_text"]`
 
 ## 不推荐的配置
 
 以下配置在当前代码里不应再被视为有效运行时配置：
 
-- `openai_realtime_ws` + `realtime`
-- `openai_realtime_ws` + `realtime_voice`
-- `openai_chat_completion` + `speech_to_text`
+- `rt_asr_openai_ws` + `realtime`
+- `rt_asr_openai_ws` + `realtime_voice`
+- `rt_asr_qwen_ws` + `realtime`
+- `rt_asr_qwen_ws` + `realtime_voice`
+- `chat_http` + `speech_to_text`
 - 任意 `kind` 声明一个该 adapter 并未实现的 operation
 
 ## 后续扩展建议

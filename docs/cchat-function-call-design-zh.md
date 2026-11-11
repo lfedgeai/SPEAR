@@ -59,7 +59,7 @@ WASM 侧通过 `cchat_write_fn(fd, fn_offset, fn_json)` 注册工具。
 
 ### 2) chat completion
 
-`cchat_send` 会将会话 messages 与 tools 组装成请求，交给 AI backend（例如 OpenAI chat/completions）。目前 backend 适配层会返回原始 JSON payload（canonical envelope）。见 [openai_chat_completion.rs](../src/spearlet/execution/ai/backends/openai_chat_completion.rs)。
+`cchat_send` 会将会话 messages 与 tools 组装成请求，交给 AI backend（例如 OpenAI chat/completions）。目前 backend 适配层会返回原始 JSON payload（canonical envelope）。见 [chat_http.rs](../src/spearlet/execution/ai/backends/chat_http.rs)。
 
 ### 3) 缺口
 

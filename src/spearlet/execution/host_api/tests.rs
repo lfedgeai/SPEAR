@@ -1,4 +1,7 @@
 use super::*;
+use crate::spearlet::execution::ai::backends::{
+    KIND_CHAT_HTTP, KIND_RT_ASR_OPENAI_WS, KIND_STUB,
+};
 use crate::spearlet::execution::ai::ir::{
     CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload,
     RoutingHints, SpeechToTextPayload,
@@ -45,6 +48,7 @@ fn stt_req() -> CanonicalRequestEnvelope {
         timeout_ms: None,
         payload: Payload::SpeechToText(SpeechToTextPayload {
             model: Some("gpt-test".to_string()),
+            sample_rate: None,
         }),
         extra: HashMap::new(),
     }
@@ -58,7 +62,7 @@ fn test_cchat_send_pipeline_stub_backend() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "stub".to_string(),
-            kind: "stub".to_string(),
+            kind: KIND_STUB.to_string(),
             base_url: String::new(),
             hosting: Some("local".to_string()),
             model: None,
@@ -106,7 +110,7 @@ fn test_cchat_send_auto_tool_call_loop_stub_backend() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "stub".to_string(),
-            kind: "stub".to_string(),
+            kind: KIND_STUB.to_string(),
             base_url: String::new(),
             hosting: Some("local".to_string()),
             model: None,
@@ -178,7 +182,7 @@ fn test_configured_openai_backend_missing_key_is_filtered() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "openai-us".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: KIND_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -227,7 +231,7 @@ fn test_registry_credential_ref_missing_env_keeps_backend_registered() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "openai-chat".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: KIND_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -272,7 +276,7 @@ fn test_registry_credential_ref_with_env_registers_backend() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "openai-chat".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: KIND_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -307,7 +311,7 @@ fn test_registry_credential_ref_with_env_registers_backend() {
 }
 
 #[test]
-fn test_registry_openai_chat_completion_kind_alias_registers_backend() {
+fn test_registry_chat_http_kind_alias_registers_backend() {
     let mut cfg = crate::spearlet::config::SpearletConfig::default();
     cfg.ai
         .credentials
@@ -320,7 +324,7 @@ fn test_registry_openai_chat_completion_kind_alias_registers_backend() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "openai-chat".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: KIND_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -368,7 +372,7 @@ fn test_realtime_ws_plan_uses_resolved_env_template() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "rt-ws".to_string(),
-            kind: "openai_realtime_ws".to_string(),
+            kind: KIND_RT_ASR_OPENAI_WS.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -600,7 +604,7 @@ async fn test_rtasr_websocket_transport_receives_events() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "rt-ws".to_string(),
-            kind: "openai_realtime_ws".to_string(),
+            kind: KIND_RT_ASR_OPENAI_WS.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -826,7 +830,7 @@ async fn test_rtasr_websocket_flush_sends_commit() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "rt-ws".to_string(),
-            kind: "openai_realtime_ws".to_string(),
+            kind: KIND_RT_ASR_OPENAI_WS.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -943,7 +947,7 @@ async fn test_rtasr_websocket_autoflush_bytes_sends_commit() {
         .backends
         .push(crate::spearlet::config::AiBackendConfig {
             name: "rt-ws".to_string(),
-            kind: "openai_realtime_ws".to_string(),
+            kind: KIND_RT_ASR_OPENAI_WS.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -1071,7 +1075,7 @@ async fn test_mic_read_epollin_and_close_hup() {
         "channels": 1,
         "format": "pcm16",
         "frame_ms": 20,
-        "source": "stub"
+        "source": KIND_STUB
     }))
     .unwrap();
     let _ = api.mic_ctl(mic_fd, 1, Some(&mic_cfg)).unwrap();
@@ -1126,7 +1130,7 @@ async fn test_mic_stub_pcm16_base64_loops() {
         "channels": 1,
         "format": "pcm16",
         "frame_ms": 10,
-        "source": "stub",
+        "source": KIND_STUB,
         "stub_pcm16_base64": b64,
     }))
     .unwrap();

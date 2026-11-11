@@ -111,7 +111,7 @@ fn remote_openai_model_access_verified_payload() -> serde_json::Value {
     json!({
         "success": true,
         "result": {
-            "provider_family": "open_ai_compatible",
+            "provider_family": "openai",
             "outcome": {
                 "outcome_kind": "model_access_verified",
                 "resolved_endpoint": "https://api.openai.com/v1/models",
@@ -134,7 +134,7 @@ fn remote_openai_auth_failed_payload() -> serde_json::Value {
     json!({
         "success": false,
         "result": {
-            "provider_family": "open_ai_compatible",
+            "provider_family": "openai",
             "outcome": {
                 "outcome_kind": "auth_failed",
                 "error_code": "auth_invalid",
@@ -232,7 +232,7 @@ async fn test_admin_ai_backend_preflight_proxies_to_target_node() {
                     "priority": 0
                 },
                 "local": {
-                    "provider_family": "llama_cpp",
+                    "provider_family": "llamacpp",
                     "config": {
                         "model_url": "https://models.example.com/qwen.gguf",
                         "skip_download": false,
@@ -291,9 +291,9 @@ async fn test_admin_ai_backend_preflight_supports_remote_backends() {
                 "provider": "openai",
                 "model": "gpt-4o-mini",
                 "hosting": "remote",
-                "backend_kind": "openai_chat_completion",
+                "backend_kind": "chat_http",
                 "remote": {
-                    "provider_family": "open_ai_compatible",
+                    "provider_family": "openai",
                     "config": {
                         "base_url": "https://api.openai.com/v1",
                         "credential_ref": "openai-prod",
@@ -327,7 +327,7 @@ async fn test_admin_ai_backend_preflight_supports_remote_backends() {
     assert_eq!(results[0]["details"]["kind"], "remote_provider");
     assert_eq!(
         results[0]["details"]["result"]["provider_family"],
-        "open_ai_compatible"
+        "openai"
     );
     assert_eq!(
         results[0]["details"]["result"]["outcome"]["outcome_kind"],
@@ -376,9 +376,9 @@ async fn test_admin_ai_backend_preflight_surfaces_openai_auth_failure_shape() {
                 "provider": "openai",
                 "model": "gpt-4o-mini",
                 "hosting": "remote",
-                "backend_kind": "openai_chat_completion",
+                "backend_kind": "chat_http",
                 "remote": {
-                    "provider_family": "open_ai_compatible",
+                    "provider_family": "openai",
                     "config": {
                         "base_url": "https://api.openai.com/v1",
                         "credential_ref": "openai-prod",
@@ -412,7 +412,7 @@ async fn test_admin_ai_backend_preflight_surfaces_openai_auth_failure_shape() {
     assert_eq!(results[0]["details"]["kind"], "remote_provider");
     assert_eq!(
         results[0]["details"]["result"]["provider_family"],
-        "open_ai_compatible"
+        "openai"
     );
     assert_eq!(
         results[0]["details"]["result"]["outcome"]["outcome_kind"],
@@ -479,7 +479,7 @@ async fn test_admin_ai_backend_preflight_requires_structured_remote_input_for_op
                 "provider": "openai",
                 "model": "gpt-4o-mini",
                 "hosting": "remote",
-                "backend_kind": "openai_chat_completion",
+                "backend_kind": "chat_http",
                 "credential_ref": "openai-prod",
                 "spec": {
                     "base_url": "https://api.openai.com/v1",
@@ -519,10 +519,10 @@ async fn test_admin_ai_backend_preflight_rejects_duplicate_remote_openai_sources
                 "provider": "openai",
                 "model": "gpt-4o-mini",
                 "hosting": "remote",
-                "backend_kind": "openai_chat_completion",
+                "backend_kind": "chat_http",
                 "credential_ref": "legacy-openai",
                 "remote": {
-                    "provider_family": "open_ai_compatible",
+                    "provider_family": "openai",
                     "config": {
                         "base_url": "https://api.openai.com/v1",
                         "credential_ref": "openai-prod",

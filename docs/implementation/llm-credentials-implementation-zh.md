@@ -70,7 +70,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 
 [[spearlet.ai.backends]]
 name = "openai-chat"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_chat"
@@ -82,7 +82,7 @@ priority = 0
 
 [[spearlet.ai.backends]]
 name = "openai-realtime-asr"
-kind = "openai_realtime_ws"
+kind = "rt_asr_openai_ws"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_realtime"
@@ -244,8 +244,8 @@ fn collect_required_env_vars(cfg: &SpearletConfig) -> HashSet<String>
    - 若缺失 `credential_ref` / 引用不存在：backend 不注册
    - 若 `runtime_config.global_environment` 不含该 env：backend 不注册
    - 构造 adapter：
-- openai_chat_completion：从 `global_environment[api_key_env_resolved]` 取值并传入 api_key
-     - openai_realtime_ws：传入 `api_key_env_resolved`（adapter 内会把它放进 ws headers 模板）
+- chat_http：从 `global_environment[api_key_env_resolved]` 取值并传入 api_key
+     - rt_asr_openai_ws：传入 `api_key_env_resolved`（adapter 内会把它放进 ws headers 模板）
 
 ### 5.2 错误处理策略
 
@@ -256,15 +256,15 @@ best practice（更利于运维）：
 
 ## 6. Backend adapter 行为约束
 
-### 6.1 openai_chat_completion
+### 6.1 chat_http
 
-目前 adapter 直接持有 api_key（由 registry 从 `global_environment` 中解析得到），见 [openai_chat_completion.rs](../../src/spearlet/execution/ai/backends/openai_chat_completion.rs)。
+目前 adapter 直接持有 api_key（由 registry 从 `global_environment` 中解析得到），见 [chat_http.rs](../../src/spearlet/execution/ai/backends/chat_http.rs)。
 
 改造后：registry 负责完成 env name → api_key 的解析，adapter 只消费 api_key。
 
-### 6.2 openai_realtime_ws
+### 6.2 rt_asr_openai_ws
 
-目前 adapter 生成 ws plan 时写入 header 模板：`Bearer ${env:...}`，见 [openai_realtime_ws.rs](../../src/spearlet/execution/ai/backends/openai_realtime_ws.rs#L72-L85)。
+目前 adapter 生成 ws plan 时写入 header 模板：`Bearer ${env:...}`，见 [rt_asr_openai_ws.rs](../../src/spearlet/execution/ai/backends/rt_asr_openai_ws.rs#L72-L85)。
 
 改造后：只需把 resolved 的 env name 传进去。
 

@@ -132,7 +132,7 @@ src/spearlet/execution/
     backends/
       mod.rs
       stub.rs
-      openai_chat_completion.rs
+      chat_http.rs
 ```
 
 And add `pub mod ai;` to `src/spearlet/execution/mod.rs`.
@@ -255,7 +255,7 @@ For MVP, keep the router as a field in `DefaultHostApi` (e.g., `ai_engine: Arc<A
   - `#[cfg(feature = "backend-openai")] pub mod openai_chat_completion;`
 ### 5.2 OpenAI adapter implementation
 
-- File: `src/spearlet/execution/ai/backends/openai_chat_completion.rs`
+- File: `src/spearlet/execution/ai/backends/chat_http.rs`
   - `struct OpenAIChatCompletionBackendAdapter { name, base_url, api_key }`
   - `fn invoke(&self, req: &CanonicalRequestEnvelope) -> Result<CanonicalResponseEnvelope, CanonicalError>`
     - map payload to OpenAI `POST {base_url}/chat/completions`

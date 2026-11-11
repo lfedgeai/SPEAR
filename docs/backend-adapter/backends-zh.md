@@ -18,7 +18,7 @@
 
 建议区分两层：
 
-- `BackendKind`：实现类型（openai_chat_completion/azure/vllm/realtime...）
+- `BackendKind`：adapter family（如 `chat_http`、`rt_asr_openai_ws`、`rt_asr_qwen_ws`）
 - `BackendInstance`：具体实例（base_url、region、权重、优先级、capabilities、limits）
 
 路由选择对象是 instance。
@@ -66,7 +66,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 
 [[spearlet.ai.backends]]
 name = "openai-us"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 model = "gpt-4o-mini"
@@ -79,7 +79,7 @@ transports = ["http"]
 
 [[spearlet.ai.backends]]
 name = "openai-realtime"
-kind = "openai_realtime_ws"
+kind = "rt_asr_openai_ws"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_realtime"
@@ -88,7 +88,31 @@ priority = 20
 ops = ["speech_to_text"]
 features = []
 transports = ["websocket"]
+
+[[spearlet.ai.backends]]
+name = "qwen-asr-realtime"
+kind = "rt_asr_qwen_ws"
+# base_url 需填写包含 DashScope WorkspaceId 的完整主机地址。
+# adapter 会自动把 https 升级为 wss、补齐 /api-ws/v1/realtime 并设置 ?model=<model>。
+base_url = "https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com"
+hosting = "remote"
+# 可选：覆盖 model 与 sample_rate；默认值为 qwen3-asr-flash-realtime / 16000。
+model = "qwen3-asr-flash-realtime"
+credential_ref = "qwen_asr_realtime"
+weight = 100
+priority = 20
+ops = ["speech_to_text"]
+features = []
+transports = ["websocket"]
 ```
+
+> Qwen 实时 ASR 复用与 OpenAI realtime 相同的 WebSocket 数据面
+> （`input_audio_buffer.append` / `commit`）。仅 `session.update` 结构与实时文本事件
+> （`conversation.item.input_audio_transcription.text`，携带 `text` + `stash`）不同；
+> 这些底层差异由 adapter 与 SDK 自动掩盖。
+> `base_url` 推荐填写根域名或 Workspace 域名；如果用户粘贴了以
+> `/compatible-mode/v1` 结尾的 OpenAI-compatible HTTP base URL，adapter 会先
+> 将其归一化回根路径，再推导 realtime endpoint。
 
 ### 5.1 model 绑定与“按模型路由”
 

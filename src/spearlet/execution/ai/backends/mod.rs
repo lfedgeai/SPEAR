@@ -1,14 +1,15 @@
 pub mod http_json;
+pub mod chat_http;
 pub mod ollama_chat;
-pub mod openai_chat_completion;
-pub mod openai_realtime_ws;
+pub mod rt_asr_openai_ws;
+pub mod rt_asr_qwen_ws;
 pub mod stub;
 
-pub const KIND_PREFIX_OPENAI: &str = "openai_";
-pub const KIND_OPENAI_CHAT_COMPLETION: &str = "openai_chat_completion";
-pub const KIND_OPENAI_REALTIME_WS: &str = "openai_realtime_ws";
-pub const KIND_OLLAMA_CHAT: &str = "ollama_chat";
-pub const KIND_STUB: &str = "stub";
+pub use crate::ai_backend_types::{
+    BACKEND_FAMILY_CHAT_HTTP as KIND_CHAT_HTTP, BACKEND_FAMILY_OLLAMA_CHAT as KIND_OLLAMA_CHAT,
+    BACKEND_FAMILY_RT_ASR_OPENAI_WS as KIND_RT_ASR_OPENAI_WS,
+    BACKEND_FAMILY_RT_ASR_QWEN_WS as KIND_RT_ASR_QWEN_WS, BACKEND_FAMILY_STUB as KIND_STUB,
+};
 
 use crate::spearlet::execution::ai::ir::{
     CanonicalError, CanonicalRequestEnvelope, CanonicalResponseEnvelope,

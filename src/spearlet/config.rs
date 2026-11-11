@@ -611,6 +611,10 @@ mod tests {
         validate_spearlet_config, AiBackendConfig, AiBackendProviderView, AiBackendTypedView,
         AiConfig, LocalBackendProviderView, RemoteBackendProviderView, SpearletConfig,
     };
+    use crate::ai_backend_types::{
+        BACKEND_FAMILY_CHAT_HTTP, BACKEND_FAMILY_LLAMACPP, BACKEND_FAMILY_OLLAMA_CHAT,
+        BACKEND_PROVIDER_LLAMACPP, BACKEND_PROVIDER_OLLAMA, BACKEND_PROVIDER_OPENAI,
+    };
 
     #[test]
     fn ai_config_uses_expected_backend_report_interval_by_default() {
@@ -619,15 +623,15 @@ mod tests {
     }
 
     #[test]
-    fn ai_backend_config_typed_view_normalizes_aliases() {
+    fn ai_backend_config_typed_view_requires_canonical_local_values() {
         let config = AiBackendConfig {
             name: "local-llama".to_string(),
-            kind: "llama.cpp".to_string(),
+            kind: BACKEND_FAMILY_LLAMACPP.to_string(),
             base_url: String::new(),
             hosting: Some("local".to_string()),
             model: Some("qwen".to_string()),
             credential_ref: None,
-            provider: Some("llama_cpp".to_string()),
+            provider: Some(BACKEND_PROVIDER_LLAMACPP.to_string()),
             origin: Some("local_controller".to_string()),
             deployment_id: None,
             weight: 100,
@@ -642,8 +646,8 @@ mod tests {
             AiBackendTypedView::Local(local) => local,
             AiBackendTypedView::Remote(_) => panic!("local config should produce local typed view"),
         };
-        assert_eq!(local.common.kind.as_str(), "llamacpp");
-        assert_eq!(local.common.provider.as_str(), "llamacpp");
+        assert_eq!(local.common.kind.as_str(), BACKEND_FAMILY_LLAMACPP);
+        assert_eq!(local.common.provider.as_str(), BACKEND_PROVIDER_LLAMACPP);
         assert_eq!(local.common.origin.as_str(), "local_controller");
     }
 
@@ -652,12 +656,12 @@ mod tests {
         let mut config = SpearletConfig::default();
         config.ai.backends.push(AiBackendConfig {
             name: "ollama-local".to_string(),
-            kind: "ollama_chat".to_string(),
+            kind: BACKEND_FAMILY_OLLAMA_CHAT.to_string(),
             base_url: "http://127.0.0.1:11434".to_string(),
             hosting: Some("local".to_string()),
             model: Some("llama3.1:8b".to_string()),
             credential_ref: None,
-            provider: Some("ollama".to_string()),
+            provider: Some(BACKEND_PROVIDER_OLLAMA.to_string()),
             origin: Some("local_controller".to_string()),
             deployment_id: None,
             weight: 100,
@@ -674,12 +678,12 @@ mod tests {
     fn ai_backend_config_typed_view_builds_remote_variant() {
         let config = AiBackendConfig {
             name: "remote-openai".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: Some("gpt-4o-mini".to_string()),
             credential_ref: Some("openai-key".to_string()),
-            provider: None,
+            provider: Some(BACKEND_PROVIDER_OPENAI.to_string()),
             origin: Some("sms".to_string()),
             deployment_id: Some("deploy-1".to_string()),
             weight: 100,
@@ -690,14 +694,13 @@ mod tests {
         };
 
         let typed = config.typed_view().expect("typed view should be built");
-        let remote = match typed {
-            AiBackendTypedView::Remote(remote) => remote,
-            AiBackendTypedView::Local(_) => {
-                panic!("remote config should produce remote typed view")
-            }
+        let remote = if let AiBackendTypedView::Remote(remote) = typed {
+            remote
+        } else {
+            unreachable!("remote config should produce remote typed view")
         };
-        assert_eq!(remote.common.kind.as_str(), "openai_chat_completion");
-        assert_eq!(remote.common.provider.as_str(), "openai");
+        assert_eq!(remote.common.kind.as_str(), BACKEND_FAMILY_CHAT_HTTP);
+        assert_eq!(remote.common.provider.as_str(), BACKEND_PROVIDER_OPENAI);
         assert_eq!(remote.base_url, "https://api.openai.com/v1");
         assert_eq!(remote.credential_ref.as_deref(), Some("openai-key"));
     }
@@ -706,12 +709,12 @@ mod tests {
     fn ai_backend_config_typed_view_rejects_remote_backend_without_base_url() {
         let config = AiBackendConfig {
             name: "remote-openai".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
             base_url: String::new(),
             hosting: Some("remote".to_string()),
             model: Some("gpt-4o-mini".to_string()),
             credential_ref: None,
-            provider: None,
+            provider: Some(BACKEND_PROVIDER_OPENAI.to_string()),
             origin: Some("sms".to_string()),
             deployment_id: None,
             weight: 100,
@@ -731,12 +734,12 @@ mod tests {
     fn ai_backend_config_typed_view_allows_local_llamacpp_without_base_url() {
         let config = AiBackendConfig {
             name: "local-llama".to_string(),
-            kind: "llamacpp".to_string(),
+            kind: BACKEND_FAMILY_LLAMACPP.to_string(),
             base_url: String::new(),
             hosting: Some("local".to_string()),
             model: Some("qwen".to_string()),
             credential_ref: None,
-            provider: Some("llamacpp".to_string()),
+            provider: Some(BACKEND_PROVIDER_LLAMACPP.to_string()),
             origin: Some("local_controller".to_string()),
             deployment_id: None,
             weight: 100,
@@ -761,12 +764,12 @@ mod tests {
     fn ai_backend_config_typed_view_exposes_provider_specific_local_view() {
         let config = AiBackendConfig {
             name: "ollama-local".to_string(),
-            kind: "ollama_chat".to_string(),
+            kind: BACKEND_FAMILY_OLLAMA_CHAT.to_string(),
             base_url: "http://127.0.0.1:11434".to_string(),
             hosting: Some("local".to_string()),
             model: Some("llama3.1:8b".to_string()),
             credential_ref: None,
-            provider: Some("ollama".to_string()),
+            provider: Some(BACKEND_PROVIDER_OLLAMA.to_string()),
             origin: Some("local_controller".to_string()),
             deployment_id: None,
             weight: 100,
@@ -779,7 +782,7 @@ mod tests {
         let typed = config.typed_view().expect("typed view should be built");
         match typed.provider_view() {
             AiBackendProviderView::Local(LocalBackendProviderView::Ollama(local)) => {
-                assert_eq!(local.common.provider.as_str(), "ollama");
+                assert_eq!(local.common.provider.as_str(), BACKEND_PROVIDER_OLLAMA);
             }
             other => panic!("expected local ollama provider view, got {other:?}"),
         }
@@ -789,12 +792,12 @@ mod tests {
     fn ai_backend_config_typed_view_exposes_provider_specific_remote_view() {
         let config = AiBackendConfig {
             name: "remote-openai".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: Some("gpt-4o-mini".to_string()),
             credential_ref: Some("openai-key".to_string()),
-            provider: Some("openai".to_string()),
+            provider: Some(BACKEND_PROVIDER_OPENAI.to_string()),
             origin: Some("sms".to_string()),
             deployment_id: Some("deploy-1".to_string()),
             weight: 100,
@@ -807,7 +810,7 @@ mod tests {
         let typed = config.typed_view().expect("typed view should be built");
         match typed.provider_view() {
             AiBackendProviderView::Remote(RemoteBackendProviderView::OpenAi(remote)) => {
-                assert_eq!(remote.common.provider.as_str(), "openai");
+                assert_eq!(remote.common.provider.as_str(), BACKEND_PROVIDER_OPENAI);
             }
             other => panic!("expected remote openai provider view, got {other:?}"),
         }
@@ -817,12 +820,12 @@ mod tests {
     fn ai_backend_config_typed_view_rejects_provider_kind_mismatch() {
         let config = AiBackendConfig {
             name: "bad-remote".to_string(),
-            kind: "ollama_chat".to_string(),
+            kind: BACKEND_FAMILY_OLLAMA_CHAT.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: Some("llama3.1:8b".to_string()),
             credential_ref: None,
-            provider: Some("openai".to_string()),
+            provider: Some(BACKEND_PROVIDER_OPENAI.to_string()),
             origin: Some("sms".to_string()),
             deployment_id: None,
             weight: 100,
@@ -835,7 +838,7 @@ mod tests {
         let err = config
             .typed_view()
             .expect_err("provider/kind mismatch should be rejected");
-        assert!(err.contains("does not match kind"));
+        assert!(err.contains("is not supported for kind"));
     }
 }
 
@@ -1148,7 +1151,9 @@ impl LocalBackendConfigView {
             CanonicalBackendProvider::LlamaCpp => LocalBackendProviderView::LlamaCpp(self),
             CanonicalBackendProvider::Vllm => LocalBackendProviderView::Vllm(self),
             CanonicalBackendProvider::Internal => LocalBackendProviderView::Internal(self),
-            CanonicalBackendProvider::OpenAi | CanonicalBackendProvider::Unknown(_) => {
+            CanonicalBackendProvider::OpenAi
+            | CanonicalBackendProvider::Qwen
+            | CanonicalBackendProvider::Unknown(_) => {
                 LocalBackendProviderView::Unknown(self)
             }
         }
@@ -1186,6 +1191,7 @@ impl RemoteBackendConfigView {
             CanonicalBackendProvider::Internal => RemoteBackendProviderView::Internal(self),
             CanonicalBackendProvider::LlamaCpp
             | CanonicalBackendProvider::Vllm
+            | CanonicalBackendProvider::Qwen
             | CanonicalBackendProvider::Unknown(_) => RemoteBackendProviderView::Unknown(self),
         }
     }
@@ -1278,19 +1284,27 @@ fn canonical_provider_for_kind(
     kind: &CanonicalBackendKind,
     raw_provider: Option<&str>,
 ) -> Result<CanonicalBackendProvider, String> {
-    let inferred = kind.inferred_provider();
-    let Some(provider) = raw_provider.and_then(trimmed_option) else {
-        return Ok(inferred);
+    let provider = match raw_provider.and_then(trimmed_option) {
+        Some(provider) => provider,
+        None => {
+            return match kind.default_provider() {
+                Some(provider) => Ok(provider),
+                None => Err(format!(
+                    "ai backend provider is required for backend kind {}",
+                    kind.as_str()
+                )),
+            };
+        }
     };
     let parsed = CanonicalBackendProvider::parse(&provider);
     if matches!(parsed, CanonicalBackendProvider::Unknown(_)) {
         return Err(format!("invalid ai backend provider {provider}"));
     }
-    if matches!(inferred, CanonicalBackendProvider::Unknown(_)) || parsed == inferred {
+    if kind.supports_provider(&parsed) {
         return Ok(parsed);
     }
     Err(format!(
-        "backend provider {} does not match kind {}",
+        "backend provider {} is not supported for kind {}",
         parsed.as_str(),
         kind.as_str()
     ))

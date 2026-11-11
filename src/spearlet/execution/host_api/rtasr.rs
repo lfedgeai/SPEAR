@@ -40,6 +40,9 @@ struct RtAsrConnectOverrides {
     ws_url: Option<String>,
     client_secret: Option<String>,
     model: Option<String>,
+    // Optional audio sample rate (Hz) forwarded to the backend session config.
+    // 可选音频采样率（Hz），透传给后端会话配置。
+    sample_rate: Option<u32>,
 }
 
 impl RtAsrConnectOverrides {
@@ -56,10 +59,15 @@ impl RtAsrConnectOverrides {
             .get(rtasr_keys::MODEL)
             .and_then(|x| x.as_str())
             .map(|s| s.to_string());
+        let sample_rate = params
+            .get(rtasr_keys::SAMPLE_RATE)
+            .and_then(|x| x.as_u64())
+            .map(|v| v as u32);
         Self {
             ws_url,
             client_secret,
             model,
+            sample_rate,
         }
     }
 }
@@ -74,7 +82,11 @@ enum RtAsrConnectAction {
     },
 }
 
-fn build_ws_s2t_request(st: &RtAsrState, model: Option<String>) -> CanonicalRequestEnvelope {
+fn build_ws_s2t_request(
+    st: &RtAsrState,
+    model: Option<String>,
+    sample_rate: Option<u32>,
+) -> CanonicalRequestEnvelope {
     CanonicalRequestEnvelope {
         version: 1,
         request_id: "rtasr_connect".to_string(),
@@ -94,7 +106,7 @@ fn build_ws_s2t_request(st: &RtAsrState, model: Option<String>) -> CanonicalRequ
             required_transports: vec!["websocket".to_string()],
         },
         timeout_ms: None,
-        payload: Payload::SpeechToText(SpeechToTextPayload { model }),
+        payload: Payload::SpeechToText(SpeechToTextPayload { model, sample_rate }),
         extra: HashMap::new(),
     }
 }
@@ -220,7 +232,11 @@ impl DefaultHostApi {
                             RtAsrTransport::Websocket => {
                                 st.state = RtAsrConnState::Connecting;
                                 action = RtAsrConnectAction::ResolveWebsocket {
-                                    req: build_ws_s2t_request(st, overrides.model.clone()),
+                                    req: build_ws_s2t_request(
+                                        st,
+                                        overrides.model.clone(),
+                                        overrides.sample_rate,
+                                    ),
                                     overrides,
                                     segmentation: st.segmentation.clone(),
                                 };

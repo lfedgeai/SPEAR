@@ -22,7 +22,7 @@ async fn backend_snapshot_report_and_query_works() {
         backends: vec![BackendInfo {
             spec: Some(BackendSpec {
                 name: "openai-chat".to_string(),
-                kind: "openai_chat_completion".to_string(),
+                kind: "chat_http".to_string(),
                 operations: vec!["chat_completions".to_string()],
                 features: vec![],
                 transports: vec!["http".to_string()],

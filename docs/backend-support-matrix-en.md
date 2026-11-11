@@ -12,7 +12,7 @@ This matrix reflects current behavior only. Historical design notes, reserved fi
 
 ## Design Principles
 
-- `kind` identifies the backend adapter type, such as `openai_chat_completion`
+- `kind` identifies the backend adapter family, such as `chat_http`
 - `operations` identify the externally declared capability, such as `chat_completions`
 - a backend can participate in routing only if:
   - the declared operation is valid
@@ -21,11 +21,12 @@ This matrix reflects current behavior only. Historical design notes, reserved fi
 
 ## Built-in Runtime Matrix
 
-| Kind | Hosting | Transport | Currently supported operations | Notes |
+| Backend family | Hosting | Transport | Currently supported operations | Notes |
 |---|---|---|---|---|
-| `openai_chat_completion` | remote | `http` | `chat_completions` | Standard OpenAI-style HTTP chat adapter |
+| `chat_http` | remote | `http` | `chat_completions` | Provider-neutral HTTP chat adapter used by OpenAI and Qwen |
 | `ollama_chat` | remote or local endpoint-style | `http` | `chat_completions` | Ollama-compatible HTTP adapter |
-| `openai_realtime_ws` | remote | `websocket` | `speech_to_text` | Currently implemented as streaming ASR, not a general realtime voice agent |
+| `rt_asr_openai_ws` | remote | `websocket` | `speech_to_text` | OpenAI-style realtime websocket ASR adapter |
+| `rt_asr_qwen_ws` | remote | `websocket` | `speech_to_text` | Qwen realtime websocket ASR adapter |
 | `llamacpp` | local | `http` | `chat_completions` | Node-local managed `llama-server` adapter |
 | `stub` | local / internal | in-process | `chat_completions` | Test / development only |
 
@@ -40,17 +41,19 @@ Web Admin now exposes two explicit create paths:
 
 Current remote combinations available from the UI:
 
-| Hosting | Provider | Backend Kind | Default / common operations | Notes |
+| Hosting | Provider | Backend family | Default / common operations | Notes |
 |---|---|---|---|---|
-| `remote` | `openai` | `openai_chat_completion` | `chat_completions` | Standard remote HTTP chat backend |
-| `remote` | `openai` | `openai_realtime_ws` | `speech_to_text` | Remote websocket ASR backend |
+| `remote` | `openai` | `chat_http` | `chat_completions` | Standard remote HTTP chat backend |
+| `remote` | `openai` | `rt_asr_openai_ws` | `speech_to_text` | Remote websocket ASR backend |
+| `remote` | `qwen` | `chat_http` | `chat_completions` | Remote Qwen chat backend through the shared HTTP chat adapter |
+| `remote` | `qwen` | `rt_asr_qwen_ws` | `speech_to_text` | Remote Qwen websocket ASR backend |
 | `remote` | `ollama` | `ollama_chat` | `chat_completions` | External Ollama-compatible endpoint |
 
 ### Local
 
 Current local combinations available from the UI:
 
-| Hosting | Provider | Backend Kind | Current behavior | Notes |
+| Hosting | Provider | Backend family | Current behavior | Notes |
 |---|---|---|---|---|
 | `local` | `llamacpp` | `llamacpp` | managed local runtime | Starts / manages node-local `llama-server` |
 | `local` | `vllm` | `vllm` | scaffolded / external-endpoint oriented | Not yet a fully managed local process path |
@@ -80,10 +83,10 @@ So when judging support, use the runtime adapter matrix plus `kind` / `operation
 ## Recommended Current Usage
 
 - Standard chat backend:
-  - `kind = openai_chat_completion`
+  - `kind = chat_http`
   - `operations = ["chat_completions"]`
 - Realtime ASR backend:
-  - `kind = openai_realtime_ws`
+  - `kind = rt_asr_openai_ws` or `rt_asr_qwen_ws`
   - `operations = ["speech_to_text"]`
 - Local llama.cpp backend:
   - `kind = llamacpp`
@@ -94,9 +97,11 @@ So when judging support, use the runtime adapter matrix plus `kind` / `operation
 
 The following should not be treated as valid runtime-ready configurations in the current codebase:
 
-- `openai_realtime_ws` + `realtime`
-- `openai_realtime_ws` + `realtime_voice`
-- `openai_chat_completion` + `speech_to_text`
+- `rt_asr_openai_ws` + `realtime`
+- `rt_asr_openai_ws` + `realtime_voice`
+- `rt_asr_qwen_ws` + `realtime`
+- `rt_asr_qwen_ws` + `realtime_voice`
+- `chat_http` + `speech_to_text`
 - any `kind` declaring an operation that its adapter does not implement
 
 ## Recommended Extension Order

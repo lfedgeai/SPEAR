@@ -125,9 +125,14 @@ name = "openai_realtime"
 kind = "env"
 api_key_env = "OPENAI_API_KEY"
 
+[[spearlet.ai.credentials]]
+name = "qwen_live"
+kind = "env"
+api_key_env = "DASHSCOPE_API_KEY"
+
 [[spearlet.ai.backends]]
 name = "openai-chat"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 model = "gpt-4o-mini"
@@ -139,8 +144,20 @@ weight = 100
 priority = 0
 
 [[spearlet.ai.backends]]
+name = "qwen-live"
+kind = "rt_asr_qwen_ws"
+base_url = "https://maas.qianwenaiapi.com/compatible-mode/v1"
+hosting = "remote"
+credential_ref = "qwen_live"
+ops = ["speech_to_text"]
+features = []
+transports = ["websocket"]
+weight = 100
+priority = 0
+
+[[spearlet.ai.backends]]
 name = "openai-realtime-asr"
-kind = "openai_realtime_ws"
+kind = "rt_asr_openai_ws"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_realtime"

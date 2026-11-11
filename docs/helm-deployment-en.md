@@ -185,7 +185,7 @@ spearlet:
           apiKeyEnv: OPENAI_API_KEY
       backends:
         - name: openai-chat
-          kind: openai_chat_completion
+          kind: chat_http
           baseUrl: https://api.openai.com/v1
           model: gpt-4o-mini
           credentialRef: openai_chat

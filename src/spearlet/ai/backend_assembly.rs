@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use crate::ai_backend_types::{
     CanonicalBackendHosting, CanonicalBackendKind, CanonicalBackendOrigin, CanonicalBackendProvider,
+    BACKEND_FAMILY_CHAT_HTTP, BACKEND_FAMILY_LLAMACPP, BACKEND_FAMILY_OLLAMA_CHAT,
+    BACKEND_FAMILY_RT_ASR_OPENAI_WS, BACKEND_FAMILY_RT_ASR_QWEN_WS, BACKEND_FAMILY_STUB,
+    BACKEND_PROVIDER_INTERNAL, BACKEND_PROVIDER_LLAMACPP, BACKEND_PROVIDER_OLLAMA,
+    BACKEND_PROVIDER_OPENAI,
 };
 use crate::proto::sms::{BackendHosting, BackendInfo, BackendOrigin, BackendSpec, BackendStatus};
 use crate::spearlet::ai::credential_resolver::CredentialResolver;
@@ -10,8 +14,9 @@ use crate::spearlet::config::{
     LocalBackendProviderView, RemoteBackendConfigView, RemoteBackendProviderView,
 };
 use crate::spearlet::execution::ai::backends::ollama_chat::OllamaChatBackendAdapter;
-use crate::spearlet::execution::ai::backends::openai_chat_completion::OpenAIChatCompletionBackendAdapter;
-use crate::spearlet::execution::ai::backends::openai_realtime_ws::OpenAIRealtimeWsBackendAdapter;
+use crate::spearlet::execution::ai::backends::chat_http::OpenAIChatCompletionBackendAdapter;
+use crate::spearlet::execution::ai::backends::rt_asr_openai_ws::OpenAIRealtimeWsBackendAdapter;
+use crate::spearlet::execution::ai::backends::rt_asr_qwen_ws::QwenAsrRealtimeWsBackendAdapter;
 use crate::spearlet::execution::ai::backends::stub::StubBackendAdapter;
 use crate::spearlet::execution::ai::backends::BackendAdapter;
 use crate::spearlet::execution::ai::ir::Operation;
@@ -38,7 +43,8 @@ pub struct BackendSpecParts {
 
 pub fn infer_provider(kind: &str) -> String {
     CanonicalBackendKind::parse(kind)
-        .inferred_provider()
+        .default_provider()
+        .unwrap_or(CanonicalBackendProvider::Unknown("unknown".to_string()))
         .as_str()
         .to_string()
 }
@@ -101,10 +107,13 @@ fn optional_string(v: &str) -> Option<String> {
 /// 用于集中 capability 与 adapter 选择的运行时 backend 家族。
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RuntimeBackendFamily {
-    /// OpenAI chat-completions adapter family / OpenAI chat-completions 适配器家族
-    OpenAiChatCompletion,
+    /// Provider-neutral chat-completions HTTP+JSON adapter family.
+    /// Provider-neutral chat-completions HTTP+JSON 适配器家族。
+    ChatHttp,
     /// OpenAI realtime websocket adapter family / OpenAI realtime websocket 适配器家族
-    OpenAiRealtimeWs,
+    RtAsrOpenAiWs,
+    /// Qwen realtime ASR websocket adapter family / Qwen 实时 ASR websocket 适配器家族
+    RtAsrQwenWs,
     /// Ollama chat adapter family / Ollama chat 适配器家族
     OllamaChat,
     /// Internal stub adapter family / 内部 stub 适配器家族
@@ -118,8 +127,13 @@ impl RuntimeBackendFamily {
     /// 将运行时 backend kind 分类为规范 adapter 家族。
     fn from_kind(kind: &str) -> Self {
         match CanonicalBackendKind::parse(kind) {
-            CanonicalBackendKind::OpenAiChatCompletion => Self::OpenAiChatCompletion,
-            CanonicalBackendKind::OpenAiRealtimeWs => Self::OpenAiRealtimeWs,
+            CanonicalBackendKind::ChatHttp => Self::ChatHttp,
+            CanonicalBackendKind::RtAsrOpenAiWs => {
+                Self::RtAsrOpenAiWs
+            }
+            CanonicalBackendKind::RtAsrQwenWs => {
+                Self::RtAsrQwenWs
+            }
             CanonicalBackendKind::OllamaChat => Self::OllamaChat,
             CanonicalBackendKind::Stub => Self::Stub,
             other => Self::Unknown(other.as_str().to_string()),
@@ -130,10 +144,11 @@ impl RuntimeBackendFamily {
     /// 返回一个运行时家族在固定情况下支持的 operation 集合。
     fn supported_operations(&self) -> Option<&'static [Operation]> {
         match self {
-            Self::OpenAiChatCompletion | Self::OllamaChat | Self::Stub => {
+            Self::ChatHttp | Self::OllamaChat | Self::Stub => {
                 Some(&[Operation::ChatCompletions])
             }
-            Self::OpenAiRealtimeWs => Some(&[Operation::SpeechToText]),
+            Self::RtAsrOpenAiWs => Some(&[Operation::SpeechToText]),
+            Self::RtAsrQwenWs => Some(&[Operation::SpeechToText]),
             Self::Unknown(_) => None,
         }
     }
@@ -479,7 +494,7 @@ pub fn build_adapter_from_spec(
         Some(spec.credential_ref.as_str())
     };
     match RuntimeBackendFamily::from_kind(&spec.kind) {
-        RuntimeBackendFamily::OpenAiChatCompletion => {
+        RuntimeBackendFamily::ChatHttp => {
             let mut a = OpenAIChatCompletionBackendAdapter::new(
                 spec.name.clone(),
                 spec.base_url.clone(),
@@ -491,8 +506,16 @@ pub fn build_adapter_from_spec(
             }
             Some(Arc::new(a))
         }
-        RuntimeBackendFamily::OpenAiRealtimeWs => {
+        RuntimeBackendFamily::RtAsrOpenAiWs => {
             Some(Arc::new(OpenAIRealtimeWsBackendAdapter::new(
+                spec.name.clone(),
+                spec.base_url.clone(),
+                cred_ref.map(ToOwned::to_owned),
+                credential_resolver.cloned(),
+            )))
+        }
+        RuntimeBackendFamily::RtAsrQwenWs => {
+            Some(Arc::new(QwenAsrRealtimeWsBackendAdapter::new(
                 spec.name.clone(),
                 spec.base_url.clone(),
                 cred_ref.map(ToOwned::to_owned),
@@ -529,19 +552,23 @@ mod tests {
     #[test]
     fn runtime_backend_family_classifies_supported_runtime_kinds() {
         assert_eq!(
-            RuntimeBackendFamily::from_kind("OPENAI_CHAT_COMPLETION"),
-            RuntimeBackendFamily::OpenAiChatCompletion
+            RuntimeBackendFamily::from_kind(BACKEND_FAMILY_CHAT_HTTP),
+            RuntimeBackendFamily::ChatHttp
         );
         assert_eq!(
-            RuntimeBackendFamily::from_kind("openai_realtime_ws"),
-            RuntimeBackendFamily::OpenAiRealtimeWs
+            RuntimeBackendFamily::from_kind(BACKEND_FAMILY_RT_ASR_OPENAI_WS),
+            RuntimeBackendFamily::RtAsrOpenAiWs
         );
         assert_eq!(
-            RuntimeBackendFamily::from_kind("ollama_chat"),
+            RuntimeBackendFamily::from_kind(BACKEND_FAMILY_RT_ASR_QWEN_WS),
+            RuntimeBackendFamily::RtAsrQwenWs
+        );
+        assert_eq!(
+            RuntimeBackendFamily::from_kind(BACKEND_FAMILY_OLLAMA_CHAT),
             RuntimeBackendFamily::OllamaChat
         );
         assert_eq!(
-            RuntimeBackendFamily::from_kind("stub"),
+            RuntimeBackendFamily::from_kind(BACKEND_FAMILY_STUB),
             RuntimeBackendFamily::Stub
         );
     }
@@ -550,7 +577,7 @@ mod tests {
     fn capabilities_from_spec_uses_runtime_family_selector() {
         let spec = backend_spec_from_parts(BackendSpecParts {
             name: "rt".to_string(),
-            kind: "openai_realtime_ws".to_string(),
+            kind: BACKEND_FAMILY_RT_ASR_OPENAI_WS.to_string(),
             operations: vec!["speech_to_text".to_string()],
             features: vec![],
             transports: vec!["websocket".to_string()],
@@ -574,7 +601,7 @@ mod tests {
         let inst = build_instance_from_spec(
             backend_spec_from_parts(BackendSpecParts {
                 name: "rt".to_string(),
-                kind: "openai_realtime_ws".to_string(),
+                kind: BACKEND_FAMILY_RT_ASR_OPENAI_WS.to_string(),
                 operations: vec!["speech_to_text".to_string()],
                 features: vec![],
                 transports: vec!["websocket".to_string()],
@@ -593,23 +620,23 @@ mod tests {
         )
         .expect("backend instance should be built");
 
-        assert_eq!(inst.spec.provider, "openai");
+        assert_eq!(inst.spec.provider, BACKEND_PROVIDER_OPENAI);
         assert_eq!(inst.hosting, Hosting::Remote);
-        assert_eq!(inst.spec.kind, "openai_realtime_ws");
+        assert_eq!(inst.spec.kind, BACKEND_FAMILY_RT_ASR_OPENAI_WS);
     }
 
     #[test]
-    fn backend_spec_from_parts_normalizes_provider_and_kind_aliases() {
+    fn backend_spec_from_parts_uses_canonical_provider_and_kind_values() {
         let spec = backend_spec_from_parts(BackendSpecParts {
             name: "local-llama".to_string(),
-            kind: "llama.cpp".to_string(),
+            kind: BACKEND_FAMILY_LLAMACPP.to_string(),
             operations: vec!["chat_completions".to_string()],
             features: vec![],
             transports: vec!["http".to_string()],
             weight: 100,
             priority: 0,
             base_url: String::new(),
-            provider: Some("llama_cpp".to_string()),
+            provider: Some(BACKEND_PROVIDER_LLAMACPP.to_string()),
             model: Some("qwen".to_string()),
             hosting: Hosting::Local,
             credential_ref: None,
@@ -617,8 +644,8 @@ mod tests {
             deployment_id: None,
         });
 
-        assert_eq!(spec.kind, "llamacpp");
-        assert_eq!(spec.provider, "llamacpp");
+        assert_eq!(spec.kind, BACKEND_FAMILY_LLAMACPP);
+        assert_eq!(spec.provider, BACKEND_PROVIDER_LLAMACPP);
     }
 
     #[test]
@@ -639,8 +666,8 @@ mod tests {
             backend_spec_from_typed_config(&AiBackendTypedView::Local(LocalBackendConfigView {
                 common: AiBackendCommonView {
                     name: "ollama-local".to_string(),
-                    kind: CanonicalBackendKind::parse("ollama_chat"),
-                    provider: CanonicalBackendProvider::parse("ollama"),
+                    kind: CanonicalBackendKind::parse(BACKEND_FAMILY_OLLAMA_CHAT),
+                    provider: CanonicalBackendProvider::parse(BACKEND_PROVIDER_OLLAMA),
                     origin: CanonicalBackendOrigin::parse_optional(Some("local_controller")),
                     deployment_id: None,
                     weight: 100,
@@ -654,8 +681,8 @@ mod tests {
                 base_url: "http://127.0.0.1:11434".to_string(),
             }));
 
-        assert_eq!(spec.kind, "ollama_chat");
-        assert_eq!(spec.provider, "ollama");
+        assert_eq!(spec.kind, BACKEND_FAMILY_OLLAMA_CHAT);
+        assert_eq!(spec.provider, BACKEND_PROVIDER_OLLAMA);
         assert_eq!(spec.hosting, BackendHosting::NodeLocal as i32);
     }
 
@@ -665,8 +692,8 @@ mod tests {
             backend_spec_from_typed_config(&AiBackendTypedView::Remote(RemoteBackendConfigView {
                 common: AiBackendCommonView {
                     name: "openai-remote".to_string(),
-                    kind: CanonicalBackendKind::parse("openai_chat_completion"),
-                    provider: CanonicalBackendProvider::parse("openai"),
+                    kind: CanonicalBackendKind::parse(BACKEND_FAMILY_CHAT_HTTP),
+                    provider: CanonicalBackendProvider::parse(BACKEND_PROVIDER_OPENAI),
                     origin: CanonicalBackendOrigin::parse_optional(Some("sms")),
                     deployment_id: Some("deploy-1".to_string()),
                     weight: 100,
@@ -680,8 +707,8 @@ mod tests {
                 base_url: "https://api.openai.com/v1".to_string(),
             }));
 
-        assert_eq!(spec.kind, "openai_chat_completion");
-        assert_eq!(spec.provider, "openai");
+        assert_eq!(spec.kind, BACKEND_FAMILY_CHAT_HTTP);
+        assert_eq!(spec.provider, BACKEND_PROVIDER_OPENAI);
         assert_eq!(spec.hosting, BackendHosting::Remote as i32);
         assert_eq!(spec.credential_ref, "openai-key");
     }
@@ -696,7 +723,7 @@ mod tests {
         let inst = build_instance_from_spec(
             backend_spec_from_parts(BackendSpecParts {
                 name: "rt-invalid".to_string(),
-                kind: "openai_realtime_ws".to_string(),
+                kind: BACKEND_FAMILY_RT_ASR_OPENAI_WS.to_string(),
                 operations: vec!["chat_completions".to_string()],
                 features: vec![],
                 transports: vec!["websocket".to_string()],
@@ -721,14 +748,14 @@ mod tests {
     fn build_adapter_from_spec_respects_stub_family_gate() {
         let spec = backend_spec_from_parts(BackendSpecParts {
             name: "stub-backend".to_string(),
-            kind: "stub".to_string(),
+            kind: BACKEND_FAMILY_STUB.to_string(),
             operations: vec!["chat_completions".to_string()],
             features: vec![],
             transports: vec!["memory".to_string()],
             weight: 100,
             priority: 0,
             base_url: String::new(),
-            provider: Some("internal".to_string()),
+            provider: Some(BACKEND_PROVIDER_INTERNAL.to_string()),
             model: None,
             hosting: Hosting::Local,
             credential_ref: None,

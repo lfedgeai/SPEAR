@@ -247,7 +247,7 @@ export type WriteAiBackendInput = {
 
 export type AiBackendLocalInput =
   | {
-      provider_family: 'llama_cpp'
+      provider_family: 'llamacpp'
       config: {
         model_url?: string
         model_path?: string
@@ -272,7 +272,7 @@ export type AiBackendLocalInput =
 
 export type AiBackendRemoteInput =
   | {
-      provider_family: 'open_ai_compatible'
+      provider_family: 'openai'
       config: {
         base_url?: string
         credential_ref?: string

@@ -10,6 +10,7 @@ use spear_wasm_helper::{
     rtasr_protocol::TranscriptEvent,
     stream::{BufferedTextOutput, StreamEndpoint, StreamModality},
     time_format::current_hms_prefix,
+    transcript_draft::RealtimeTranscriptDraft,
     user_stream_protocol::{
         is_audio_utterance_begin, is_open_handshake, parse_stream_message, IncomingStreamMessage,
         StreamMessageError,
@@ -50,7 +51,11 @@ struct VoiceChatApp {
     text_output: BufferedTextOutput,
     rtasr: Option<VoiceTranscriptionSession>,
     voice_state: VoiceState,
-    last_transcript: String,
+    // Shared transcript draft helper that keeps provider-specific transcript
+    // semantics out of the sample-level state machine.
+    // 共享 transcript 草稿 helper，把 provider 特有的转写语义从 sample 层
+    // 状态机里收敛出去。
+    transcript_draft: RealtimeTranscriptDraft,
     warned: HashSet<&'static str>,
     session_closed: bool,
 }
@@ -67,7 +72,7 @@ impl VoiceChatApp {
             text_output: BufferedTextOutput::new(crate::config::META_V1_JSON),
             rtasr: None,
             voice_state: VoiceState::Idle,
-            last_transcript: String::new(),
+            transcript_draft: RealtimeTranscriptDraft::default(),
             warned: HashSet::new(),
             session_closed: false,
         };
@@ -295,16 +300,25 @@ impl VoiceChatApp {
         };
         let transcript_events = session.drain_events().map_err(render_error)?;
         for event in transcript_events {
+            let update = self.transcript_draft.apply(&event);
             match event {
                 TranscriptEvent::SpeechStarted => {}
-                TranscriptEvent::Delta(delta) => self.last_transcript.push_str(&delta),
-                TranscriptEvent::Completed(transcript) => {
-                    if let Some(text) = transcript.filter(|value| !value.is_empty()) {
-                        self.last_transcript = text;
-                    }
+                TranscriptEvent::Delta(_) | TranscriptEvent::Preview { .. } => {}
+                TranscriptEvent::Completed(_) => {
                     if self.voice_state == VoiceState::Committing {
-                        if !self.last_transcript.is_empty() {
-                            let final_transcript = std::mem::take(&mut self.last_transcript);
+                        let final_transcript = update
+                            .completed_transcript
+                            .or_else(|| {
+                                let draft = self.transcript_draft.current_draft().to_string();
+                                if draft.is_empty() {
+                                    None
+                                } else {
+                                    Some(draft)
+                                }
+                            });
+                        if let Some(final_transcript) =
+                            final_transcript.filter(|value| !value.is_empty())
+                        {
                             self.text_output
                                 .write(&current_hms_prefix().map_err(render_error)?);
                             self.text_output.write(&final_transcript);
@@ -312,6 +326,7 @@ impl VoiceChatApp {
                             self.flush_text_output()?;
                             self.send_chat_reply(&final_transcript)?;
                         }
+                        self.transcript_draft.reset();
                         self.voice_state = VoiceState::Idle;
                     }
                 }
@@ -322,7 +337,7 @@ impl VoiceChatApp {
 
     fn begin_utterance(&mut self) -> Result<(), String> {
         self.voice_state = VoiceState::Recording;
-        self.last_transcript.clear();
+        self.transcript_draft.reset();
         if let Some(session) = self.rtasr.as_mut() {
             return session.prepare_for_new_utterance().map_err(render_error);
         }

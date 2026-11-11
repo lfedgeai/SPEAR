@@ -132,7 +132,7 @@ src/spearlet/execution/
     backends/
       mod.rs
       stub.rs
-      openai_chat_completion.rs
+      chat_http.rs
 ```
 
 并在 `src/spearlet/execution/mod.rs` 增加 `pub mod ai;`。
@@ -257,7 +257,7 @@ MVP 阶段 router 可以作为 `DefaultHostApi` 的一个字段（例如 `ai_eng
   - `#[cfg(feature = "backend-openai")] pub mod openai_chat_completion;`
 ### 5.2 OpenAI backend adapter
 
-- 文件：`src/spearlet/execution/ai/backends/openai_chat_completion.rs`
+- 文件：`src/spearlet/execution/ai/backends/chat_http.rs`
   - `struct OpenAIChatCompletionBackendAdapter { name, base_url, api_key }`
   - `fn invoke(&self, req: &CanonicalRequestEnvelope) -> Result<CanonicalResponseEnvelope, CanonicalError>`
     - 将 payload 映射到 OpenAI `POST {base_url}/chat/completions`

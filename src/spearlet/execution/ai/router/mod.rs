@@ -324,9 +324,13 @@ fn managed_backend_info_to_instance(b: crate::proto::sms::BackendInfo) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::{
+        BACKEND_PROVIDER_INTERNAL, BACKEND_PROVIDER_OLLAMA, BACKEND_PROVIDER_OPENAI,
+    };
     use crate::spearlet::config::RouterGrpcFilterStreamConfig;
     use crate::spearlet::execution::ai::backends::{
-        stub::StubBackendAdapter, KIND_OLLAMA_CHAT, KIND_OPENAI_REALTIME_WS,
+        stub::StubBackendAdapter, KIND_CHAT_HTTP, KIND_OLLAMA_CHAT, KIND_RT_ASR_OPENAI_WS,
+        KIND_STUB,
     };
     use crate::spearlet::execution::ai::ir::{
         ChatCompletionsPayload, ChatMessage, Operation, Payload, RoutingHints, SpeechToTextPayload,
@@ -419,6 +423,7 @@ mod tests {
             timeout_ms: None,
             payload: Payload::SpeechToText(SpeechToTextPayload {
                 model: model.map(str::to_string),
+                sample_rate: None,
             }),
             extra: HashMap::new(),
         }
@@ -429,7 +434,7 @@ mod tests {
         let inst = managed_backend_info_to_instance(crate::proto::sms::BackendInfo {
             spec: Some(crate::proto::sms::BackendSpec {
                 name: "rt-ws".to_string(),
-                kind: KIND_OPENAI_REALTIME_WS.to_string(),
+                kind: KIND_RT_ASR_OPENAI_WS.to_string(),
                 operations: vec!["speech_to_text".to_string()],
                 features: vec![],
                 transports: vec!["websocket".to_string()],
@@ -451,7 +456,7 @@ mod tests {
         let plan = inst.adapter.streaming_plan(&stt_req(None)).unwrap();
         let StreamingPlan::Websocket(ws) = plan;
         assert!(ws.websocket.url.starts_with("wss://"));
-        assert_eq!(inst.spec.kind, KIND_OPENAI_REALTIME_WS);
+        assert_eq!(inst.spec.kind, KIND_RT_ASR_OPENAI_WS);
     }
 
     #[test]
@@ -488,19 +493,19 @@ mod tests {
     fn test_route_prefers_model_bound_backend() {
         let a = mk_inst(
             "openai",
-            "openai_chat_completion",
+            KIND_CHAT_HTTP,
             "https://api.openai.com/v1",
             Hosting::Remote,
             "gpt-4o-mini",
-            "openai",
+            BACKEND_PROVIDER_OPENAI,
         );
         let b = mk_inst(
             "ollama",
-            "ollama_chat",
+            KIND_OLLAMA_CHAT,
             "http://127.0.0.1:11434",
             Hosting::Local,
             "gemma3:1b",
-            "ollama",
+            BACKEND_PROVIDER_OLLAMA,
         );
         let router = Router::new(
             BackendRegistry::new(vec![a, b]),
@@ -515,11 +520,11 @@ mod tests {
     fn test_route_errors_on_unknown_model_when_model_bound_exists() {
         let a = mk_inst(
             "ollama",
-            "ollama_chat",
+            KIND_OLLAMA_CHAT,
             "http://127.0.0.1:11434",
             Hosting::Local,
             "gemma3:1b",
-            "ollama",
+            BACKEND_PROVIDER_OLLAMA,
         );
         let router = Router::new(
             BackendRegistry::new(vec![a]),
@@ -537,11 +542,11 @@ mod tests {
     fn test_route_fail_open_when_filter_unavailable() {
         let a = mk_inst(
             "stub",
-            "stub",
+            KIND_STUB,
             "",
             Hosting::Local,
             "gpt-4o-mini",
-            "internal",
+            BACKEND_PROVIDER_INTERNAL,
         );
 
         let hub = Arc::new(RouterFilterStreamHub::new(RouterGrpcFilterStreamConfig {
@@ -564,11 +569,11 @@ mod tests {
     fn test_route_fail_closed_when_filter_unavailable() {
         let a = mk_inst(
             "stub",
-            "stub",
+            KIND_STUB,
             "",
             Hosting::Local,
             "gpt-4o-mini",
-            "internal",
+            BACKEND_PROVIDER_INTERNAL,
         );
 
         let hub = Arc::new(RouterFilterStreamHub::new(RouterGrpcFilterStreamConfig {
@@ -594,19 +599,19 @@ mod tests {
     fn test_route_applies_backend_allowlist_and_denylist() {
         let a = mk_inst(
             "openai",
-            "openai_chat_completion",
+            KIND_CHAT_HTTP,
             "https://api.openai.com/v1",
             Hosting::Remote,
             "gpt-4o-mini",
-            "openai",
+            BACKEND_PROVIDER_OPENAI,
         );
         let b = mk_inst(
             "ollama",
-            "ollama_chat",
+            KIND_OLLAMA_CHAT,
             "http://127.0.0.1:11434",
             Hosting::Local,
             "gemma3:1b",
-            "ollama",
+            BACKEND_PROVIDER_OLLAMA,
         );
         let router = Router::new(
             BackendRegistry::new(vec![a, b]),
@@ -614,8 +619,11 @@ mod tests {
         );
 
         let mut req = chat_req("gemma3:1b");
-        req.routing.allowlist = vec!["openai".to_string(), "ollama".to_string()];
-        req.routing.denylist = vec!["openai".to_string()];
+        req.routing.allowlist = vec![
+            BACKEND_PROVIDER_OPENAI.to_string(),
+            BACKEND_PROVIDER_OLLAMA.to_string(),
+        ];
+        req.routing.denylist = vec![BACKEND_PROVIDER_OPENAI.to_string()];
         req.routing.backend = Some("ollama".to_string());
 
         let inst = router.route(&req).unwrap();

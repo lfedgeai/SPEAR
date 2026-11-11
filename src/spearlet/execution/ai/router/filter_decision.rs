@@ -83,8 +83,10 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    use crate::ai_backend_types::BACKEND_PROVIDER_INTERNAL;
     use crate::proto::sms::BackendSpec;
     use crate::proto::spearlet::{CandidateDecision, FinalAction};
+    use crate::spearlet::execution::ai::backends::KIND_STUB;
     use crate::spearlet::execution::ai::backends::stub::StubBackendAdapter;
     use crate::spearlet::execution::ai::ir::Operation;
     use crate::spearlet::execution::ai::router::capabilities::Capabilities;
@@ -94,14 +96,14 @@ mod tests {
         BackendInstance {
             spec: BackendSpec {
                 name: name.to_string(),
-                kind: "stub".to_string(),
+                kind: KIND_STUB.to_string(),
                 operations: vec!["chat_completions".to_string()],
                 features: vec![],
                 transports: vec!["http".to_string()],
                 weight: 100,
                 priority: 0,
                 base_url: String::new(),
-                provider: "internal".to_string(),
+                provider: BACKEND_PROVIDER_INTERNAL.to_string(),
                 model: String::new(),
                 hosting: 0,
                 credential_ref: String::new(),

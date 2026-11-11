@@ -745,6 +745,11 @@ fn local_assignment_spec_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::{
+        BACKEND_FAMILY_LLAMACPP, BACKEND_FAMILY_OLLAMA_CHAT, BACKEND_FAMILY_VLLM,
+        BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE,
+        BACKEND_PROVIDER_OLLAMA, BACKEND_PROVIDER_OPENAI, BACKEND_PROVIDER_VLLM,
+    };
     use crate::proto::sms::{
         AiBackendDesiredState, AiBackendManagementMode, AiBackendPlacementRecord, AiBackendRecord,
         BackendOrigin, BackendSpec,
@@ -762,7 +767,7 @@ mod tests {
             backend: Some(AiBackendRecord {
                 backend_id: "backend-1".to_string(),
                 display_name: "Backend 1".to_string(),
-                provider: "openai".to_string(),
+                provider: BACKEND_PROVIDER_OPENAI.to_string(),
                 model: "gpt-4.1".to_string(),
                 hosting: hosting as i32,
                 backend_kind: backend_kind.to_string(),
@@ -778,7 +783,7 @@ mod tests {
                     weight: 100,
                     priority: 0,
                     base_url: "https://example.com".to_string(),
-                    provider: "openai".to_string(),
+                    provider: BACKEND_PROVIDER_OPENAI.to_string(),
                     model: "gpt-4.1".to_string(),
                     hosting: crate::proto::sms::BackendHosting::Remote as i32,
                     credential_ref: "cred-1".to_string(),
@@ -873,13 +878,13 @@ mod tests {
         let mut client = test_client();
         let mut runtime_backends = Vec::new();
         let mut live_local_ids = std::collections::HashSet::new();
-        let mut assignment = sample_assignment(AiBackendHosting::Remote, "ollama_chat");
+        let mut assignment = sample_assignment(AiBackendHosting::Remote, BACKEND_FAMILY_OLLAMA_CHAT);
         let backend = assignment.backend.as_mut().expect("backend");
-        backend.provider = "ollama".to_string();
+        backend.provider = BACKEND_PROVIDER_OLLAMA.to_string();
         backend.credential_ref = None;
         let spec = backend.spec.as_mut().expect("spec");
-        spec.kind = "ollama_chat".to_string();
-        spec.provider = "ollama".to_string();
+        spec.kind = BACKEND_FAMILY_OLLAMA_CHAT.to_string();
+        spec.provider = BACKEND_PROVIDER_OLLAMA.to_string();
         spec.base_url = base_url;
         spec.credential_ref.clear();
         let status = controller
@@ -910,7 +915,7 @@ mod tests {
         let status = controller
             .materialize_assignment(
                 &mut client,
-                &clear_assignment_base_url(sample_assignment(AiBackendHosting::Local, "vllm")),
+                &clear_assignment_base_url(sample_assignment(AiBackendHosting::Local, BACKEND_FAMILY_VLLM)),
                 &mut runtime_backends,
                 &mut live_local_ids,
                 "node-1",
@@ -932,7 +937,7 @@ mod tests {
         let status = controller
             .materialize_assignment(
                 &mut client,
-                &clear_assignment_base_url(sample_assignment(AiBackendHosting::Local, "vllm")),
+                &clear_assignment_base_url(sample_assignment(AiBackendHosting::Local, BACKEND_FAMILY_VLLM)),
                 &mut runtime_backends,
                 &mut live_local_ids,
                 "node-1",
@@ -962,7 +967,7 @@ mod tests {
             .collect(),
         };
         let mut assignment =
-            sample_assignment_with_metadata(AiBackendHosting::Local, "vllm", metadata);
+            sample_assignment_with_metadata(AiBackendHosting::Local, BACKEND_FAMILY_VLLM, metadata);
         assignment
             .backend
             .as_mut()
@@ -1046,14 +1051,14 @@ mod tests {
     fn vllm_assignment_params_preserve_metadata_scalars() {
         let spec = BackendSpec {
             name: String::new(),
-            kind: "vllm-openai".to_string(),
+            kind: BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE.to_string(),
             operations: vec!["chat".to_string()],
             features: vec![],
             transports: vec!["http".to_string()],
             weight: 1,
             priority: 0,
             base_url: String::new(),
-            provider: "vllm".to_string(),
+            provider: BACKEND_PROVIDER_VLLM.to_string(),
             model: "foo".to_string(),
             hosting: crate::proto::sms::BackendHosting::NodeLocal as i32,
             credential_ref: String::new(),
@@ -1083,7 +1088,7 @@ mod tests {
         let backend = AiBackendRecord {
             backend_id: "backend-1".to_string(),
             display_name: "Backend 1".to_string(),
-            provider: "vllm".to_string(),
+            provider: BACKEND_PROVIDER_VLLM.to_string(),
             model: "foo".to_string(),
             hosting: AiBackendHosting::Local as i32,
             backend_kind: "custom".to_string(),
@@ -1099,14 +1104,14 @@ mod tests {
         };
         let spec = BackendSpec {
             name: String::new(),
-            kind: "vllm-openai".to_string(),
+            kind: BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE.to_string(),
             operations: vec!["chat".to_string()],
             features: vec![],
             transports: vec!["http".to_string()],
             weight: 1,
             priority: 0,
             base_url: String::new(),
-            provider: "vllm".to_string(),
+            provider: BACKEND_PROVIDER_VLLM.to_string(),
             model: "foo".to_string(),
             hosting: crate::proto::sms::BackendHosting::NodeLocal as i32,
             credential_ref: String::new(),
@@ -1115,7 +1120,7 @@ mod tests {
         };
 
         let mut llamacpp_backend = backend.clone();
-        llamacpp_backend.backend_kind = "llama.cpp".to_string();
+        llamacpp_backend.backend_kind = BACKEND_FAMILY_LLAMACPP.to_string();
         assert_eq!(
             LocalAssignmentRuntimeFamily::from_assignment(&llamacpp_backend, &spec),
             LocalAssignmentRuntimeFamily::LlamaCpp
@@ -1141,7 +1146,7 @@ mod tests {
 
     #[test]
     fn reconciling_status_uses_reconciling_enum_and_reason() {
-        let assignment = sample_assignment(AiBackendHosting::Local, "llamacpp");
+        let assignment = sample_assignment(AiBackendHosting::Local, BACKEND_FAMILY_LLAMACPP);
         let backend = assignment.backend.as_ref().unwrap();
         let spec = backend.spec.as_ref().unwrap();
 

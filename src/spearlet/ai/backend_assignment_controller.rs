@@ -32,9 +32,7 @@ use crate::spearlet::local_models::llamacpp::LlamaCppSupervisor;
 use crate::spearlet::local_models::provider::{
     resolve_local_provider_kind_for_assignment, LocalProviderKind,
 };
-use crate::spearlet::local_models::vllm::{
-    VllmPreparedAssignment, VllmSupervisor,
-};
+use crate::spearlet::local_models::vllm::{VllmPreparedAssignment, VllmSupervisor};
 
 /// Controller that materializes control-plane assignments into runtime backends.
 /// 将控制面 assignment 落地为运行时 backend 的控制器。
@@ -527,9 +525,9 @@ impl BackendAssignmentController {
                     now_ms,
                 ))
             }
-            VllmPreparedAssignment::Placeholder { reason } => {
-                Some(pending_status_for_backend(backend, spec, node_uuid, now_ms, reason))
-            }
+            VllmPreparedAssignment::Placeholder { reason } => Some(pending_status_for_backend(
+                backend, spec, node_uuid, now_ms, reason,
+            )),
         }
     }
 

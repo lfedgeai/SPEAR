@@ -195,9 +195,7 @@ pub(super) async fn preflight_local_model(
                     },
                     "model_url" => LocalModelPreflightDetailsResponse::ModelUrl {
                         effective_model_path: report.effective_model_path,
-                        final_url: report
-                            .final_url
-                            .unwrap_or_else(|| "unknown".to_string()),
+                        final_url: report.final_url.unwrap_or_else(|| "unknown".to_string()),
                         http_status: report.http_status.unwrap_or(200),
                         content_length: report.content_length,
                     },

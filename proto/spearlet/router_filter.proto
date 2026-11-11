@@ -120,8 +120,8 @@ message Candidate {
   // BackendInstance.name
   string name = 1;
 
-  // Backend kind (openai_chat_completion / ollama_chat / ...).
-  // backend kind（openai_chat_completion / ollama_chat / ...）。
+  // Backend family (chat_http / ollama_chat / ...).
+  // backend family（chat_http / ollama_chat / ...）。
   string kind = 2;
 
   // Optional base_url (may be omitted for privacy).

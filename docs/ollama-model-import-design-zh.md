@@ -92,7 +92,7 @@ binding_mode = "fixed_default_model"
 ### 为什么要放到 `spearlet.ai.discovery.*`
 
 - 语义清晰：`ai.backends[]` 是声明式配置；`ai.discovery.*` 是运行态发现。
-- 易扩展：未来可以加入 `discovery.openai_compatible`, `discovery.k8s_service`, `discovery.file` 等。
+- 易扩展：未来可以加入 `discovery.openai`, `discovery.k8s_service`, `discovery.file` 等。
 
 ## 行为语义（详细）
 

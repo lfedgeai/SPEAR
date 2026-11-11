@@ -56,7 +56,7 @@ fn is_llamacpp_family(value: &str) -> bool {
 fn is_vllm_family(value: &str) -> bool {
     matches!(
         CanonicalBackendKind::parse(value),
-        CanonicalBackendKind::Vllm | CanonicalBackendKind::VllmOpenAi
+        CanonicalBackendKind::Vllm | CanonicalBackendKind::VllmOpenAiCompatible
     ) || CanonicalBackendProvider::parse(value) == CanonicalBackendProvider::Vllm
 }
 
@@ -65,23 +65,20 @@ mod tests {
     use super::{
         resolve_local_provider_kind, resolve_local_provider_kind_for_assignment, LocalProviderKind,
     };
+    use crate::ai_backend_types::{BACKEND_PROVIDER_LLAMACPP, BACKEND_PROVIDER_VLLM};
 
     #[test]
-    fn resolves_llamacpp_from_aliases() {
+    fn resolves_llamacpp_from_canonical_value() {
         assert_eq!(
-            resolve_local_provider_kind(["llama.cpp"]),
-            LocalProviderKind::LlamaCpp
-        );
-        assert_eq!(
-            resolve_local_provider_kind(["llama_cpp"]),
+            resolve_local_provider_kind([BACKEND_PROVIDER_LLAMACPP]),
             LocalProviderKind::LlamaCpp
         );
     }
 
     #[test]
-    fn resolves_vllm_from_aliases() {
+    fn resolves_vllm_from_canonical_value() {
         assert_eq!(
-            resolve_local_provider_kind(["vllm-openai"]),
+            resolve_local_provider_kind([BACKEND_PROVIDER_VLLM]),
             LocalProviderKind::Vllm
         );
     }
@@ -97,11 +94,15 @@ mod tests {
     #[test]
     fn resolves_assignment_provider_kind_from_backend_and_spec_fields() {
         assert_eq!(
-            resolve_local_provider_kind_for_assignment("custom", "vllm-openai", "vllm"),
+            resolve_local_provider_kind_for_assignment(
+                "custom",
+                BACKEND_PROVIDER_VLLM,
+                BACKEND_PROVIDER_VLLM
+            ),
             LocalProviderKind::Vllm
         );
         assert_eq!(
-            resolve_local_provider_kind_for_assignment("llama.cpp", "", ""),
+            resolve_local_provider_kind_for_assignment(BACKEND_PROVIDER_LLAMACPP, "", ""),
             LocalProviderKind::LlamaCpp
         );
     }

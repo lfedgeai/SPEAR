@@ -4,7 +4,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ai_backend_types::{CanonicalBackendKind, CanonicalBackendProvider};
+use crate::ai_backend_types::{
+    CanonicalBackendKind, CanonicalBackendProvider, BACKEND_PROVIDER_OLLAMA,
+    BACKEND_PROVIDER_OPENAI, BACKEND_PROVIDER_QWEN,
+};
 use crate::proto::sms::BackendSpec;
 use crate::spearlet::ai::credential_resolver::{CredentialResolution, CredentialResolver};
 use crate::spearlet::execution::ai::backends::http_json::join_url;
@@ -13,8 +16,10 @@ use crate::spearlet::execution::ai::backends::http_json::join_url;
 /// 当前支持的 remote preflight provider 家族。
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RemotePreflightProviderFamily {
-    /// OpenAI-compatible HTTP family / OpenAI-compatible HTTP 家族
+    /// OpenAI HTTP family / OpenAI HTTP 家族
     OpenAiCompatible,
+    /// Qwen-compatible HTTP control-plane checks / Qwen 兼容的 HTTP 控制面检查
+    Qwen,
     /// Ollama-compatible HTTP family / Ollama-compatible HTTP 家族
     Ollama,
     /// Unsupported provider family / 不支持的 provider 家族
@@ -30,16 +35,20 @@ impl RemotePreflightProviderFamily {
         let provider = CanonicalBackendProvider::parse(&spec.provider);
         let kind = CanonicalBackendKind::parse(&spec.kind);
 
-        if provider == CanonicalBackendProvider::Ollama || kind == CanonicalBackendKind::OllamaChat
-        {
+        if provider == CanonicalBackendProvider::Ollama || kind == CanonicalBackendKind::OllamaChat {
             return Self::Ollama;
+        }
+        if provider == CanonicalBackendProvider::Qwen
+            || kind == CanonicalBackendKind::RtAsrQwenWs
+        {
+            return Self::Qwen;
         }
         if provider == CanonicalBackendProvider::OpenAi
             || matches!(
                 kind,
-                CanonicalBackendKind::OpenAiChatCompletion | CanonicalBackendKind::OpenAiRealtimeWs
+                CanonicalBackendKind::ChatHttp
+                    | CanonicalBackendKind::RtAsrOpenAiWs
             )
-            || raw_kind.starts_with("openai_")
         {
             return Self::OpenAiCompatible;
         }
@@ -54,8 +63,9 @@ impl RemotePreflightProviderFamily {
     /// 返回稳定序列化使用的家族名称。
     fn as_str(&self) -> &str {
         match self {
-            Self::OpenAiCompatible => "openai_compatible",
-            Self::Ollama => "ollama",
+            Self::OpenAiCompatible => BACKEND_PROVIDER_OPENAI,
+            Self::Qwen => BACKEND_PROVIDER_QWEN,
+            Self::Ollama => BACKEND_PROVIDER_OLLAMA,
             Self::Unknown(value) => value.as_str(),
         }
     }
@@ -65,7 +75,7 @@ impl RemotePreflightProviderFamily {
     fn default_requested_checks(&self) -> Vec<String> {
         match self {
             Self::Ollama => vec!["connectivity".to_string(), "model_access".to_string()],
-            Self::OpenAiCompatible | Self::Unknown(_) => vec![
+            Self::OpenAiCompatible | Self::Qwen | Self::Unknown(_) => vec![
                 "connectivity".to_string(),
                 "auth".to_string(),
                 "model_access".to_string(),
@@ -193,8 +203,9 @@ pub async fn preflight_remote_backend(
 
     match provider_family {
         RemotePreflightProviderFamily::OpenAiCompatible => {
-            preflight_openai_compatible(http, resolver, spec, &requested, started).await
+            preflight_openai(http, resolver, spec, &requested, started).await
         }
+        RemotePreflightProviderFamily::Qwen => preflight_qwen(http, resolver, spec, &requested, started).await,
         RemotePreflightProviderFamily::Ollama => {
             preflight_ollama(http, spec, &requested, started).await
         }
@@ -323,12 +334,51 @@ fn map_reqwest_error_code(error: &reqwest::Error) -> &'static str {
     }
 }
 
-async fn preflight_openai_compatible(
+async fn preflight_openai(
     http: &Client,
     resolver: &CredentialResolver,
     spec: &BackendSpec,
     requested: &[String],
     started: Instant,
+) -> RemoteBackendPreflightReport {
+    preflight_bearer_models_endpoint(
+        http,
+        resolver,
+        spec,
+        requested,
+        started,
+        BACKEND_PROVIDER_OPENAI,
+    )
+    .await
+}
+
+async fn preflight_qwen(
+    http: &Client,
+    resolver: &CredentialResolver,
+    spec: &BackendSpec,
+    requested: &[String],
+    started: Instant,
+) -> RemoteBackendPreflightReport {
+    preflight_bearer_models_endpoint(
+        http,
+        resolver,
+        spec,
+        requested,
+        started,
+        BACKEND_PROVIDER_QWEN,
+    )
+    .await
+}
+
+/// Preflight providers that expose a bearer-authenticated model-list endpoint.
+/// 预检通过 Bearer 鉴权并暴露 models 列表接口的 provider 家族。
+async fn preflight_bearer_models_endpoint(
+    http: &Client,
+    resolver: &CredentialResolver,
+    spec: &BackendSpec,
+    requested: &[String],
+    started: Instant,
+    provider_name: &'static str,
 ) -> RemoteBackendPreflightReport {
     let endpoint = if spec.base_url.contains("/v1") {
         join_url(&spec.base_url, "models")
@@ -341,7 +391,7 @@ async fn preflight_openai_compatible(
         CredentialResolution::Ready(secret) => Some(secret),
         state if check_enabled(requested, "auth") => {
             return RemoteBackendPreflightReport::failure(
-                "openai_compatible",
+                provider_name,
                 "auth",
                 credential_error_code(&state),
                 state.message(spec.credential_ref.as_str()),
@@ -368,7 +418,7 @@ async fn preflight_openai_compatible(
         Ok(response) => response,
         Err(error) => {
             return RemoteBackendPreflightReport::failure(
-                "openai_compatible",
+                provider_name,
                 "connectivity",
                 map_reqwest_error_code(&error),
                 error.to_string(),
@@ -393,9 +443,9 @@ async fn preflight_openai_compatible(
             "connectivity"
         };
         let (error_code, provider_code, message) =
-            map_http_failure("openai_compatible", phase, status, payload.as_ref());
+            map_http_failure(provider_name, phase, status, payload.as_ref());
         return RemoteBackendPreflightReport::failure(
-            "openai_compatible",
+            provider_name,
             phase,
             error_code,
             message,
@@ -430,7 +480,7 @@ async fn preflight_openai_compatible(
             .unwrap_or(false);
         if !found {
             return RemoteBackendPreflightReport::failure(
-                "openai_compatible",
+                provider_name,
                 "model_access",
                 "model_not_found",
                 format!("model '{}' is not visible from this node", model),
@@ -447,7 +497,7 @@ async fn preflight_openai_compatible(
     }
 
     RemoteBackendPreflightReport::success(
-        "openai_compatible",
+        provider_name,
         if check_enabled(requested, "model_access") && !model.is_empty() {
             "model_access"
         } else if check_enabled(requested, "auth") {
@@ -490,7 +540,7 @@ async fn preflight_ollama(
         Ok(response) => response,
         Err(error) => {
             return RemoteBackendPreflightReport::failure(
-                "ollama",
+                BACKEND_PROVIDER_OLLAMA,
                 "connectivity",
                 map_reqwest_error_code(&error),
                 error.to_string(),
@@ -510,9 +560,9 @@ async fn preflight_ollama(
     let payload = response.json::<Value>().await.ok();
     if !(200..300).contains(&status) {
         let (error_code, provider_code, message) =
-            map_http_failure("ollama", "connectivity", status, payload.as_ref());
+            map_http_failure(BACKEND_PROVIDER_OLLAMA, "connectivity", status, payload.as_ref());
         return RemoteBackendPreflightReport::failure(
-            "ollama",
+            BACKEND_PROVIDER_OLLAMA,
             "connectivity",
             error_code,
             message,
@@ -543,7 +593,7 @@ async fn preflight_ollama(
             .unwrap_or(false);
         if !found {
             return RemoteBackendPreflightReport::failure(
-                "ollama",
+                BACKEND_PROVIDER_OLLAMA,
                 "model_access",
                 "model_not_found",
                 format!("model '{}' is not available from this node", model),
@@ -560,7 +610,7 @@ async fn preflight_ollama(
     }
 
     RemoteBackendPreflightReport::success(
-        "ollama",
+        BACKEND_PROVIDER_OLLAMA,
         if check_enabled(requested, "model_access") && !model.is_empty() {
             "model_access"
         } else {
@@ -583,9 +633,16 @@ async fn preflight_ollama(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::{
+        BACKEND_FAMILY_CHAT_HTTP, BACKEND_FAMILY_OLLAMA_CHAT,
+        BACKEND_FAMILY_RT_ASR_OPENAI_WS, BACKEND_FAMILY_RT_ASR_QWEN_WS,
+    };
     use axum::{routing::get, Json, Router};
     use serde_json::json;
+    use std::collections::HashMap;
     use tokio::net::TcpListener;
+
+    use crate::spearlet::config::{AiCredentialConfig, SpearletConfig};
 
     async fn start_json_server(
         path: &'static str,
@@ -626,8 +683,8 @@ mod tests {
     }
 
     #[test]
-    fn remote_preflight_provider_family_normalizes_openai_aliases() {
-        let spec = test_backend_spec("openai_realtime_ws", "openai_compatible");
+    fn remote_preflight_provider_family_uses_canonical_openai_provider() {
+        let spec = test_backend_spec(BACKEND_FAMILY_RT_ASR_OPENAI_WS, BACKEND_PROVIDER_OPENAI);
         assert_eq!(
             RemotePreflightProviderFamily::from_spec(&spec),
             RemotePreflightProviderFamily::OpenAiCompatible
@@ -635,8 +692,17 @@ mod tests {
     }
 
     #[test]
+    fn remote_preflight_provider_family_infers_qwen_from_kind() {
+        let spec = test_backend_spec(BACKEND_FAMILY_RT_ASR_QWEN_WS, "");
+        assert_eq!(
+            RemotePreflightProviderFamily::from_spec(&spec),
+            RemotePreflightProviderFamily::Qwen
+        );
+    }
+
+    #[test]
     fn remote_preflight_provider_family_infers_ollama_from_kind() {
-        let spec = test_backend_spec("ollama_chat", "");
+        let spec = test_backend_spec(BACKEND_FAMILY_OLLAMA_CHAT, "");
         assert_eq!(
             RemotePreflightProviderFamily::from_spec(&spec),
             RemotePreflightProviderFamily::Ollama
@@ -645,11 +711,20 @@ mod tests {
 
     #[test]
     fn default_requested_checks_follow_provider_family() {
-        let openai_spec = test_backend_spec("openai_chat_completion", "");
-        let ollama_spec = test_backend_spec("ollama_chat", "");
+        let openai_spec = test_backend_spec(BACKEND_FAMILY_CHAT_HTTP, BACKEND_PROVIDER_OPENAI);
+        let qwen_spec = test_backend_spec(BACKEND_FAMILY_RT_ASR_QWEN_WS, "");
+        let ollama_spec = test_backend_spec(BACKEND_FAMILY_OLLAMA_CHAT, "");
 
         assert_eq!(
             default_requested_checks(&openai_spec),
+            vec![
+                "connectivity".to_string(),
+                "auth".to_string(),
+                "model_access".to_string(),
+            ]
+        );
+        assert_eq!(
+            default_requested_checks(&qwen_spec),
             vec![
                 "connectivity".to_string(),
                 "auth".to_string(),
@@ -675,14 +750,14 @@ mod tests {
             CredentialResolver::from_config(&crate::spearlet::config::SpearletConfig::default());
         let spec = BackendSpec {
             name: "backend-1".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
             operations: vec!["chat_completions".to_string()],
             features: vec![],
             transports: vec!["http".to_string()],
             weight: 100,
             priority: 0,
             base_url,
-            provider: "openai".to_string(),
+            provider: BACKEND_PROVIDER_OPENAI.to_string(),
             model: "gpt-4o-mini".to_string(),
             hosting: crate::proto::sms::BackendHosting::Remote as i32,
             credential_ref: String::new(),
@@ -705,6 +780,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn qwen_preflight_verifies_model_access() {
+        let (handle, server_base_url) = start_json_server(
+            "/compatible-mode/v1/models",
+            json!({
+                "data": [{"id": "qwen3-asr-flash-realtime"}]
+            }),
+        )
+        .await;
+
+        let http = Client::new();
+        let mut cfg = SpearletConfig::default();
+        cfg.ai.credentials.push(AiCredentialConfig {
+            name: "qwen-live".to_string(),
+            kind: "env".to_string(),
+            api_key_env: "DASHSCOPE_API_KEY".to_string(),
+        });
+        let resolver = CredentialResolver::from_config_with_env(
+            &cfg,
+            &HashMap::from([("DASHSCOPE_API_KEY".to_string(), "sk-test".to_string())]),
+        );
+        let report = preflight_remote_backend(
+            &http,
+            &resolver,
+            &BackendSpec {
+                base_url: format!("{server_base_url}/compatible-mode/v1"),
+                credential_ref: "qwen-live".to_string(),
+                model: "qwen3-asr-flash-realtime".to_string(),
+                kind: BACKEND_FAMILY_RT_ASR_QWEN_WS.to_string(),
+                provider: BACKEND_PROVIDER_QWEN.to_string(),
+                ..test_backend_spec(BACKEND_FAMILY_RT_ASR_QWEN_WS, BACKEND_PROVIDER_QWEN)
+            },
+            &["connectivity".to_string(), "auth".to_string(), "model_access".to_string()],
+        )
+        .await;
+
+        assert!(report.success);
+        assert_eq!(report.provider, BACKEND_PROVIDER_QWEN);
+        assert_eq!(report.phase, "model_access");
+        assert_eq!(report.auth_valid, Some(true));
+        assert_eq!(report.model_accessible, Some(true));
+        handle.abort();
+    }
+
+    #[tokio::test]
     async fn ollama_preflight_reports_missing_model() {
         let (handle, base_url) = start_json_server(
             "/api/tags",
@@ -717,14 +836,14 @@ mod tests {
             CredentialResolver::from_config(&crate::spearlet::config::SpearletConfig::default());
         let spec = BackendSpec {
             name: "backend-2".to_string(),
-            kind: "ollama_chat".to_string(),
+            kind: BACKEND_FAMILY_OLLAMA_CHAT.to_string(),
             operations: vec!["chat_completions".to_string()],
             features: vec![],
             transports: vec!["http".to_string()],
             weight: 100,
             priority: 0,
             base_url,
-            provider: "ollama".to_string(),
+            provider: BACKEND_PROVIDER_OLLAMA.to_string(),
             model: "qwen2.5".to_string(),
             hosting: crate::proto::sms::BackendHosting::Remote as i32,
             credential_ref: String::new(),

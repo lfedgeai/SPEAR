@@ -227,6 +227,15 @@ rtasr 的 read/write 以及后台任务在修改队列/状态后必须：
 - key、client_secret、URL allowlist 全部在 host 管理；WASM guest 不能读到真实 secret
 - 日志不得输出 secret 与原始认证头
 
+Provider 支持：
+
+- OpenAI realtime（`rt_asr_openai_ws`）与 Qwen/DashScope（`rt_asr_qwen_ws`）
+  共用同一套数据面（`input_audio_buffer.append` / `commit`）。仅 `session.update`
+  结构与实时文本事件不同（Qwen 发送
+  `conversation.item.input_audio_transcription.text`，携带 `text` + `stash`），
+  这些差异由按 kind 区分的 adapter 与 SDK 归一化处理。配置示例见
+  [backends-zh.md](../backend-adapter/backends-zh.md)。
+
 ## 8. 配置与路由（与现有 LLM 配置对齐）
 
 仓库已有 `SpearletConfig.ai.backends`（见 `src/spearlet/config.rs`），包含 `ops/features/transports`。建议对 rtasr：
@@ -238,6 +247,10 @@ rtasr 的 read/write 以及后台任务在修改队列/状态后必须：
 
 - `[[spearlet.ai.backends]] hosting` 为必填，只允许 `local` 或 `remote`。
 - `credential_ref` 为可选：未配置时视为“无需鉴权”。
+- 对于 Qwen realtime ASR，backend kind 必须保持为 `rt_asr_qwen_ws`。
+  不要因为控制面的 `base_url` 可能是 OpenAI-compatible 的
+  `/compatible-mode/v1` 地址，就把它误配成 `rt_asr_openai_ws`；否则运行时会
+  绑定错误的 adapter，并在任何 transcript 事件产生之前就在 websocket 建连阶段失败。
 
 实现层面可选两条路：
 
@@ -291,8 +304,93 @@ rtasr 的 read/write 以及后台任务在修改队列/状态后必须：
 
 - stub 模式：默认跑，确保 CI 可稳定通过
 - 真实 WS：在具备 key 的环境下运行（用环境变量注入），并将其标记为可选/ignored
+- Live Provider 覆盖：
+  - [realtime_asr_live_tests.rs](../../tests/realtime_asr_live_tests.rs) 会枚举所有满足
+    `speech_to_text + websocket` 的 realtime ASR backend，并对每个解析出的 backend
+    复用同一段夹具音频执行 live 测试
+  - [qwen_realtime_asr_live_tests.rs](../../tests/qwen_realtime_asr_live_tests.rs) 使用仓库内置的
+    PCM 夹具 [qwen_live_e2e_hello.pcm](../../tests/fixtures/qwen_live_e2e_hello.pcm)，通过项目自身
+    的 RTASR host API 对 Qwen realtime ASR 做真实联调
+  - 共享 live-test 约定：
+    - `SPEAR_RUN_LIVE_TESTS=1`
+    - 配置来自 `SPEAR_TEST_CONFIG` 或默认的 `config/spearlet/config.toml`
+    - backend 必须是 `rt_asr_qwen_ws`
+    - backend 关联的 credential 必须使用 `kind = "env"`
+    - 真实 secret 仍通过该 credential 对应的 `api_key_env` 在 shell 中提供
+  - Provider 定制覆盖项：
+    - `QWEN_LIVE_MODEL`
+  - 默认值：
+    - `QWEN_LIVE_MODEL=qwen3-asr-flash-realtime`
+  - 运行时接线方式：
+    - 测试会在内存中构造一份 `SpearletConfig`
+    - backend 名称和 base URL 会复用共享测试配置里解析出来的结果
+    - credential 使用 `env` 类型
+    - secret 会以解析出的 credential 环境变量名注入 `RuntimeConfig.global_environment`，
+      与 host 侧通过环境变量解析凭据的方式保持一致
+  - 配置示例：
 
-## 11. 实施步骤（建议按阶段合并 PR）
+    ```toml
+    [[spearlet.ai.credentials]]
+    name = "qwen_live"
+    kind = "env"
+    api_key_env = "DASHSCOPE_API_KEY"
+
+    [[spearlet.ai.backends]]
+    name = "qwen-live"
+    kind = "rt_asr_qwen_ws"
+    base_url = "https://maas.qianwenaiapi.com/compatible-mode/v1"
+    credential_ref = "qwen_live"
+    ops = ["speech_to_text"]
+    transports = ["websocket"]
+    ```
+
+  - 运行示例：
+
+    ```bash
+    SPEAR_RUN_LIVE_TESTS=1 \
+    DASHSCOPE_API_KEY='your-api-key' \
+    cargo test test_qwen_realtime_asr_live_transcribes_fixture_audio --test qwen_realtime_asr_live_tests -- --nocapture
+    ```
+
+  - 聚合运行示例：
+
+    ```bash
+    SPEAR_RUN_LIVE_TESTS=1 \
+    OPENAI_API_KEY='your-openai-key' \
+    DASHSCOPE_API_KEY='your-qwen-key' \
+    cargo test test_all_realtime_asr_live_backends_transcribe_fixture_audio --test realtime_asr_live_tests -- --nocapture
+    ```
+
+  - 推荐做法：
+    - 将 OpenAI 和 Qwen 的 live test backend 一起放在同一份共享配置文件里，
+      让两个 provider 复用同一套启用、配置和 secret 注入流程
+    - 默认示例文件 [config.toml](../../config/spearlet/config.toml)
+      已内置 `qwen-live` backend 和 `qwen_live` 的 env credential 示例
+
+## 11. 运行时排障说明
+
+- `websocket disconnected (code 1005): connection closed` 往往只是浏览器侧看到的
+  症状。在本仓库里，它通常表示上游 user-stream 或 runtime websocket 在没有显式
+  reason 的情况下被关闭，因此真正的失败原因需要结合 `sms` / `spearlet` 日志或
+  backend status 来确认。
+- 如果已经配置了 Qwen realtime ASR，但运行时仍提示没有候选 backend，优先检查
+  `GET /admin/api/ai-backend-statuses/{backend_id}`。对应 backend 必须达到
+  `status=ready` 且 `available=true`；否则说明节点还没有发布可用的 runtime backend。
+- 如果 node-side status 出现
+  `remote preflight does not support provider 'qwen' with kind 'rt_asr_qwen_ws'`，
+  说明控制面验证在路由前就拦住了该 backend。在这种状态下，执行层的 RTASR 请求通常会退化为
+  `no candidate backend ... backends=[]`。
+- 对 Qwen 来说，像
+  `https://maas.qianwenaiapi.com/compatible-mode/v1` 这样的 compatible HTTP
+  `base_url` 是合法输入，但运行时 adapter 必须先把它归一化回 realtime websocket
+  根路径，再拼接 `/api-ws/v1/realtime?model=...`。
+- 如果运行时已经能连通，但字幕仍然不完整，需要继续检查 transcript consumer。
+  Qwen 会发送预览型的
+  `conversation.item.input_audio_transcription.text` 事件，其中包含 `text + stash`；
+  最终可见 transcript 还需要在后续 `Completed(transcript)` 事件到来时补齐，而不能
+  只按 OpenAI 的 delta-only 语义来消费。
+
+## 12. 实施步骤（建议按阶段合并 PR）
 
 ### Phase 1：类型与 fd 接入
 
@@ -322,7 +420,7 @@ rtasr 的 read/write 以及后台任务在修改队列/状态后必须：
 
 验收：在真实环境下可跑通 transcription delta/completed。
 
-## 12. wasm-c（C 代码）参考用法
+## 13. wasm-c（C 代码）参考用法
 
 本节回答“将来 C 写的 WASM guest 应该如何调用 realtime ASR”。它展示一个典型的 **单线程事件循环**：用 `spear_epoll_*` 同时等待 `mic_fd` 与 `rtasr_fd` 的就绪事件，从而“同时推进采集麦克风 + 写音频 + 读 ASR 事件”。
 

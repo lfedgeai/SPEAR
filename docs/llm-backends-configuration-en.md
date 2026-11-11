@@ -41,7 +41,7 @@ Example:
 ```toml
 [[spearlet.ai.backends]]
 name = "openai-chat"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 model = "gpt-4o-mini"
@@ -54,7 +54,7 @@ priority = 0
 
 [[spearlet.ai.backends]]
 name = "openai-realtime-asr"
-kind = "openai_realtime_ws"
+kind = "rt_asr_openai_ws"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_default"
@@ -81,12 +81,12 @@ priority = 0
 - If `credential_ref` is not set:
   - the backend is treated as “no-auth” (no API key header), useful for OpenAI-compatible proxies that do not require a key
 
-## Backend kinds
+## Backend families
 
-Common kinds in this repository:
+Common backend families in this repository:
 
-- `openai_chat_completion` (HTTP)
-- `openai_realtime_ws` (WebSocket)
+- `chat_http` (HTTP)
+- `rt_asr_openai_ws` (WebSocket)
 - `ollama_chat` (HTTP, node-local)
 - `stub` (testing)
 
@@ -105,8 +105,8 @@ Remote backends created from SMS / Web Admin are now reconciled by `spearlet` th
 
 Current runtime support for SMS-managed dynamic backend kinds:
 
-- `openai_chat_completion`
-- `openai_realtime_ws`
+- `chat_http`
+- `rt_asr_openai_ws`
 - `ollama_chat`
 - `stub`
 

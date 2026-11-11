@@ -111,7 +111,7 @@ async fn test_admin_ai_model_views_lists_local_and_remote_models() {
             "hosting": "local",
             "backend_kind": "llamacpp",
             "local": {
-                "provider_family": "llama_cpp",
+                "provider_family": "llamacpp",
                 "config": {
                     "model_path": "/models/llama3.gguf"
                 }
@@ -128,10 +128,7 @@ async fn test_admin_ai_model_views_lists_local_and_remote_models() {
         .await
         .json();
     assert!(local_backend["success"].as_bool().unwrap());
-    assert_eq!(
-        local_backend["backend"]["local"]["provider_family"],
-        "llama_cpp"
-    );
+    assert_eq!(local_backend["backend"]["local"]["provider_family"], "llamacpp");
     assert_eq!(
         local_backend["backend"]["local"]["config"]["model_path"],
         "/models/llama3.gguf"
@@ -145,9 +142,9 @@ async fn test_admin_ai_model_views_lists_local_and_remote_models() {
             "provider": "openai",
             "model": "gpt-4o",
             "hosting": "remote",
-            "backend_kind": "openai_chat_completion",
+            "backend_kind": "chat_http",
             "remote": {
-                "provider_family": "open_ai_compatible",
+                "provider_family": "openai",
                 "config": {
                     "base_url": "https://api.openai.com/v1",
                     "operations": ["chat_completions"],
@@ -169,7 +166,7 @@ async fn test_admin_ai_model_views_lists_local_and_remote_models() {
     assert!(remote_backend["success"].as_bool().unwrap());
     assert_eq!(
         remote_backend["backend"]["remote"]["provider_family"],
-        "open_ai_compatible"
+        "openai"
     );
     assert_eq!(
         remote_backend["backend"]["remote"]["config"]["base_url"],
@@ -232,7 +229,7 @@ async fn test_admin_ai_backend_create_normalizes_local_metadata_shape() {
                 "priority": 0
             },
             "local": {
-                "provider_family": "llama_cpp",
+                "provider_family": "llamacpp",
                 "config": {
                     "model_url": " https://models.example.com/llama3.gguf ",
                     "skip_download": false,
@@ -256,7 +253,7 @@ async fn test_admin_ai_backend_create_normalizes_local_metadata_shape() {
     assert_eq!(body["backend"]["metadata"]["download_timeout_s"], "60");
     assert_eq!(body["backend"]["metadata"]["threads"], "8");
     assert_eq!(body["backend"]["metadata"]["extra_key"], "preserve-me");
-    assert_eq!(body["backend"]["local"]["provider_family"], "llama_cpp");
+    assert_eq!(body["backend"]["local"]["provider_family"], "llamacpp");
     assert_eq!(
         body["backend"]["local"]["config"]["model_url"],
         "https://models.example.com/llama3.gguf"
@@ -280,9 +277,9 @@ async fn test_admin_ai_model_views_include_backend_ids_and_instances() {
             "provider": "openai",
             "model": "gpt-4o",
             "hosting": "remote",
-            "backend_kind": "openai_chat_completion",
+            "backend_kind": "chat_http",
             "remote": {
-                "provider_family": "open_ai_compatible",
+                "provider_family": "openai",
                 "config": {
                     "base_url": "https://api.openai.com/v1",
                     "operations": ["chat_completions"],
@@ -389,10 +386,10 @@ async fn test_admin_ai_backend_create_rejects_duplicate_remote_openai_sources() 
             "provider": "openai",
             "model": "gpt-4o",
             "hosting": "remote",
-            "backend_kind": "openai_chat_completion",
+            "backend_kind": "chat_http",
             "credential_ref": "legacy-openai",
             "remote": {
-                "provider_family": "open_ai_compatible",
+                "provider_family": "openai",
                 "config": {
                     "base_url": "https://api.openai.com/v1",
                     "credential_ref": "openai-prod",
@@ -472,9 +469,9 @@ async fn test_admin_ai_backend_update_requires_structured_remote_input_for_opena
             "provider": "openai",
             "model": "gpt-4o",
             "hosting": "remote",
-            "backend_kind": "openai_chat_completion",
+            "backend_kind": "chat_http",
             "remote": {
-                "provider_family": "open_ai_compatible",
+                "provider_family": "openai",
                 "config": {
                     "base_url": "https://api.openai.com/v1",
                     "operations": ["chat_completions"],
@@ -505,7 +502,7 @@ async fn test_admin_ai_backend_update_requires_structured_remote_input_for_opena
             "provider": "openai",
             "model": "gpt-4o-mini",
             "hosting": "remote",
-            "backend_kind": "openai_chat_completion",
+            "backend_kind": "chat_http",
             "credential_ref": "openai-prod",
             "spec": {
                 "base_url": "https://api.openai.com/v1",
@@ -541,9 +538,9 @@ async fn test_admin_ai_backend_detail_returns_typed_remote_read_view() {
             "provider": "openai",
             "model": "gpt-4o-mini",
             "hosting": "remote",
-            "backend_kind": "openai_chat_completion",
+            "backend_kind": "chat_http",
             "remote": {
-                "provider_family": "open_ai_compatible",
+                "provider_family": "openai",
                 "config": {
                     "base_url": "https://api.openai.com/v1",
                     "credential_ref": "openai-prod",
@@ -577,7 +574,7 @@ async fn test_admin_ai_backend_detail_returns_typed_remote_read_view() {
     assert!(body["found"].as_bool().unwrap());
     assert_eq!(
         body["backend"]["remote"]["provider_family"],
-        "open_ai_compatible"
+        "openai"
     );
     assert_eq!(
         body["backend"]["remote"]["config"]["base_url"],
@@ -617,7 +614,7 @@ async fn test_admin_ai_backend_list_returns_typed_local_read_view() {
             "hosting": "local",
             "backend_kind": "llamacpp",
             "local": {
-                "provider_family": "llama_cpp",
+                "provider_family": "llamacpp",
                 "config": {
                     "model_url": "https://models.example.com/llama3.1.gguf",
                     "model_path": "/models/llama3.1.gguf",
@@ -650,7 +647,7 @@ async fn test_admin_ai_backend_list_returns_typed_local_read_view() {
         .find(|item| item["provider"] == "llamacpp" && item["model"] == "llama3.1")
         .cloned()
         .expect("local backend should appear in list");
-    assert_eq!(backend["local"]["provider_family"], "llama_cpp");
+    assert_eq!(backend["local"]["provider_family"], "llamacpp");
     assert_eq!(
         backend["local"]["config"]["model_url"],
         "https://models.example.com/llama3.1.gguf"

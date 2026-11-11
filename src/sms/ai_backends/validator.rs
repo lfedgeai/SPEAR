@@ -1,6 +1,6 @@
 //! Validation helpers for unified AI backends / 统一 AI backend 的校验辅助
 
-use crate::ai_backend_types::{AllowedHosting, CanonicalBackendKind};
+use crate::ai_backend_types::{AllowedHosting, CanonicalBackendKind, CanonicalBackendProvider};
 use crate::sms::ai_backends::model::{
     AiBackendHostingModel, AiBackendManagementModeModel, AiBackendPlacementRecordModel,
     AiBackendRecordModel, AiBackendSpecModel,
@@ -18,6 +18,7 @@ pub fn validate_backend_record(record: &AiBackendRecordModel) -> Result<(), SmsE
     validate_metadata_is_object(&record.metadata)?;
     validate_hosting_management_mode(record)?;
     validate_backend_kind_for_hosting(record)?;
+    validate_backend_provider_for_kind(record)?;
     validate_record_spec_consistency(record)?;
     Ok(())
 }
@@ -108,6 +109,26 @@ fn validate_backend_kind_for_hosting(record: &AiBackendRecordModel) -> Result<()
         }
         _ => Ok(()),
     }
+}
+
+/// Validate that one provider is allowed for the selected backend kind.
+/// 校验所选 backend kind 是否允许当前 provider。
+fn validate_backend_provider_for_kind(record: &AiBackendRecordModel) -> Result<(), SmsError> {
+    let kind = CanonicalBackendKind::parse(&record.backend_kind);
+    let provider = CanonicalBackendProvider::parse(&record.provider);
+    if matches!(provider, CanonicalBackendProvider::Unknown(_)) {
+        return Err(SmsError::InvalidRequest(format!(
+            "backend provider {} is not supported",
+            record.provider
+        )));
+    }
+    if kind.supports_provider(&provider) {
+        return Ok(());
+    }
+    Err(SmsError::InvalidRequest(format!(
+        "backend provider {} is not supported for backend_kind {}",
+        record.provider, record.backend_kind
+    )))
 }
 
 fn validate_record_spec_consistency(record: &AiBackendRecordModel) -> Result<(), SmsError> {
@@ -204,12 +225,12 @@ mod tests {
             provider: "openai".to_string(),
             model: "gpt-4.1".to_string(),
             hosting: AiBackendHostingModel::Remote,
-            backend_kind: "openai_chat_completion".to_string(),
+            backend_kind: "chat_http".to_string(),
             desired_state: AiBackendDesiredStateModel::Enabled,
             management_mode: AiBackendManagementModeModel::SmsLocal,
             credential_ref: Some("cred-1".to_string()),
             spec: AiBackendSpecModel {
-                kind: "openai_chat_completion".to_string(),
+                kind: "chat_http".to_string(),
                 operations: vec!["chat_completions".to_string()],
                 provider: "openai".to_string(),
                 model: "gpt-4.1".to_string(),
@@ -263,39 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_remote_with_local_only_backend_kind_alias() {
-        let record = AiBackendRecordModel {
-            backend_id: "backend-1".to_string(),
-            display_name: "Backend 1".to_string(),
-            provider: "llamacpp".to_string(),
-            model: "qwen".to_string(),
-            hosting: AiBackendHostingModel::Remote,
-            backend_kind: "llama.cpp".to_string(),
-            desired_state: AiBackendDesiredStateModel::Enabled,
-            management_mode: AiBackendManagementModeModel::SmsRemote,
-            credential_ref: None,
-            spec: AiBackendSpecModel {
-                kind: "llama.cpp".to_string(),
-                operations: vec!["chat_completions".to_string()],
-                provider: "llamacpp".to_string(),
-                model: "qwen".to_string(),
-                base_url: "https://example.com".to_string(),
-                credential_ref: String::new(),
-                ..sample_spec()
-            },
-            labels: BTreeMap::new(),
-            metadata: serde_json::json!({}),
-            generation: 1,
-            created_at_ms: 1,
-            updated_at_ms: 1,
-        };
-
-        let err = validate_backend_record(&record)
-            .expect_err("remote hosting should reject local-only alias kind");
-        assert!(matches!(err, SmsError::InvalidRequest(_)));
-    }
-
-    #[test]
     fn allows_local_ollama_chat_backend_kind() {
         let record = AiBackendRecordModel {
             backend_id: "backend-1".to_string(),
@@ -327,6 +315,41 @@ mod tests {
     }
 
     #[test]
+    fn rejects_provider_kind_mismatch() {
+        let record = AiBackendRecordModel {
+            backend_id: "backend-1".to_string(),
+            display_name: "Backend 1".to_string(),
+            provider: "ollama".to_string(),
+            model: "gpt-4.1".to_string(),
+            hosting: AiBackendHostingModel::Remote,
+            backend_kind: "chat_http".to_string(),
+            desired_state: AiBackendDesiredStateModel::Enabled,
+            management_mode: AiBackendManagementModeModel::SmsRemote,
+            credential_ref: Some("cred-1".to_string()),
+            spec: AiBackendSpecModel {
+                kind: "chat_http".to_string(),
+                operations: vec!["chat_completions".to_string()],
+                provider: "ollama".to_string(),
+                model: "gpt-4.1".to_string(),
+                base_url: "https://example.com/v1".to_string(),
+                credential_ref: "cred-1".to_string(),
+                ..sample_spec()
+            },
+            labels: BTreeMap::new(),
+            metadata: serde_json::json!({}),
+            generation: 1,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+
+        let err = validate_backend_record(&record).expect_err("provider-kind mismatch should fail");
+        assert!(matches!(err, SmsError::InvalidRequest(_)));
+        assert!(err
+            .to_string()
+            .contains("backend provider ollama is not supported for backend_kind"));
+    }
+
+    #[test]
     fn rejects_non_empty_legacy_deployment_id() {
         let mut spec = sample_spec();
         spec.deployment_id = "legacy-deployment".to_string();
@@ -343,12 +366,12 @@ mod tests {
             provider: "openai".to_string(),
             model: "gpt-4.1".to_string(),
             hosting: AiBackendHostingModel::Remote,
-            backend_kind: "openai_chat_completion".to_string(),
+            backend_kind: "chat_http".to_string(),
             desired_state: AiBackendDesiredStateModel::Enabled,
             management_mode: AiBackendManagementModeModel::SmsRemote,
             credential_ref: Some("cred-1".to_string()),
             spec: AiBackendSpecModel {
-                kind: "openai_chat_completion".to_string(),
+                kind: "chat_http".to_string(),
                 operations: vec!["chat_completions".to_string()],
                 provider: "azure-openai".to_string(),
                 model: "gpt-4.1".to_string(),

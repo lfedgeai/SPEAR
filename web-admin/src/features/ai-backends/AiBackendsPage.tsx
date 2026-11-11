@@ -32,6 +32,7 @@ import AiBackendEditorDialog from './AiBackendEditorDialog'
 import LocalBackendCreateDialog from './LocalBackendCreateDialog'
 import type { PlacementPolicyInput } from './AiBackendEditorForm'
 import RemoteBackendCreateDialog from './RemoteBackendCreateDialog'
+import { AI_BACKEND_PROVIDERS, REMOTE_PROVIDER_OPTIONS } from './backendFamilyRegistry'
 
 function StateBadge(props: { state: string }) {
   if (props.state === 'enabled') return <Badge variant="success">enabled</Badge>
@@ -138,9 +139,10 @@ export default function AiBackendsPage() {
 
       const supportsRemotePreflight =
         input.backend.hosting === 'remote' &&
-        ['openai', 'openai_compatible', 'ollama'].includes(input.backend.provider)
+        REMOTE_PROVIDER_OPTIONS.includes(input.backend.provider)
       const supportsLocalPreflight =
-        input.backend.hosting === 'local' && input.backend.provider === 'llamacpp'
+        input.backend.hosting === 'local' &&
+        input.backend.provider === AI_BACKEND_PROVIDERS.LLAMACPP
       if ((supportsRemotePreflight || supportsLocalPreflight) && targetNodeUuids.length > 0) {
         const preflight = await preflightAiBackend({
           backend: input.backend,
@@ -444,7 +446,7 @@ export default function AiBackendsPage() {
                     <th className="px-3 py-2">Name</th>
                     <th className="px-3 py-2">Provider / Model</th>
                     <th className="px-3 py-2">Hosting</th>
-                    <th className="px-3 py-2">Kind</th>
+                    <th className="px-3 py-2">Backend family</th>
                     <th className="px-3 py-2">Desired State</th>
                     <th className="px-3 py-2">Status reason</th>
                     <th className="px-3 py-2">Generation</th>

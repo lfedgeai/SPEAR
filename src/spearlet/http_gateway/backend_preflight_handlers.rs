@@ -145,7 +145,11 @@ pub(super) enum BackendPreflightOllamaOutcomeResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "provider_family", rename_all = "snake_case")]
 pub(super) enum BackendPreflightProviderResultResponse {
+    #[serde(rename = "openai")]
     OpenAiCompatible {
+        outcome: BackendPreflightOpenAiCompatibleOutcomeResponse,
+    },
+    Qwen {
         outcome: BackendPreflightOpenAiCompatibleOutcomeResponse,
     },
     Ollama {
@@ -172,6 +176,7 @@ pub(super) struct BackendPreflightResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BackendPreflightProviderFamily {
     OpenAiCompatible,
+    Qwen,
     Ollama,
     Unknown(String),
 }
@@ -182,11 +187,13 @@ impl BackendPreflightProviderFamily {
     fn parse(provider: &str, backend_kind: &str) -> Self {
         match CanonicalBackendProvider::parse(provider) {
             CanonicalBackendProvider::OpenAi => Self::OpenAiCompatible,
+            CanonicalBackendProvider::Qwen => Self::Qwen,
             CanonicalBackendProvider::Ollama => Self::Ollama,
             CanonicalBackendProvider::Unknown(_) => {
-                match CanonicalBackendKind::parse(backend_kind).inferred_provider() {
-                    CanonicalBackendProvider::OpenAi => Self::OpenAiCompatible,
-                    CanonicalBackendProvider::Ollama => Self::Ollama,
+                match CanonicalBackendKind::parse(backend_kind).default_provider() {
+                    Some(CanonicalBackendProvider::OpenAi) => Self::OpenAiCompatible,
+                    Some(CanonicalBackendProvider::Qwen) => Self::Qwen,
+                    Some(CanonicalBackendProvider::Ollama) => Self::Ollama,
                     _ => Self::Unknown(provider.trim().to_string()),
                 }
             }
@@ -201,7 +208,14 @@ impl BackendPreflightProviderFamily {
         outcome: BackendPreflightOutcomeResponse,
     ) -> BackendPreflightProviderResultResponse {
         match self {
-            Self::OpenAiCompatible => BackendPreflightProviderResultResponse::OpenAiCompatible {
+            Self::OpenAiCompatible => {
+                BackendPreflightProviderResultResponse::OpenAiCompatible {
+                    outcome: BackendPreflightOpenAiCompatibleOutcomeResponse::from_generic(
+                        outcome,
+                    ),
+                }
+            },
+            Self::Qwen => BackendPreflightProviderResultResponse::Qwen {
                 outcome: BackendPreflightOpenAiCompatibleOutcomeResponse::from_generic(outcome),
             },
             Self::Ollama => BackendPreflightProviderResultResponse::Ollama {
@@ -478,12 +492,23 @@ pub(super) async fn preflight_backend(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::{
+        BACKEND_FAMILY_CHAT_HTTP, BACKEND_FAMILY_RT_ASR_OPENAI_WS, BACKEND_PROVIDER_QWEN,
+    };
 
     #[test]
     fn backend_preflight_provider_family_parses_openai_from_kind_alias() {
         assert_eq!(
-            BackendPreflightProviderFamily::parse("", "openai_realtime_ws"),
+            BackendPreflightProviderFamily::parse("", BACKEND_FAMILY_RT_ASR_OPENAI_WS),
             BackendPreflightProviderFamily::OpenAiCompatible
+        );
+    }
+
+    #[test]
+    fn backend_preflight_provider_family_parses_qwen_from_provider() {
+        assert_eq!(
+            BackendPreflightProviderFamily::parse(BACKEND_PROVIDER_QWEN, BACKEND_FAMILY_CHAT_HTTP),
+            BackendPreflightProviderFamily::Qwen
         );
     }
 
@@ -496,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_compatible_outcome_refines_model_access_success() {
+    fn openai_outcome_refines_model_access_success() {
         let outcome = BackendPreflightOpenAiCompatibleOutcomeResponse::from_generic(
             BackendPreflightOutcomeResponse::Success {
                 phase: "model_access".to_string(),
@@ -550,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_compatible_outcome_refines_auth_failure() {
+    fn openai_outcome_refines_auth_failure() {
         let outcome = BackendPreflightOpenAiCompatibleOutcomeResponse::from_generic(
             BackendPreflightOutcomeResponse::Failure {
                 phase: "auth".to_string(),

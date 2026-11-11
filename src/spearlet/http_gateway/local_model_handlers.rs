@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn local_model_preflight_provider_parses_aliases() {
         assert_eq!(
-            LocalModelPreflightProvider::parse("llama.cpp"),
+            LocalModelPreflightProvider::parse("llamacpp"),
             LocalModelPreflightProvider::LlamaCpp
         );
         assert_eq!(

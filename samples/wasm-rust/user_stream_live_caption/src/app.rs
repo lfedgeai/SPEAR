@@ -10,6 +10,7 @@ use spear_wasm_helper::{
     rtasr_protocol::TranscriptEvent,
     stream::{BufferedTextOutput, StreamEndpoint, StreamModality},
     time_format::current_hms_prefix,
+    transcript_draft::RealtimeTranscriptDraft,
     user_stream_protocol::{
         is_audio_utterance_begin, is_open_handshake, parse_stream_message, IncomingStreamMessage,
         StreamMessageError,
@@ -46,6 +47,11 @@ struct LiveCaptionApp {
     text_output: BufferedTextOutput,
     rtasr: Option<LiveCaptionRtasr>,
     caption_open: bool,
+    // Shared transcript draft helper that normalizes OpenAI/Qwen transcript
+    // events into append-only suffix updates for the caption stream.
+    // 共享的 transcript 草稿 helper，会把 OpenAI/Qwen 事件归一化为适合
+    // 字幕追加式输出的尾部更新。
+    transcript_draft: RealtimeTranscriptDraft,
     warned: HashSet<&'static str>,
     session_closed: bool,
 }
@@ -63,6 +69,7 @@ impl LiveCaptionApp {
             text_output: BufferedTextOutput::new(crate::config::META_V1_JSON),
             rtasr: None,
             caption_open: false,
+            transcript_draft: RealtimeTranscriptDraft::default(),
             warned: HashSet::new(),
             session_closed: false,
         };
@@ -285,22 +292,28 @@ impl LiveCaptionApp {
         };
         let transcript_events = session.drain_events().map_err(render_error)?;
         for event in transcript_events {
+            let update = self.transcript_draft.apply(&event);
             match event {
                 TranscriptEvent::SpeechStarted => {
                     self.open_caption_if_needed()?;
                 }
-                TranscriptEvent::Delta(delta) => {
-                    self.open_caption_if_needed()?;
-                    if !delta.is_empty() {
-                        self.text_output.write(delta);
+                TranscriptEvent::Delta(_) | TranscriptEvent::Preview { .. } => {
+                    if !update.newly_confirmed_suffix.is_empty() {
+                        self.open_caption_if_needed()?;
+                        self.text_output.write(&update.newly_confirmed_suffix);
                     }
                 }
                 TranscriptEvent::Completed(_) => {
+                    if !update.newly_confirmed_suffix.is_empty() {
+                        self.open_caption_if_needed()?;
+                        self.text_output.write(&update.newly_confirmed_suffix);
+                    }
                     if self.caption_open {
                         self.text_output.write("\n");
                         self.text_output.commit();
                         self.caption_open = false;
                     }
+                    self.transcript_draft.reset();
                 }
             }
             self.flush_text_output()?;
@@ -320,6 +333,7 @@ impl LiveCaptionApp {
 
     fn begin_utterance(&mut self) -> Result<(), String> {
         if let Some(session) = self.rtasr.as_mut() {
+            self.transcript_draft.reset();
             return session.prepare_for_new_utterance().map_err(render_error);
         }
 
@@ -443,4 +457,5 @@ mod tests {
             ))
         );
     }
+
 }

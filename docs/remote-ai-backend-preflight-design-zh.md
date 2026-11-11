@@ -157,7 +157,7 @@ OpenAI-compatible 和 remote Ollama 这类标准 provider 可以做更强的语�
 建议第一版优先支持：
 
 - `openai`
-- `openai_compatible`
+- `qwen`
 - `ollama`
 
 后续再扩展：
@@ -183,6 +183,16 @@ OpenAI-compatible 和 remote Ollama 这类标准 provider 可以做更强的语�
 1. model metadata 或 model listing 接口
 2. 如果支持，直接查询目标 model
 3. 如果元数据探测不足，再退化为一个最小、低成本请求
+
+### Qwen Realtime ASR
+
+检查项：
+
+- base URL 可达
+- Bearer Token 凭证有效
+- 通过兼容模式下的 `models` 接口验证目标 realtime ASR model 是否可见
+
+当前控制面实现会复用 OpenAI HTTP 探测形态来完成 Qwen 的 credential 与 model 检查，但运行时流量仍然走专用的 `rt_asr_qwen_ws` adapter。
 
 ### Remote Ollama
 
@@ -241,7 +251,7 @@ OpenAI-compatible 和 remote Ollama 这类标准 provider 可以做更强的语�
 ```json
 {
   "backend": {
-    "provider": "openai_compatible",
+    "provider": "openai",
     "hosting": "remote",
     "model": "gpt-4o-mini",
     "base_url": "https://api.openai.com/v1",
@@ -264,7 +274,7 @@ OpenAI-compatible 和 remote Ollama 这类标准 provider 可以做更强的语�
 ```json
 {
   "success": true,
-  "provider": "openai_compatible",
+  "provider": "openai",
   "phase": "model_access",
   "error_code": null,
   "message": "authentication and model access verified",
@@ -402,7 +412,7 @@ SMS 应该把节点侧结果规范化成一套统一的 Web Admin 响应。
 - provider adapter：
   - `remote_preflight/mod.rs`
   - `remote_preflight/common.rs`
-  - `remote_preflight/openai_compatible.rs`
+  - `remote_preflight/openai.rs`
   - `remote_preflight/ollama.rs`
   - `remote_preflight/http_json.rs`
 

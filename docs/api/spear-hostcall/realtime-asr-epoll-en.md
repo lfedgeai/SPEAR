@@ -362,7 +362,7 @@ Recommended defaults:
 
 Additional keys to reserve (optional for v1, recommended for evolution):
 
-- `backend = "openai_chat_completion" | "openai_realtime_ws" | ...` (name only; no URL/secret)
+- `backend = "chat_http" | "rt_asr_openai_ws" | "rt_asr_qwen_ws" | ...` (name only; no URL/secret)
 - `model = "gpt-4o-mini-transcribe" | ...` (shortcut)
 - `connect_timeout_ms = 10000`
 - `idle_timeout_ms = 60000`

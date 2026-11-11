@@ -35,6 +35,7 @@ import {
 import LocalLlamaCppFields from './LocalLlamaCppFields'
 import PlacementSection from './PlacementSection'
 import RemoteBackendFields from './RemoteBackendFields'
+import { AI_BACKEND_PROVIDERS } from './backendFamilyRegistry'
 
 function deriveInitialFormState(props: {
   backend?: AiBackendSummary | null
@@ -55,6 +56,18 @@ function applySingleNodePlacementDefault(
   if (form.placement_node_uuid.trim()) return form
   if (nodes.length !== 1) return form
   return { ...form, placement_node_uuid: nodes[0].uuid }
+}
+
+function resolveFieldWithKindDefaults(
+  currentValue: string,
+  previousDefault: string,
+  nextDefault: string,
+): string {
+  const trimmedCurrent = currentValue.trim()
+  if (!trimmedCurrent || trimmedCurrent === previousDefault.trim()) {
+    return nextDefault
+  }
+  return currentValue
 }
 
 export default function AiBackendEditorDialog(props: {
@@ -183,17 +196,30 @@ function AiBackendEditorDialogBody(props: {
                       const nextKind = nextKindOptions.includes(current.backend_kind)
                         ? current.backend_kind
                         : defaultBackendKindFor(hosting, nextProvider)
-                      const nextDefaults = defaultsForKind(nextKind)
+                      const currentDefaults = defaultsForKind(
+                        current.hosting,
+                        current.provider,
+                        current.backend_kind,
+                      )
+                      const nextDefaults = defaultsForKind(hosting, nextProvider, nextKind)
                       return {
                         ...current,
                         hosting,
                         provider: nextProvider,
-                        model: current.model.trim() ? current.model : nextDefaults.model,
+                        model: resolveFieldWithKindDefaults(
+                          current.model,
+                          currentDefaults.model,
+                          nextDefaults.model,
+                        ),
                         backend_kind: nextKind,
                         operations: nextDefaults.operations.join(', '),
                         transports: nextDefaults.transports,
                         features: nextDefaults.features,
-                        base_url: current.base_url.trim() ? current.base_url : nextDefaults.base_url,
+                        base_url: resolveFieldWithKindDefaults(
+                          current.base_url,
+                          currentDefaults.base_url,
+                          nextDefaults.base_url,
+                        ),
                         placement_scope: defaultPlacementScopeForHosting(hosting),
                         placement_node_uuid:
                           hosting === 'local' && nodes.length === 1 ? nodes[0].uuid : '',
@@ -220,16 +246,29 @@ function AiBackendEditorDialogBody(props: {
                   setForm((current) => {
                     const provider = event.target.value
                     const backendKind = defaultBackendKindFor(current.hosting, provider)
-                    const nextDefaults = defaultsForKind(backendKind)
+                    const currentDefaults = defaultsForKind(
+                      current.hosting,
+                      current.provider,
+                      current.backend_kind,
+                    )
+                    const nextDefaults = defaultsForKind(current.hosting, provider, backendKind)
                     return {
                       ...current,
                       provider,
-                      model: current.model.trim() ? current.model : nextDefaults.model,
+                      model: resolveFieldWithKindDefaults(
+                        current.model,
+                        currentDefaults.model,
+                        nextDefaults.model,
+                      ),
                       backend_kind: backendKind,
                       operations: nextDefaults.operations.join(', '),
                       transports: nextDefaults.transports,
                       features: nextDefaults.features,
-                      base_url: current.base_url.trim() ? current.base_url : nextDefaults.base_url,
+                      base_url: resolveFieldWithKindDefaults(
+                        current.base_url,
+                        currentDefaults.base_url,
+                        nextDefaults.base_url,
+                      ),
                     }
                   })
                 }
@@ -253,22 +292,39 @@ function AiBackendEditorDialogBody(props: {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <div className="text-sm font-medium">Backend kind</div>
+              <div className="text-sm font-medium">Backend family</div>
               <select
                 className="h-9 w-full rounded-[calc(var(--radius)-4px)] border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 text-sm"
                 value={effectiveForm.backend_kind}
                 onChange={(event) =>
                   setForm((current) => {
                     const backendKind = event.target.value
-                    const nextDefaults = defaultsForKind(backendKind)
+                    const currentDefaults = defaultsForKind(
+                      current.hosting,
+                      current.provider,
+                      current.backend_kind,
+                    )
+                    const nextDefaults = defaultsForKind(
+                      current.hosting,
+                      current.provider,
+                      backendKind,
+                    )
                     return {
                       ...current,
-                      model: current.model.trim() ? current.model : nextDefaults.model,
+                      model: resolveFieldWithKindDefaults(
+                        current.model,
+                        currentDefaults.model,
+                        nextDefaults.model,
+                      ),
                       backend_kind: backendKind,
                       operations: nextDefaults.operations.join(', '),
                       transports: nextDefaults.transports,
                       features: nextDefaults.features,
-                      base_url: current.base_url.trim() ? current.base_url : nextDefaults.base_url,
+                      base_url: resolveFieldWithKindDefaults(
+                        current.base_url,
+                        currentDefaults.base_url,
+                        nextDefaults.base_url,
+                      ),
                     }
                   })
                 }
@@ -302,7 +358,8 @@ function AiBackendEditorDialogBody(props: {
             <RemoteBackendFields form={effectiveForm} setForm={setForm} />
           ) : null}
 
-          {effectiveForm.hosting === 'local' && effectiveForm.provider === 'llamacpp' ? (
+          {effectiveForm.hosting === 'local' &&
+          effectiveForm.provider === AI_BACKEND_PROVIDERS.LLAMACPP ? (
             <LocalLlamaCppFields form={effectiveForm} setForm={setForm} />
           ) : null}
 

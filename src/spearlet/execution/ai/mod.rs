@@ -167,6 +167,8 @@ impl AiEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::BACKEND_PROVIDER_INTERNAL;
+    use crate::spearlet::execution::ai::backends::KIND_STUB;
     use crate::spearlet::execution::ai::backends::stub::StubBackendAdapter;
     use crate::spearlet::execution::ai::ir::{
         ChatCompletionsPayload, ChatMessage, Operation, Requirements, ResultPayload, RoutingHints,
@@ -185,14 +187,14 @@ mod tests {
         let inst = BackendInstance {
             spec: crate::proto::sms::BackendSpec {
                 name: "stub".to_string(),
-                kind: "stub".to_string(),
+                kind: KIND_STUB.to_string(),
                 operations: vec!["chat_completions".to_string()],
                 features: vec![],
                 transports: vec!["in_process".to_string()],
                 weight: 100,
                 priority: 0,
                 base_url: String::new(),
-                provider: "internal".to_string(),
+                provider: BACKEND_PROVIDER_INTERNAL.to_string(),
                 model: "default-model".to_string(),
                 hosting: crate::proto::sms::BackendHosting::NodeLocal as i32,
                 credential_ref: String::new(),

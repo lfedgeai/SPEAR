@@ -208,13 +208,14 @@ async fn create_store_based_on_conditions() -> Result<Box<dyn KvStore>, Box<dyn 
 {
     let config = if env::var("TESTING").is_ok() {
         KvStoreConfig::memory().with_param("test_mode", "true")
-    } else if let Ok(_db_path) = env::var("DATABASE_PATH") {
+    } else if let Ok(db_path) = env::var("DATABASE_PATH") {
         #[cfg(feature = "sled")]
         {
             KvStoreConfig::sled(db_path)
         }
         #[cfg(not(feature = "sled"))]
         {
+            let _ = db_path;
             KvStoreConfig::memory().with_param("simulated_persistence", "true")
         }
     } else {

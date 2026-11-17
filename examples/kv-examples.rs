@@ -343,7 +343,7 @@ async fn example_kv_node_registry() -> Result<(), Box<dyn std::error::Error>> {
 /// 示例6：使用Sled的持久化存储
 #[cfg(feature = "sled")]
 async fn example_sled_persistence() -> Result<(), Box<dyn std::error::Error>> {
-    use spear_next::storage::{KvStore, SledKvStore};
+    use spear_next::storage::{create_kv_store, KvStore, KvStoreType, SledKvStore};
     use tempfile::TempDir;
 
     println!("=== Sled Persistence Example ===");

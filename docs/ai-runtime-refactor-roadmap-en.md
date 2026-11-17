@@ -347,7 +347,7 @@ This order minimizes risk because the early phases clarify runtime boundaries be
 - `src/spearlet/ai/backend_assignment_controller.rs`
 - `src/spearlet/backend_reporter.rs`
 - `src/spearlet/execution/ai/router/grpc_filter_stream.rs`
-- `src/spearlet/execution/ai/backends/openai_chat_completion.rs`
+- `src/spearlet/execution/ai/backends/chat_http.rs`
 - `src/spearlet/execution/ai/backends/ollama_chat.rs`
 
 ### Current progress

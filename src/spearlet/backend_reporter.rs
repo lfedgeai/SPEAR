@@ -239,6 +239,7 @@ async fn report_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::BACKEND_FAMILY_CHAT_HTTP;
     use crate::proto::sms::{BackendHosting, BackendOrigin, BackendSpec, CredentialMaterial};
     use crate::spearlet::config::AiBackendConfig;
 
@@ -270,7 +271,7 @@ mod tests {
         let mut cfg = SpearletConfig::default();
         cfg.ai.backends.push(AiBackendConfig {
             name: "static-openai".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,
@@ -288,11 +289,7 @@ mod tests {
         let global = crate::spearlet::ai::dynamic_backend_registry::global_dynamic_backends();
         global.set_backends(
             DynamicBackendSource::AiControlPlane,
-            vec![mk_backend(
-                "cp-remote",
-                "openai_chat_completion",
-                BackendOrigin::Sms,
-            )],
+            vec![mk_backend("cp-remote", BACKEND_FAMILY_CHAT_HTTP, BackendOrigin::Sms)],
         );
 
         let reported = collect_reportable_backends(&cfg);
@@ -328,7 +325,7 @@ mod tests {
         let mut cfg = SpearletConfig::default();
         cfg.ai.backends.push(AiBackendConfig {
             name: "openai-chat".to_string(),
-            kind: "openai_chat_completion".to_string(),
+            kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             hosting: Some("remote".to_string()),
             model: None,

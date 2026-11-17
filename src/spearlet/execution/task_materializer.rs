@@ -23,7 +23,11 @@ use super::{
 fn executable_location_from_sms_task(
     executable: &crate::proto::sms::TaskExecutable,
 ) -> Option<String> {
-    match executable.reference.as_ref().and_then(|reference| reference.target.as_ref()) {
+    match executable
+        .reference
+        .as_ref()
+        .and_then(|reference| reference.target.as_ref())
+    {
         Some(crate::proto::sms::task_executable_reference::Target::Object(object))
             if !object.key.is_empty() =>
         {

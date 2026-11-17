@@ -75,22 +75,30 @@ This document explains how to use the current `spear-next` Web Admin, covering n
 
 ### Create Remote Backend
 
-- Use this for OpenAI-, Ollama-, or other external endpoint-backed adapters.
+- Use this for OpenAI-, Qwen-, Ollama-, or other external endpoint-backed adapters.
 - Common fields:
   - `Display name`
   - `Provider`
   - `Model`
-  - `Backend kind`
+  - `Backend family`
   - `Base URL`
   - `Credential ref`
   - `Operations`
   - `Features`
   - `Transports`
   - `Placement`
-- For supported remote providers such as `openai`, `openai_compatible`, and `ollama`, Web Admin now runs node-side preflight before creation.
+- `qwen` is now available in the remote provider selector:
+  - chat / multimodal understanding uses `chat_http`
+  - realtime ASR uses `rt_asr_qwen_ws`
+- For `qwen` realtime ASR, Web Admin keeps `base_url`, `credential_ref`, `operations`, and `transports` on the top-level backend spec so the payload matches the current SMS admin API contract.
+- For supported remote providers such as `openai`, `qwen`, and `ollama`, Web Admin now runs node-side preflight before creation.
 - The preflight is executed from the selected target SPEARlet node instead of from the browser or SMS process.
 - For multi-node placement, the default policy is sampled strict verification before create, followed by full node-side verification during post-create placement reconciliation.
 - If endpoint reachability, credential validation, or model access fails on the sampled node set, creation stops immediately with the node-side error.
+- For Qwen realtime ASR specifically, treat `status=ready` plus `available=true`
+  in `AI Backends` / backend status APIs as the control-plane success condition.
+  If the backend stays in `error`, runtime execution can still fail later with
+  `no candidate backend` even though the UI create/edit flow itself succeeded.
 
 ### Create Local Backend
 

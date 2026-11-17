@@ -14,14 +14,12 @@ use crate::sms::ai_admin_api::{
     backend_record_to_response, model_view_to_response, AdminAiBackendAssignmentListResponse,
     AdminAiBackendDetailResponse, AdminAiBackendListResponse,
     AdminAiBackendLocalModelPreflightSourceResponse, AdminAiBackendMutationResponse,
-    AdminAiBackendNodeStatusListResponse, AdminAiBackendPlacementListResponse,
-    AdminAiBackendOllamaPreflightOutcomeResponse,
+    AdminAiBackendNodeStatusListResponse, AdminAiBackendOllamaPreflightOutcomeResponse,
+    AdminAiBackendOpenAiCompatiblePreflightOutcomeResponse, AdminAiBackendPlacementListResponse,
     AdminAiBackendPlacementMutationResponse, AdminAiBackendPreflightCheckResponse,
-    AdminAiBackendOpenAiCompatiblePreflightOutcomeResponse,
     AdminAiBackendPreflightDetailsResponse, AdminAiBackendPreflightNodeResponse,
     AdminAiBackendPreflightResponse, AdminAiBackendRemoteProviderPreflightOutcomeResponse,
-    AdminAiBackendRemoteProviderPreflightResultResponse,
-    AdminAiModelViewListResponse,
+    AdminAiBackendRemoteProviderPreflightResultResponse, AdminAiModelViewListResponse,
 };
 use crate::sms::gateway::GatewayState;
 
@@ -60,6 +58,7 @@ pub(crate) struct AiBackendSpecBody {
 #[serde(tag = "provider_family", content = "config", rename_all = "snake_case")]
 pub(crate) enum AiBackendLocalProviderWriteBody {
     /// Structured local llama.cpp input body / 结构化 local llama.cpp 输入体
+    #[serde(rename = "llamacpp")]
     LlamaCpp(AiBackendLlamaCppLocalWriteBody),
     /// Structured local vLLM input body / 结构化 local vLLM 输入体
     Vllm(AiBackendVllmLocalWriteBody),
@@ -100,6 +99,7 @@ pub(crate) struct AiBackendVllmLocalWriteBody {
 #[serde(tag = "provider_family", content = "config", rename_all = "snake_case")]
 pub(crate) enum AiBackendRemoteProviderWriteBody {
     /// Structured OpenAI-compatible remote input body / 结构化 OpenAI-compatible remote 输入体
+    #[serde(rename = "openai")]
     OpenAiCompatible(AiBackendOpenAiCompatibleRemoteWriteBody),
     /// Structured Ollama remote input body / 结构化 Ollama remote 输入体
     Ollama(AiBackendOllamaRemoteWriteBody),
@@ -404,6 +404,7 @@ enum SpearletOllamaPreflightOutcomeResponse {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "provider_family", rename_all = "snake_case")]
 enum SpearletRemoteBackendPreflightResultResponse {
+    #[serde(rename = "openai")]
     OpenAiCompatible {
         outcome: SpearletOpenAiCompatiblePreflightOutcomeResponse,
     },
@@ -1095,6 +1096,7 @@ fn ai_backend_proto_from_body(
     }
     let canonical_kind = CanonicalBackendKind::parse(&body.backend_kind);
     let canonical_provider = parse_supported_ai_backend_provider(&body.provider)?;
+    validate_backend_provider_for_kind(&canonical_kind, &canonical_provider)?;
     let hosting = parse_ai_backend_hosting(&body.hosting)?;
     let typed = AiBackendWriteTypedView::parse(body.clone())?;
     let resolved_spec = typed.resolved_spec()?;
@@ -1198,6 +1200,7 @@ impl AiBackendWriteTypedView {
         let hosting = CanonicalBackendHosting::parse(&body.hosting);
         let kind = CanonicalBackendKind::parse(&body.backend_kind);
         let provider = parse_supported_ai_backend_provider(&body.provider)?;
+        validate_backend_provider_for_kind(&kind, &provider)?;
         if body.metadata.is_none() {
             body.metadata = Some(json!({}));
         }
@@ -1263,7 +1266,11 @@ impl LocalAiBackendWriteView {
 
     /// Reject duplicated legacy metadata keys once structured local input is present.
     /// 当结构化 local 输入存在时，拒绝重复出现的 legacy metadata 字段。
-    fn ensure_no_legacy_metadata_overlap(&self, keys: &[&str], provider_label: &str) -> Result<(), String> {
+    fn ensure_no_legacy_metadata_overlap(
+        &self,
+        keys: &[&str],
+        provider_label: &str,
+    ) -> Result<(), String> {
         let duplicates = keys
             .iter()
             .copied()
@@ -1372,14 +1379,17 @@ impl LocalAiBackendWriteView {
                 }
                 Ok(LocalAiBackendWriteProviderView::Internal(self))
             }
-            CanonicalBackendProvider::OpenAi => {
+            CanonicalBackendProvider::OpenAi | CanonicalBackendProvider::Qwen => {
                 if self.local_provider_body().is_some() {
                     return Err(
                         "local provider-specific input is only supported for known local providers"
                             .to_string(),
                     );
                 }
-                return Err("openai does not support local hosting".to_string());
+                return Err(format!(
+                    "{} does not support local hosting",
+                    self.provider.as_str()
+                ));
             }
             CanonicalBackendProvider::Unknown(_) => {
                 Err("unsupported backend provider should have been rejected earlier".to_string())
@@ -1464,50 +1474,50 @@ impl RemoteAiBackendWriteView {
     /// 将 remote 写入视图投影为 provider-specific 子视图。
     fn provider_view(&self) -> Result<RemoteAiBackendWriteProviderView<'_>, String> {
         match self.provider {
-            CanonicalBackendProvider::OpenAi => match self.remote_provider_body() {
-                Some(AiBackendRemoteProviderWriteBody::OpenAiCompatible(config)) => {
-                    self.ensure_no_legacy_remote_overlap("openai")?;
-                    Ok(RemoteAiBackendWriteProviderView::OpenAi(
-                        OpenAiCompatibleRemoteAiBackendWriteView {
-                        remote: self,
-                        config: Some(config),
-                        },
-                    ))
-                }
-                Some(_) => {
-                    return Err(
-                        "remote.provider_family must match backend provider openai".to_string(),
-                    )
-                }
-                None => {
-                    return Err(
+            CanonicalBackendProvider::OpenAi => {
+                match self.remote_provider_body() {
+                    Some(AiBackendRemoteProviderWriteBody::OpenAiCompatible(config)) => {
+                        self.ensure_no_legacy_remote_overlap("openai")?;
+                        Ok(RemoteAiBackendWriteProviderView::OpenAi(
+                            OpenAiCompatibleRemoteAiBackendWriteView {
+                                remote: self,
+                                config: Some(config),
+                            },
+                        ))
+                    }
+                    Some(_) => {
+                        return Err(
+                            "remote.provider_family must match backend provider openai".to_string()
+                        )
+                    }
+                    None => return Err(
                         "remote provider-specific input is required for backend provider openai"
                             .to_string(),
-                    )
+                    ),
                 }
-            },
-            CanonicalBackendProvider::Ollama => match self.remote_provider_body() {
-                Some(AiBackendRemoteProviderWriteBody::Ollama(config)) => {
-                    self.ensure_no_legacy_remote_overlap("ollama")?;
-                    Ok(RemoteAiBackendWriteProviderView::Ollama(
-                        OllamaRemoteAiBackendWriteView {
-                        remote: self,
-                        config: Some(config),
-                        },
-                    ))
-                }
-                Some(_) => {
-                    return Err(
-                        "remote.provider_family must match backend provider ollama".to_string(),
-                    )
-                }
-                None => {
-                    return Err(
+            }
+            CanonicalBackendProvider::Ollama => {
+                match self.remote_provider_body() {
+                    Some(AiBackendRemoteProviderWriteBody::Ollama(config)) => {
+                        self.ensure_no_legacy_remote_overlap("ollama")?;
+                        Ok(RemoteAiBackendWriteProviderView::Ollama(
+                            OllamaRemoteAiBackendWriteView {
+                                remote: self,
+                                config: Some(config),
+                            },
+                        ))
+                    }
+                    Some(_) => {
+                        return Err(
+                            "remote.provider_family must match backend provider ollama".to_string()
+                        )
+                    }
+                    None => return Err(
                         "remote provider-specific input is required for backend provider ollama"
                             .to_string(),
-                    )
+                    ),
                 }
-            },
+            }
             CanonicalBackendProvider::Internal => {
                 if matches!(
                     self.remote_provider_body(),
@@ -1520,8 +1530,16 @@ impl RemoteAiBackendWriteView {
                 }
                 Ok(RemoteAiBackendWriteProviderView::Internal(self))
             }
-            CanonicalBackendProvider::LlamaCpp
-            | CanonicalBackendProvider::Vllm => {
+            CanonicalBackendProvider::Qwen => {
+                if self.remote_provider_body().is_some() {
+                    return Err(
+                        "remote provider-specific input is only supported for known remote providers"
+                            .to_string(),
+                    );
+                }
+                Ok(RemoteAiBackendWriteProviderView::Internal(self))
+            }
+            CanonicalBackendProvider::LlamaCpp | CanonicalBackendProvider::Vllm => {
                 if self.remote_provider_body().is_some() {
                     return Err(
                         "remote provider-specific input is only supported for known remote providers"
@@ -1671,8 +1689,10 @@ impl LlamaCppAdminMetadataInput {
     /// Parse typed llama.cpp metadata from one structured local write body.
     /// 从结构化 local 写入体解析强类型 llama.cpp metadata。
     fn from_local_write_body(body: &AiBackendLlamaCppLocalWriteBody) -> Result<Self, String> {
-        let server_mode = trim_to_option(body.server_mode.clone()).map(|value| value.to_ascii_lowercase());
-        let ready_probe = trim_to_option(body.ready_probe.clone()).map(|value| value.to_ascii_lowercase());
+        let server_mode =
+            trim_to_option(body.server_mode.clone()).map(|value| value.to_ascii_lowercase());
+        let ready_probe =
+            trim_to_option(body.ready_probe.clone()).map(|value| value.to_ascii_lowercase());
         let input = Self {
             model_url: trim_to_option(body.model_url.clone()),
             model_path: trim_to_option(body.model_path.clone()),
@@ -1698,11 +1718,7 @@ impl LlamaCppAdminMetadataInput {
         set_optional_string(metadata, "model_url", self.model_url.clone());
         set_optional_string(metadata, "model_path", self.model_path.clone());
         set_optional_bool_string(metadata, "skip_download", self.skip_download);
-        set_optional_u64_string(
-            metadata,
-            "download_timeout_s",
-            self.download_timeout_s,
-        );
+        set_optional_u64_string(metadata, "download_timeout_s", self.download_timeout_s);
         set_optional_string(metadata, "server_mode", self.server_mode.clone());
         set_optional_string(metadata, "server_cmd", self.server_cmd.clone());
         set_optional_string(metadata, "server_cmd_args", self.server_cmd_args.clone());
@@ -1727,11 +1743,7 @@ impl VllmAdminMetadataInput {
     /// 将规范化后的 vLLM metadata 渲染回 JSON 对象。
     fn apply_normalized(&self, metadata: &mut Map<String, Value>) {
         set_optional_string(metadata, "mode", self.mode.clone());
-        set_optional_bool_string(
-            metadata,
-            "managed_externally",
-            self.managed_externally,
-        );
+        set_optional_bool_string(metadata, "managed_externally", self.managed_externally);
     }
 }
 
@@ -1841,9 +1853,7 @@ async fn preflight_local_backend_node(
     Ok(AdminAiBackendPreflightNodeResponse {
         node_uuid: String::new(),
         success: status.is_success() && payload.success,
-        details: AdminAiBackendPreflightDetailsResponse::LocalModel {
-            source: details,
-        },
+        details: AdminAiBackendPreflightDetailsResponse::LocalModel { source: details },
         latency_ms: None,
         message: payload.message,
     })
@@ -1860,21 +1870,26 @@ async fn preflight_remote_backend_node(
         AiBackendWriteTypedView::Remote(remote) => remote,
         AiBackendWriteTypedView::Local(_) => {
             return Err(
-                "preflight only supports remote OpenAI-compatible or Ollama backends".to_string(),
+                "preflight only supports remote OpenAI-compatible, Qwen, or Ollama backends"
+                    .to_string(),
             )
         }
     };
-    if !remote.kind.supports_remote_preflight() {
+    if !remote.kind.supports_remote_preflight_for(&remote.provider) {
         return Err(
-            "preflight only supports remote OpenAI-compatible or Ollama backends".to_string(),
+            "preflight only supports remote OpenAI-compatible, Qwen, or Ollama backends"
+                .to_string(),
         );
     }
     match remote.provider_view()? {
-        RemoteAiBackendWriteProviderView::OpenAi(_)
-        | RemoteAiBackendWriteProviderView::Ollama(_) => {}
+        RemoteAiBackendWriteProviderView::OpenAi(_) => {}
+        RemoteAiBackendWriteProviderView::Ollama(_) => {}
+        RemoteAiBackendWriteProviderView::Internal(_)
+            if remote.provider == CanonicalBackendProvider::Qwen => {}
         RemoteAiBackendWriteProviderView::Internal(_) => {
             return Err(
-                "preflight only supports remote OpenAI-compatible or Ollama backends".to_string(),
+                "preflight only supports remote OpenAI-compatible, Qwen, or Ollama backends"
+                    .to_string(),
             )
         }
     }
@@ -2153,6 +2168,22 @@ fn parse_supported_ai_backend_provider(value: &str) -> Result<CanonicalBackendPr
     }
 }
 
+/// Validate that one admin provider is allowed for the selected backend kind.
+/// 校验管理端 provider 是否允许与所选 backend kind 组合。
+fn validate_backend_provider_for_kind(
+    kind: &CanonicalBackendKind,
+    provider: &CanonicalBackendProvider,
+) -> Result<(), String> {
+    if kind.supports_provider(provider) {
+        return Ok(());
+    }
+    Err(format!(
+        "backend provider {} is not supported for kind {}",
+        provider.as_str(),
+        kind.as_str()
+    ))
+}
+
 fn parse_ai_backend_desired_state(
     value: &str,
 ) -> Result<crate::proto::sms::AiBackendDesiredState, String> {
@@ -2239,14 +2270,14 @@ mod tests {
     }
 
     #[test]
-    fn ai_backend_proto_from_body_normalizes_provider_and_kind_aliases() {
+    fn ai_backend_proto_from_body_uses_canonical_provider_and_kind_values() {
         let record = ai_backend_proto_from_body(
             AiBackendWriteBody {
                 display_name: "Local llama.cpp".to_string(),
-                provider: "llama_cpp".to_string(),
+                provider: "llamacpp".to_string(),
                 model: "qwen".to_string(),
                 hosting: "local".to_string(),
-                backend_kind: "llama.cpp".to_string(),
+                backend_kind: "llamacpp".to_string(),
                 management_mode: None,
                 credential_ref: None,
                 desired_state: None,
@@ -2279,7 +2310,7 @@ mod tests {
             },
             "backend-1".to_string(),
         )
-        .expect("body should normalize aliases");
+        .expect("body should accept canonical values");
 
         assert_eq!(record.provider, "llamacpp");
         assert_eq!(record.backend_kind, "llamacpp");
@@ -2673,7 +2704,7 @@ mod tests {
                 provider: "openai".to_string(),
                 model: "gpt-4o-mini".to_string(),
                 hosting: "remote".to_string(),
-                backend_kind: "openai_chat_completion".to_string(),
+                backend_kind: "chat_http".to_string(),
                 management_mode: None,
                 credential_ref: None,
                 desired_state: None,
@@ -2718,7 +2749,7 @@ mod tests {
                 provider: "openai".to_string(),
                 model: "gpt-4o-mini".to_string(),
                 hosting: "remote".to_string(),
-                backend_kind: "openai_chat_completion".to_string(),
+                backend_kind: "chat_http".to_string(),
                 management_mode: None,
                 credential_ref: None,
                 desired_state: None,
@@ -2746,7 +2777,10 @@ mod tests {
         )
         .expect_err("mismatched remote provider body should fail");
 
-        assert_eq!(err, "remote.provider_family must match backend provider openai");
+        assert_eq!(
+            err,
+            "remote.provider_family must match backend provider openai"
+        );
     }
 
     #[test]
@@ -2757,7 +2791,7 @@ mod tests {
                 provider: "openai".to_string(),
                 model: "gpt-4o-mini".to_string(),
                 hosting: "remote".to_string(),
-                backend_kind: "openai_chat_completion".to_string(),
+                backend_kind: "chat_http".to_string(),
                 management_mode: None,
                 credential_ref: Some("legacy-openai".to_string()),
                 desired_state: None,
@@ -2800,7 +2834,7 @@ mod tests {
                 provider: "openai".to_string(),
                 model: "gpt-4o-mini".to_string(),
                 hosting: "remote".to_string(),
-                backend_kind: "openai_chat_completion".to_string(),
+                backend_kind: "chat_http".to_string(),
                 management_mode: None,
                 credential_ref: None,
                 desired_state: None,

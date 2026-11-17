@@ -120,7 +120,9 @@ async fn e2e_rustfs_blob_store_round_trips_and_enforces_lifecycle() {
     assert_eq!(retained.ref_count, 1);
     assert!(matches!(
         store.delete_blob(&created.key).await,
-        Err(BlobStoreError::Conflict("Referenced objects cannot be deleted"))
+        Err(BlobStoreError::Conflict(
+            "Referenced objects cannot be deleted"
+        ))
     ));
 
     let released = store

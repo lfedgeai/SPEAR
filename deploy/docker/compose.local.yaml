@@ -8,6 +8,7 @@ services:
       args:
         RUST_IMAGE: ${RUST_IMAGE:-rust:1.91-bookworm}
         DEBIAN_IMAGE: ${DEBUG_SERVER_DEBIAN_IMAGE:-debian:bookworm-slim}
+        USE_CARGO_MIRROR: ${USE_CARGO_MIRROR:-1}
         CARGO_BUILD_PROFILE: ${DEBUG_SERVER_CARGO_BUILD_PROFILE:-dev}
         CARGO_OUTPUT_DIR: ${DEBUG_SERVER_CARGO_OUTPUT_DIR:-debug}
     image: spear-debug-server:local

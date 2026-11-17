@@ -8,4 +8,5 @@ pub mod rtasr_protocol;
 pub mod rtasr_session;
 pub mod stream;
 pub mod time_format;
+pub mod transcript_draft;
 pub mod user_stream_protocol;

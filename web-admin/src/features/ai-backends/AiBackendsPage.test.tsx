@@ -4,6 +4,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AiBackendsPage from '@/features/ai-backends/AiBackendsPage'
+import {
+  AI_BACKEND_FAMILIES,
+  AI_BACKEND_PROVIDERS,
+} from '@/features/ai-backends/backendFamilyRegistry'
 
 const mockListAiBackends = vi.fn()
 const mockListAiBackendNodeStatuses = vi.fn()
@@ -112,7 +116,7 @@ describe('AiBackendsPage', () => {
           provider: 'openai',
           model: 'gpt-4o',
           hosting: 'remote',
-          backend_kind: 'openai_chat_completion',
+          backend_kind: AI_BACKEND_FAMILIES.CHAT_HTTP,
           desired_state: 'enabled',
           management_mode: 'externally_managed',
           generation: 1,
@@ -218,7 +222,7 @@ describe('AiBackendsPage', () => {
             hosting: 'local',
             provider: 'llamacpp',
             local: {
-              provider_family: 'llama_cpp',
+              provider_family: AI_BACKEND_PROVIDERS.LLAMACPP,
               config: expect.objectContaining({
                 model_url: 'https://models.example.com/llama3.1.gguf',
               }),
@@ -263,12 +267,54 @@ describe('AiBackendsPage', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             remote: {
-              provider_family: 'open_ai_compatible',
+              provider_family: AI_BACKEND_PROVIDERS.OPENAI,
               config: expect.objectContaining({
                 base_url: 'https://api.openai.com/v1',
                 operations: ['chat_completions'],
               }),
             },
+          }),
+          node_uuids: ['node-1'],
+          verification_policy: 'single_node_strict',
+          requested_checks: ['connectivity', 'auth', 'model_access'],
+        }),
+      ),
+    )
+    expect(mockCreateAiBackend).toHaveBeenCalledTimes(1)
+  })
+
+  it('preflights remote qwen chat backends before creating the backend', async () => {
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Backend' }))
+    fireEvent.click(screen.getByText('Create Remote Backend'))
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('e.g. OpenAI Production')).toBeTruthy(),
+    )
+    fireEvent.change(screen.getByPlaceholderText('e.g. OpenAI Production'), {
+      target: { value: 'Qwen Realtime ASR' },
+    })
+    fireEvent.change(screen.getByDisplayValue('openai'), {
+      target: { value: 'qwen' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Remote Backend' }))
+
+    await waitFor(() =>
+      expect(mockPreflightAiBackend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backend: expect.objectContaining({
+            hosting: 'remote',
+            provider: 'qwen',
+            model: 'qwen3.7-plus',
+              backend_kind: AI_BACKEND_FAMILIES.CHAT_HTTP,
+            credential_ref: undefined,
+            spec: expect.objectContaining({
+              base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+              operations: ['chat_completions'],
+              transports: ['http'],
+            }),
           }),
           node_uuids: ['node-1'],
           verification_policy: 'single_node_strict',

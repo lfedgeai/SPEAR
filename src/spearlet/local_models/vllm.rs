@@ -155,19 +155,22 @@ fn parse_truthy(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_backend_types::{
+        BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE, BACKEND_PROVIDER_VLLM,
+    };
     use crate::proto::sms::{BackendHosting, BackendOrigin};
 
     fn sample_spec() -> BackendSpec {
         BackendSpec {
             name: "vllm-local".to_string(),
-            kind: "vllm-openai".to_string(),
+            kind: BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE.to_string(),
             operations: vec!["chat".to_string()],
             features: vec![],
             transports: vec!["http".to_string()],
             weight: 1,
             priority: 0,
             base_url: String::new(),
-            provider: "vllm".to_string(),
+            provider: BACKEND_PROVIDER_VLLM.to_string(),
             model: "foo".to_string(),
             hosting: BackendHosting::NodeLocal as i32,
             credential_ref: String::new(),
@@ -226,8 +229,7 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("managed_externally".to_string(), "true".to_string());
 
-        let endpoint =
-            resolve_vllm_external_endpoint(&spec, &params).expect("external endpoint");
+        let endpoint = resolve_vllm_external_endpoint(&spec, &params).expect("external endpoint");
         assert_eq!(endpoint.base_url, "http://127.0.0.1:8002/v1");
         assert_eq!(endpoint.source, VllmEndpointSource::ManagedExternally);
     }

@@ -347,7 +347,7 @@ list/upsert/delete/status/watch 的数据面 helper 已集中收口到 `sms/regi
 - `src/spearlet/ai/backend_assignment_controller.rs`
 - `src/spearlet/backend_reporter.rs`
 - `src/spearlet/execution/ai/router/grpc_filter_stream.rs`
-- `src/spearlet/execution/ai/backends/openai_chat_completion.rs`
+- `src/spearlet/execution/ai/backends/chat_http.rs`
 - `src/spearlet/execution/ai/backends/ollama_chat.rs`
 
 ### 当前进度

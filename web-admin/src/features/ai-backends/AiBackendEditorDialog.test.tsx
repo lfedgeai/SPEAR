@@ -1,9 +1,15 @@
+/**
+ * Covers AI backend editor dialog interactions for remote and local providers.
+ * 覆盖 AI backend 编辑弹窗在远端与本地 provider 下的交互行为。
+ */
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AiBackendEditorDialog from '@/features/ai-backends/AiBackendEditorDialog'
 import type { AiBackendHosting } from '@/api/ai-backends'
+import { AI_BACKEND_FAMILIES, AI_BACKEND_PROVIDERS } from '@/features/ai-backends/backendFamilyRegistry'
 
 const mockListCredentials = vi.fn()
 const mockListNodes = vi.fn()
@@ -127,7 +133,7 @@ describe('AiBackendEditorDialog', () => {
           model: 'gpt-4o',
           credential_ref: undefined,
           remote: {
-            provider_family: 'open_ai_compatible',
+            provider_family: AI_BACKEND_PROVIDERS.OPENAI,
             config: expect.objectContaining({
               credential_ref: 'openai-prod',
             }),
@@ -182,8 +188,8 @@ describe('AiBackendEditorDialog', () => {
 
     await waitFor(() => {
       const updatedSelects = screen.getAllByRole('combobox')
-      expect((updatedSelects[1] as HTMLSelectElement).value).toBe('llamacpp')
-      expect((updatedSelects[2] as HTMLSelectElement).value).toBe('llamacpp')
+      expect((updatedSelects[1] as HTMLSelectElement).value).toBe(AI_BACKEND_PROVIDERS.LLAMACPP)
+      expect((updatedSelects[2] as HTMLSelectElement).value).toBe(AI_BACKEND_FAMILIES.LLAMACPP)
     })
 
     expect((screen.getByLabelText('chat_completions') as HTMLInputElement).checked).toBe(true)
@@ -201,7 +207,7 @@ describe('AiBackendEditorDialog', () => {
 
     const selects = screen.getAllByRole('combobox')
     fireEvent.change(selects[2], {
-      target: { value: 'openai_realtime_ws' },
+      target: { value: AI_BACKEND_FAMILIES.RT_ASR_OPENAI_WS },
     })
 
     await waitFor(() => {
@@ -214,6 +220,56 @@ describe('AiBackendEditorDialog', () => {
     expect((screen.getByPlaceholderText('e.g. gpt-4.1') as HTMLInputElement).value).toBe(
       'gpt-4o-mini-transcribe',
     )
+  })
+
+  it('switches to qwen chat defaults and submits top-level remote fields without structured remote config', async () => {
+    const { onSubmit } = renderDialog()
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. OpenAI Production'), {
+      target: { value: 'Remote Qwen Realtime ASR' },
+    })
+    fireEvent.change(getSelectForLabel('Provider'), {
+      target: { value: 'qwen' },
+    })
+
+    await waitFor(() => {
+      expect(getSelectForLabel('Backend family').value).toBe(AI_BACKEND_FAMILIES.CHAT_HTTP)
+    })
+    expect(
+      (screen.getByPlaceholderText('e.g. https://api.openai.com/v1') as HTMLInputElement).value,
+    ).toBe('https://dashscope.aliyuncs.com/compatible-mode/v1')
+    expect((screen.getByPlaceholderText('e.g. gpt-4.1') as HTMLInputElement).value).toBe(
+      'qwen3.7-plus',
+    )
+    expect((screen.getByLabelText('chat_completions') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByDisplayValue('http') as HTMLInputElement).value).toBe('http')
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'openai-prod' })).toBeTruthy())
+    fireEvent.change(getSelectForLabel('Credential ref'), {
+      target: { value: 'openai-prod' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    const [payload, placement] = onSubmit.mock.calls[0]
+    expect(payload).toMatchObject({
+      provider: 'qwen',
+      backend_kind: AI_BACKEND_FAMILIES.CHAT_HTTP,
+      credential_ref: 'openai-prod',
+      spec: {
+        base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        operations: ['chat_completions'],
+        features: [],
+        transports: ['http'],
+        weight: 100,
+        priority: 0,
+      },
+    })
+    expect('remote' in payload).toBe(false)
+    expect(placement).toMatchObject({
+      scope: 'all_nodes',
+      node_uuids: ['node-1'],
+    })
   })
 
   it('supports multi-select operations via checkboxes', async () => {
@@ -237,7 +293,7 @@ describe('AiBackendEditorDialog', () => {
           operations: [],
         }),
         remote: {
-          provider_family: 'open_ai_compatible',
+          provider_family: AI_BACKEND_PROVIDERS.OPENAI,
           config: expect.objectContaining({
             operations: ['chat_completions', 'embeddings'],
           }),
@@ -269,7 +325,7 @@ describe('AiBackendEditorDialog', () => {
           features: [],
         }),
         remote: {
-          provider_family: 'open_ai_compatible',
+          provider_family: AI_BACKEND_PROVIDERS.OPENAI,
           config: expect.objectContaining({
             features: ['stream', 'supports_tools'],
           }),
@@ -303,7 +359,7 @@ describe('AiBackendEditorDialog', () => {
       expect.objectContaining({
         hosting: 'local',
         local: {
-          provider_family: 'llama_cpp',
+          provider_family: AI_BACKEND_PROVIDERS.LLAMACPP,
           config: expect.objectContaining({
             model_url: 'https://models.example.com/llama3.1.gguf',
           }),
@@ -335,7 +391,7 @@ describe('AiBackendEditorDialog', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         local: {
-          provider_family: 'llama_cpp',
+          provider_family: AI_BACKEND_PROVIDERS.LLAMACPP,
           config: expect.objectContaining({
             model_url: 'https://models.example.com/llama3.1.gguf',
           }),
@@ -365,7 +421,7 @@ describe('AiBackendEditorDialog', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         local: {
-          provider_family: 'llama_cpp',
+          provider_family: AI_BACKEND_PROVIDERS.LLAMACPP,
           config: expect.objectContaining({
             model_path: '/models/llama/llama3.1.gguf',
           }),
@@ -401,7 +457,7 @@ describe('AiBackendEditorDialog', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         local: {
-          provider_family: 'llama_cpp',
+          provider_family: AI_BACKEND_PROVIDERS.LLAMACPP,
           config: expect.objectContaining({
             model_url: 'https://models.example.com/typed.gguf',
           }),

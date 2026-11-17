@@ -272,7 +272,7 @@ export default function AiBackendDetailPage() {
                 <SummaryRow label="Hosting" value={<span className="font-mono text-xs">{backend.hosting}</span>} />
                 <SummaryRow label="Provider" value={<span className="font-mono text-xs">{backend.provider}</span>} />
                 <SummaryRow label="Model" value={<span className="font-mono text-xs">{backend.model}</span>} />
-                <SummaryRow label="Kind" value={<span className="font-mono text-xs">{backend.backend_kind}</span>} />
+                <SummaryRow label="Backend family" value={<span className="font-mono text-xs">{backend.backend_kind}</span>} />
                 <SummaryRow label="Generation" value={backend.generation} />
               </CardContent>
             </Card>
@@ -311,7 +311,7 @@ export default function AiBackendDetailPage() {
           {providerFields.length > 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>Provider Config</CardTitle>
+                <CardTitle>Provider details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {providerFields.map((field) => (

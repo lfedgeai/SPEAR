@@ -61,6 +61,7 @@ pub mod rtasr {
     pub const WS_URL: &str = "ws_url";
     pub const CLIENT_SECRET: &str = "client_secret";
     pub const MODEL: &str = "model";
+    pub const SAMPLE_RATE: &str = "sample_rate";
     pub const MAX_SEND_QUEUE_BYTES: &str = "max_send_queue_bytes";
     pub const MAX_RECV_QUEUE_BYTES: &str = "max_recv_queue_bytes";
 }

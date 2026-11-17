@@ -18,7 +18,7 @@
 ```toml
 [[spearlet.ai.backends]]
 name = "openai-chat"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 model = "gpt-4o-mini"

@@ -76,8 +76,6 @@ pub mod web_admin;
 #[cfg(test)]
 pub mod config_test;
 #[cfg(test)]
-pub mod object_service_test;
-#[cfg(test)]
 pub mod gateway_test;
 #[cfg(test)]
 pub mod grpc_server_test;
@@ -85,6 +83,8 @@ pub mod grpc_server_test;
 pub mod handlers_test;
 #[cfg(test)]
 pub mod http_gateway_test;
+#[cfg(test)]
+pub mod object_service_test;
 #[cfg(test)]
 pub mod placement_penalty_test;
 #[cfg(test)]

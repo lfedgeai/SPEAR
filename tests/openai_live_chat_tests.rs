@@ -1,4 +1,4 @@
-use spear_next::spearlet::execution::ai::backends::openai_chat_completion::OpenAIChatCompletionBackendAdapter;
+use spear_next::spearlet::execution::ai::backends::chat_http::OpenAIChatCompletionBackendAdapter;
 use spear_next::spearlet::execution::ai::backends::BackendAdapter;
 use spear_next::spearlet::execution::ai::ir::{
     CanonicalRequestEnvelope, ChatCompletionsPayload, ChatMessage, Operation, Payload, RoutingHints,
@@ -58,7 +58,7 @@ fn test_openai_live_chat_completion() {
         spear_next::spearlet::execution::ai::ir::ResultPayload::Payload(v) => v,
         spear_next::spearlet::execution::ai::ir::ResultPayload::Error(e) => {
             panic!("unexpected error payload: {}", e.message)
-        }
+        },
     };
 
     if let Ok(s) = serde_json::to_string_pretty(&v) {

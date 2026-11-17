@@ -769,7 +769,7 @@ api_key_env = "OPENAI_CHAT_API_KEY"
 
 [[spearlet.ai.backends]]
 name = "openai-chat"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_chat"

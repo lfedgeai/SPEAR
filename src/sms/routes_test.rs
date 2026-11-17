@@ -62,7 +62,10 @@ fn build_json_route_probe_request(
     uri: &str,
     fast_fail_methods: &[Method],
 ) -> Request<Body> {
-    let request_body = if fast_fail_methods.iter().any(|candidate| candidate == &method) {
+    let request_body = if fast_fail_methods
+        .iter()
+        .any(|candidate| candidate == &method)
+    {
         Body::from("{")
     } else {
         Body::from("{}")

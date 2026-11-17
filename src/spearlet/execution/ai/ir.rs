@@ -147,6 +147,12 @@ pub struct ImageGenerationPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechToTextPayload {
     pub model: Option<String>,
+    /// Optional audio sample rate in Hz (e.g. 16000/8000). Backend-specific
+    /// adapters may map it into provider session configuration.
+    /// 可选音频采样率（Hz，例如 16000/8000）。后端适配器可将其映射到
+    /// 对应服务商的会话配置。
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

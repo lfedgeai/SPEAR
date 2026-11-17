@@ -7,6 +7,7 @@ import type {
   AiBackendRemoteInput,
   AiBackendSummary,
 } from '@/api/ai-backends'
+import { AI_BACKEND_PROVIDERS } from './backendFamilyRegistry'
 
 export type BackendDetailSummaryView = {
   operations: string[]
@@ -23,18 +24,27 @@ export type BackendDetailProviderField = {
 
 function isOpenAiRemoteInput(
   value?: AiBackendRemoteInput,
-): value is Extract<AiBackendRemoteInput, { provider_family: 'open_ai_compatible' }> {
-  return value?.provider_family === 'open_ai_compatible'
+): value is Extract<
+  AiBackendRemoteInput,
+  { provider_family: typeof AI_BACKEND_PROVIDERS.OPENAI }
+> {
+  return value?.provider_family === AI_BACKEND_PROVIDERS.OPENAI
 }
 
 function isOllamaRemoteInput(
   value?: AiBackendRemoteInput,
-): value is Extract<AiBackendRemoteInput, { provider_family: 'ollama' }> {
-  return value?.provider_family === 'ollama'
+): value is Extract<
+  AiBackendRemoteInput,
+  { provider_family: typeof AI_BACKEND_PROVIDERS.OLLAMA }
+> {
+  return value?.provider_family === AI_BACKEND_PROVIDERS.OLLAMA
 }
 
-function isKnownRemoteProvider(provider: string): boolean {
-  return provider === 'openai' || provider === 'ollama'
+function usesStructuredRemoteProviderInput(provider: string): boolean {
+  return (
+    provider === AI_BACKEND_PROVIDERS.OPENAI ||
+    provider === AI_BACKEND_PROVIDERS.OLLAMA
+  )
 }
 
 export function resolveBackendDetailSummary(
@@ -45,22 +55,22 @@ export function resolveBackendDetailSummary(
   const normalizedProvider = backend.provider.trim().toLowerCase()
 
   return {
-    operations: isKnownRemoteProvider(normalizedProvider)
+    operations: usesStructuredRemoteProviderInput(normalizedProvider)
       ? remoteOpenAi?.config.operations || remoteOllama?.config.operations || []
       : backend.spec?.operations || [],
-    features: isKnownRemoteProvider(normalizedProvider)
+    features: usesStructuredRemoteProviderInput(normalizedProvider)
       ? remoteOpenAi?.config.features || remoteOllama?.config.features || []
       : backend.spec?.features || [],
-    transports: isKnownRemoteProvider(normalizedProvider)
+    transports: usesStructuredRemoteProviderInput(normalizedProvider)
       ? remoteOpenAi?.config.transports || remoteOllama?.config.transports || []
       : backend.spec?.transports || [],
-    baseUrl: isKnownRemoteProvider(normalizedProvider)
+    baseUrl: usesStructuredRemoteProviderInput(normalizedProvider)
       ? remoteOpenAi?.config.base_url || remoteOllama?.config.base_url || ''
       : backend.spec?.base_url || '',
     credentialRef:
-      normalizedProvider === 'openai'
+      normalizedProvider === AI_BACKEND_PROVIDERS.OPENAI
         ? remoteOpenAi?.config.credential_ref || ''
-        : !isKnownRemoteProvider(normalizedProvider)
+        : !usesStructuredRemoteProviderInput(normalizedProvider)
           ? backend.credential_ref || backend.spec?.credential_ref || ''
           : '',
   }
@@ -69,7 +79,7 @@ export function resolveBackendDetailSummary(
 export function resolveBackendProviderFields(
   backend: AiBackendSummary,
 ): BackendDetailProviderField[] {
-  if (backend.local?.provider_family === 'llama_cpp') {
+  if (backend.local?.provider_family === AI_BACKEND_PROVIDERS.LLAMACPP) {
     const fields: BackendDetailProviderField[] = []
     const config = backend.local.config
     if (config.model_url) fields.push({ label: 'Model URL', value: config.model_url })
@@ -89,7 +99,7 @@ export function resolveBackendProviderFields(
     return fields
   }
 
-  if (backend.local?.provider_family === 'vllm') {
+  if (backend.local?.provider_family === AI_BACKEND_PROVIDERS.VLLM) {
     const fields: BackendDetailProviderField[] = []
     const config = backend.local.config
     if (config.mode) fields.push({ label: 'Mode', value: config.mode })
@@ -100,14 +110,6 @@ export function resolveBackendProviderFields(
       })
     }
     return fields
-  }
-
-  if (backend.remote?.provider_family === 'open_ai_compatible') {
-    return [{ label: 'Provider family', value: 'open_ai_compatible' }]
-  }
-
-  if (backend.remote?.provider_family === 'ollama') {
-    return [{ label: 'Provider family', value: 'ollama' }]
   }
 
   return []

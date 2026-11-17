@@ -74,22 +74,30 @@
 
 ### Create Remote Backend
 
-- 用于 OpenAI、Ollama 或其他外部 endpoint 类型的 adapter。
+- 用于 OpenAI、Qwen、Ollama 或其他外部 endpoint 类型的 adapter。
 - 常见输入包括：
   - `Display name`
   - `Provider`
   - `Model`
-  - `Backend kind`
+  - `Backend family`
   - `Base URL`
   - `Credential ref`
   - `Operations`
   - `Features`
   - `Transports`
   - `Placement`
-- 对于 `openai`、`openai_compatible`、`ollama` 这类已支持的 remote provider，Web Admin 现在会在创建前执行节点侧 preflight。
+- `qwen` 现已出现在 remote provider 选择器中：
+  - chat / 多模态理解走 `chat_http`
+  - realtime ASR 走 `rt_asr_qwen_ws`
+- 对于 Qwen realtime ASR，Web Admin 会继续把 `base_url`、`credential_ref`、`operations` 和 `transports` 放在顶层 backend spec 中，以匹配当前 SMS admin API 的 payload 约定。
+- 对于 `openai`、`qwen`、`ollama` 这类已支持的 remote provider，Web Admin 现在会在创建前执行节点侧 preflight。
 - 这个 preflight 是从目标 SPEARlet 节点发起的，而不是从浏览器或 SMS 进程发起。
 - 对于多节点 placement，默认策略是“创建前抽样严格验证 + 创建后通过 placement reconcile 做全量节点验证”。
 - 如果抽样节点上的 endpoint 可达性、credential 验证或 model 访问失败，创建会立即终止，并返回节点侧错误。
+- 对 Qwen realtime ASR 来说，需要把 `AI Backends` 页面或 backend status API 中的
+  `status=ready` 且 `available=true` 视为控制面成功标志。如果 backend 仍停留在
+  `error`，那么即使 UI 创建或编辑本身成功，运行时执行阶段仍可能退化成
+  `no candidate backend`。
 
 ### Create Local Backend
 

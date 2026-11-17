@@ -15,6 +15,7 @@ use tokio::time::timeout;
 use tracing::warn;
 use url::Url;
 
+use crate::ai_backend_types::{BACKEND_FAMILY_CHAT_HTTP, BACKEND_FAMILY_LLAMACPP};
 use crate::proto::sms::{BackendInfo, BackendStatus};
 use crate::spearlet::ai::backend_assembly::{backend_spec_from_parts, BackendSpecParts};
 use crate::spearlet::config::SpearletConfig;
@@ -219,14 +220,14 @@ impl LlamaCppSupervisor {
         let backend = BackendInfo {
             spec: Some(backend_spec_from_parts(BackendSpecParts {
                 name: format!("managed/llamacpp/{}", sanitize_name(model)),
-                kind: "openai_chat_completion".to_string(),
+                kind: BACKEND_FAMILY_CHAT_HTTP.to_string(),
                 operations: vec!["chat_completions".to_string()],
                 features: Vec::new(),
                 transports: vec!["http".to_string()],
                 weight: 100,
                 priority: 0,
                 base_url: base_url.clone(),
-                provider: Some("llamacpp".to_string()),
+                provider: Some(BACKEND_FAMILY_LLAMACPP.to_string()),
                 model: Some(model.to_string()),
                 hosting: Hosting::Local,
                 credential_ref: None,

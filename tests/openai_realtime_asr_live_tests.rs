@@ -32,7 +32,7 @@ fn test_openai_realtime_asr_websocket_connect() {
     });
     cfg.ai.backends.push(AiBackendConfig {
         name: resolved.name.clone(),
-        kind: "openai_realtime_ws".to_string(),
+        kind: "rt_asr_openai_ws".to_string(),
         base_url: resolved.base_url.clone(),
         hosting: None,
         model: None,

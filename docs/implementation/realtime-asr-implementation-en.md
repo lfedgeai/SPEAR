@@ -187,6 +187,15 @@ Security:
 - secrets live only on host side; guest must not access them
 - logs must not print secrets/headers
 
+Providers:
+
+- OpenAI realtime (`rt_asr_openai_ws`) and Qwen/DashScope (`rt_asr_qwen_ws`)
+  share the same data plane (`input_audio_buffer.append` / `commit`). Only the
+  `session.update` shape and the live-text event differ (Qwen emits
+  `conversation.item.input_audio_transcription.text` with `text` + `stash`),
+  which the per-kind adapter and SDK normalize. See
+  [backends-en.md](../backend-adapter/backends-en.md) for config examples.
+
 ## 7. Config and routing
 
 Align with `SpearletConfig.ai.backends` (`ops/features/transports`), and introduce a dedicated op name for realtime ASR (e.g. `speech_to_text` + `websocket` transport or a separate op).
@@ -200,6 +209,11 @@ Config notes:
 
 - `[[spearlet.ai.backends]] hosting` is required and must be `local` or `remote`.
 - `credential_ref` is optional; if omitted, the backend is treated as “no-auth”.
+- For Qwen realtime ASR, the backend kind must remain `rt_asr_qwen_ws`.
+  Do not reuse `rt_asr_openai_ws` just because the control-plane base URL may be
+  an OpenAI-compatible `/compatible-mode/v1` endpoint; otherwise the runtime will
+  bind the wrong adapter and the websocket connect step can fail before any
+  transcript event is produced.
 
 ## 8. Control plane: rtasr_ctl commands (v1)
 
@@ -221,3 +235,90 @@ Recommended set:
 - E2E:
   - stub mode always runs in CI
   - real WS mode runs only when credentials are available (optional/ignored)
+- Live provider coverage:
+  - [realtime_asr_live_tests.rs](../../tests/realtime_asr_live_tests.rs) enumerates
+    all configured realtime ASR backends that match `speech_to_text + websocket`
+    and runs the same fixture audio through each resolved backend
+  - [qwen_realtime_asr_live_tests.rs](../../tests/qwen_realtime_asr_live_tests.rs) exercises the
+    repository RTASR host API against Qwen realtime ASR using the embedded PCM
+    fixture [qwen_live_e2e_hello.pcm](../../tests/fixtures/qwen_live_e2e_hello.pcm)
+  - shared live-test convention:
+    - `SPEAR_RUN_LIVE_TESTS=1`
+    - config comes from `SPEAR_TEST_CONFIG` or the default `config/spearlet/config.toml`
+    - the backend must be `rt_asr_qwen_ws`
+    - the backend credential must use `kind = "env"`
+    - the real secret is still provided via the shell using that credential's `api_key_env`
+  - provider-specific override:
+    - `QWEN_LIVE_MODEL`
+  - defaults:
+    - `QWEN_LIVE_MODEL=qwen3-asr-flash-realtime`
+  - runtime wiring:
+    - the test builds an in-memory `SpearletConfig`
+    - it mirrors the resolved backend name/base URL from the shared test config
+    - the credential kind is `env`
+    - the secret is injected into `RuntimeConfig.global_environment` using the
+      resolved credential env name, mirroring host-side env resolution
+  - sample config:
+
+    ```toml
+    [[spearlet.ai.credentials]]
+    name = "qwen_live"
+    kind = "env"
+    api_key_env = "DASHSCOPE_API_KEY"
+
+    [[spearlet.ai.backends]]
+    name = "qwen-live"
+    kind = "rt_asr_qwen_ws"
+    base_url = "https://maas.qianwenaiapi.com/compatible-mode/v1"
+    credential_ref = "qwen_live"
+    ops = ["speech_to_text"]
+    transports = ["websocket"]
+    ```
+
+  - example:
+
+    ```bash
+    SPEAR_RUN_LIVE_TESTS=1 \
+    DASHSCOPE_API_KEY='your-api-key' \
+    cargo test test_qwen_realtime_asr_live_transcribes_fixture_audio --test qwen_realtime_asr_live_tests -- --nocapture
+    ```
+
+  - aggregate example:
+
+    ```bash
+    SPEAR_RUN_LIVE_TESTS=1 \
+    OPENAI_API_KEY='your-openai-key' \
+    DASHSCOPE_API_KEY='your-qwen-key' \
+    cargo test test_all_realtime_asr_live_backends_transcribe_fixture_audio --test realtime_asr_live_tests -- --nocapture
+    ```
+
+  - recommendation:
+    - keep OpenAI and Qwen live tests in the same shared config file so both
+      providers follow the same enable/configure/secret-injection workflow
+    - the default sample file [config.toml](../../config/spearlet/config.toml)
+      now includes a `qwen-live` backend and `qwen_live` env credential
+
+## 10. Operational troubleshooting notes
+
+- `websocket disconnected (code 1005): connection closed` is usually only the
+  browser-facing symptom. In this repository it often means the upstream
+  user-stream or runtime websocket was closed without an explicit reason, so the
+  real failure must be confirmed from `sms` / `spearlet` logs or backend status.
+- If Qwen realtime ASR is configured but runtime routing reports no candidate
+  backend, check `GET /admin/api/ai-backend-statuses/{backend_id}` first. The
+  backend must reach `status=ready` and `available=true`; otherwise the node has
+  not published a usable runtime backend yet.
+- A node-side status such as `remote preflight does not support provider 'qwen'
+  with kind 'rt_asr_qwen_ws'` means control-plane validation blocked the
+  backend before routing. In that state, execution-level RTASR requests typically
+  degrade to `no candidate backend ... backends=[]`.
+- For Qwen specifically, a `base_url` copied from the compatible HTTP endpoint
+  like `https://maas.qianwenaiapi.com/compatible-mode/v1` is valid, but the
+  runtime adapter must normalize it back to the realtime websocket root before
+  appending `/api-ws/v1/realtime?model=...`.
+- If the runtime connects but subtitles still look incomplete, inspect the
+  transcript consumer next. Qwen emits preview-style
+  `conversation.item.input_audio_transcription.text` events with `text + stash`,
+  and the final visible transcript must be sealed from the later
+  `Completed(transcript)` event instead of assuming OpenAI-style delta-only
+  behavior.

@@ -34,7 +34,7 @@ fn test_wasm_to_openai_chat_completion_e2e() {
     });
     cfg.ai.backends.push(AiBackendConfig {
         name: "openai".to_string(),
-        kind: "openai_chat_completion".to_string(),
+        kind: "chat_http".to_string(),
         base_url: resolved.base_url,
         hosting: None,
         model: None,

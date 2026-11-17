@@ -41,7 +41,7 @@ api_key_env = "OPENAI_API_KEY"
 ```toml
 [[spearlet.ai.backends]]
 name = "openai-chat"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 model = "gpt-4o-mini"
@@ -54,7 +54,7 @@ priority = 0
 
 [[spearlet.ai.backends]]
 name = "openai-realtime-asr"
-kind = "openai_realtime_ws"
+kind = "rt_asr_openai_ws"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_default"
@@ -81,12 +81,12 @@ priority = 0
 - 若未配置 `credential_ref`：
   - 视为“无需鉴权”（不会附加 API key header），适用于自建 OpenAI-compatible 代理等场景
 
-## 常见 backend kind
+## 常见 backend family
 
-本仓库常见 kind：
+本仓库常见 backend family：
 
-- `openai_chat_completion`（HTTP）
-- `openai_realtime_ws`（WebSocket）
+- `chat_http`（HTTP）
+- `rt_asr_openai_ws`（WebSocket）
 - `ollama_chat`（HTTP，节点本地）
 - `stub`（测试用）
 
@@ -105,8 +105,8 @@ priority = 0
 
 当前运行时已支持的 SMS 动态 backend kind：
 
-- `openai_chat_completion`
-- `openai_realtime_ws`
+- `chat_http`
+- `rt_asr_openai_ws`
 - `ollama_chat`
 - `stub`
 

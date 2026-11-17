@@ -24,14 +24,14 @@
 ## mic_rtasr prerequisites
 
 - Host binaries must enable `mic-device` (otherwise `source=device` fails)
-- Host must configure a realtime ASR backend (e.g. `openai_realtime_ws`) plus its API key
+- Host must configure a realtime ASR backend (e.g. `rt_asr_openai_ws`) plus its API key
 - Default backend name is `openai-realtime-asr` (override at build time via `-DSP_RTASR_BACKEND=\"...\"`)
 
 Note: the `mic_rtasr` sample uses `server_vad` segmentation by default (silence-based).
 
 Suggested setup:
 
-- Spearlet config example: `config/spearlet/config.toml` (includes an `openai_realtime_ws` backend)
+- Spearlet config example: `config/spearlet/config.toml` (includes a realtime ASR backend example)
 - Set env before running: `OPENAI_REALTIME_API_KEY`
 
 How to run: after building `samples/build/mic_rtasr.wasm`, upload it as a WASM executable and run it as a task (see `docs/api-usage-guide-en.md` for the upload/task workflow).
@@ -75,6 +75,12 @@ WASM-Rust samples:
 - `stream_id=2` is the voice uplink stream; the runtime expects CTRL(OPEN) before DATA/COMMIT.
 - Press-and-hold flows send `utterance_begin`, stream PCM16LE DATA, and send voice COMMIT on release.
 - The live-caption and voice-chat samples accept both `input_audio_transcription.*` and `conversation.item.input_audio_transcription.*` RTASR event names.
+- The Rust `live_caption` sample appends only Qwen's confirmed preview prefix during
+  `Preview { text, stash }`, then fills any missing tail from the final
+  `Completed(transcript)` event before committing the caption line.
+- The Rust `live_caption` and `voice_chat` samples now share the same
+  `spear-wasm-helper::transcript_draft` helper so OpenAI/Qwen transcript
+  normalization lives in one place instead of diverging per sample.
 - Current Console defaults are `16000Hz`, mono, `chunkMs=300`; the JS live-caption sample uses `server_vad` with `silence_ms=600` and also aggregates about `240ms` of PCM before each `rtasr.writeAudio()` call.
 - The Rust live-caption sample mirrors the same protocol behavior, but uses Rust SDK `epoll` wrappers and typed modules instead of the Boa JS runner.
 - Rust WASM samples now opt in to `spear_wasm::{println, eprintln}` macro shadowing, so unqualified `println!` / `eprintln!` inside the sample crate are mirrored to debug-server as guest info/error logs.
@@ -83,6 +89,25 @@ WASM-Rust samples:
 - The Rust live-caption sample now mirrors RTASR `state` / `last_error` into guest runtime logs when RTASR connect, clear, write, flush, read, or transport-close paths fail, so debug-server can surface upstream causes such as OpenAI websocket connectivity failures.
 - The Rust live-caption sample now also mirrors app-level diagnostic edges such as control-stream shutdown, stream hangup, invalid voice protocol frames, and DATA/COMMIT arriving before RTASR session setup, so debug-server exposes more failure context even when the task exits early.
 - The Rust voice-chat sample mirrors the JS voice-chat behavior: wait for voice COMMIT, finish RTASR transcription, then invoke downstream Chat Completion and write the response back to `stream_id=1`.
+
+## Realtime ASR troubleshooting
+- If the browser reports `websocket disconnected (code 1005): connection closed`,
+  treat it as a transport symptom first, not as proof that subtitle rendering is
+  broken. Confirm the real cause from `sms` / `spearlet` logs or backend status.
+- For Qwen-based runs, make sure the backend is configured as
+  `provider=qwen` plus `backend_kind=rt_asr_qwen_ws`. If the same endpoint
+  is created as `rt_asr_openai_ws`, the sample can fail during RTASR connect
+  and then drop later voice DATA/COMMIT frames because the session never became
+  ready.
+- If a sample reports that no realtime ASR backend is available, inspect
+  `GET /admin/api/ai-backend-statuses/{backend_id}`. The target backend must be
+  `ready` and `available=true`; otherwise the node has not published a usable
+  runtime backend and execution can degrade to `no candidate backend`.
+- For Qwen transcript output, a successful connection is not enough by itself.
+  The visible caption line is built from preview `text + stash` events plus the
+  later `Completed(transcript)` tail, which is why the shared
+  `transcript_draft` helper must stay in the loop for both `live_caption` and
+  `voice_chat`.
 
 ## Runtime integration
 - The generated `hello.wasm` can be uploaded via SMS file service and referenced in task registration `executable.uri`

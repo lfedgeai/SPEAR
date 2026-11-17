@@ -50,6 +50,7 @@ pub(crate) struct AdminAiBackendRecordResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "provider_family", content = "config", rename_all = "snake_case")]
 pub(crate) enum AdminAiBackendLocalProviderResponse {
+    #[serde(rename = "llamacpp")]
     LlamaCpp(AdminAiBackendLlamaCppLocalConfigResponse),
     Vllm(AdminAiBackendVllmLocalConfigResponse),
 }
@@ -84,6 +85,7 @@ pub(crate) struct AdminAiBackendVllmLocalConfigResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "provider_family", content = "config", rename_all = "snake_case")]
 pub(crate) enum AdminAiBackendRemoteProviderResponse {
+    #[serde(rename = "openai")]
     OpenAiCompatible(AdminAiBackendOpenAiCompatibleRemoteConfigResponse),
     Ollama(AdminAiBackendOllamaRemoteConfigResponse),
 }
@@ -258,6 +260,7 @@ pub(crate) enum AdminAiBackendOllamaPreflightOutcomeResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "provider_family", rename_all = "snake_case")]
 pub(crate) enum AdminAiBackendRemoteProviderPreflightResultResponse {
+    #[serde(rename = "openai")]
     OpenAiCompatible {
         outcome: AdminAiBackendOpenAiCompatiblePreflightOutcomeResponse,
     },

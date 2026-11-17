@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use tracing::{error, info};
 
-use crate::sms::blob_store::build_blob_store;
 use super::gateway::{create_gateway_router, GatewayState};
 use crate::proto::sms::{
     admin_credential_service_client::AdminCredentialServiceClient,
@@ -18,6 +17,7 @@ use crate::proto::sms::{
     mcp_registry_service_client::McpRegistryServiceClient, node_service_client::NodeServiceClient,
     placement_service_client::PlacementServiceClient, task_service_client::TaskServiceClient,
 };
+use crate::sms::blob_store::build_blob_store;
 use tokio_util::sync::CancellationToken;
 
 /// SMS HTTP gateway / SMS HTTP网关

@@ -157,7 +157,7 @@ If topology metadata is not yet available, v1 should still implement determinist
 Recommended initial provider scope:
 
 - `openai`
-- `openai_compatible`
+- `qwen`
 - `ollama`
 
 Deferred to later iterations:
@@ -183,6 +183,16 @@ Preferred probe order:
 1. model metadata or model listing endpoint
 2. direct target model lookup if supported
 3. minimal low-cost request only if metadata inspection is insufficient
+
+### Qwen Realtime ASR
+
+Checks:
+
+- base URL reachability
+- bearer-token credential validity
+- target realtime ASR model visibility through the compatible `models` endpoint
+
+The current control-plane implementation reuses the OpenAI HTTP probe shape for Qwen credential and model checks, while runtime traffic still goes through the dedicated `rt_asr_qwen_ws` adapter.
 
 ### Remote Ollama
 
@@ -241,7 +251,7 @@ Suggested request body:
 ```json
 {
   "backend": {
-    "provider": "openai_compatible",
+    "provider": "openai",
     "hosting": "remote",
     "model": "gpt-4o-mini",
     "base_url": "https://api.openai.com/v1",
@@ -264,7 +274,7 @@ Suggested response body:
 ```json
 {
   "success": true,
-  "provider": "openai_compatible",
+  "provider": "openai",
   "phase": "model_access",
   "error_code": null,
   "message": "authentication and model access verified",
@@ -402,7 +412,7 @@ Suggested implementation layout:
 - provider adapters:
   - `remote_preflight/mod.rs`
   - `remote_preflight/common.rs`
-  - `remote_preflight/openai_compatible.rs`
+  - `remote_preflight/openai.rs`
   - `remote_preflight/ollama.rs`
   - `remote_preflight/http_json.rs`
 

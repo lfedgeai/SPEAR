@@ -5,6 +5,26 @@ use crate::proto::sms::{
     AiBackendDesiredState, AiBackendHosting, AiBackendManagementMode, BackendOrigin,
 };
 
+/// Canonical backend family ids shared across runtime, config, and tests.
+/// runtime、配置与测试共享的规范 backend family id。
+pub const BACKEND_FAMILY_CHAT_HTTP: &str = "chat_http";
+pub const BACKEND_FAMILY_RT_ASR_OPENAI_WS: &str = "rt_asr_openai_ws";
+pub const BACKEND_FAMILY_RT_ASR_QWEN_WS: &str = "rt_asr_qwen_ws";
+pub const BACKEND_FAMILY_OLLAMA_CHAT: &str = "ollama_chat";
+pub const BACKEND_FAMILY_LLAMACPP: &str = "llamacpp";
+pub const BACKEND_FAMILY_VLLM: &str = "vllm";
+pub const BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE: &str = "vllm_openai_compatible";
+pub const BACKEND_FAMILY_STUB: &str = "stub";
+
+/// Canonical backend provider ids shared across runtime, config, and tests.
+/// runtime、配置与测试共享的规范 backend provider id。
+pub const BACKEND_PROVIDER_OPENAI: &str = "openai";
+pub const BACKEND_PROVIDER_OLLAMA: &str = "ollama";
+pub const BACKEND_PROVIDER_QWEN: &str = "qwen";
+pub const BACKEND_PROVIDER_LLAMACPP: &str = "llamacpp";
+pub const BACKEND_PROVIDER_VLLM: &str = "vllm";
+pub const BACKEND_PROVIDER_INTERNAL: &str = "internal";
+
 /// Canonical backend hosting kind used by internal code paths.
 /// 内部代码路径使用的规范 backend hosting 类型。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -67,6 +87,8 @@ pub enum CanonicalBackendProvider {
     OpenAi,
     /// Ollama provider family / Ollama provider 家族
     Ollama,
+    /// Qwen (DashScope / Model Studio) provider family / Qwen（百炼）provider 家族
+    Qwen,
     /// Local llama.cpp managed runtime / 本地 llama.cpp 托管运行时
     LlamaCpp,
     /// Local vLLM family / 本地 vLLM 家族
@@ -82,11 +104,12 @@ impl CanonicalBackendProvider {
     /// 从边界层原始字符串解析 provider。
     pub fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
-            "openai" | "openai_compatible" => Self::OpenAi,
-            "ollama" => Self::Ollama,
-            "llamacpp" | "llama_cpp" | "llama.cpp" => Self::LlamaCpp,
-            "vllm" | "vllm-openai" => Self::Vllm,
-            "internal" => Self::Internal,
+            BACKEND_PROVIDER_OPENAI => Self::OpenAi,
+            BACKEND_PROVIDER_OLLAMA => Self::Ollama,
+            BACKEND_PROVIDER_QWEN => Self::Qwen,
+            BACKEND_PROVIDER_LLAMACPP => Self::LlamaCpp,
+            BACKEND_PROVIDER_VLLM => Self::Vllm,
+            BACKEND_PROVIDER_INTERNAL => Self::Internal,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -95,24 +118,30 @@ impl CanonicalBackendProvider {
     /// 返回稳定序列化使用的规范字符串形式。
     pub fn as_str(&self) -> &str {
         match self {
-            Self::OpenAi => "openai",
-            Self::Ollama => "ollama",
-            Self::LlamaCpp => "llamacpp",
-            Self::Vllm => "vllm",
-            Self::Internal => "internal",
+            Self::OpenAi => BACKEND_PROVIDER_OPENAI,
+            Self::Ollama => BACKEND_PROVIDER_OLLAMA,
+            Self::Qwen => BACKEND_PROVIDER_QWEN,
+            Self::LlamaCpp => BACKEND_PROVIDER_LLAMACPP,
+            Self::Vllm => BACKEND_PROVIDER_VLLM,
+            Self::Internal => BACKEND_PROVIDER_INTERNAL,
             Self::Unknown(value) => value.as_str(),
         }
     }
 }
 
-/// Canonical backend kind used to centralize hosting and provider rules.
-/// 用于集中承载 hosting 与 provider 规则的规范 backend kind。
+/// Canonical backend kind used to centralize adapter-family rules.
+/// 用于集中承载 adapter-family 规则的规范 backend kind。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CanonicalBackendKind {
-    /// OpenAI chat completion backend / OpenAI chat completion backend
-    OpenAiChatCompletion,
-    /// OpenAI realtime websocket backend / OpenAI realtime websocket backend
-    OpenAiRealtimeWs,
+    /// Provider-neutral chat-completions HTTP+JSON adapter family.
+    /// Provider-neutral chat-completions HTTP+JSON 适配器家族。
+    ChatHttp,
+    /// OpenAI-style realtime speech-to-text websocket adapter family.
+    /// OpenAI 风格实时语音识别 websocket 适配器家族。
+    RtAsrOpenAiWs,
+    /// Qwen realtime speech-to-text websocket adapter family.
+    /// Qwen 实时语音识别 websocket 适配器家族。
+    RtAsrQwenWs,
     /// Ollama chat backend / Ollama chat backend
     OllamaChat,
     /// Local llama.cpp backend / 本地 llama.cpp backend
@@ -120,7 +149,7 @@ pub enum CanonicalBackendKind {
     /// Local vLLM backend / 本地 vLLM backend
     Vllm,
     /// Local vLLM OpenAI-compatible backend / 本地 vLLM OpenAI-compatible backend
-    VllmOpenAi,
+    VllmOpenAiCompatible,
     /// Internal stub backend / 内部 stub backend
     Stub,
     /// Unknown or unsupported value / 未知或不支持的取值
@@ -132,13 +161,14 @@ impl CanonicalBackendKind {
     /// 从边界层原始字符串解析 backend kind。
     pub fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
-            "openai_chat_completion" => Self::OpenAiChatCompletion,
-            "openai_realtime_ws" => Self::OpenAiRealtimeWs,
-            "ollama_chat" => Self::OllamaChat,
-            "llamacpp" | "llama_cpp" | "llama.cpp" => Self::LlamaCpp,
-            "vllm" => Self::Vllm,
-            "vllm-openai" => Self::VllmOpenAi,
-            "stub" => Self::Stub,
+            BACKEND_FAMILY_CHAT_HTTP => Self::ChatHttp,
+            BACKEND_FAMILY_RT_ASR_OPENAI_WS => Self::RtAsrOpenAiWs,
+            BACKEND_FAMILY_RT_ASR_QWEN_WS => Self::RtAsrQwenWs,
+            BACKEND_FAMILY_OLLAMA_CHAT => Self::OllamaChat,
+            BACKEND_FAMILY_LLAMACPP => Self::LlamaCpp,
+            BACKEND_FAMILY_VLLM => Self::Vllm,
+            BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE => Self::VllmOpenAiCompatible,
+            BACKEND_FAMILY_STUB => Self::Stub,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -147,27 +177,57 @@ impl CanonicalBackendKind {
     /// 返回稳定序列化使用的规范字符串形式。
     pub fn as_str(&self) -> &str {
         match self {
-            Self::OpenAiChatCompletion => "openai_chat_completion",
-            Self::OpenAiRealtimeWs => "openai_realtime_ws",
-            Self::OllamaChat => "ollama_chat",
-            Self::LlamaCpp => "llamacpp",
-            Self::Vllm => "vllm",
-            Self::VllmOpenAi => "vllm-openai",
-            Self::Stub => "stub",
+            Self::ChatHttp => BACKEND_FAMILY_CHAT_HTTP,
+            Self::RtAsrOpenAiWs => BACKEND_FAMILY_RT_ASR_OPENAI_WS,
+            Self::RtAsrQwenWs => BACKEND_FAMILY_RT_ASR_QWEN_WS,
+            Self::OllamaChat => BACKEND_FAMILY_OLLAMA_CHAT,
+            Self::LlamaCpp => BACKEND_FAMILY_LLAMACPP,
+            Self::Vllm => BACKEND_FAMILY_VLLM,
+            Self::VllmOpenAiCompatible => BACKEND_FAMILY_VLLM_OPENAI_COMPATIBLE,
+            Self::Stub => BACKEND_FAMILY_STUB,
             Self::Unknown(value) => value.as_str(),
         }
     }
 
-    /// Infer the default provider for one backend kind.
-    /// 为一个 backend kind 推断默认 provider。
-    pub fn inferred_provider(&self) -> CanonicalBackendProvider {
+    /// Return the default provider for one backend kind when that mapping is unambiguous.
+    /// 当映射无歧义时，返回一个 backend kind 的默认 provider。
+    pub fn default_provider(&self) -> Option<CanonicalBackendProvider> {
         match self {
-            Self::OpenAiChatCompletion | Self::OpenAiRealtimeWs => CanonicalBackendProvider::OpenAi,
-            Self::OllamaChat => CanonicalBackendProvider::Ollama,
-            Self::LlamaCpp => CanonicalBackendProvider::LlamaCpp,
-            Self::Vllm | Self::VllmOpenAi => CanonicalBackendProvider::Vllm,
-            Self::Stub => CanonicalBackendProvider::Internal,
-            Self::Unknown(_) => CanonicalBackendProvider::Unknown("unknown".to_string()),
+            Self::ChatHttp => None,
+            Self::RtAsrOpenAiWs => Some(CanonicalBackendProvider::OpenAi),
+            Self::RtAsrQwenWs => Some(CanonicalBackendProvider::Qwen),
+            Self::OllamaChat => Some(CanonicalBackendProvider::Ollama),
+            Self::LlamaCpp => Some(CanonicalBackendProvider::LlamaCpp),
+            Self::Vllm | Self::VllmOpenAiCompatible => Some(CanonicalBackendProvider::Vllm),
+            Self::Stub => Some(CanonicalBackendProvider::Internal),
+            Self::Unknown(_) => None,
+        }
+    }
+
+    /// Check whether one provider is allowed for this backend kind.
+    /// 检查该 backend kind 是否允许指定 provider。
+    pub fn supports_provider(&self, provider: &CanonicalBackendProvider) -> bool {
+        match self {
+            Self::ChatHttp => matches!(
+                provider,
+                CanonicalBackendProvider::OpenAi | CanonicalBackendProvider::Qwen
+            ),
+            Self::RtAsrOpenAiWs => *provider == CanonicalBackendProvider::OpenAi,
+            Self::RtAsrQwenWs => *provider == CanonicalBackendProvider::Qwen,
+            Self::OllamaChat => *provider == CanonicalBackendProvider::Ollama,
+            Self::LlamaCpp => *provider == CanonicalBackendProvider::LlamaCpp,
+            Self::Vllm | Self::VllmOpenAiCompatible => *provider == CanonicalBackendProvider::Vllm,
+            Self::Stub => *provider == CanonicalBackendProvider::Internal,
+            Self::Unknown(_) => !matches!(provider, CanonicalBackendProvider::Unknown(_)),
+        }
+    }
+
+    /// Check whether this kind needs an explicit provider because the kind spans multiple vendors.
+    /// 检查该 kind 是否必须显式声明 provider，因为该 kind 跨多个厂商。
+    pub fn requires_explicit_provider(&self) -> bool {
+        match self {
+            Self::ChatHttp => true,
+            _ => false,
         }
     }
 
@@ -175,8 +235,11 @@ impl CanonicalBackendKind {
     /// 返回一个 backend kind 允许的 hosting 家族。
     pub fn allowed_hosting(&self) -> AllowedHosting {
         match self {
-            Self::LlamaCpp | Self::Vllm | Self::VllmOpenAi => AllowedHosting::LocalOnly,
-            Self::OpenAiChatCompletion | Self::OpenAiRealtimeWs => AllowedHosting::RemoteOnly,
+            Self::LlamaCpp | Self::Vllm | Self::VllmOpenAiCompatible => AllowedHosting::LocalOnly,
+            Self::ChatHttp | Self::RtAsrOpenAiWs => {
+                AllowedHosting::RemoteOnly
+            }
+            Self::RtAsrQwenWs => AllowedHosting::RemoteOnly,
             Self::OllamaChat => AllowedHosting::Any,
             Self::Stub | Self::Unknown(_) => AllowedHosting::Any,
         }
@@ -191,11 +254,17 @@ impl CanonicalBackendKind {
         }
     }
 
-    /// Check whether this kind supports remote provider preflight.
-    /// 检查该 kind 是否支持 remote provider preflight。
-    pub fn supports_remote_preflight(&self) -> bool {
+    /// Check whether this kind/provider pair supports remote preflight.
+    /// 检查该 kind/provider 组合是否支持 remote preflight。
+    pub fn supports_remote_preflight_for(&self, provider: &CanonicalBackendProvider) -> bool {
         match self {
-            Self::OpenAiChatCompletion | Self::OpenAiRealtimeWs | Self::OllamaChat => true,
+            Self::ChatHttp => matches!(
+                provider,
+                CanonicalBackendProvider::OpenAi | CanonicalBackendProvider::Qwen
+            ),
+            Self::RtAsrOpenAiWs => *provider == CanonicalBackendProvider::OpenAi,
+            Self::RtAsrQwenWs => *provider == CanonicalBackendProvider::Qwen,
+            Self::OllamaChat => *provider == CanonicalBackendProvider::Ollama,
             _ => false,
         }
     }
@@ -377,30 +446,65 @@ impl CanonicalBackendManagementMode {
 #[cfg(test)]
 mod tests {
     use super::{
-        AllowedHosting, CanonicalBackendDesiredState, CanonicalBackendHosting,
-        CanonicalBackendKind, CanonicalBackendManagementMode, CanonicalBackendOrigin,
-        CanonicalBackendProvider,
+        AllowedHosting, CanonicalBackendDesiredState, CanonicalBackendHosting, CanonicalBackendKind,
+        CanonicalBackendManagementMode, CanonicalBackendOrigin, CanonicalBackendProvider,
+        BACKEND_FAMILY_LLAMACPP, BACKEND_FAMILY_OLLAMA_CHAT, BACKEND_FAMILY_RT_ASR_OPENAI_WS,
     };
 
     #[test]
-    fn canonical_backend_kind_infers_provider_and_hosting_family() {
-        let kind = CanonicalBackendKind::parse("openai_realtime_ws");
-        assert_eq!(kind.inferred_provider(), CanonicalBackendProvider::OpenAi);
+    fn canonical_backend_kind_exposes_default_provider_and_hosting_family() {
+        let kind = CanonicalBackendKind::parse(BACKEND_FAMILY_RT_ASR_OPENAI_WS);
+        assert_eq!(
+            kind.default_provider(),
+            Some(CanonicalBackendProvider::OpenAi)
+        );
         assert_eq!(kind.allowed_hosting(), AllowedHosting::RemoteOnly);
     }
 
     #[test]
     fn canonical_ollama_kind_allows_both_local_and_remote_hosting() {
-        let kind = CanonicalBackendKind::parse("ollama_chat");
-        assert_eq!(kind.inferred_provider(), CanonicalBackendProvider::Ollama);
+        let kind = CanonicalBackendKind::parse(BACKEND_FAMILY_OLLAMA_CHAT);
+        assert_eq!(
+            kind.default_provider(),
+            Some(CanonicalBackendProvider::Ollama)
+        );
         assert_eq!(kind.allowed_hosting(), AllowedHosting::Any);
     }
 
     #[test]
-    fn canonical_backend_kind_normalizes_llamacpp_aliases() {
-        let kind = CanonicalBackendKind::parse("llama.cpp");
-        assert_eq!(kind.as_str(), "llamacpp");
+    fn canonical_backend_kind_parses_canonical_llamacpp_value() {
+        let kind = CanonicalBackendKind::parse(BACKEND_FAMILY_LLAMACPP);
+        assert_eq!(kind.as_str(), BACKEND_FAMILY_LLAMACPP);
         assert!(kind.supports_local_model_preflight());
+    }
+
+    #[test]
+    fn chat_http_kind_accepts_openai_and_qwen() {
+        let kind = CanonicalBackendKind::ChatHttp;
+        assert!(kind.supports_provider(&CanonicalBackendProvider::OpenAi));
+        assert!(kind.supports_provider(&CanonicalBackendProvider::Qwen));
+        assert!(kind.requires_explicit_provider());
+        assert_eq!(kind.default_provider(), None);
+    }
+
+    #[test]
+    fn legacy_kind_aliases_are_rejected() {
+        assert!(matches!(
+            CanonicalBackendKind::parse("openai_chat_completion"),
+            CanonicalBackendKind::Unknown(_)
+        ));
+        assert!(matches!(
+            CanonicalBackendKind::parse("openai_realtime_ws"),
+            CanonicalBackendKind::Unknown(_)
+        ));
+        assert!(matches!(
+            CanonicalBackendKind::parse("qwen_asr_realtime_ws"),
+            CanonicalBackendKind::Unknown(_)
+        ));
+        assert!(matches!(
+            CanonicalBackendKind::parse("vllm-openai"),
+            CanonicalBackendKind::Unknown(_)
+        ));
     }
 
     #[test]

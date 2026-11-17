@@ -57,7 +57,7 @@ impl BackendAdapter for OpenAIRealtimeWsBackendAdapter {
         Err(CanonicalError {
             code: "unsupported_operation".to_string(),
             message: format!(
-                "openai_realtime_ws is streaming-only; invoke() is unsupported for {:?}",
+                "rt_asr_openai_ws is streaming-only; invoke() is unsupported for {:?}",
                 req.operation
             ),
             retryable: false,
@@ -72,7 +72,9 @@ impl BackendAdapter for OpenAIRealtimeWsBackendAdapter {
         if req.operation != crate::spearlet::execution::ai::ir::Operation::SpeechToText {
             return Err(CanonicalError {
                 code: "unsupported_operation".to_string(),
-                message: "openai_realtime_ws only supports speech_to_text streaming".to_string(),
+                message:
+                    "rt_asr_openai_ws only supports speech_to_text streaming"
+                        .to_string(),
                 retryable: false,
                 operation: Some(req.operation.clone()),
             });
@@ -220,7 +222,10 @@ mod tests {
             routing: Default::default(),
             requirements: Default::default(),
             timeout_ms: None,
-            payload: Payload::SpeechToText(SpeechToTextPayload { model: None }),
+            payload: Payload::SpeechToText(SpeechToTextPayload {
+                model: None,
+                sample_rate: None,
+            }),
             extra: Default::default(),
         };
         let plan = adapter.streaming_plan(&req).unwrap();
@@ -265,6 +270,7 @@ mod tests {
             timeout_ms: None,
             payload: Payload::SpeechToText(SpeechToTextPayload {
                 model: Some("gpt-4o-mini-transcribe".to_string()),
+                sample_rate: None,
             }),
             extra: Default::default(),
         };

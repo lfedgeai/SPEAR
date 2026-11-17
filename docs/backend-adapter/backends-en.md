@@ -18,7 +18,7 @@ The registry builder registers backends behind `#[cfg(feature = "backend-xxx")]`
 
 Split into two layers:
 
-- `BackendKind`: implementation type (openai_chat_completion/azure/vllm/realtime...)
+- `BackendKind`: adapter family (for example `chat_http`, `rt_asr_openai_ws`, `rt_asr_qwen_ws`)
 - `BackendInstance`: concrete endpoint (base_url, region, weight, priority, capabilities, limits)
 
 The router selects instances.
@@ -66,7 +66,7 @@ api_key_env = "OPENAI_REALTIME_API_KEY"
 
 [[spearlet.ai.backends]]
 name = "openai-us"
-kind = "openai_chat_completion"
+kind = "chat_http"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 model = "gpt-4o-mini"
@@ -79,7 +79,7 @@ transports = ["http"]
 
 [[spearlet.ai.backends]]
 name = "openai-realtime"
-kind = "openai_realtime_ws"
+kind = "rt_asr_openai_ws"
 base_url = "https://api.openai.com/v1"
 hosting = "remote"
 credential_ref = "openai_realtime"
@@ -88,7 +88,31 @@ priority = 20
 ops = ["speech_to_text"]
 features = ["supports_bidi_stream", "supports_audio_input", "supports_audio_output"]
 transports = ["websocket"]
+
+[[spearlet.ai.backends]]
+name = "qwen-asr-realtime"
+kind = "rt_asr_qwen_ws"
+# Provide the full base_url including your DashScope WorkspaceId host.
+# The adapter upgrades https->wss, appends /api-ws/v1/realtime, and sets ?model=<model>.
+base_url = "https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com"
+hosting = "remote"
+# Optional: override model and sample_rate; defaults are qwen3-asr-flash-realtime / 16000.
+model = "qwen3-asr-flash-realtime"
+credential_ref = "qwen_asr_realtime"
+weight = 100
+priority = 20
+ops = ["speech_to_text"]
+features = ["supports_bidi_stream", "supports_audio_input"]
+transports = ["websocket"]
 ```
+
+> Qwen realtime ASR uses the same WebSocket data plane as OpenAI realtime
+> (`input_audio_buffer.append` / `commit`). Only the `session.update` shape and
+> the live-text event (`conversation.item.input_audio_transcription.text`,
+> carrying `text` + `stash`) differ; the adapter and SDK hide these details.
+> Prefer the root host or Workspace host as `base_url`. If users paste an
+> OpenAI-compatible HTTP base URL ending with `/compatible-mode/v1`, the adapter
+> normalizes it back to the host root before deriving the realtime endpoint.
 
 ### 5.1 Model binding and “route by model”
 

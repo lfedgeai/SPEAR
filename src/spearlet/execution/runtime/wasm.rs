@@ -750,11 +750,9 @@ impl Runtime for WasmRuntime {
 
         let module_bytes_vec: Vec<u8> = if let Some(snapshot) = &config.artifact {
             if let Some(uri) = &snapshot.location {
-                let (override_host_port, path, object_key) =
-                    Self::parse_artifact_sms_path(uri).ok_or_else(|| {
-                        ExecutionError::InvalidConfiguration {
-                            message: format!("Unsupported artifact URI scheme: {}", uri),
-                        }
+                let (override_host_port, path, object_key) = Self::parse_artifact_sms_path(uri)
+                    .ok_or_else(|| ExecutionError::InvalidConfiguration {
+                        message: format!("Unsupported artifact URI scheme: {}", uri),
                     })?;
 
                 let cfg = self
@@ -1211,10 +1209,9 @@ mod wasm_runtime_thread_tests {
 
     #[test]
     fn test_parse_artifact_sms_path_supports_object_uri() {
-        let object = WasmRuntime::parse_artifact_sms_path(
-            "object://123e4567-e89b-12d3-a456-426614174000",
-        )
-        .expect("object uri");
+        let object =
+            WasmRuntime::parse_artifact_sms_path("object://123e4567-e89b-12d3-a456-426614174000")
+                .expect("object uri");
         assert_eq!(
             object.1,
             "/api/v1/objects/123e4567-e89b-12d3-a456-426614174000/content"

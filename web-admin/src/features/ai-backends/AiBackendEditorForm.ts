@@ -1,3 +1,8 @@
+/**
+ * AI backend editor form state, defaults, and serialization helpers.
+ * AI backend 编辑表单的状态、默认值与序列化辅助逻辑。
+ */
+
 import type {
   AiBackendSummary,
   AiBackendDesiredState,
@@ -6,6 +11,16 @@ import type {
   WriteAiBackendInput,
 } from '@/api/ai-backends'
 import type { NodeSummary } from '@/api/types'
+import {
+  AI_BACKEND_PROVIDERS,
+  BACKEND_FAMILY_BASE_DEFAULTS,
+  BACKEND_FAMILY_OPTIONS,
+  BACKEND_FAMILY_PROVIDER_DEFAULTS,
+  LOCAL_PROVIDER_OPTIONS,
+  REMOTE_PROVIDER_OPTIONS,
+  STRUCTURED_REMOTE_PROVIDER_OPTIONS,
+  type BackendKindDefaults,
+} from './backendFamilyRegistry'
 
 export type PlacementScope = 'all_nodes' | 'single_node' | 'selected_nodes'
 
@@ -57,61 +72,6 @@ export const OPERATION_OPTIONS: string[] = [
   'text_to_speech',
 ]
 
-const REMOTE_PROVIDER_OPTIONS: string[] = ['openai', 'ollama']
-const LOCAL_PROVIDER_OPTIONS: string[] = ['llamacpp', 'vllm']
-
-const BACKEND_KIND_OPTIONS: Record<AiBackendHosting, Record<string, string[]>> = {
-  remote: {
-    openai: ['openai_chat_completion', 'openai_realtime_ws'],
-    ollama: ['ollama_chat'],
-  },
-  local: {
-    llamacpp: ['llamacpp'],
-    vllm: ['vllm'],
-  },
-}
-
-const BACKEND_KIND_DEFAULTS: Record<
-  string,
-  { operations: string[]; transports: string; features: string; base_url: string; model: string }
-> = {
-  openai_chat_completion: {
-    operations: ['chat_completions'],
-    transports: 'http',
-    features: '',
-    base_url: 'https://api.openai.com/v1',
-    model: '',
-  },
-  openai_realtime_ws: {
-    operations: ['speech_to_text'],
-    transports: 'websocket',
-    features: '',
-    base_url: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini-transcribe',
-  },
-  ollama_chat: {
-    operations: ['chat_completions'],
-    transports: 'http',
-    features: '',
-    base_url: 'http://127.0.0.1:11434',
-    model: '',
-  },
-  llamacpp: {
-    operations: ['chat_completions'],
-    transports: 'http',
-    features: '',
-    base_url: '',
-    model: '',
-  },
-  vllm: {
-    operations: ['chat_completions'],
-    transports: 'http',
-    features: '',
-    base_url: '',
-    model: '',
-  },
-}
-
 export function providerOptionsForHosting(hosting: AiBackendHosting, currentProvider?: string) {
   const base = hosting === 'local' ? [...LOCAL_PROVIDER_OPTIONS] : [...REMOTE_PROVIDER_OPTIONS]
   const normalizedCurrent = (currentProvider || '').trim()
@@ -122,7 +82,7 @@ export function providerOptionsForHosting(hosting: AiBackendHosting, currentProv
 }
 
 export function defaultProviderForHosting(hosting: AiBackendHosting): string {
-  return hosting === 'local' ? 'llamacpp' : 'openai'
+  return hosting === 'local' ? AI_BACKEND_PROVIDERS.LLAMACPP : AI_BACKEND_PROVIDERS.OPENAI
 }
 
 export function backendKindOptionsFor(
@@ -130,7 +90,7 @@ export function backendKindOptionsFor(
   provider: string,
   currentKind?: string,
 ) {
-  const options = [...(BACKEND_KIND_OPTIONS[hosting][provider] || [])]
+  const options: string[] = [...(BACKEND_FAMILY_OPTIONS[hosting][provider] || [])]
   const normalizedCurrent = (currentKind || '').trim()
   if (normalizedCurrent && !options.includes(normalizedCurrent)) {
     return [normalizedCurrent, ...options]
@@ -142,8 +102,23 @@ export function defaultBackendKindFor(hosting: AiBackendHosting, provider: strin
   return backendKindOptionsFor(hosting, provider)[0] || ''
 }
 
-export function defaultsForKind(kind: string) {
-  return BACKEND_KIND_DEFAULTS[kind] || {
+export function defaultsForKind(
+  hosting: AiBackendHosting,
+  provider: string,
+  kind: string,
+): BackendKindDefaults {
+  const base = BACKEND_FAMILY_BASE_DEFAULTS[kind as keyof typeof BACKEND_FAMILY_BASE_DEFAULTS]
+  const providerDefaults =
+    BACKEND_FAMILY_PROVIDER_DEFAULTS[hosting]?.[provider]?.[
+      kind as keyof (typeof BACKEND_FAMILY_PROVIDER_DEFAULTS)[AiBackendHosting][string]
+    ]
+  if (base && providerDefaults) {
+    return {
+      ...base,
+      ...providerDefaults,
+    }
+  }
+  return {
     operations: [],
     transports: '',
     features: '',
@@ -183,18 +158,24 @@ function optionalNumberString(value?: number | null): string {
 
 function isOpenAiRemoteInput(
   value?: AiBackendRemoteInput,
-): value is Extract<AiBackendRemoteInput, { provider_family: 'open_ai_compatible' }> {
-  return value?.provider_family === 'open_ai_compatible'
+): value is Extract<
+  AiBackendRemoteInput,
+  { provider_family: typeof AI_BACKEND_PROVIDERS.OPENAI }
+> {
+  return value?.provider_family === AI_BACKEND_PROVIDERS.OPENAI
 }
 
 function isOllamaRemoteInput(
   value?: AiBackendRemoteInput,
-): value is Extract<AiBackendRemoteInput, { provider_family: 'ollama' }> {
-  return value?.provider_family === 'ollama'
+): value is Extract<
+  AiBackendRemoteInput,
+  { provider_family: typeof AI_BACKEND_PROVIDERS.OLLAMA }
+> {
+  return value?.provider_family === AI_BACKEND_PROVIDERS.OLLAMA
 }
 
-function isKnownRemoteProvider(provider: string): boolean {
-  return provider === 'openai' || provider === 'ollama'
+function usesStructuredRemoteProviderInput(provider: string): boolean {
+  return STRUCTURED_REMOTE_PROVIDER_OPTIONS.has(provider)
 }
 
 function isSupportedProviderForHosting(hosting: AiBackendHosting, provider: string): boolean {
@@ -204,10 +185,20 @@ function isSupportedProviderForHosting(hosting: AiBackendHosting, provider: stri
   return supportedProviders.includes(normalizedProvider)
 }
 
+function isSupportedKindForProvider(
+  hosting: AiBackendHosting,
+  provider: string,
+  backendKind: string,
+): boolean {
+  const normalizedProvider = provider.trim().toLowerCase()
+  const normalizedKind = backendKind.trim()
+  return backendKindOptionsFor(hosting, normalizedProvider).includes(normalizedKind)
+}
+
 export function emptyForm(hosting: AiBackendHosting = 'remote'): AiBackendEditorFormState {
   const provider = defaultProviderForHosting(hosting)
   const backendKind = defaultBackendKindFor(hosting, provider)
-  const defaults = defaultsForKind(backendKind)
+  const defaults = defaultsForKind(hosting, provider, backendKind)
   return {
     display_name: '',
     provider,
@@ -243,55 +234,59 @@ export function formFromBackend(backend?: AiBackendSummary | null): AiBackendEdi
   if (!backend) return emptyForm()
   const metadata = JSON.stringify(backend.metadata || {}, null, 2)
   const normalizedProvider = backend.provider.trim().toLowerCase()
+  const resolvedHosting = backend.hosting === 'local' ? 'local' : 'remote'
   const localProvider =
-    backend.local && backend.local.provider_family === 'llama_cpp' ? backend.local : undefined
+    backend.local && backend.local.provider_family === AI_BACKEND_PROVIDERS.LLAMACPP
+      ? backend.local
+      : undefined
   const remoteOpenAi = isOpenAiRemoteInput(backend.remote) ? backend.remote : undefined
   const remoteOllama = isOllamaRemoteInput(backend.remote) ? backend.remote : undefined
-  const resolvedCredentialRef = isKnownRemoteProvider(normalizedProvider)
+  const resolvedCredentialRef = usesStructuredRemoteProviderInput(normalizedProvider)
     ? remoteOpenAi?.config.credential_ref || ''
     : backend.credential_ref || backend.spec?.credential_ref || ''
-  const resolvedBaseUrl = isKnownRemoteProvider(normalizedProvider)
+  const resolvedBaseUrl = usesStructuredRemoteProviderInput(normalizedProvider)
     ? remoteOpenAi?.config.base_url || remoteOllama?.config.base_url || ''
     : backend.spec?.base_url || ''
-  const resolvedOperations = isKnownRemoteProvider(normalizedProvider)
+  const resolvedOperations = usesStructuredRemoteProviderInput(normalizedProvider)
     ? remoteOpenAi?.config.operations || remoteOllama?.config.operations
     : backend.spec?.operations
-  const resolvedFeatures = isKnownRemoteProvider(normalizedProvider)
+  const resolvedFeatures = usesStructuredRemoteProviderInput(normalizedProvider)
     ? remoteOpenAi?.config.features || remoteOllama?.config.features
     : backend.spec?.features
-  const resolvedTransports = isKnownRemoteProvider(normalizedProvider)
+  const resolvedTransports = usesStructuredRemoteProviderInput(normalizedProvider)
     ? remoteOpenAi?.config.transports || remoteOllama?.config.transports
     : backend.spec?.transports
   const resolvedModelUrl =
-    normalizedProvider === 'llamacpp'
+    normalizedProvider === AI_BACKEND_PROVIDERS.LLAMACPP
       ? optionalString(localProvider?.config.model_url)
       : ''
   const resolvedModelPath =
-    normalizedProvider === 'llamacpp'
+    normalizedProvider === AI_BACKEND_PROVIDERS.LLAMACPP
       ? optionalString(localProvider?.config.model_path)
       : ''
   const resolvedSkipDownload =
-    normalizedProvider === 'llamacpp'
+    normalizedProvider === AI_BACKEND_PROVIDERS.LLAMACPP
       ? (localProvider?.config.skip_download ?? false)
       : false
   const resolvedDownloadTimeout =
-    normalizedProvider === 'llamacpp'
+    normalizedProvider === AI_BACKEND_PROVIDERS.LLAMACPP
       ? optionalNumberString(localProvider?.config.download_timeout_s)
       : ''
   const resolvedThreads =
-    normalizedProvider === 'llamacpp'
+    normalizedProvider === AI_BACKEND_PROVIDERS.LLAMACPP
       ? optionalNumberString(localProvider?.config.threads)
       : ''
   const resolvedCtxSize =
-    normalizedProvider === 'llamacpp'
+    normalizedProvider === AI_BACKEND_PROVIDERS.LLAMACPP
       ? optionalNumberString(localProvider?.config.ctx_size)
       : ''
   return {
     display_name: backend.display_name || '',
     provider: backend.provider || '',
     model: backend.model || '',
-    hosting: backend.hosting === 'local' ? 'local' : 'remote',
-    backend_kind: backend.backend_kind || backend.spec?.kind || 'openai-compatible',
+    hosting: resolvedHosting,
+    backend_kind:
+      backend.backend_kind || backend.spec?.kind || defaultBackendKindFor(resolvedHosting, normalizedProvider),
     credential_ref: resolvedCredentialRef,
     desired_state: backend.desired_state === 'disabled' ? 'disabled' : 'enabled',
     base_url: resolvedBaseUrl,
@@ -393,7 +388,7 @@ export function buildPayload(form: AiBackendEditorFormState): WriteAiBackendInpu
     metadata,
   }
 
-  if (form.hosting === 'local' && form.provider === 'llamacpp') {
+  if (form.hosting === 'local' && form.provider === AI_BACKEND_PROVIDERS.LLAMACPP) {
     deleteMetadataKeys([
       'model_url',
       'model_path',
@@ -410,7 +405,7 @@ export function buildPayload(form: AiBackendEditorFormState): WriteAiBackendInpu
     return {
       ...basePayload,
       local: {
-        provider_family: 'llama_cpp',
+        provider_family: AI_BACKEND_PROVIDERS.LLAMACPP,
         config: {
           model_url: form.model_url.trim() || undefined,
           model_path: form.model_path.trim() || undefined,
@@ -425,18 +420,18 @@ export function buildPayload(form: AiBackendEditorFormState): WriteAiBackendInpu
     }
   }
 
-  if (form.hosting === 'local' && form.provider === 'vllm') {
+  if (form.hosting === 'local' && form.provider === AI_BACKEND_PROVIDERS.VLLM) {
     deleteMetadataKeys(['mode', 'managed_externally'])
     return {
       ...basePayload,
       local: {
-        provider_family: 'vllm',
+        provider_family: AI_BACKEND_PROVIDERS.VLLM,
         config: {},
       },
     }
   }
 
-  if (form.hosting === 'remote' && form.provider === 'openai') {
+  if (form.hosting === 'remote' && form.provider === AI_BACKEND_PROVIDERS.OPENAI) {
     return {
       ...basePayload,
       credential_ref: undefined,
@@ -448,7 +443,7 @@ export function buildPayload(form: AiBackendEditorFormState): WriteAiBackendInpu
         transports: [],
       },
       remote: {
-        provider_family: 'open_ai_compatible',
+        provider_family: AI_BACKEND_PROVIDERS.OPENAI,
         config: {
           base_url: form.base_url.trim() || undefined,
           credential_ref: form.credential_ref.trim() || undefined,
@@ -460,7 +455,7 @@ export function buildPayload(form: AiBackendEditorFormState): WriteAiBackendInpu
     }
   }
 
-  if (form.hosting === 'remote' && form.provider === 'ollama') {
+  if (form.hosting === 'remote' && form.provider === AI_BACKEND_PROVIDERS.OLLAMA) {
     return {
       ...basePayload,
       credential_ref: undefined,
@@ -472,7 +467,7 @@ export function buildPayload(form: AiBackendEditorFormState): WriteAiBackendInpu
         transports: [],
       },
       remote: {
-        provider_family: 'ollama',
+        provider_family: AI_BACKEND_PROVIDERS.OLLAMA,
         config: {
           base_url: form.base_url.trim() || undefined,
           operations: splitCsv(form.operations),
@@ -508,10 +503,20 @@ export function validateForm(
     errors.push(`Provider ${form.provider.trim()} is not supported for ${form.hosting} backends`)
   }
   if (!form.model.trim()) errors.push('Model is required')
-  if (!form.backend_kind.trim()) errors.push('Backend kind is required')
+  if (!form.backend_kind.trim()) errors.push('Backend family is required')
+  if (
+    form.provider.trim() &&
+    form.backend_kind.trim() &&
+    isSupportedProviderForHosting(form.hosting, form.provider) &&
+    !isSupportedKindForProvider(form.hosting, form.provider, form.backend_kind)
+  ) {
+    errors.push(
+      `Backend family ${form.backend_kind.trim()} is not supported for provider ${form.provider.trim()}`,
+    )
+  }
   if (
     form.hosting === 'local' &&
-    form.provider === 'llamacpp' &&
+    form.provider === AI_BACKEND_PROVIDERS.LLAMACPP &&
     !form.model_url.trim() &&
     !form.model_path.trim()
   ) {

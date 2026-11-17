@@ -24,14 +24,14 @@
 ## mic_rtasr 示例运行前提
 
 - 需要宿主二进制启用 `mic-device`（否则 `source=device` 会失败）
-- 需要宿主配置可用的 realtime ASR backend（例如 `openai_realtime_ws`）以及对应 API Key
+- 需要宿主配置可用的 realtime ASR backend（例如 `rt_asr_openai_ws`）以及对应 API Key
 - 默认使用 backend 名称 `openai-realtime-asr`，可在构建时通过 `-DSP_RTASR_BACKEND=\"...\"` 覆盖
 
 说明：`mic_rtasr` 示例默认使用 `server_vad` 做分段（按静音切分）。
 
 建议配置方式：
 
-- Spearlet 配置示例：`config/spearlet/config.toml`（包含 `openai_realtime_ws` 的 backend 示例）
+- Spearlet 配置示例：`config/spearlet/config.toml`（包含 realtime ASR backend 示例）
 - 运行前设置环境变量：`OPENAI_REALTIME_API_KEY`
 
 运行方式：构建 `samples/build/mic_rtasr.wasm` 后，将其作为 WASM 可执行文件上传并创建任务运行（具体上传/创建任务流程见 `docs/api-usage-guide-zh.md`）。
@@ -75,6 +75,12 @@ WASM-Rust 示例：
 - `stream_id=2` 是语音上行流；运行时要求在发送 DATA/COMMIT 前先发 CTRL(OPEN)。
 - 按住说话链路会先发送 `utterance_begin`，持续发送 PCM16LE DATA，松手时发送 voice COMMIT。
 - `live_caption` 与 `voice_chat` 示例同时兼容 `input_audio_transcription.*` 和 `conversation.item.input_audio_transcription.*` 两套 RTASR 事件名。
+- Rust 版 `live_caption` 在处理 Qwen 的 `Preview { text, stash }` 时，只追加
+  已确认的 `text` 前缀；在最终 `Completed(transcript)` 事件到来时，会补写尚未
+  输出的尾部，再提交整行字幕。
+- Rust 版 `live_caption` 与 `voice_chat` 现在共享同一个
+  `spear-wasm-helper::transcript_draft` helper，因此 OpenAI/Qwen 的 transcript
+  归一化逻辑集中在一处维护，不再在两个 sample 里各自分叉。
 - 当前 Console 默认配置为 `16000Hz`、单声道、`chunkMs=300`；JS 版 `live_caption` 使用 `server_vad` 且 `silence_ms=600`，并会先聚合约 `240ms` 的 PCM，再执行一次 `rtasr.writeAudio()`。
 - Rust 版 `live_caption` 在协议行为上与之保持一致，但实现方式改为 Rust SDK `epoll` wrapper + 强类型模块拆分，而不是依赖 Boa JS runner。
 - Rust WASM samples 现在会通过 `use spear_wasm::{println, eprintln};` 显式启用 SDK 提供的宏遮蔽能力，使 sample crate 内未限定路径的 `println!` / `eprintln!` 自动镜像到 debug-server 的 guest info/error 日志。
@@ -83,6 +89,22 @@ WASM-Rust 示例：
 - Rust 版 `live_caption` 现在会在 RTASR connect、clear、write、flush、read 或 transport 关闭失败时，把 RTASR `state` / `last_error` 镜像到 guest runtime log，便于 debug-server 直接看到 OpenAI websocket 连通性等上游错误原因。
 - Rust 版 `live_caption` 现在还会把 control stream 关闭、stream hangup、voice 协议帧非法，以及在 RTASR 会话尚未建立前收到 DATA/COMMIT 等应用层诊断边界镜像到 debug-server，便于任务提前退出时也能看到更多失败上下文。
 - Rust 版 `voice_chat` 在协议行为上与 JS 版保持一致：等待 voice COMMIT，完成 RTASR 转写，再调用下游 Chat Completion，并将结果写回 `stream_id=1`。
+
+## Realtime ASR 排障说明
+- 如果浏览器报 `websocket disconnected (code 1005): connection closed`，优先把它视为
+  传输层症状，而不是先认定为字幕渲染问题。真正的失败原因应结合 `sms` /
+  `spearlet` 日志或 backend status 来确认。
+- 对基于 Qwen 的运行链路，必须确认 backend 是
+  `provider=qwen` 且 `backend_kind=rt_asr_qwen_ws`。如果把同一个 endpoint
+  误建成 `rt_asr_openai_ws`，sample 会在 RTASR connect 阶段失败，随后因为会话
+  从未进入 ready 而丢弃后续的 voice DATA/COMMIT 帧。
+- 如果 sample 提示没有可用的 realtime ASR backend，检查
+  `GET /admin/api/ai-backend-statuses/{backend_id}`。目标 backend 必须进入
+  `ready` 且 `available=true`；否则说明节点还没有发布可用的 runtime backend，
+  执行层可能会退化为 `no candidate backend`。
+- 对 Qwen transcript 来说，仅“连接成功”还不够。最终可见字幕需要把预览态的
+  `text + stash` 事件与后续 `Completed(transcript)` 尾部拼接起来，这也是
+  `live_caption` 和 `voice_chat` 都必须继续复用共享 `transcript_draft` helper 的原因。
 
 ## 与运行时集成
 - 构建生成的 `hello.wasm` 可通过 SMS 文件服务上传后在任务注册中以 `executable.uri` 引用

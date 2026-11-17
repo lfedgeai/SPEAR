@@ -61,7 +61,7 @@ WASM registers a tool with `cchat_write_fn(fd, fn_offset, fn_json)`.
 
 ### Chat completion invocation
 
-`cchat_send` assembles `messages` and `tools` and calls the AI backend (e.g., OpenAI chat/completions). The backend adapter returns the raw JSON payload in a canonical envelope. See [openai_chat_completion.rs](../src/spearlet/execution/ai/backends/openai_chat_completion.rs).
+`cchat_send` assembles `messages` and `tools` and calls the AI backend (e.g., OpenAI chat/completions). The backend adapter returns the raw JSON payload in a canonical envelope. See [chat_http.rs](../src/spearlet/execution/ai/backends/chat_http.rs).
 
 ### Missing loop
 

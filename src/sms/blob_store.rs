@@ -1,6 +1,6 @@
-use crate::sms::config::{ObjectStorageBackend, SmsConfig};
 #[cfg(feature = "sms-rustfs")]
 use crate::sms::blob_store_rustfs::rustfs_blob_store;
+use crate::sms::config::{ObjectStorageBackend, SmsConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -291,7 +291,9 @@ impl BlobStore for LocalFsBlobStore {
             return Err(BlobStoreError::Conflict("Pinned objects cannot be deleted"));
         }
         if meta.ref_count > 0 {
-            return Err(BlobStoreError::Conflict("Referenced objects cannot be deleted"));
+            return Err(BlobStoreError::Conflict(
+                "Referenced objects cannot be deleted",
+            ));
         }
         fs::remove_file(self.blob_path(key))
             .await
@@ -332,7 +334,10 @@ impl BlobStore for LocalFsBlobStore {
                         key: file_name.to_string(),
                         name: compat.name,
                         size: compat.len.unwrap_or(meta.len()),
-                        updated_at: compat.updated_at.or(compat.created_at).unwrap_or(modified_at),
+                        updated_at: compat
+                            .updated_at
+                            .or(compat.created_at)
+                            .unwrap_or(modified_at),
                         ref_count: compat.ref_count,
                         pinned: compat.pinned,
                     });
@@ -512,7 +517,9 @@ mod tests {
         assert_eq!(retained.ref_count, 1);
         assert!(matches!(
             store.delete_blob(&created.key).await,
-            Err(BlobStoreError::Conflict("Referenced objects cannot be deleted"))
+            Err(BlobStoreError::Conflict(
+                "Referenced objects cannot be deleted"
+            ))
         ));
 
         let released = store

@@ -156,7 +156,6 @@ compression = "true"
 - [KV Storage Architecture Documentation](./unified-kv-architecture-en.md)
 - [KV Factory Pattern Documentation](./kv-factory-pattern-en.md)
 - [API Usage Guide](./api-usage-guide-en.md)
-- [Configuration Guide](./config-guide-en.md)
 
 ## Troubleshooting
 

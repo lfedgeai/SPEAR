@@ -64,5 +64,5 @@ Chinese README: [README.md](./README.md)
 ### quick-coverage.sh
 
 - Purpose: Faster coverage run (shorter timeout, less output).
-- Typical usage: `make quick-coverage`
+- Typical usage: `make coverage-quick`
 - Note: The script may attempt to install `cargo-tarpaulin` if it is missing.

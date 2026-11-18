@@ -15,12 +15,7 @@
 //! 定义自己的配置结构，同时共享通用的基础配置。
 
 use anyhow::{Context, Result};
-use figment::{
-    providers::{Env, Format, Serialized, Toml},
-    Figment,
-};
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -28,82 +23,6 @@ use std::sync::OnceLock;
 pub mod base;
 pub use crate::storage::kv::KvStoreConfig;
 pub use base::*;
-
-/// Base configuration trait / 基础配置特征
-/// All application configurations should implement this trait
-/// 所有应用程序配置都应该实现此特征
-pub trait AppConfig: for<'de> Deserialize<'de> + Serialize + Clone + std::fmt::Debug {
-    /// Load configuration from multiple sources with proper precedence
-    /// 从多个源加载配置，具有适当的优先级
-    ///
-    /// Precedence order (highest to lowest):
-    /// 优先级顺序（从高到低）：
-    /// 1. Command line arguments / 命令行参数
-    /// 2. Environment variables / 环境变量  
-    /// 3. Configuration file / 配置文件
-    /// 4. Default values / 默认值
-    fn load() -> Result<Self> {
-        let figment = Figment::new()
-            .merge(Serialized::defaults(Self::default_config()))
-            .merge(Toml::file("config.toml"))
-            .merge(Env::prefixed("SPEAR_"))
-            .merge(Self::cli_overrides()?);
-
-        figment.extract().context("Failed to load configuration")
-    }
-
-    /// Load configuration from a specific file
-    /// 从特定文件加载配置
-    fn load_from_file(path: &PathBuf) -> Result<Self> {
-        let figment = Figment::new()
-            .merge(Serialized::defaults(Self::default_config()))
-            .merge(Toml::file(path))
-            .merge(Env::prefixed("SPEAR_"))
-            .merge(Self::cli_overrides()?);
-
-        figment
-            .extract()
-            .context("Failed to load configuration from file")
-    }
-
-    /// Get default configuration values
-    /// 获取默认配置值
-    fn default_config() -> Self;
-
-    /// Get CLI argument overrides
-    /// 获取CLI参数覆盖
-    fn cli_overrides() -> Result<Serialized<Self>>;
-
-    /// Validate the configuration
-    /// 验证配置
-    fn validate(&self) -> Result<()> {
-        Ok(())
-    }
-}
-
-/// Common network configuration / 通用网络配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkConfig {
-    /// gRPC server bind address / gRPC服务器绑定地址
-    pub grpc_addr: SocketAddr,
-    /// HTTP server bind address / HTTP服务器绑定地址
-    pub http_addr: SocketAddr,
-    /// Maximum message size for gRPC / gRPC最大消息大小
-    pub max_message_size: usize,
-    /// Request timeout in seconds / 请求超时时间（秒）
-    pub request_timeout: u64,
-}
-
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        Self {
-            grpc_addr: "127.0.0.1:50051".parse().unwrap(),
-            http_addr: "127.0.0.1:8080".parse().unwrap(),
-            max_message_size: 4 * 1024 * 1024, // 4MB
-            request_timeout: 30,
-        }
-    }
-}
 
 /// Common logging configuration / 通用日志配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

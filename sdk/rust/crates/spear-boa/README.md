@@ -84,4 +84,4 @@ Do **not** put sample-specific presentation policy here, such as:
 - text-output formatting wrappers
 - app-specific state machines
 
-Those should remain in sample-local helpers, such as `samples/wasm-js/_shared/`.
+Those should remain in sample-local helpers, such as `samples/wasm-js/lib/`.

@@ -820,13 +820,11 @@ name = "spear-boa"
 version = "0.1.0"
 dependencies = [
  "boa_engine",
- "boa_parser",
  "libc",
  "seq-macro",
  "serde_json",
  "spear-ssf",
  "spear-wasm",
- "thiserror",
 ]
 
 [[package]]

@@ -260,31 +260,6 @@ Note: For `type=wasm`, Spearlet runtime strictly requires a valid WASM binary at
 - `status`: Filter by status
 - `priority`: Filter by priority
 
-## Cluster Statistics API
-
-### Get Cluster Statistics
-
-**Endpoint**: `GET /api/v1/cluster/stats`
-
-**Response**:
-```json
-{
-  "stats": {
-    "total_nodes": 5,
-    "active_nodes": 4,
-    "inactive_nodes": 1,
-    "unhealthy_nodes": 0,
-    "nodes_with_resources": 3,
-    "average_cpu_usage": 45.6,
-    "average_memory_usage": 67.2,
-    "total_memory_bytes": 42949672960,
-    "total_used_memory_bytes": 28858370048,
-    "high_load_nodes": 1
-  },
-  "success": true
-}
-```
-
 ## Health Check
 
 **Endpoint**: `GET /health`
@@ -376,8 +351,6 @@ curl -X POST http://localhost:8080/api/v1/tasks \
     "priority": "medium"
   }'
 
-# 7. Get cluster statistics
-curl -s http://localhost:8080/api/v1/cluster/stats | jq .
 ```
 
 ## Using Swagger UI

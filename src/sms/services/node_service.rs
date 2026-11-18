@@ -132,28 +132,6 @@ impl NodeService {
         let nodes = self.nodes.read().await;
         Ok(nodes.len())
     }
-
-    /// Cleanup unhealthy nodes / 清理不健康的节点
-    pub async fn cleanup_unhealthy_nodes(
-        &mut self,
-        timeout_seconds: u64,
-    ) -> SmsResult<Vec<String>> {
-        let mut nodes = self.nodes.write().await;
-        let current_time = chrono::Utc::now().timestamp();
-        let timeout_threshold = current_time - timeout_seconds as i64;
-
-        let mut removed_nodes = Vec::new();
-        nodes.retain(|uuid, node| {
-            if node.last_heartbeat < timeout_threshold {
-                removed_nodes.push(uuid.clone());
-                false
-            } else {
-                true
-            }
-        });
-
-        Ok(removed_nodes)
-    }
 }
 
 impl Default for NodeService {

@@ -41,7 +41,6 @@ mod execution_finalize;
 pub(crate) mod execution_status;
 pub mod host_api;
 pub mod hostcall;
-pub mod http_adapter;
 pub mod instance;
 pub mod manager;
 pub mod pool;

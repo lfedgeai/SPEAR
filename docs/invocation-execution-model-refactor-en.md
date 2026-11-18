@@ -441,7 +441,6 @@ Targets (non-exhaustive, must be searched in codebase):
 
 - SMS Web Admin BFF: [web_admin.rs](../src/sms/web_admin.rs)
 - Tests:
-  - [placement_spillback_e2e_tests.rs](../tests/placement_spillback_e2e_tests.rs)
   - [spearlet_fetch_task_from_sms_tests.rs](../tests/spearlet_fetch_task_from_sms_tests.rs)
   - any other tests using `proto::spearlet::*`
 - Admin static assets under `assets/admin/` (update to new BFF endpoint names and payload shape).

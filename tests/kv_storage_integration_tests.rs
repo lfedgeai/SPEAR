@@ -23,7 +23,8 @@ mod test_utils {
     /// Create test configurations for all supported backends
     /// 为所有支持的后端创建测试配置
     pub fn create_test_configs() -> Vec<(&'static str, KvStoreConfig, Option<TempDir>)> {
-        let configs = vec![("memory", KvStoreConfig::memory(), None)];
+        #[allow(unused_mut)]
+        let mut configs = vec![("memory", KvStoreConfig::memory(), None)];
 
         // Add Sled configuration with temporary directory
         // 添加带临时目录的Sled配置

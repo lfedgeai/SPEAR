@@ -120,7 +120,6 @@ src/spearlet/execution/
   ai/
     mod.rs
     ir.rs
-    media_ref.rs
     normalize/
       mod.rs
       chat.rs
@@ -149,13 +148,7 @@ And add `pub mod ai;` to `src/spearlet/execution/mod.rs`.
   - `enum ResultPayload { Payload(Value), Error(CanonicalError) }` (MVP can use `serde_json::Value` for response payloads)
   - `struct CanonicalError { code, message, retryable, operation, ... }`
 
-### 2.2 MediaRef types
-
-- File: `src/spearlet/execution/ai/media_ref.rs`
-  - `enum MediaRef { InlineBase64{mime,data}, ObjectRef{mime,uri}, HttpUrl{mime,url} }`
-  - Phase 1 is type-only; object storage integration comes later.
-
-### 2.3 Minimal validation
+### 2.2 Minimal validation
 
 - File: `src/spearlet/execution/ai/ir.rs`
   - `impl CanonicalRequestEnvelope { fn validate_basic(&self) -> Result<(), CanonicalError> }`

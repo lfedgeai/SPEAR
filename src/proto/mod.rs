@@ -1,5 +1,5 @@
-//! Generated protobuf code for spear-next services
-//! spear-next服务的生成protobuf代码
+//! Generated protobuf code for SPEAR services
+//! SPEAR服务的生成protobuf代码
 
 pub mod sms {
     //! SMS service protobuf definitions / SMS服务protobuf定义

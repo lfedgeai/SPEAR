@@ -2,8 +2,8 @@
 //! KV抽象层使用示例
 //!
 //! This file contains practical examples of how to use the KV abstraction layer
-//! in different scenarios within the spear-next project.
-//! 此文件包含在spear-next项目中不同场景下如何使用KV抽象层的实际示例。
+//! in different scenarios within the SPEAR project.
+//! 此文件包含在SPEAR项目中不同场景下如何使用KV抽象层的实际示例。
 
 use spear_next::storage::{KvPair, RangeOptions};
 
@@ -379,7 +379,7 @@ async fn example_sled_persistence() -> Result<(), Box<dyn std::error::Error>> {
 
     // Method 2: Use factory function / 方法2：使用工厂函数
     {
-        let store = create_kv_store(KvStoreType::Sled {
+        let store = spear_next::storage::create_kv_store(spear_next::storage::KvStoreType::Sled {
             path: db_path.to_string_lossy().to_string(),
         })?;
 

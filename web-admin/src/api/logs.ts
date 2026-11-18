@@ -1,6 +1,6 @@
-import { fetchJson, getAdminToken } from '@/api/client'
+import { fetchJson } from '@/api/client'
 
-export type ExecutionLogLine = {
+type ExecutionLogLine = {
   ts_ms: number
   seq: number
   stream: string
@@ -29,16 +29,4 @@ export function getExecutionLogs(input: {
   return fetchJson<GetExecutionLogsResponse>(
     `/admin/api/executions/${encodeURIComponent(input.execution_id)}/logs${suffix}`,
   )
-}
-
-export async function downloadExecutionLogsText(execution_id: string) {
-  const token = getAdminToken()
-  const headers: Record<string, string> = {}
-  if (token) headers.Authorization = `Bearer ${token}`
-  const resp = await fetch(
-    `/admin/api/executions/${encodeURIComponent(execution_id)}/logs/download?format=text`,
-    { headers },
-  )
-  if (!resp.ok) throw new Error(`Download failed: HTTP ${resp.status}`)
-  return await resp.text()
 }

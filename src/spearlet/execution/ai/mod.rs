@@ -1,7 +1,6 @@
 pub mod backends;
 pub mod engine_holder;
 pub mod ir;
-pub mod media_ref;
 pub mod normalize;
 pub mod router;
 pub mod streaming;

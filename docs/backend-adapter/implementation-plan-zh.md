@@ -120,7 +120,6 @@ src/spearlet/execution/
   ai/
     mod.rs
     ir.rs
-    media_ref.rs
     normalize/
       mod.rs
       chat.rs
@@ -149,13 +148,7 @@ src/spearlet/execution/
   - `enum ResultPayload { Payload(Value), Error(CanonicalError) }`（MVP 可先用 `serde_json::Value` 承载 response payload）
   - `struct CanonicalError { code, message, retryable, operation, ... }`
 
-### 2.2 MediaRef 独立文件
-
-- 文件：`src/spearlet/execution/ai/media_ref.rs`
-  - `enum MediaRef { InlineBase64{mime,data}, ObjectRef{mime,uri}, HttpUrl{mime,url} }`
-  - 先只在类型层定义，不在 Phase 1 做对象存储联动。
-
-### 2.3 最小校验函数
+### 2.2 最小校验函数
 
 - 文件：`src/spearlet/execution/ai/ir.rs`
   - `impl CanonicalRequestEnvelope { fn validate_basic(&self) -> Result<(), CanonicalError> }`

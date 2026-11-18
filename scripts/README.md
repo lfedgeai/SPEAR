@@ -64,5 +64,5 @@ English README: [README.en.md](./README.en.md)
 ### quick-coverage.sh
 
 - 用途：更快的覆盖率运行（较短超时、更少输出）。
-- 典型用法：`make quick-coverage`
+- 典型用法：`make coverage-quick`
 - 说明：脚本会在缺少 `cargo-tarpaulin` 时尝试安装。

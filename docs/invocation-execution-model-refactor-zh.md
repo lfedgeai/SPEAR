@@ -437,7 +437,6 @@ service ExecutionService {
 
 - SMS Web Admin BFF：[web_admin.rs](../src/sms/web_admin.rs)
 - 测试：
-  - [placement_spillback_e2e_tests.rs](../tests/placement_spillback_e2e_tests.rs)
   - [spearlet_fetch_task_from_sms_tests.rs](../tests/spearlet_fetch_task_from_sms_tests.rs)
   - 其它引用 `proto::spearlet::*` 的测试
 - Admin 静态资源 `assets/admin/`（对接新的 BFF endpoint 与请求结构）。

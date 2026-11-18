@@ -37,13 +37,11 @@ prost-types = "0.13"
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "timeout"] }
-hyper = { version = "1", features = ["client", "http1"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
 aws-config = { version = "1", features = ["behavior-version-latest"], optional = true }
 aws-sdk-s3 = { version = "1", optional = true }
 
 # Configuration management / 配置管理
-figment = { version = "0.10", features = ["toml", "env"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
@@ -115,9 +113,8 @@ cpal = { version = "0.15", optional = true }
 [dev-dependencies]
 # Testing utilities / 测试工具
 tempfile = "3.0"
-tokio-test = "0.4"
+tokio = { version = "1", features = ["test-util"] }
 axum-test = "17.0"
-tower = "0.5"
 tokio-stream = { version = "0.1", features = ["net"] }
 serde_urlencoded = "0.7"
 # Docker-based integration testing / 基于Docker的集成测试
@@ -126,7 +123,6 @@ serial_test = "2.0"
 
 # Benchmarking / 基准测试
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-futures = "0.3"
 
 [build-dependencies]
 tonic-build = "0.12"

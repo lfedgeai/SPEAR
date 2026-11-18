@@ -283,14 +283,6 @@ impl Artifact {
         )
     }
 
-    /// Check if artifact can be modified / 检查 Artifact 是否可以修改
-    pub fn is_modifiable(&self) -> bool {
-        matches!(
-            self.status(),
-            ArtifactStatus::Creating | ArtifactStatus::Stopped | ArtifactStatus::Error(_)
-        )
-    }
-
     /// Get artifact age / 获取 Artifact 年龄
     pub fn age(&self) -> Duration {
         SystemTime::now()

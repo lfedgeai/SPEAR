@@ -6,8 +6,7 @@ test('create task supports auto schedule without choosing node', async ({ page }
   await page.getByTestId('tasks-open-create').click();
 
   await expect(page.getByTestId('task-executable-type')).toBeVisible();
-  await expect(page.getByTestId('task-node')).toBeVisible();
-  await expect(page.getByTestId('task-node')).toHaveValue('');
+  await expect(page.getByTestId('task-node')).toHaveCount(0);
 
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   await page.getByRole('textbox', { name: 'Name' }).fill(`auto-${unique}`);

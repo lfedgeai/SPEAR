@@ -207,17 +207,6 @@ impl InstanceScheduler {
         }
     }
 
-    /// Create with custom configuration / 使用自定义配置创建
-    pub fn with_config(config: SchedulerConfig) -> Self {
-        Self {
-            config,
-            pools: Arc::new(AsyncRwLock::new(HashMap::new())),
-            instances: Arc::new(DashMap::new()),
-            metrics: Arc::new(RwLock::new(SchedulingMetrics::default())),
-            decision_counter: AtomicU64::new(0),
-        }
-    }
-
     /// Add instance to scheduler / 向调度器添加实例
     pub async fn add_instance(&self, instance: Arc<TaskInstance>) -> ExecutionResult<()> {
         let instance_id = instance.id().to_string();
@@ -480,16 +469,6 @@ impl InstanceScheduler {
         self.instances.iter().map(|entry| entry.clone()).collect()
     }
 
-    /// List instances for task / 列出任务的实例
-    pub async fn list_instances_for_task(&self, task_id: &TaskId) -> Vec<Arc<TaskInstance>> {
-        let pools = self.pools.read().await;
-        if let Some(pool) = pools.get(task_id.as_str()) {
-            pool.get_instances().to_vec()
-        } else {
-            Vec::new()
-        }
-    }
-
     /// Get scheduling metrics / 获取调度指标
     pub fn get_metrics(&self) -> SchedulingMetrics {
         self.metrics.read().clone()
@@ -528,12 +507,6 @@ impl InstanceScheduler {
     /// Get configuration / 获取配置
     pub fn config(&self) -> &SchedulerConfig {
         &self.config
-    }
-
-    /// Update configuration / 更新配置
-    pub fn update_config(&mut self, config: SchedulerConfig) {
-        self.config = config;
-        info!("Updated scheduler configuration: {:?}", self.config);
     }
 }
 
